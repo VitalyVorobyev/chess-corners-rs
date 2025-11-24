@@ -1,0 +1,20 @@
+[package]
+name = "chess-core"
+version = "0.1.0"
+description = "Core ChESS (Chess-board Extraction by Subtraction and Summation) response + corner candidates"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["std"]
+std = []
+# phase D:
+# simd = []
+# rayon = []
+# preblur = []
+# orientation = []
+# pyramid = []
+
+[dependencies]
+# keep core lean in A+B

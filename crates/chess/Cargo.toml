@@ -1,0 +1,11 @@
+[package]
+name = "chess"
+version = "0.1.0"
+description = "Ergonomic ChESS detector crate"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chess-core = { path = "../chess-core", version = "0.1.0" }
+image = "0.25"
