@@ -1,11 +1,12 @@
 use anyhow::Context;
-use chess::{find_corners_image, ChessParams};
+use chess::{find_corners_image_trace, ChessParams};
 use image::{
     imageops::{resize, FilterType},
     ImageBuffer, ImageReader, Luma,
 };
 use serde::Serialize;
 use std::{fs::File, io::Write, path::PathBuf};
+use std::time::Instant;
 
 #[derive(Serialize)]
 struct CornerOut {
@@ -59,16 +60,22 @@ fn main() -> anyhow::Result<()> {
     };
 
     let params = ChessParams::default();
-    let mut corners = find_corners_image(&work_img, &params);
+    let chess_started = Instant::now();
+    let mut res = find_corners_image_trace(&work_img, &params);
+    let chess_ms = chess_started.elapsed().as_secs_f64() * 1000.0;
+    println!("chess: {:5.2} ms", chess_ms);
+    println!(" -   resp: {:5.2} ms", res.resp_ms);
+    println!(" - detect: {:5.2} ms", res.detect_ms);
+
     if downsample > 1 {
         let s = downsample as f32;
-        for c in &mut corners {
+        for c in &mut res.corners {
             c.xy[0] *= s;
             c.xy[1] *= s;
         }
     }
 
-    println!("Detected {} corners (downsample={})", corners.len(), downsample);
+    println!("Detected {} corners (downsample={})", res.corners.len(), downsample);
 
     let json_out = input.with_extension("corners.json");
     let dump = CornerDump {
@@ -76,7 +83,7 @@ fn main() -> anyhow::Result<()> {
         width: img.width(),
         height: img.height(),
         downsample,
-        corners: corners
+        corners: res.corners
             .iter()
             .map(|c| CornerOut {
                 x: c.xy[0],
@@ -93,7 +100,7 @@ fn main() -> anyhow::Result<()> {
 
     // simple visualization: draw small 3x3 white squares around corners
     let mut vis: ImageBuffer<Luma<u8>, _> = img.clone();
-    for c in &corners {
+    for c in &res.corners {
         let x = c.xy[0].round() as i32;
         let y = c.xy[1].round() as i32;
         for dy in -1..=1 {

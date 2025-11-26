@@ -6,6 +6,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+rayon = ["chess-core/rayon"]  # enable core’s rayon via this feature
+
 [dependencies]
 chess-core = { path = "../chess-core", version = "0.1.0" }
 image = "0.25"
