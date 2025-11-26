@@ -1,9 +1,13 @@
+//! Dense ChESS response computation for 8-bit grayscale inputs.
 use crate::ring::ring_offsets;
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
+/// Compute the dense ChESS response for an 8-bit grayscale image.
+///
+/// Automatically parallelizes over rows when built with the `rayon` feature.
 pub fn chess_response_u8(img: &[u8], w: usize, h: usize, params: &ChessParams) -> ResponseMap {
     // rayon path compiled only when feature is enabled
     #[cfg(feature = "rayon")]

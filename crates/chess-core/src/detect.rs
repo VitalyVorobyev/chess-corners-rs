@@ -1,3 +1,4 @@
+//! Corner detection utilities built on top of the dense ChESS response map.
 use crate::response::chess_response_u8;
 use crate::{ChessParams, ResponseMap};
 use std::time::Instant;
@@ -13,9 +14,13 @@ pub struct Corner {
     pub scale: u8,
 }
 
+/// Timed detection outcome containing corners and profiling data.
 pub struct ChessResult {
+    /// Refined corners (in image coordinates).
     pub corners: Vec<Corner>,
+    /// Time spent computing the dense response (milliseconds).
     pub resp_ms: f64,
+    /// Time spent on thresholding, NMS, and refinement (milliseconds).
     pub detect_ms: f64,
 }
 
@@ -59,7 +64,9 @@ pub fn find_corners_u8(img: &[u8], w: usize, h: usize, params: &ChessParams) -> 
 
 /// Core detector: run NMS + refinement on an existing response map.
 ///
-/// Useful if you want to reuse the response map for debugging or tuning.
+/// Useful if you want to reuse the response map for debugging or tuning. Honors
+/// relative vs absolute thresholds, enforces the configurable NMS radius, and
+/// rejects isolated responses via `min_cluster_size`.
 pub fn detect_corners_from_response(resp: &ResponseMap, params: &ChessParams) -> Vec<Corner> {
     let w = resp.w;
     let h = resp.h;

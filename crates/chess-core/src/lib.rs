@@ -1,9 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+//! Core primitives for computing ChESS responses and extracting subpixel corners.
 
 pub mod detect;
 pub mod response;
 pub mod ring;
 
+/// Tunable parameters for the ChESS response computation and corner detection.
 #[derive(Clone, Debug)]
 pub struct ChessParams {
     /// Ring radius in pixels (canonical 5, or 10 for heavy blur).
@@ -31,7 +33,7 @@ impl Default for ChessParams {
     }
 }
 
-/// Response map in row-major layout
+/// Dense response map in row-major layout.
 #[derive(Clone, Debug)]
 pub struct ResponseMap {
     pub w: usize,
@@ -41,6 +43,7 @@ pub struct ResponseMap {
 
 impl ResponseMap {
     #[inline]
+    /// Response value at an integer coordinate.
     pub fn at(&self, x: usize, y: usize) -> f32 {
         self.data[y * self.w + x]
     }

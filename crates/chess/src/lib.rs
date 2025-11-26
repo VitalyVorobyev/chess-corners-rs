@@ -1,3 +1,4 @@
+//! Ergonomic wrappers over `chess-core` that accept `image::GrayImage` inputs.
 pub use chess_core::*;
 
 use image::GrayImage;
@@ -25,7 +26,7 @@ pub fn find_corners_image(
     )
 }
 
-/// Detect subpixel corners from an `image::GrayImage`.
+/// Detect subpixel corners from an `image::GrayImage` and return timing stats.
 pub fn find_corners_image_trace(
     img: &GrayImage,
     params: &ChessParams,
