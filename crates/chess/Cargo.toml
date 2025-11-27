@@ -9,6 +9,7 @@ repository.workspace = true
 [features]
 default = []
 rayon = ["chess-core/rayon", "dep:rayon"]  # enable core’s rayon via this feature
+simd = ["chess-core/simd"]
 
 [dependencies]
 chess-core = { path = "../chess-core", version = "0.1.0" }

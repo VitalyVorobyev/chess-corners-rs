@@ -9,6 +9,12 @@ use rayon::prelude::*;
 use core::simd::Simd;
 
 #[cfg(feature = "simd")]
+use std::simd::prelude::SimdUint;
+
+#[cfg(feature = "simd")]
+use std::simd::num::SimdFloat;
+
+#[cfg(feature = "simd")]
 const LANES: usize = 16;
 
 #[cfg(feature = "simd")]
@@ -34,7 +40,12 @@ pub fn chess_response_u8(img: &[u8], w: usize, h: usize, params: &ChessParams) -
 
 /// Always uses the scalar implementation (no rayon, no SIMD),
 /// useful for reference/golden testing.
-pub fn chess_response_u8_scalar(img: &[u8], w: usize, h: usize, params: &ChessParams) -> ResponseMap {
+pub fn chess_response_u8_scalar(
+    img: &[u8],
+    w: usize,
+    h: usize,
+    params: &ChessParams,
+) -> ResponseMap {
     compute_response_sequential_scalar(img, w, h, params)
 }
 
@@ -107,6 +118,7 @@ pub fn chess_response_u8_patch(
     }
 }
 
+
 fn compute_response_sequential(
     img: &[u8],
     w: usize,
@@ -125,10 +137,33 @@ fn compute_response_sequential(
     let y1 = h - r as usize;
 
     for y in y0..y1 {
-        for x in x0..x1 {
-            let resp = chess_response_at_u8(img, w, x as i32, y as i32, ring);
-            data[y * w + x] = resp;
-        }
+        let row = &mut data[y * w..(y + 1) * w];
+        compute_row(img, w, y as i32, &ring, row, x0, x1);
+    }
+
+    ResponseMap { w, h, data }
+}
+
+fn compute_response_sequential_scalar(
+    img: &[u8],
+    w: usize,
+    h: usize,
+    params: &ChessParams,
+) -> ResponseMap {
+    let r = params.radius as i32;
+    let ring = ring_offsets(params.radius);
+
+    let mut data = vec![0.0f32; w * h];
+
+    // only evaluate where full ring fits
+    let x0 = r as usize;
+    let y0 = r as usize;
+    let x1 = w - r as usize;
+    let y1 = h - r as usize;
+
+    for y in y0..y1 {
+        let row = &mut data[y * w..(y + 1) * w];
+        compute_row_scalar(img, w, y as i32, &ring, row, x0, x1);
     }
 
     ResponseMap { w, h, data }
@@ -149,13 +184,11 @@ fn compute_response_parallel(img: &[u8], w: usize, h: usize, params: &ChessParam
     // Parallelize over rows. We keep the exact same logic and write
     // each row's slice independently.
     data.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
-        if y < y0 || y >= y1 {
+        let y_i = y as i32;
+        if y_i < y0 as i32 || y_i >= y1 as i32 {
             return;
         }
-        for x in x0..x1 {
-            let resp = chess_response_at_u8(img, w, x as i32, y as i32, ring);
-            row[x] = resp;
-        }
+        compute_row(img, w, y_i, &ring, row, x0, x1);
     });
 
     ResponseMap { w, h, data }
@@ -208,4 +241,124 @@ fn chess_response_at_u8(img: &[u8], w: usize, x: i32, y: i32, ring: &[(i32, i32)
     let mr = (mu_n - mu_l).abs();
 
     (sr as f32) - (dr as f32) - 16.0 * mr
+}
+
+fn compute_row(
+    img: &[u8],
+    w: usize,
+    y: i32,
+    ring: &[(i32, i32); 16],
+    row: &mut [f32],
+    x0: usize,
+    x1: usize,
+) {
+    #[cfg(feature = "simd")]
+    {
+        compute_row_simd(img, w, y, ring, row, x0, x1);
+        return;
+    }
+
+    // fallback
+    #[cfg(not(feature = "simd"))]
+    compute_row_scalar(img, w, y, ring, row, x0, x1);
+}
+
+fn compute_row_scalar(
+    img: &[u8],
+    w: usize,
+    y: i32,
+    ring: &[(i32, i32); 16],
+    row: &mut [f32],
+    x0: usize,
+    x1: usize,
+) {
+    for x in x0..x1 {
+        let resp = chess_response_at_u8(img, w, x as i32, y, ring);
+        row[x] = resp;
+    }
+}
+
+#[cfg(feature = "simd")]
+fn compute_row_simd(
+    img: &[u8],
+    w: usize,
+    y: i32,
+    ring: &[(i32, i32); 16],
+    row: &mut [f32],
+    x0: usize,
+    x1: usize,
+) {
+    let y_usize = y as usize;
+
+    let mut x = x0;
+
+    while x + LANES <= x1 {
+        // Gather ring samples for LANES pixels starting at x
+        let mut s: [U8s; 16] = [U8s::splat(0); 16];
+
+        for k in 0..16 {
+            let (dx, dy) = ring[k];
+            let yy = (y + dy) as usize;
+            let xx = (x as i32 + dx) as usize;
+            let base = yy * w + xx;
+
+            // SAFETY: x range + radius guarantees we stay in bounds
+            s[k] = U8s::from_slice(&img[base..base + LANES]);
+        }
+
+        // Sum of ring values (for neighbor mean)
+        let mut sum_ring_v = F32s::splat(0.0);
+        for k in 0..16 {
+            sum_ring_v += s[k].cast::<f32>();
+        }
+
+        // SR
+        let mut sr_v = F32s::splat(0.0);
+        for k in 0..4 {
+            let a = s[k].cast::<f32>() + s[k + 8].cast::<f32>();
+            let b = s[k + 4].cast::<f32>() + s[k + 12].cast::<f32>();
+            let diff = (a - b).abs();
+            sr_v += diff;
+        }
+
+        // DR
+        let mut dr_v = F32s::splat(0.0);
+        for k in 0..8 {
+            let a = s[k].cast::<f32>();
+            let b = s[k + 8].cast::<f32>();
+            dr_v += (a - b).abs();
+        }
+
+        // Convert vectors to scalar arrays for the MR step
+        let sr_arr = sr_v.to_array();
+        let dr_arr = dr_v.to_array();
+        let sum_ring_arr = sum_ring_v.to_array();
+
+        // Per-lane local mean + final response
+        for lane in 0..LANES {
+            let xx = x + lane;
+
+            // center + 4-neighborhood (scalar) at base resolution
+            let c  = img[y_usize * w + xx] as f32;
+            let n  = img[(y_usize - 1) * w + xx] as f32;
+            let s0 = img[(y_usize + 1) * w + xx] as f32;
+            let e  = img[y_usize * w + (xx + 1)] as f32;
+            let w0 = img[y_usize * w + (xx - 1)] as f32;
+
+            let mu_n = sum_ring_arr[lane] / 16.0;
+            let mu_l = (c + n + s0 + e + w0) / 5.0;
+            let mr = (mu_n - mu_l).abs();
+
+            row[xx] = sr_arr[lane] - dr_arr[lane] - 16.0 * mr;
+        }
+
+        x += LANES;
+    }
+
+    // Tail: scalar for remaining pixels
+    while x < x1 {
+        let resp = chess_response_at_u8(img, w, x as i32, y, ring);
+        row[x] = resp;
+        x += 1;
+    }
 }

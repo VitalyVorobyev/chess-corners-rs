@@ -1,4 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(feature = "simd", feature(portable_simd))]
 //! Core primitives for computing ChESS responses and extracting subpixel corners.
 
 pub mod detect;
