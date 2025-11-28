@@ -1,6 +1,42 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 //! Core primitives for computing ChESS responses and extracting subpixel corners.
+//!
+//! # Overview
+//! 
+//! This crate exposes two main building blocks:
+//! 
+//! - [`response`] – dense ChESS response computation on 8‑bit grayscale images.
+//! - [`detect`] – thresholding, non‑maximum suppression (NMS), and 5×5
+//!   center‑of‑mass refinement on a response map.
+//!
+//! The response is based on a 16‑sample ring (see [`ring`]) and is intended for
+//! chessboard‑like corner detection, as described in the ChESS paper
+//! (“Chess‑board Extraction by Subtraction and Summation”).
+//!
+//! # Features
+//!
+//! - `std` *(default)* – enables use of the Rust standard library. When
+//!   disabled, the crate is `no_std` + `alloc`.
+//! - `rayon` – parallelizes the dense response computation over image rows
+//!   using the [`rayon`] crate. This does not change numerical results, only
+//!   performance on multi‑core machines.
+//! - `simd` – enables a SIMD‑accelerated inner loop for the response
+//!   computation, based on `portable_simd`. This feature currently requires a
+//!   nightly compiler and is intended as a performance optimization; the
+//!   scalar path remains the reference implementation.
+//!
+//! Feature combinations:
+//!
+//! - no features / `std` only – single‑threaded scalar implementation.
+//! - `rayon` – same scalar math, but rows are processed in parallel.
+//! - `simd` – single‑threaded, but the inner ring computation is vectorized.
+//! - `rayon + simd` – rows are processed in parallel *and* each row uses the
+//!   SIMD‑accelerated inner loop.
+//!
+//! The detector in [`detect`] is independent of `rayon`/`simd` and runs the
+//! same logic regardless of these features; only the time to produce the dense
+//! response map changes.
 
 pub mod detect;
 pub mod response;

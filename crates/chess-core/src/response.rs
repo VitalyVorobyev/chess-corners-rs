@@ -9,10 +9,7 @@ use rayon::prelude::*;
 use core::simd::Simd;
 
 #[cfg(feature = "simd")]
-use std::simd::prelude::SimdUint;
-
-#[cfg(feature = "simd")]
-use std::simd::num::SimdFloat;
+use std::simd::prelude::{SimdUint, SimdInt};
 
 #[cfg(feature = "simd")]
 const LANES: usize = 16;
@@ -21,11 +18,64 @@ const LANES: usize = 16;
 type U8s = Simd<u8, LANES>;
 
 #[cfg(feature = "simd")]
-type F32s = Simd<f32, LANES>;
+type I16s = Simd<i16, LANES>;
+
+#[cfg(feature = "simd")]
+type I32s = Simd<i32, LANES>;
 
 /// Compute the dense ChESS response for an 8-bit grayscale image.
 ///
-/// Automatically parallelizes over rows when built with the `rayon` feature.
+/// The response at each valid pixel center is computed from a 16‑sample ring
+/// around the pixel and a 5‑pixel cross at the center. For a given center
+/// `c`, let `s[0..16)` be the ring samples in the canonical order:
+///
+/// - `SR` (sum of “square” responses) compares four opposite quadrants on
+///   the ring:
+///
+///   ```text
+///   SR = sum_{k=0..3} | (s[k] + s[k+8]) - (s[k+4] + s[k+12]) |
+///   ```
+///
+/// - `DR` (sum of “difference” responses) enforces edge‑like structure:
+///
+///   ```text
+///   DR = sum_{k=0..7} | s[k] - s[k+8] |
+///   ```
+///
+/// - `μₙ` is the mean of all 16 ring samples.
+/// - `μₗ` is the local mean of the 5‑pixel cross at the center
+///   (`c`, `north`, `south`, `east`, `west`).
+///
+/// The final ChESS response is:
+///
+/// ```text
+/// R = SR - DR - 16 * |μₙ - μₗ|
+/// ```
+///
+/// where high positive values correspond to chessboard‑like corners.
+///
+/// # Implementation strategy
+///
+/// Internally the image is processed row‑by‑row, but only pixels whose
+/// full ring lies inside the image bounds are evaluated; border pixels
+/// are left at zero in the returned [`ResponseMap`].
+///
+/// - Without any features, `chess_response_u8` uses a straightforward
+///   nested `for y { for x { ... } }` scalar loop and relies on the
+///   compiler’s auto‑vectorization in release builds.
+/// - With the `rayon` feature, the work is split into independent row
+///   slices and processed in parallel using `rayon::par_chunks_mut`.
+/// - With the `simd` feature, the inner loop over `x` is rewritten to
+///   operate on `LANES` pixels at a time using portable SIMD vectors
+///   (currently 16 lanes of `u8`). The ring samples are gathered into
+///   SIMD registers, `SR`/`DR`/`μₙ` are accumulated in integer vectors,
+///   and the final response is written back per lane.
+/// - With both `rayon` and `simd` enabled, each row is processed in
+///   parallel *and* each row uses the SIMD‑accelerated inner loop.
+///
+/// All feature combinations produce the same output values (within a
+/// small tolerance for floating‑point rounding), and differ only in
+/// performance characteristics.
 pub fn chess_response_u8(img: &[u8], w: usize, h: usize, params: &ChessParams) -> ResponseMap {
     // rayon path compiled only when feature is enabled
     #[cfg(feature = "rayon")]
@@ -118,7 +168,7 @@ pub fn chess_response_u8_patch(
     }
 }
 
-
+#[cfg(not(feature = "rayon"))]
 fn compute_response_sequential(
     img: &[u8],
     w: usize,
@@ -136,9 +186,22 @@ fn compute_response_sequential(
     let x1 = w - r as usize;
     let y1 = h - r as usize;
 
-    for y in y0..y1 {
-        let row = &mut data[y * w..(y + 1) * w];
-        compute_row(img, w, y as i32, &ring, row, x0, x1);
+    #[cfg(feature = "simd")]
+    {
+        for y in y0..y1 {
+            let row = &mut data[y * w..(y + 1) * w];
+            compute_row(img, w, y as i32, &ring, row, x0, x1);
+        }
+    }
+
+    #[cfg(not(feature = "simd"))]
+    {
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let resp = chess_response_at_u8(img, w, x as i32, y as i32, &ring);
+                data[y * w + x] = resp;
+            }
+        }
     }
 
     ResponseMap { w, h, data }
@@ -188,7 +251,18 @@ fn compute_response_parallel(img: &[u8], w: usize, h: usize, params: &ChessParam
         if y_i < y0 as i32 || y_i >= y1 as i32 {
             return;
         }
-        compute_row(img, w, y_i, &ring, row, x0, x1);
+        #[cfg(feature = "simd")]
+        {
+            compute_row(img, w, y_i, &ring, row, x0, x1);
+        }
+
+        #[cfg(not(feature = "simd"))]
+        {
+            for x in x0..x1 {
+                let resp = chess_response_at_u8(img, w, x as i32, y_i, &ring);
+                row[x] = resp;
+            }
+        }
     });
 
     ResponseMap { w, h, data }
@@ -201,6 +275,19 @@ fn compute_response_parallel(img: &[u8], w: usize, h: usize, params: &ChessParam
     compute_response_sequential(img, w, h, params)
 }
 
+/// Low-level ChESS response at a single pixel center.
+///
+/// This is the scalar reference implementation used by both the sequential
+/// and SIMD paths:
+///
+/// - gathers 16 ring samples around `(x, y)` using the offsets defined in
+///   [`crate::ring`],
+/// - computes `SR`, `DR`, the ring mean `μₙ`, and the 5‑pixel local mean
+///   `μₗ`, and
+/// - returns `R = SR - DR - 16 * |μₙ - μₗ|` as a `f32`.
+///
+/// Callers are responsible for ensuring that `(x, y)` is far enough from the
+/// image border so that all ring and 5‑pixel cross accesses are in‑bounds.
 #[inline(always)]
 fn chess_response_at_u8(img: &[u8], w: usize, x: i32, y: i32, ring: &[(i32, i32); 16]) -> f32 {
     // gather ring samples into i32
@@ -243,6 +330,7 @@ fn chess_response_at_u8(img: &[u8], w: usize, x: i32, y: i32, ring: &[(i32, i32)
     (sr as f32) - (dr as f32) - 16.0 * mr
 }
 
+#[cfg(feature = "simd")]
 fn compute_row(
     img: &[u8],
     w: usize,
@@ -290,49 +378,54 @@ fn compute_row_simd(
 ) {
     let y_usize = y as usize;
 
+    // Precompute row bases for each ring sample to avoid recomputing (y+dy)*w.
+    let mut ring_bases: [isize; 16] = [0; 16];
+    for k in 0..16 {
+        let (dx, dy) = ring[k];
+        let yy = (y + dy) as usize;
+        ring_bases[k] = (yy * w) as isize + dx as isize;
+    }
+
     let mut x = x0;
 
     while x + LANES <= x1 {
         // Gather ring samples for LANES pixels starting at x
-        let mut s: [U8s; 16] = [U8s::splat(0); 16];
+        let mut s: [I16s; 16] = [I16s::splat(0); 16];
 
         for k in 0..16 {
-            let (dx, dy) = ring[k];
-            let yy = (y + dy) as usize;
-            let xx = (x as i32 + dx) as usize;
-            let base = yy * w + xx;
+            let base = (ring_bases[k] + x as isize) as usize;
 
             // SAFETY: x range + radius guarantees we stay in bounds
-            s[k] = U8s::from_slice(&img[base..base + LANES]);
+            let v_u8 = U8s::from_slice(&img[base..base + LANES]);
+            s[k] = v_u8.cast::<i16>();
         }
 
         // Sum of ring values (for neighbor mean)
-        let mut sum_ring_v = F32s::splat(0.0);
+        let mut sum_ring_v = I32s::splat(0);
         for k in 0..16 {
-            sum_ring_v += s[k].cast::<f32>();
+            sum_ring_v += s[k].cast::<i32>();
         }
 
         // SR
-        let mut sr_v = F32s::splat(0.0);
+        let mut sr_v = I32s::splat(0);
         for k in 0..4 {
-            let a = s[k].cast::<f32>() + s[k + 8].cast::<f32>();
-            let b = s[k + 4].cast::<f32>() + s[k + 12].cast::<f32>();
-            let diff = (a - b).abs();
-            sr_v += diff;
+            let a = s[k].cast::<i32>() + s[k + 8].cast::<i32>();
+            let b = s[k + 4].cast::<i32>() + s[k + 12].cast::<i32>();
+            sr_v += (a - b).abs();
         }
 
         // DR
-        let mut dr_v = F32s::splat(0.0);
+        let mut dr_v = I32s::splat(0);
         for k in 0..8 {
-            let a = s[k].cast::<f32>();
-            let b = s[k + 8].cast::<f32>();
+            let a = s[k].cast::<i32>();
+            let b = s[k + 8].cast::<i32>();
             dr_v += (a - b).abs();
         }
 
         // Convert vectors to scalar arrays for the MR step
-        let sr_arr = sr_v.to_array();
-        let dr_arr = dr_v.to_array();
-        let sum_ring_arr = sum_ring_v.to_array();
+        let sr_arr = sr_v.cast::<f32>().to_array();
+        let dr_arr = dr_v.cast::<f32>().to_array();
+        let sum_ring_arr = sum_ring_v.cast::<f32>().to_array();
 
         // Per-lane local mean + final response
         for lane in 0..LANES {
