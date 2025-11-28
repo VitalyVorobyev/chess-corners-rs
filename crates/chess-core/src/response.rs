@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use core::simd::Simd;
 
 #[cfg(feature = "simd")]
-use std::simd::prelude::{SimdUint, SimdInt};
+use std::simd::prelude::{SimdInt, SimdUint};
 
 #[cfg(feature = "simd")]
 const LANES: usize = 16;
@@ -22,6 +22,15 @@ type I16s = Simd<i16, LANES>;
 
 #[cfg(feature = "simd")]
 type I32s = Simd<i32, LANES>;
+
+/// Rectangular region of interest, in image coordinates.
+#[derive(Clone, Copy, Debug)]
+pub struct Roi {
+    pub x0: usize,
+    pub y0: usize,
+    pub x1: usize,
+    pub y1: usize,
+}
 
 /// Compute the dense ChESS response for an 8-bit grayscale image.
 ///
@@ -101,9 +110,9 @@ pub fn chess_response_u8_scalar(
 
 /// Compute the ChESS response only inside a rectangular ROI of the image.
 ///
-/// The ROI is given in image coordinates [x0, x1) × [y0, y1). The returned
-/// ResponseMap has width (x1 - x0) and height (y1 - y0), with coordinates
-/// relative to (x0, y0).
+/// The ROI is given in image coordinates [x0, x1) × [y0, y1) via [`Roi`]. The
+/// returned ResponseMap has width (x1 - x0) and height (y1 - y0), with
+/// coordinates relative to (x0, y0).
 ///
 /// Pixels where the ChESS ring would go out of bounds (w.r.t. the *full*
 /// image) are left at 0.0, and will be ignored by the detector because they
@@ -113,11 +122,10 @@ pub fn chess_response_u8_patch(
     img_w: usize,
     img_h: usize,
     params: &ChessParams,
-    x0: usize,
-    y0: usize,
-    x1: usize,
-    y1: usize,
+    roi: Roi,
 ) -> ResponseMap {
+    let Roi { x0, y0, x1, y1 } = roi;
+
     // Clamp ROI to the image bounds
     let x0 = x0.min(img_w);
     let y0 = y0.min(img_h);
@@ -198,7 +206,7 @@ fn compute_response_sequential(
     {
         for y in y0..y1 {
             for x in x0..x1 {
-                let resp = chess_response_at_u8(img, w, x as i32, y as i32, &ring);
+                let resp = chess_response_at_u8(img, w, x as i32, y as i32, ring);
                 data[y * w + x] = resp;
             }
         }
@@ -226,7 +234,7 @@ fn compute_response_sequential_scalar(
 
     for y in y0..y1 {
         let row = &mut data[y * w..(y + 1) * w];
-        compute_row_scalar(img, w, y as i32, &ring, row, x0, x1);
+        compute_row_scalar(img, w, y as i32, ring, row, x0, x1);
     }
 
     ResponseMap { w, h, data }
@@ -360,9 +368,8 @@ fn compute_row_scalar(
     x0: usize,
     x1: usize,
 ) {
-    for x in x0..x1 {
-        let resp = chess_response_at_u8(img, w, x as i32, y, ring);
-        row[x] = resp;
+    for (x, item) in row.iter_mut().enumerate().take(x1).skip(x0) {
+        *item = chess_response_at_u8(img, w, x as i32, y, ring);
     }
 }
 
@@ -432,10 +439,10 @@ fn compute_row_simd(
             let xx = x + lane;
 
             // center + 4-neighborhood (scalar) at base resolution
-            let c  = img[y_usize * w + xx] as f32;
-            let n  = img[(y_usize - 1) * w + xx] as f32;
+            let c = img[y_usize * w + xx] as f32;
+            let n = img[(y_usize - 1) * w + xx] as f32;
             let s0 = img[(y_usize + 1) * w + xx] as f32;
-            let e  = img[y_usize * w + (xx + 1)] as f32;
+            let e = img[y_usize * w + (xx + 1)] as f32;
             let w0 = img[y_usize * w + (xx - 1)] as f32;
 
             let mu_n = sum_ring_arr[lane] / 16.0;

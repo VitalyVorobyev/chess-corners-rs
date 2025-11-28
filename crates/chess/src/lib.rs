@@ -281,8 +281,18 @@ pub fn find_corners_coarse_to_fine_image_trace(
         let y1u = y1 as usize;
 
         // Compute response only inside this ROI at base level.
-        let patch_resp =
-            chess_response_u8_patch(img.as_raw(), base_w, base_h, params, x0u, y0u, x1u, y1u);
+        let patch_resp = chess_response_u8_patch(
+            img.as_raw(),
+            base_w,
+            base_h,
+            params,
+            chess_core::response::Roi {
+                x0: x0u,
+                y0: y0u,
+                x1: x1u,
+                y1: y1u,
+            },
+        );
 
         if patch_resp.w == 0 || patch_resp.h == 0 {
             return None;

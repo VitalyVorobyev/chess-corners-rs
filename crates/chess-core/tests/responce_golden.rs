@@ -1,5 +1,9 @@
 use chess_core::detect::{detect_corners_from_response, find_corners_u8_with_trace};
-use chess_core::response::{chess_response_u8, chess_response_u8_scalar};
+use chess_core::response::chess_response_u8;
+
+#[cfg(feature = "simd")]
+use chess_core::response::chess_response_u8_scalar;
+
 use chess_core::ring::{ring_offsets, RING10, RING5};
 use chess_core::{ChessParams, ResponseMap};
 
@@ -49,7 +53,9 @@ fn simd_matches_scalar_reasonably() {
 #[test]
 fn simd_parallel_matches_scalar() {
     let params = ChessParams::default();
-    let img = image::GrayImage::from_fn(192, 192, |x, y| image::Luma([(x.wrapping_mul(7) ^ y) as u8]));
+    let img = image::GrayImage::from_fn(192, 192, |x, y| {
+        image::Luma([(x.wrapping_mul(7) ^ y) as u8])
+    });
     let w = img.width() as usize;
     let h = img.height() as usize;
 

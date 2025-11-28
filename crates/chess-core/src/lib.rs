@@ -3,9 +3,9 @@
 //! Core primitives for computing ChESS responses and extracting subpixel corners.
 //!
 //! # Overview
-//! 
+//!
 //! This crate exposes two main building blocks:
-//! 
+//!
 //! - [`response`] – dense ChESS response computation on 8‑bit grayscale images.
 //! - [`detect`] – thresholding, non‑maximum suppression (NMS), and 5×5
 //!   center‑of‑mass refinement on a response map.
@@ -19,7 +19,7 @@
 //! - `std` *(default)* – enables use of the Rust standard library. When
 //!   disabled, the crate is `no_std` + `alloc`.
 //! - `rayon` – parallelizes the dense response computation over image rows
-//!   using the [`rayon`] crate. This does not change numerical results, only
+//!   using the `rayon` crate. This does not change numerical results, only
 //!   performance on multi‑core machines.
 //! - `simd` – enables a SIMD‑accelerated inner loop for the response
 //!   computation, based on `portable_simd`. This feature currently requires a
