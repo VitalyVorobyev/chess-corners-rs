@@ -58,8 +58,11 @@ pub struct DetectionConfig {
 pub struct CornerOut {
     pub x: f32,
     pub y: f32,
-    pub strength: f32,
-    pub scale: Option<u8>,
+    pub response: f32,
+    pub scale: f32,
+    pub orientation: f32,
+    pub phase: u8,
+    pub anisotropy: f32,
 }
 
 #[derive(Serialize)]
@@ -103,8 +106,9 @@ fn run_single(cfg: DetectionConfig) -> Result<()> {
     if downsample > 1 {
         let s = downsample as f32;
         for c in &mut corners {
-            c.xy[0] *= s;
-            c.xy[1] *= s;
+            c.x *= s;
+            c.y *= s;
+            c.scale *= 1.0 / s;
         }
     }
 
@@ -124,10 +128,13 @@ fn run_single(cfg: DetectionConfig) -> Result<()> {
         corners: corners
             .iter()
             .map(|c| CornerOut {
-                x: c.xy[0],
-                y: c.xy[1],
-                strength: c.strength,
-                scale: Some(c.scale),
+                x: c.x,
+                y: c.y,
+                response: c.response,
+                scale: c.scale,
+                orientation: c.orientation,
+                phase: c.phase,
+                anisotropy: c.anisotropy,
             })
             .collect(),
     };
@@ -197,10 +204,13 @@ fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
             .corners
             .iter()
             .map(|c| CornerOut {
-                x: c.xy[0],
-                y: c.xy[1],
-                strength: c.strength,
-                scale: None,
+                x: c.x,
+                y: c.y,
+                response: c.response,
+                scale: c.scale,
+                orientation: c.orientation,
+                phase: c.phase,
+                anisotropy: c.anisotropy,
             })
             .collect(),
     };

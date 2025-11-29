@@ -42,6 +42,7 @@ pub mod detect;
 pub mod response;
 pub mod ring;
 
+pub use crate::detect::ChessCornerDescriptor;
 /// Tunable parameters for the ChESS response computation and corner detection.
 #[derive(Clone, Debug)]
 pub struct ChessParams {

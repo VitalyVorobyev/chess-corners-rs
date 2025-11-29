@@ -17,7 +17,7 @@ pub mod pyramid;
 // Re-export a focused subset of core types for convenience. Consumers that
 // need lower-level primitives (rings, raw response functions, etc.) are
 // encouraged to depend on `chess-core` directly.
-pub use chess_core::detect::Corner;
+pub use chess_core::detect::ChessCornerDescriptor;
 pub use chess_core::{ChessParams, ResponseMap};
 
 // High-level helpers on `image::GrayImage`.

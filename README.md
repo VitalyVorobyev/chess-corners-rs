@@ -13,10 +13,12 @@ ChESS is a classical, ID-free detector for chessboard **X-junction** corners. Th
 - Dense response computation plus NMS, minimum-cluster filtering, and 5x5 center-of-mass refinement.
 - Optional `rayon` parallelism and portable SIMD acceleration on the dense response path and pyramid downsampling.
 - Three crates:
-  - `chess-core`: lean core (std optional) meant to stay SIMD/parallel-friendly.
-  - `chess`: ergonomic facade that accepts `image::GrayImage`.
-  - `chess-cli`: small CLI for single-scale and multiscale runs.
+- `chess-core`: lean core (std optional) meant to stay SIMD/parallel-friendly.
+- `chess`: ergonomic facade that accepts `image::GrayImage`.
+- `chess-cli`: small CLI for single-scale and multiscale runs.
 - Multiscale coarse-to-fine helpers with reusable pyramid buffers.
+- Corner descriptors that include subpixel position, scale, response,
+  orientation, phase, and anisotropy.
 - JSON/PNG output and a small Python helper (`tools/plot_corners.py`) for overlay visualization.
 
 ## Quick start
@@ -33,6 +35,12 @@ println!("response map: {} x {}", resp.w, resp.h);
 
 let corners = find_corners_image(&img, &params);
 println!("found {} corners", corners.len());
+if let Some(c) = corners.first() {
+    println!(
+        "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad, phase {}",
+        c.x, c.y, c.response, c.orientation, c.phase
+    );
+}
 ```
 
 Need timings for profiling? Swap in `find_corners_image_trace` to get per-stage milliseconds.
