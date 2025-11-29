@@ -176,28 +176,12 @@ pub fn chess_response_u8_patch(
 
         #[cfg(feature = "simd")]
         {
-            compute_row_range_simd(
-                img,
-                img_w,
-                gy as i32,
-                &ring,
-                dst_row,
-                row_gx0,
-                row_gx1,
-            );
+            compute_row_range_simd(img, img_w, gy as i32, &ring, dst_row, row_gx0, row_gx1);
         }
 
         #[cfg(not(feature = "simd"))]
         {
-            compute_row_range_scalar(
-                img,
-                img_w,
-                gy as i32,
-                &ring,
-                dst_row,
-                row_gx0,
-                row_gx1,
-            );
+            compute_row_range_scalar(img, img_w, gy as i32, &ring, dst_row, row_gx0, row_gx1);
         }
     }
 

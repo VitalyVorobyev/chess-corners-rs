@@ -1,8 +1,5 @@
 use chess_core::detect::{detect_corners_from_response, find_corners_u8_with_trace};
-use chess_core::response::chess_response_u8;
-
-#[cfg(feature = "simd")]
-use chess_core::response::chess_response_u8_scalar;
+use chess_core::response::{self, chess_response_u8, chess_response_u8_patch};
 
 use chess_core::ring::{ring_offsets, RING10, RING5};
 use chess_core::{ChessParams, ResponseMap};
@@ -171,4 +168,38 @@ fn tracing_path_reports_elapsed_times() {
     assert!(res.resp_ms >= 0.0);
     assert!(res.detect_ms >= 0.0);
     assert!(res.corners.is_empty());
+}
+
+#[test]
+fn patch_response_matches_full_map_slice() {
+    let params = ChessParams::default();
+    let img = image::GrayImage::from_fn(64, 48, |x, y| image::Luma([(x * 7 + y * 13) as u8]));
+    let w = img.width() as usize;
+    let h = img.height() as usize;
+
+    let full = chess_response_u8(img.as_raw(), w, h, &params);
+
+    let roi = response::Roi {
+        x0: 5,
+        y0: 7,
+        x1: 37,
+        y1: 29,
+    };
+    let patch = chess_response_u8_patch(img.as_raw(), w, h, &params, roi);
+
+    assert_eq!(patch.w, roi.x1 - roi.x0);
+    assert_eq!(patch.h, roi.y1 - roi.y0);
+
+    for py in 0..patch.h {
+        for px in 0..patch.w {
+            let gx = roi.x0 + px;
+            let gy = roi.y0 + py;
+            let full_val = full.at(gx, gy);
+            let patch_val = patch.at(px, py);
+            assert!(
+                (full_val - patch_val).abs() <= 1e-3,
+                "mismatch at ({gx},{gy}) -> ({px},{py}): {full_val} vs {patch_val}"
+            );
+        }
+    }
 }

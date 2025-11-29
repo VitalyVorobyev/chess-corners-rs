@@ -1,5 +1,9 @@
 # chess-rs
 
+[![CI](https://github.com/VitalyVorobyev/chess-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-rs/actions/workflows/ci.yml)
+[![Security audit](https://github.com/VitalyVorobyev/chess-rs/actions/workflows/audit.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-rs/actions/workflows/audit.yml)
+[![Docs](https://github.com/VitalyVorobyev/chess-rs/actions/workflows/docs.yml/badge.svg)](https://vitalyvorobyev.github.io/chess-rs/)
+
 Rust implementation of the **ChESS** (Chess-board Extraction by Subtraction and Summation) corner detector.
 
 ChESS is a classical, ID-free detector for chessboard **X-junction** corners. This workspace delivers a fast scalar kernel, corner extraction with non-maximum suppression and subpixel refinement, and convenient helpers for the `image` crate.
