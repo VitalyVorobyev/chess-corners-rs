@@ -11,12 +11,13 @@ ChESS is a classical, ID-free detector for chessboard **X-junction** corners. Th
 ## Highlights
 - Canonical 16-sample rings (r=5 default, r=10 for heavy blur).
 - Dense response computation plus NMS, minimum-cluster filtering, and 5x5 center-of-mass refinement.
-- Optional `rayon` parallelism on the response path and SIMD downsampling for pyramids.
-- Two crates:
+- Optional `rayon` parallelism and portable SIMD acceleration on the dense response path and pyramid downsampling.
+- Three crates:
   - `chess-core`: lean core (std optional) meant to stay SIMD/parallel-friendly.
   - `chess`: ergonomic facade that accepts `image::GrayImage`.
+  - `chess-cli`: small CLI for single-scale and multiscale runs.
 - Multiscale coarse-to-fine helpers with reusable pyramid buffers.
-- Example utilities that export detections as JSON/PNG overlays.
+- JSON/PNG output and a small Python helper (`tools/plot_corners.py`) for overlay visualization.
 
 ## Quick start
 
@@ -63,9 +64,8 @@ response path.
 ## Development
 
 - Run the workspace tests: `cargo test`
-- Example run with JSON + overlay output:
-  - `cargo run -p chess --example dump_corners --release -- path/to/board.png`
 - Enable parallel response computation: `cargo test -p chess-core --features rayon`
+- Run docs locally: `cargo doc --workspace --all-features --no-deps`
 
 ### CLI
 
@@ -105,13 +105,17 @@ The config JSON drives both single-scale and multiscale runs:
 
 You can override any field via CLI flags (e.g., `--mode single --downsample 2 --output_json out.json`).
 
+- SIMD and `rayon` are gated by Cargo features:
+  - Enable SIMD (nightly only) on the core: `cargo test -p chess-core --features simd`
+  - Enable both SIMD and `rayon`: `cargo test -p chess-core --features "simd,rayon"`
+
 ## Status
 
-Implemented: response kernel, ring tables, NMS + thresholding + cluster filter, 5x5 subpixel refinement, image helpers, data-free unit tests.
-
-Implemented (multiscale): pyramid builder with reusable buffers and coarse-to-fine corner refinement path.
-
-Planned: SIMD acceleration, CLI packaging.
+Implemented:
+- response kernel, ring tables, NMS + thresholding + cluster filter, 5x5 subpixel refinement, image helpers, data-free unit tests
+- multiscale pyramid builder with reusable buffers and coarse-to-fine corner refinement path
+- SIMD acceleration and optional `rayon` parallelism on the response and pyramid paths
+- CLI tooling and plotting helper for JSON/PNG-based inspection
 
 ## License
 
