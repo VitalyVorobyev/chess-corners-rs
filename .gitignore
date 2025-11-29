@@ -1,4 +1,5 @@
 target
 testdata
 .DS_Store
-config
+config/config.json
+output.json
