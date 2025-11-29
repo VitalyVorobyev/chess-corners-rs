@@ -418,4 +418,3 @@ mod tests {
         assert!(res.corners.is_empty());
     }
 }
-

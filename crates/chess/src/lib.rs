@@ -20,9 +20,8 @@ pub use crate::image::{chess_response_image, find_corners_image, find_corners_im
 
 // Multiscale/coarse-to-fine API.
 pub use crate::multiscale::{
-    CoarseToFineParams, CoarseToFineResult, MultiscaleCorner,
     find_corners_coarse_to_fine_image, find_corners_coarse_to_fine_image_trace,
-    find_corners_multiscale_image,
+    find_corners_multiscale_image, CoarseToFineParams, CoarseToFineResult, MultiscaleCorner,
 };
 
 // Pyramid utilities are re-exported from the crate root for ergonomic access.
