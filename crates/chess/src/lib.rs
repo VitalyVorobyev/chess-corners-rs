@@ -7,6 +7,8 @@
 //! - [`pyramid`] – reusable buffers and downsampling for image pyramids.
 //! - [`logger`] – a simple `log` implementation used by examples.
 
+/// Application-level helpers shared by the CLI and examples.
+pub mod app;
 pub mod image;
 pub mod logger;
 pub mod multiscale;
@@ -15,8 +17,8 @@ pub mod pyramid;
 // Re-export a focused subset of core types for convenience. Consumers that
 // need lower-level primitives (rings, raw response functions, etc.) are
 // encouraged to depend on `chess-core` directly.
-pub use chess_core::{ChessParams, ResponseMap};
 pub use chess_core::detect::{ChessResult, Corner};
+pub use chess_core::{ChessParams, ResponseMap};
 
 // High-level helpers on `image::GrayImage`.
 pub use crate::image::{chess_response_image, find_corners_image, find_corners_image_trace};

@@ -67,6 +67,44 @@ response path.
   - `cargo run -p chess --example dump_corners --release -- path/to/board.png`
 - Enable parallel response computation: `cargo test -p chess-core --features rayon`
 
+### CLI
+
+Run the bundled CLI for quick experiments:
+
+```
+cargo run -p chess-cli -- run config/chess_cli_config.example.json
+```
+
+The config JSON drives both single-scale and multiscale runs:
+
+```json
+{
+  "image": "testdata/images/Cam1.png",
+  "mode": "multiscale",
+  "downsample": null,
+  "pyramid_levels": 3,
+  "min_size": 12,
+  "roi_radius": 12,
+  "merge_radius": 2.0,
+  "output_json": null,
+  "output_png": null,
+  "threshold_rel": 0.015,
+  "threshold_abs": null,
+  "radius": 5,
+  "nms_radius": 1,
+  "min_cluster_size": 2,
+  "log_level": "info"
+}
+```
+
+- `mode`: `single` or `multiscale`
+- `downsample`: integer factor (single-scale only)
+- `pyramid_levels`, `min_size`, `roi_radius`, `merge_radius`: multiscale controls
+- `threshold_rel` / `threshold_abs`, `radius`, `nms_radius`, `min_cluster_size`: detector tuning
+- `output_json` / `output_png`: override output paths (defaults next to the image)
+
+You can override any field via CLI flags (e.g., `--mode single --downsample 2 --output_json out.json`).
+
 ## Status
 
 Implemented: response kernel, ring tables, NMS + thresholding + cluster filter, 5x5 subpixel refinement, image helpers, data-free unit tests.

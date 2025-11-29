@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/chess-core",
   "crates/chess",
+  "crates/chess-cli",
   "tools/gen-golden",
   # phase later:
   # "crates/chess-cli",

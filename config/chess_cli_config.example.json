@@ -1,0 +1,17 @@
+{
+  "image": "testdata/images/Cam1.png",
+  "mode": "multiscale",
+  "downsample": null,
+  "pyramid_levels": 3,
+  "min_size": 256,
+  "roi_radius":3,
+  "merge_radius": 2.0,
+  "output_json": null,
+  "output_png": null,
+  "threshold_rel": 0.015,
+  "threshold_abs": null,
+  "radius": 5,
+  "nms_radius": 1,
+  "min_cluster_size": 2,
+  "log_level": "info"
+}
