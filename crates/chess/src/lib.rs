@@ -12,8 +12,11 @@ pub mod logger;
 pub mod multiscale;
 pub mod pyramid;
 
-// Re-export core types for convenience.
-pub use chess_core::*;
+// Re-export a focused subset of core types for convenience. Consumers that
+// need lower-level primitives (rings, raw response functions, etc.) are
+// encouraged to depend on `chess-core` directly.
+pub use chess_core::{ChessParams, ResponseMap};
+pub use chess_core::detect::{ChessResult, Corner};
 
 // High-level helpers on `image::GrayImage`.
 pub use crate::image::{chess_response_image, find_corners_image, find_corners_image_trace};

@@ -67,6 +67,35 @@ impl Default for CoarseToFineParams {
     }
 }
 
+impl CoarseToFineParams {
+    /// Create a new parameter set with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Override the pyramid parameters while keeping other fields at their
+    /// defaults.
+    pub fn with_pyramid(pyramid: PyramidParams) -> Self {
+        Self {
+            pyramid,
+            ..Self::default()
+        }
+    }
+
+    /// Set the ROI radius in coarse-level pixels. See the type-level docs for
+    /// how this is converted to a base-image radius.
+    pub fn with_roi_radius(mut self, roi_radius: u32) -> Self {
+        self.roi_radius = roi_radius;
+        self
+    }
+
+    /// Set the merge radius in base-image pixels.
+    pub fn with_merge_radius(mut self, merge_radius: f32) -> Self {
+        self.merge_radius = merge_radius;
+        self
+    }
+}
+
 /// Detect corners across an image pyramid and merge nearby detections.
 ///
 /// Coordinates are rescaled back to the base image so consumers can treat the
