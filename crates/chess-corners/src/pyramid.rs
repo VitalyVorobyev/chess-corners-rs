@@ -236,7 +236,7 @@ fn downsample_2x_box(src: ImageView<'_>, dst: &mut ImageBuffer) {
 }
 
 #[inline]
-#[cfg(not(feature = "rayon"))]
+#[cfg_attr(feature = "rayon", allow(dead_code))]
 fn downsample_2x_box_scalar(src: ImageView<'_>, dst: &mut ImageBuffer) {
     debug_assert_eq!(src.width / 2, dst.width);
     debug_assert_eq!(src.height / 2, dst.height);
