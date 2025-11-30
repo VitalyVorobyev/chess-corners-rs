@@ -7,8 +7,6 @@
 //! - [`pyramid`] – reusable buffers and downsampling for image pyramids.
 //! - [`logger`] – a simple `log` implementation used by examples.
 
-/// Application-level helpers shared by the CLI and examples.
-pub mod app;
 pub mod image;
 pub mod logger;
 pub mod multiscale;
