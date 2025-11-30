@@ -1,5 +1,5 @@
-use chess::{chess_response_image, find_corners_image, ChessParams};
-use chess_core::response::chess_response_u8;
+use chess_corners::{chess_response_image, find_corners_image, ChessParams};
+use chess_corners_core::response::chess_response_u8;
 use image::GrayImage;
 
 fn make_gradient_image(w: u32, h: u32) -> GrayImage {

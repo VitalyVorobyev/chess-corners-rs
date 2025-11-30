@@ -49,6 +49,9 @@ pub use crate::descriptor::CornerDescriptor;
 pub struct ChessParams {
     /// Ring radius in pixels (canonical 5, or 10 for heavy blur).
     pub radius: u32,
+    /// Optional override for the radius used when sampling descriptors
+    /// (e.g., for phase/orientation). Falls back to `radius` when `None`.
+    pub descriptor_radius: Option<u32>,
     /// Relative threshold as a fraction of max response (e.g. 0.015 = 1.5%).
     pub threshold_rel: f32,
     /// Absolute threshold override; if `Some`, this is used instead of `threshold_rel`.
@@ -64,6 +67,7 @@ impl Default for ChessParams {
     fn default() -> Self {
         Self {
             radius: 5,
+            descriptor_radius: None,
             threshold_rel: 0.015,
             threshold_abs: None,
             nms_radius: 1,

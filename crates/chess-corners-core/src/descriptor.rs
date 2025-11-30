@@ -65,7 +65,8 @@ pub fn corners_to_descriptors(
     let mut out = Vec::with_capacity(corners.len());
     for c in corners {
         let samples = sample_ring(img, w, h, c.xy[0], c.xy[1], ring);
-        let (orientation, phase) = estimate_orientation_and_phase_from_ring(&samples, ring);
+        let orientation = estimate_orientation_from_ring(&samples, ring);
+        let phase = estimate_phase_from_orientation(orientation);
         let anisotropy = estimate_corner_anisotropy(img, w, h, c.xy[0], c.xy[1]);
 
         out.push(CornerDescriptor {
@@ -98,28 +99,22 @@ fn sample_ring(
     samples
 }
 
-/// Estimate orientation and phase directly from the ChESS ring samples.
-///
-/// Orientation comes from the 2nd harmonic of the mean-subtracted ring
-/// (period π, normalized to [0, π)). Phase uses quadrant sums in a frame
-/// aligned to that orientation: bit0 tells which diagonal is darker, bit1
-/// resolves the darker diagonal’s direction.
-fn estimate_orientation_and_phase_from_ring(
-    samples: &[f32; 16],
-    ring: &[(i32, i32); 16],
-) -> (f32, u8) {
-    // Orientation from 2nd harmonic of mean-subtracted samples.
+#[inline]
+fn estimate_orientation_from_ring(samples: &[f32; 16], ring: &[(i32, i32); 16]) -> f32 {
+    // Same logic you use now: 2nd harmonic over sample index.
     let mean = samples.iter().copied().sum::<f32>() / 16.0;
+
     let mut c2 = 0.0f32;
     let mut s2 = 0.0f32;
-    let step = core::f32::consts::PI / 8.0; // 2π/16
-    for (k, &v_raw) in samples.iter().enumerate() {
+
+    for (&v_raw, &(dx_i, dy_i)) in samples.iter().zip(ring.iter()) {
         let v = v_raw - mean;
-        let angle = k as f32 * step;
+        let angle = (dy_i as f32).atan2(dx_i as f32);
         let a2 = 2.0 * angle;
         c2 += v * a2.cos();
         s2 += v * a2.sin();
     }
+
     let mut theta = 0.5 * s2.atan2(c2);
     if theta < 0.0 {
         theta += core::f32::consts::PI;
@@ -128,39 +123,29 @@ fn estimate_orientation_and_phase_from_ring(
         theta = 0.0;
     }
 
-    // Quadrant sums aligned to theta.
-    let ct = theta.cos();
-    let st = theta.sin();
-    let mut q00 = 0.0f32;
-    let mut q01 = 0.0f32;
-    let mut q10 = 0.0f32;
-    let mut q11 = 0.0f32;
+    theta
+}
 
-    for (val, &(dx_i, dy_i)) in samples.iter().zip(ring.iter()) {
-        let dx = dx_i as f32;
-        let dy = dy_i as f32;
-        let proj_u = dx * ct + dy * st;
-        let proj_v = -dx * st + dy * ct;
-        if proj_u < 0.0 {
-            if proj_v < 0.0 {
-                q00 += *val;
-            } else {
-                q01 += *val;
-            }
-        } else if proj_v < 0.0 {
-            q10 += *val;
-        } else {
-            q11 += *val;
-        }
+#[inline]
+fn estimate_phase_from_orientation(theta: f32) -> u8 {
+    use core::f32::consts::{FRAC_PI_2, PI};
+
+    // Normalize to [0, π)
+    let t = theta.rem_euclid(PI);
+
+    // Distance to 0 or π (axis-aligned)
+    let d0 = t.min(PI - t);
+    // Distance to π/2 (diagonal)
+    let d90 = (t - FRAC_PI_2).abs();
+
+    // phase = 0 if closer to 0/π, 2 if closer to π/2
+    if !t.is_finite() {
+        0
+    } else if d0 <= d90 {
+        0
+    } else {
+        2
     }
-
-    let d0 = q00 + q11;
-    let d1 = q01 + q10;
-    let phase_bit0 = (d0 < d1) as u8;
-    let phase_bit1 = (q00 < q11) as u8;
-    let phase = phase_bit0 | (phase_bit1 << 1);
-
-    (theta, phase)
 }
 
 /// Estimate anisotropy of a corner using the image gradients

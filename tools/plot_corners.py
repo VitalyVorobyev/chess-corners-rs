@@ -79,7 +79,7 @@ def main() -> None:
     parser.add_argument(
         "--arrow-length",
         type=float,
-        default=10.0,
+        default=15.0,
         help="Arrow length in pixels for orientation arrows.",
     )
     args = parser.parse_args()

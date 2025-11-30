@@ -20,7 +20,8 @@ pub fn find_corners_u8(
 ) -> Vec<CornerDescriptor> {
     let resp = chess_response_u8(img, w, h, params);
     let corners = detect_corners_from_response(&resp, params);
-    corners_to_descriptors(img, w, h, params.radius, corners)
+    let desc_radius = params.descriptor_radius.unwrap_or(params.radius);
+    corners_to_descriptors(img, w, h, desc_radius, corners)
 }
 
 /// Core detector: run NMS + refinement on an existing response map.
@@ -216,6 +217,7 @@ mod tests {
         let size = 32u32;
         let params = ChessParams {
             threshold_rel: 0.01,
+            descriptor_radius: None,
             ..Default::default()
         };
 

@@ -54,6 +54,9 @@ enum Commands {
         /// Ring radius override.
         #[arg(long)]
         radius: Option<u32>,
+        /// Descriptor sampling radius override.
+        #[arg(long)]
+        descriptor_radius: Option<u32>,
         /// NMS radius override.
         #[arg(long)]
         nms_radius: Option<u32>,
@@ -83,6 +86,7 @@ fn main() -> Result<()> {
             threshold_rel,
             threshold_abs,
             radius,
+            descriptor_radius,
             nms_radius,
             min_cluster_size,
             json_trace,
@@ -121,6 +125,9 @@ fn main() -> Result<()> {
             }
             if let Some(v) = radius {
                 cfg.radius = Some(v);
+            }
+            if let Some(v) = descriptor_radius {
+                cfg.descriptor_radius = Some(v);
             }
             if let Some(v) = nms_radius {
                 cfg.nms_radius = Some(v);

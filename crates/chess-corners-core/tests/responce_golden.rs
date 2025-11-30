@@ -1,10 +1,10 @@
-use chess_core::detect::{detect_corners_from_response, find_corners_u8};
+use chess_corners_core::detect::{detect_corners_from_response, find_corners_u8};
 #[cfg(feature = "simd")]
-use chess_core::response::chess_response_u8_scalar;
-use chess_core::response::{self, chess_response_u8, chess_response_u8_patch};
+use chess_corners_core::response::chess_response_u8_scalar;
+use chess_corners_core::response::{self, chess_response_u8, chess_response_u8_patch};
 
-use chess_core::ring::{ring_offsets, RING10, RING5};
-use chess_core::{ChessParams, ResponseMap};
+use chess_corners_core::ring::{ring_offsets, RING10, RING5};
+use chess_corners_core::{ChessParams, ResponseMap};
 
 fn idx(w: usize, x: usize, y: usize) -> usize {
     y * w + x
@@ -133,6 +133,7 @@ fn detect_corners_respects_threshold_and_cluster_size() {
     let resp = ResponseMap { w, h, data };
     let params = ChessParams {
         threshold_abs: Some(6.0),
+        descriptor_radius: None,
         ..Default::default()
     };
 

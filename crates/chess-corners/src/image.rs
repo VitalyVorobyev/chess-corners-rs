@@ -4,14 +4,14 @@
 //! primitives in terms of `image::GrayImage`, which is convenient for most
 //! downstream consumers.
 
-use chess_core::detect;
-use chess_core::{ChessParams, CornerDescriptor, ResponseMap};
+use chess_corners_core::detect;
+use chess_corners_core::{ChessParams, CornerDescriptor, ResponseMap};
 use image::GrayImage;
 
 /// Compute a dense ChESS response map for an `image::GrayImage`.
 #[inline]
 pub fn chess_response_image(img: &GrayImage, params: &ChessParams) -> ResponseMap {
-    chess_core::response::chess_response_u8(
+    chess_corners_core::response::chess_response_u8(
         img.as_raw(),
         img.width() as usize,
         img.height() as usize,

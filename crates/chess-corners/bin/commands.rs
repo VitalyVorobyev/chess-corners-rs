@@ -50,6 +50,7 @@ pub struct DetectionConfig {
     pub threshold_rel: Option<f32>,
     pub threshold_abs: Option<f32>,
     pub radius: Option<u32>,
+    pub descriptor_radius: Option<u32>,
     pub nms_radius: Option<u32>,
     pub min_cluster_size: Option<u32>,
     pub log_level: Option<String>,
@@ -225,6 +226,9 @@ fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
 fn apply_params_overrides(params: &mut ChessParams, cfg: &DetectionConfig) {
     if let Some(r) = cfg.radius {
         params.radius = r;
+    }
+    if let Some(r) = cfg.descriptor_radius {
+        params.descriptor_radius = Some(r);
     }
     if let Some(t) = cfg.threshold_rel {
         params.threshold_rel = t;

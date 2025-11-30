@@ -99,6 +99,7 @@ The config JSON drives both single-scale and multiscale runs:
   "threshold_rel": 0.015,
   "threshold_abs": null,
   "radius": 5,
+  "descriptor_radius": null,
   "nms_radius": 1,
   "min_cluster_size": 2,
   "log_level": "info"
@@ -108,7 +109,7 @@ The config JSON drives both single-scale and multiscale runs:
 - `mode`: `single` or `multiscale`
 - `downsample`: integer factor (single-scale only)
 - `pyramid_levels`, `min_size`, `roi_radius`, `merge_radius`: multiscale controls
-- `threshold_rel` / `threshold_abs`, `radius`, `nms_radius`, `min_cluster_size`: detector tuning
+- `threshold_rel` / `threshold_abs`, `radius`, `descriptor_radius`, `nms_radius`, `min_cluster_size`: detector + descriptor tuning (`descriptor_radius` falls back to `radius` when null)
 - `output_json` / `output_png`: override output paths (defaults next to the image)
 
 You can override any field via CLI flags (e.g., `--mode single --downsample 2 --output_json out.json`).
