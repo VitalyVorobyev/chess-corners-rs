@@ -25,19 +25,10 @@ pub use crate::multiscale::{find_chess_corners_buff, CoarseToFineParams, CoarseT
 
 /// Unified detector configuration combining response/detector params and
 /// multiscale/pyramid tuning.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ChessConfig {
     pub params: ChessParams,
     pub multiscale: CoarseToFineParams,
-}
-
-impl Default for ChessConfig {
-    fn default() -> Self {
-        Self {
-            params: ChessParams::default(),
-            multiscale: CoarseToFineParams::default(),
-        }
-    }
 }
 
 impl ChessConfig {
