@@ -38,11 +38,12 @@
 //! same logic regardless of these features; only the time to produce the dense
 //! response map changes.
 
+pub mod descriptor;
 pub mod detect;
 pub mod response;
 pub mod ring;
 
-pub use crate::detect::ChessCornerDescriptor;
+pub use crate::descriptor::CornerDescriptor;
 /// Tunable parameters for the ChESS response computation and corner detection.
 #[derive(Clone, Debug)]
 pub struct ChessParams {

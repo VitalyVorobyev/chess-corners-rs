@@ -59,7 +59,6 @@ pub struct CornerOut {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub scale: f32,
     pub orientation: f32,
     pub phase: u8,
     pub anisotropy: f32,
@@ -108,7 +107,6 @@ fn run_single(cfg: DetectionConfig) -> Result<()> {
         for c in &mut corners {
             c.x *= s;
             c.y *= s;
-            c.scale *= 1.0 / s;
         }
     }
 
@@ -131,7 +129,6 @@ fn run_single(cfg: DetectionConfig) -> Result<()> {
                 x: c.x,
                 y: c.y,
                 response: c.response,
-                scale: c.scale,
                 orientation: c.orientation,
                 phase: c.phase,
                 anisotropy: c.anisotropy,
@@ -207,7 +204,6 @@ fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
                 x: c.x,
                 y: c.y,
                 response: c.response,
-                scale: c.scale,
                 orientation: c.orientation,
                 phase: c.phase,
                 anisotropy: c.anisotropy,

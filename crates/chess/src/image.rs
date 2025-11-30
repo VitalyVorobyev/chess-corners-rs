@@ -5,7 +5,7 @@
 //! downstream consumers.
 
 use chess_core::detect;
-use chess_core::{ChessParams, ResponseMap};
+use chess_core::{ChessParams, ResponseMap, CornerDescriptor};
 use image::GrayImage;
 
 /// Compute a dense ChESS response map for an `image::GrayImage`.
@@ -24,7 +24,7 @@ pub fn chess_response_image(img: &GrayImage, params: &ChessParams) -> ResponseMa
 pub fn find_corners_image(
     img: &GrayImage,
     params: &ChessParams,
-) -> Vec<detect::ChessCornerDescriptor> {
+) -> Vec<CornerDescriptor> {
     detect::find_corners_u8(
         img.as_raw(),
         img.width() as usize,

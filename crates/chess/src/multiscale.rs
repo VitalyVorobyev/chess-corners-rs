@@ -9,19 +9,15 @@
 //! border.
 
 use crate::pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
-use chess_core::detect::{
-    self, corners_to_descriptors, detect_corners_from_response, ChessCornerDescriptor,
-};
+use chess_core::detect::{detect_corners_from_response};
+use chess_core::descriptor::{Corner, corners_to_descriptors};
 use chess_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
-use chess_core::ChessParams;
+use chess_core::{ChessParams, CornerDescriptor};
 use image::GrayImage;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 #[cfg(feature = "tracing")]
 use tracing::{debug_span, instrument};
-
-/// Corner detected in a multiscale run, reported in base-level coordinates.
-pub type MultiscaleCorner = ChessCornerDescriptor;
 
 /// Parameters controlling coarse-to-fine refinement on an image pyramid.
 ///
@@ -39,7 +35,7 @@ pub struct CoarseToFineParams {
 
 /// Timing breakdown for the coarse-to-fine detector.
 pub struct CoarseToFineResult {
-    pub corners: Vec<MultiscaleCorner>,
+    pub corners: Vec<CornerDescriptor>,
     pub coarse_cols: usize,
     pub coarse_rows: usize,
 }
@@ -87,58 +83,6 @@ impl CoarseToFineParams {
         self.merge_radius = merge_radius;
         self
     }
-}
-
-/// Detect corners across an image pyramid and merge nearby detections.
-///
-/// Coordinates are rescaled back to the base image so consumers can treat the
-/// output as a single set. Corners closer than `2` pixels are merged with
-/// simple response-based suppression. Pass a persistent `PyramidBuffers` to
-/// avoid per-call allocations.
-///
-/// # Example
-/// ```rust
-/// use chess::{find_corners_multiscale_image, ChessParams, PyramidBuffers, PyramidParams};
-/// use image::GrayImage;
-///
-/// let img = GrayImage::from_pixel(64, 64, image::Luma([0u8]));
-/// let params = ChessParams::default();
-/// let pyramid = PyramidParams::default();
-/// let mut buffers = PyramidBuffers::new();
-///
-/// let corners = find_corners_multiscale_image(&img, &params, &pyramid, &mut buffers);
-/// assert!(corners.is_empty());
-/// ```
-#[cfg_attr(
-    feature = "tracing",
-    instrument(level = "debug", skip(img, p, py, buffers))
-)]
-pub fn find_corners_multiscale_image(
-    img: &GrayImage,
-    p: &ChessParams,
-    py: &PyramidParams,
-    buffers: &mut PyramidBuffers,
-) -> Vec<MultiscaleCorner> {
-    let pyramid = build_pyramid(img, py, buffers);
-
-    let mut all = Vec::new();
-
-    for lvl in pyramid.levels.iter() {
-        let w = lvl.img.width() as usize;
-        let h = lvl.img.height() as usize;
-
-        let cores = detect::find_corners_u8_with_scale(lvl.img.as_raw(), w, h, p, lvl.scale);
-
-        let inv_scale = 1.0 / lvl.scale;
-
-        for mut c in cores {
-            c.x *= inv_scale;
-            c.y *= inv_scale;
-            all.push(c);
-        }
-    }
-
-    merge_corners_simple(&mut all, 2.0)
 }
 
 /// Coarse-to-fine corner detection with timing stats.
@@ -228,7 +172,7 @@ pub fn find_corners_coarse_to_fine_image(
     #[cfg(feature = "tracing")]
     let refine_span = debug_span!("refine").entered();
 
-    let refine_one = |c: detect::Corner| -> Option<Vec<MultiscaleCorner>> {
+    let refine_one = |c: Corner| -> Option<Vec<Corner>> {
         // Project coarse coordinate to base image
         let cx_base = c.xy[0] * inv_scale;
         let cy_base = c.xy[1] * inv_scale;
@@ -308,24 +252,22 @@ pub fn find_corners_coarse_to_fine_image(
             pc.xy[1] += y0 as f32;
         }
 
-        let out = corners_to_descriptors(img.as_raw(), base_w, base_h, 1.0, patch_corners);
-
-        if out.is_empty() {
+        if patch_corners.is_empty() {
             None
         } else {
-            Some(out)
+            Some(patch_corners)
         }
     };
 
     #[cfg(feature = "rayon")]
-    let mut refined: Vec<MultiscaleCorner> = coarse_corners
+    let mut refined: Vec<Corner> = coarse_corners
         .into_par_iter()
         .filter_map(refine_one)
         .flatten()
         .collect();
 
     #[cfg(not(feature = "rayon"))]
-    let mut refined: Vec<MultiscaleCorner> = {
+    let mut refined: Vec<Corner> = {
         let mut acc = Vec::new();
         for c in coarse_corners {
             if let Some(mut v) = refine_one(c) {
@@ -344,25 +286,27 @@ pub fn find_corners_coarse_to_fine_image(
     #[cfg(feature = "tracing")]
     drop(merge_span);
 
+    let descriptors = corners_to_descriptors(img.as_raw(), base_w, base_h, merged);
+
     CoarseToFineResult {
-        corners: merged,
+        corners: descriptors,
         coarse_cols: coarse_w,
         coarse_rows: coarse_h,
     }
 }
 
-fn merge_corners_simple(corners: &mut Vec<MultiscaleCorner>, radius: f32) -> Vec<MultiscaleCorner> {
+fn merge_corners_simple(corners: &mut Vec<Corner>, radius: f32) -> Vec<Corner> {
     let r2 = radius * radius;
-    let mut out: Vec<MultiscaleCorner> = Vec::new();
+    let mut out: Vec<Corner> = Vec::new();
 
     // naive O(N^2) for now; N is small for single chessboard
     'outer: for c in corners.drain(..) {
         for o in &mut out {
-            let dx = c.x - o.x;
-            let dy = c.y - o.y;
+            let dx = c.xy[0] - o.xy[0];
+            let dy = c.xy[1] - o.xy[1];
             if dx * dx + dy * dy <= r2 {
                 // keep the stronger
-                if c.response > o.response {
+                if c.strength > o.strength {
                     *o = c;
                 }
                 continue 'outer;
@@ -382,52 +326,27 @@ mod tests {
     #[test]
     fn merge_corners_prefers_stronger_entries() {
         let mut corners = vec![
-            MultiscaleCorner {
-                x: 10.0,
-                y: 10.0,
-                scale: 1.0,
-                response: 1.0,
-                orientation: 0.0,
-                phase: 0,
-                anisotropy: 0.0,
+            Corner {
+                xy: [10.0, 10.0],
+                strength: 1.0,
             },
-            MultiscaleCorner {
-                x: 11.0,
-                y: 11.0,
-                scale: 1.0,
-                response: 5.0,
-                orientation: 0.0,
-                phase: 0,
-                anisotropy: 0.0,
+            Corner {
+                xy: [11.0, 11.0],
+                strength: 5.0,
             },
-            MultiscaleCorner {
-                x: 20.0,
-                y: 20.0,
-                scale: 1.0,
-                response: 3.0,
-                orientation: 0.0,
-                phase: 0,
-                anisotropy: 0.0,
+            Corner {
+                xy: [20.0, 20.0],
+                strength: 3.0,
             },
         ];
         let merged = merge_corners_simple(&mut corners, 2.5);
         assert_eq!(merged.len(), 2);
-        assert!(merged.iter().any(|c| (c.x - 11.0).abs() < 1e-6
-            && (c.y - 11.0).abs() < 1e-6
-            && (c.response - 5.0).abs() < 1e-6));
+        assert!(merged.iter().any(|c| (c.xy[0] - 11.0).abs() < 1e-6
+            && (c.xy[1] - 11.0).abs() < 1e-6
+            && (c.strength - 5.0).abs() < 1e-6));
         assert!(merged
             .iter()
-            .any(|c| (c.x - 20.0).abs() < 1e-6 && (c.y - 20.0).abs() < 1e-6));
-    }
-
-    #[test]
-    fn multiscale_path_runs_on_blank_image() {
-        let img = GrayImage::from_pixel(32, 32, Luma([0u8]));
-        let params = ChessParams::default();
-        let pyramid = PyramidParams::default();
-        let mut buffers = PyramidBuffers::new();
-        let res = find_corners_multiscale_image(&img, &params, &pyramid, &mut buffers);
-        assert!(res.is_empty());
+            .any(|c| (c.xy[0] - 20.0).abs() < 1e-6 && (c.xy[1] - 20.0).abs() < 1e-6));
     }
 
     #[test]

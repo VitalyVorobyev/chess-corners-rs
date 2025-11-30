@@ -140,7 +140,6 @@ fn detect_corners_respects_threshold_and_cluster_size() {
     assert_eq!(corners.len(), 1);
 
     let c = &corners[0];
-    assert_eq!(c.scale, 0);
     assert!((c.xy[0] - cx as f32).abs() < 0.2);
     assert!((c.xy[1] - cy as f32).abs() < 0.2);
     assert!((c.strength - 10.0).abs() < f32::EPSILON);
