@@ -22,6 +22,11 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
 
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
       - name: Add rustfmt and clippy (stable only)
         if: matrix.toolchain == 'stable'
         run: rustup component add rustfmt clippy
@@ -37,26 +42,38 @@ jobs:
       - name: test (default features)
         run: cargo test --workspace
 
+      - name: test (tracing feature)
+        if: matrix.toolchain == 'stable'
+        run: cargo test --workspace --features tracing
+
       - name: test chess-core feature matrix (no simd)
         if: matrix.toolchain == 'stable'
         run: |
-          cargo test -p chess-core --tests
-          cargo test -p chess-core --tests --features rayon
+          cargo test -p chess-corners-core --tests
+          cargo test -p chess-corners-core --tests --features rayon
+          cargo test -p chess-corners-core --tests --features tracing
+          cargo test -p chess-corners-core --tests --features "rayon,tracing"
 
       - name: test chess-core feature matrix (simd)
         if: matrix.toolchain == 'nightly'
         run: |
-          cargo test -p chess-core --tests --no-default-features --features "std,simd"
-          cargo test -p chess-core --tests --no-default-features --features "std,rayon,simd"
+          cargo test -p chess-corners-core --tests --no-default-features --features "std,simd"
+          cargo test -p chess-corners-core --tests --no-default-features --features "std,rayon,simd"
+          cargo test -p chess-corners-core --tests --no-default-features --features "std,simd,tracing"
+          cargo test -p chess-corners-core --tests --no-default-features --features "std,rayon,simd,tracing"
 
       - name: test chess facade feature matrix (no simd)
         if: matrix.toolchain == 'stable'
         run: |
-          cargo test -p chess --lib --no-default-features
-          cargo test -p chess --lib --no-default-features --features rayon
+          cargo test -p chess-corners --lib --no-default-features
+          cargo test -p chess-corners --lib --no-default-features --features rayon
+          cargo test -p chess-corners --lib --no-default-features --features tracing
+          cargo test -p chess-corners --lib --no-default-features --features "rayon,tracing"
 
       - name: test chess facade feature matrix (simd)
         if: matrix.toolchain == 'nightly'
         run: |
-          cargo test -p chess --lib --no-default-features --features simd
-          cargo test -p chess --lib --no-default-features --features "simd,rayon"
+          cargo test -p chess-corners --lib --no-default-features --features simd
+          cargo test -p chess-corners --lib --no-default-features --features "simd,rayon"
+          cargo test -p chess-corners --lib --no-default-features --features "simd,tracing"
+          cargo test -p chess-corners --lib --no-default-features --features "simd,rayon,tracing"

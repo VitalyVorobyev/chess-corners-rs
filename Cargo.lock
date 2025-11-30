@@ -236,28 +236,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "chess"
+name = "chess-corners"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "chess-core",
- "image",
- "log",
- "rayon",
- "serde",
- "serde_json",
- "tracing",
-]
-
-[[package]]
-name = "chess-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chess",
+ "chess-corners-core",
  "clap",
  "image",
  "log",
+ "rayon",
  "serde",
  "serde_json",
  "tracing",
@@ -265,7 +252,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "chess-core"
+name = "chess-corners-core"
 version = "0.1.0"
 dependencies = [
  "image",

@@ -1,20 +1,10 @@
 //! Corner detection utilities built on top of the dense ChESS response map.
+use crate::descriptor::{corners_to_descriptors, Corner, CornerDescriptor};
 use crate::response::chess_response_u8;
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
-
-/// A detected ChESS corner (subpixel).
-#[derive(Clone, Debug)]
-pub struct Corner {
-    /// Subpixel location in image coordinates (x, y).
-    pub xy: [f32; 2],
-    /// Raw ChESS response at the integer peak (before COM refinement).
-    pub strength: f32,
-    /// Pyramid level / scale (0 for full-res; reserved for future multi-scale).
-    pub scale: u8,
-}
 
 /// Compute corners starting from an 8-bit grayscale image.
 ///
@@ -22,9 +12,16 @@ pub struct Corner {
 /// - chess_response_u8 (dense response map)
 /// - thresholding + NMS
 /// - 5x5 center-of-mass subpixel refinement
-pub fn find_corners_u8(img: &[u8], w: usize, h: usize, params: &ChessParams) -> Vec<Corner> {
+pub fn find_corners_u8(
+    img: &[u8],
+    w: usize,
+    h: usize,
+    params: &ChessParams,
+) -> Vec<CornerDescriptor> {
     let resp = chess_response_u8(img, w, h, params);
-    detect_corners_from_response(&resp, params)
+    let corners = detect_corners_from_response(&resp, params);
+    let desc_radius = params.descriptor_ring_radius();
+    corners_to_descriptors(img, w, h, desc_radius, corners)
 }
 
 /// Core detector: run NMS + refinement on an existing response map.
@@ -64,7 +61,7 @@ pub fn detect_corners_from_response(resp: &ResponseMap, params: &ChessParams) ->
 
     let nms_r = params.nms_radius as i32;
     let refine_r = 2i32; // 5x5 window
-    let ring_r = params.radius as i32;
+    let ring_r = params.ring_radius() as i32;
 
     // We need to stay away from the borders enough to:
     // - have a full NMS window
@@ -103,7 +100,6 @@ pub fn detect_corners_from_response(resp: &ResponseMap, params: &ChessParams) ->
             corners.push(Corner {
                 xy: sub_xy,
                 strength: v,
-                scale: 0,
             });
         }
     }
@@ -193,5 +189,66 @@ fn refine_com_5x5(resp: &ResponseMap, x: usize, y: usize) -> [f32; 2] {
         [sx / sw, sy / sw]
     } else {
         [x as f32, y as f32]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::{GrayImage, Luma};
+
+    fn make_quadrant_corner(size: u32, dark: u8, bright: u8) -> GrayImage {
+        let mut img = GrayImage::from_pixel(size, size, Luma([dark]));
+        let mid = size / 2;
+        for y in 0..size {
+            for x in 0..size {
+                let in_top = y < mid;
+                let in_left = x < mid;
+                if in_top ^ in_left {
+                    img.put_pixel(x, y, Luma([bright]));
+                }
+            }
+        }
+        img
+    }
+
+    #[test]
+    fn descriptors_report_orientation_and_phase() {
+        let size = 32u32;
+        let params = ChessParams {
+            threshold_rel: 0.01,
+            ..Default::default()
+        };
+
+        let img = make_quadrant_corner(size, 20, 220);
+        let corners = find_corners_u8(img.as_raw(), size as usize, size as usize, &params);
+        assert!(!corners.is_empty(), "expected at least one descriptor");
+
+        let best = corners
+            .iter()
+            .max_by(|a, b| a.response.partial_cmp(&b.response).unwrap())
+            .expect("non-empty");
+
+        // Expect orientation roughly aligned with a 45° grid (multiples of PI/4).
+        let k = (best.orientation / core::f32::consts::FRAC_PI_4).round();
+        let nearest = k * core::f32::consts::FRAC_PI_4;
+        let near_axis = (best.orientation - nearest).abs() < 0.35;
+        assert!(near_axis, "unexpected orientation {}", best.orientation);
+
+        let mut brighter = img.clone();
+        for p in brighter.pixels_mut() {
+            p[0] = p[0].saturating_add(5);
+        }
+
+        let brighter_corners =
+            find_corners_u8(brighter.as_raw(), size as usize, size as usize, &params);
+        assert!(!brighter_corners.is_empty());
+        let best_brighter = brighter_corners
+            .iter()
+            .max_by(|a, b| a.response.partial_cmp(&b.response).unwrap())
+            .expect("non-empty brighter");
+
+        assert!((best.x - best_brighter.x).abs() < 0.5 && (best.y - best_brighter.y).abs() < 0.5);
+        assert_eq!(best.phase, best_brighter.phase);
     }
 }

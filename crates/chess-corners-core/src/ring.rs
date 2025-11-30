@@ -41,11 +41,41 @@ pub const RING10: [(i32, i32); 16] = [
     (-4, -10),
 ];
 
+/// Valid ring radii and their canonical offset tables.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum RingOffsets {
+    /// FAST-16 offsets scaled to r=5.
+    R5 = 5,
+    /// Optional heavier-blur ring with r=10.
+    R10 = 10,
+}
+
+impl RingOffsets {
+    #[inline]
+    pub const fn radius(self) -> u32 {
+        self as u32
+    }
+
+    #[inline]
+    pub const fn offsets(self) -> &'static [(i32, i32); 16] {
+        match self {
+            RingOffsets::R5 => &RING5,
+            RingOffsets::R10 => &RING10,
+        }
+    }
+
+    #[inline]
+    pub const fn from_radius(radius: u32) -> Self {
+        match radius {
+            10 => RingOffsets::R10,
+            _ => RingOffsets::R5,
+        }
+    }
+}
+
 #[inline]
 /// Get the 16-sample ring offsets for the requested radius.
-pub fn ring_offsets(radius: u32) -> &'static [(i32, i32); 16] {
-    match radius {
-        10 => &RING10,
-        _ => &RING5,
-    }
+pub const fn ring_offsets(radius: u32) -> &'static [(i32, i32); 16] {
+    RingOffsets::from_radius(radius).offsets()
 }

@@ -11,6 +11,7 @@
   "threshold_rel": 0.015,
   "threshold_abs": null,
   "radius": 5,
+  "descriptor_radius": null,
   "nms_radius": 1,
   "min_cluster_size": 2,
   "log_level": "info",

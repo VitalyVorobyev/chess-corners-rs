@@ -1,5 +1,5 @@
 //! Dense ChESS response computation for 8-bit grayscale inputs.
-use crate::ring::ring_offsets;
+use crate::ring::RingOffsets;
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "rayon")]
@@ -33,6 +33,12 @@ pub struct Roi {
     pub y0: usize,
     pub x1: usize,
     pub y1: usize,
+}
+
+#[inline]
+fn ring_from_params(params: &ChessParams) -> (RingOffsets, &'static [(i32, i32); 16]) {
+    let ring = params.ring();
+    (ring, ring.offsets())
 }
 
 /// Compute the dense ChESS response for an 8-bit grayscale image.
@@ -162,8 +168,8 @@ pub fn chess_response_u8_patch(
     let patch_h = y1 - y0;
     let mut data = vec![0.0f32; patch_w * patch_h];
 
-    let r = params.radius as i32;
-    let ring = ring_offsets(params.radius);
+    let (ring_kind, ring) = ring_from_params(params);
+    let r = ring_kind.radius() as i32;
 
     // Safe region for ring centers in *global* image coordinates
     let gx0 = r as usize;
@@ -214,8 +220,8 @@ fn compute_response_sequential(
     h: usize,
     params: &ChessParams,
 ) -> ResponseMap {
-    let r = params.radius as i32;
-    let ring = ring_offsets(params.radius);
+    let (ring_kind, ring) = ring_from_params(params);
+    let r = ring_kind.radius() as i32;
 
     let mut data = vec![0.0f32; w * h];
 
@@ -249,8 +255,8 @@ fn compute_response_sequential_scalar(
     h: usize,
     params: &ChessParams,
 ) -> ResponseMap {
-    let r = params.radius as i32;
-    let ring = ring_offsets(params.radius);
+    let (ring_kind, ring) = ring_from_params(params);
+    let r = ring_kind.radius() as i32;
 
     let mut data = vec![0.0f32; w * h];
 
@@ -271,8 +277,8 @@ fn compute_response_sequential_scalar(
 
 #[cfg(feature = "rayon")]
 fn compute_response_parallel(img: &[u8], w: usize, h: usize, params: &ChessParams) -> ResponseMap {
-    let r = params.radius as i32;
-    let ring = ring_offsets(params.radius);
+    let (ring_kind, ring) = ring_from_params(params);
+    let r = ring_kind.radius() as i32;
     let mut data = vec![0.0f32; w * h];
 
     // ring margin
@@ -293,12 +299,12 @@ fn compute_response_parallel(img: &[u8], w: usize, h: usize, params: &ChessParam
 
         #[cfg(feature = "simd")]
         {
-            compute_row_range_simd(img, w, y_i, &ring, dst_row, x0, x1);
+            compute_row_range_simd(img, w, y_i, ring, dst_row, x0, x1);
         }
 
         #[cfg(not(feature = "simd"))]
         {
-            compute_row_range_scalar(img, w, y_i, &ring, dst_row, x0, x1);
+            compute_row_range_scalar(img, w, y_i, ring, dst_row, x0, x1);
         }
     });
 

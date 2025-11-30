@@ -1,0 +1,35 @@
+[package]
+name = "chess-corners"
+version = "0.1.0"
+description = "Ergonomic ChESS detector crate"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+autobins = false
+
+[features]
+default = ["image"]
+image = ["dep:image"]
+rayon = ["chess-corners-core/rayon", "dep:rayon"]  # enable core’s rayon via this feature
+simd = ["chess-corners-core/simd"]
+tracing = ["chess-corners-core/tracing", "dep:tracing"]
+cli = []
+
+[[bin]]
+name = "chess-corners"
+path = "bin/main.rs"
+required-features = ["image"]
+
+[dependencies]
+chess-corners-core = { path = "../chess-corners-core", version = "0.1.0" }
+image = { version = "0.25", optional = true }
+log = "0.4"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+rayon = { version = "1.10", optional = true }
+clap = { version = "4.5", features = ["derive"] }
+
+[dev-dependencies]

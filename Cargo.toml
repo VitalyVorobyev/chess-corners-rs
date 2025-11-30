@@ -1,12 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/chess-core",
-  "crates/chess",
-  "crates/chess-cli",
+  "crates/chess-corners-core",
+  "crates/chess-corners",
 ]
 
 [workspace.package]
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/VitalyVorobyev/chess-rs"
+repository = "https://github.com/VitalyVorobyev/chess-corners-rs"

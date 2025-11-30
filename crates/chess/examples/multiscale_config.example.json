@@ -1,8 +1,0 @@
-{
-  "image": "testdata/images/Cam1.png",
-  "log_level": "info",
-  "pyramid_levels": 3,
-  "min_size": 12,
-  "roi_radius": 12,
-  "merge_radius": 2.0
-}
