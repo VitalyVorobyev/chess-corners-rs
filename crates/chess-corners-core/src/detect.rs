@@ -20,7 +20,7 @@ pub fn find_corners_u8(
 ) -> Vec<CornerDescriptor> {
     let resp = chess_response_u8(img, w, h, params);
     let corners = detect_corners_from_response(&resp, params);
-    let desc_radius = params.descriptor_radius.unwrap_or(params.radius);
+    let desc_radius = params.descriptor_ring_radius();
     corners_to_descriptors(img, w, h, desc_radius, corners)
 }
 
@@ -61,7 +61,7 @@ pub fn detect_corners_from_response(resp: &ResponseMap, params: &ChessParams) ->
 
     let nms_r = params.nms_radius as i32;
     let refine_r = 2i32; // 5x5 window
-    let ring_r = params.radius as i32;
+    let ring_r = params.ring_radius() as i32;
 
     // We need to stay away from the borders enough to:
     // - have a full NMS window
@@ -217,7 +217,6 @@ mod tests {
         let size = 32u32;
         let params = ChessParams {
             threshold_rel: 0.01,
-            descriptor_radius: None,
             ..Default::default()
         };
 

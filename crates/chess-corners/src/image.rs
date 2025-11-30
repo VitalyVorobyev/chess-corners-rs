@@ -1,31 +1,19 @@
-//! Single-scale image helpers for the ChESS detector.
-//!
-//! These wrappers expose the core `chess-core` response and detection
-//! primitives in terms of `image::GrayImage`, which is convenient for most
-//! downstream consumers.
+//! Optional `image::GrayImage` helpers for the unified corner detector.
 
-use chess_corners_core::detect;
-use chess_corners_core::{ChessParams, CornerDescriptor, ResponseMap};
+use crate::multiscale::{find_chess_corners, CoarseToFineParams, CoarseToFineResult};
+use crate::pyramid::ImageView;
+use chess_corners_core::ChessParams;
 use image::GrayImage;
 
-/// Compute a dense ChESS response map for an `image::GrayImage`.
-#[inline]
-pub fn chess_response_image(img: &GrayImage, params: &ChessParams) -> ResponseMap {
-    chess_corners_core::response::chess_response_u8(
-        img.as_raw(),
-        img.width() as usize,
-        img.height() as usize,
-        params,
-    )
-}
-
-/// Detect subpixel corners from an `image::GrayImage`.
-#[inline]
-pub fn find_corners_image(img: &GrayImage, params: &ChessParams) -> Vec<CornerDescriptor> {
-    detect::find_corners_u8(
-        img.as_raw(),
-        img.width() as usize,
-        img.height() as usize,
-        params,
-    )
+/// Detect chessboard corners from a GrayImage. Dispatches to single- or
+/// multiscale based on `cf.pyramid.num_levels`.
+pub fn find_chess_corners_image(
+    img: &GrayImage,
+    params: &ChessParams,
+    cf: &CoarseToFineParams,
+    buffers: &mut crate::pyramid::PyramidBuffers,
+) -> CoarseToFineResult {
+    let view =
+        ImageView::from_u8_slice(img.width(), img.height(), img.as_raw()).expect("valid view");
+    find_chess_corners(view, params, cf, buffers)
 }

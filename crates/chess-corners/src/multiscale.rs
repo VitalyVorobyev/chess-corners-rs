@@ -1,39 +1,27 @@
-//! Multiscale and coarse-to-fine corner detection helpers.
+//! Unified corner detection (single or multiscale).
 //!
-//! The multiscale path builds an image pyramid, runs the ChESS detector on the
-//! coarsest level to generate seeds, then refines each seed in a base-image
-//! ROI using a dense response patch and NMS + subpixel refinement. An
-//! adaptive ROI radius is used: `CoarseToFineParams::roi_radius` is specified
-//! in coarse-level pixels and converted to base-image pixels based on the
-//! pyramid scale, with a minimum margin derived from the detector's own
-//! border.
+//! - If `pyramid.num_levels <= 1`, runs single-scale detection on the base.
+//! - Otherwise, runs a coarse detection on the smallest pyramid level, then
+//!   refines each seed in the base image (coarse-to-fine) and merges duplicates.
 
 use crate::pyramid::{build_pyramid, ImageView, PyramidBuffers, PyramidParams};
 use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
 use chess_corners_core::detect::detect_corners_from_response;
 use chess_corners_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
 use chess_corners_core::{ChessParams, CornerDescriptor};
-use image::GrayImage;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 #[cfg(feature = "tracing")]
 use tracing::{debug_span, instrument};
 
-/// Parameters controlling coarse-to-fine refinement on an image pyramid.
-///
-/// - `pyramid`: how the pyramid is built (levels, scale factor, min size).
-/// - `roi_radius`: half-size of the refinement ROI, expressed in *coarse-level
-///   pixels* (i.e., the level used for seeding). The implementation converts
-///   this to a radius in base-image pixels based on the coarse level's scale
-///   and enforces a minimum margin derived from the detector's own border.
-/// - `merge_radius`: radius used to merge duplicate refined corners.
 pub struct CoarseToFineParams {
     pub pyramid: PyramidParams,
+    /// ROI radius at the coarse level (ignored when `pyramid.num_levels <= 1`).
     pub roi_radius: u32,
     pub merge_radius: f32,
 }
 
-/// Timing breakdown for the coarse-to-fine detector.
+/// Timing breakdown for the detector.
 pub struct CoarseToFineResult {
     pub corners: Vec<CornerDescriptor>,
     pub coarse_cols: usize,
@@ -57,65 +45,26 @@ impl Default for CoarseToFineParams {
 }
 
 impl CoarseToFineParams {
-    /// Create a new parameter set with default values.
     pub fn new() -> Self {
         Self::default()
     }
-
-    /// Override the pyramid parameters while keeping other fields at their
-    /// defaults.
-    pub fn with_pyramid(pyramid: PyramidParams) -> Self {
-        Self {
-            pyramid,
-            ..Self::default()
-        }
-    }
-
-    /// Set the ROI radius in coarse-level pixels. See the type-level docs for
-    /// how this is converted to a base-image radius.
-    pub fn with_roi_radius(mut self, roi_radius: u32) -> Self {
-        self.roi_radius = roi_radius;
-        self
-    }
-
-    /// Set the merge radius in base-image pixels.
-    pub fn with_merge_radius(mut self, merge_radius: f32) -> Self {
-        self.merge_radius = merge_radius;
-        self
-    }
 }
 
-/// Coarse-to-fine corner detection with timing stats.
-///
-/// Algorithm:
-/// 1. Build a pyramid according to `cf.pyramid`.
-/// 2. Run full ChESS detection on the coarsest level only.
-/// 3. Upscale each coarse corner to base-level coordinates.
-/// 4. Around each predicted location, compute a ChESS response patch at the
-///    base level and run NMS + subpixel refinement inside that patch.
-/// 5. Merge duplicates within `cf.merge_radius`.
-///
-/// This trades a small amount of complexity for a significant speed-up on
-/// large images, since the dense response is never computed for the full
-/// base-resolution frame. Pass a persistent `PyramidBuffers` to reuse memory
-/// across frames.
 #[cfg_attr(
     feature = "tracing",
     instrument(
         level = "debug",
-        skip(img, params, cf, buffers),
+        skip(base, params, cf, buffers),
         fields(levels = cf.pyramid.num_levels, min_size = cf.pyramid.min_size)
     )
 )]
-pub fn find_corners_coarse_to_fine_image(
-    img: &GrayImage,
+pub fn find_chess_corners(
+    base: ImageView<'_>,
     params: &ChessParams,
     cf: &CoarseToFineParams,
     buffers: &mut PyramidBuffers,
 ) -> CoarseToFineResult {
-    let base_view =
-        ImageView::from_u8_slice(img.width(), img.height(), img.as_raw()).expect("valid base view");
-    let pyramid = build_pyramid(base_view, &cf.pyramid, buffers);
+    let pyramid = build_pyramid(base, &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
         return CoarseToFineResult {
             corners: Vec::new(),
@@ -124,8 +73,27 @@ pub fn find_corners_coarse_to_fine_image(
         };
     }
 
-    let base_w = base_view.width as usize;
-    let base_h = base_view.height as usize;
+    if pyramid.levels.len() == 1 {
+        let lvl = &pyramid.levels[0];
+        let resp =
+            chess_response_u8(lvl.img.data, lvl.img.width as usize, lvl.img.height as usize, params);
+        let raw = detect_corners_from_response(&resp, params);
+        let desc = corners_to_descriptors(
+            lvl.img.data,
+            lvl.img.width as usize,
+            lvl.img.height as usize,
+            params.descriptor_ring_radius(),
+            raw,
+        );
+        return CoarseToFineResult {
+            corners: desc,
+            coarse_cols: lvl.img.width as usize,
+            coarse_rows: lvl.img.height as usize,
+        };
+    }
+
+    let base_w = base.width as usize;
+    let base_h = base.height as usize;
     let base_w_i = base_w as i32;
     let base_h_i = base_h as i32;
 
@@ -157,7 +125,7 @@ pub fn find_corners_coarse_to_fine_image(
     let inv_scale = 1.0 / coarse_lvl.scale;
 
     // Compute the same "border" margin as the core detector uses.
-    let ring_r = params.radius as i32;
+    let ring_r = params.ring_radius() as i32;
     let nms_r = params.nms_radius as i32;
     let refine_r = 2i32; // 5x5 refinement window
     let border = (ring_r + nms_r + refine_r).max(0);
@@ -229,7 +197,7 @@ pub fn find_corners_coarse_to_fine_image(
 
         // Compute response only inside this ROI at base level.
         let patch_resp = chess_response_u8_patch(
-            img.as_raw(),
+            base.data,
             base_w,
             base_h,
             params,
@@ -288,8 +256,8 @@ pub fn find_corners_coarse_to_fine_image(
     #[cfg(feature = "tracing")]
     drop(merge_span);
 
-    let desc_radius = params.descriptor_radius.unwrap_or(params.radius);
-    let descriptors = corners_to_descriptors(img.as_raw(), base_w, base_h, desc_radius, merged);
+    let desc_radius = params.descriptor_ring_radius();
+    let descriptors = corners_to_descriptors(base.data, base_w, base_h, desc_radius, merged);
 
     CoarseToFineResult {
         corners: descriptors,
@@ -324,7 +292,7 @@ fn merge_corners_simple(corners: &mut Vec<Corner>, radius: f32) -> Vec<Corner> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::Luma;
+    use crate::pyramid::ImageBuffer;
 
     #[test]
     fn merge_corners_prefers_stronger_entries() {
@@ -354,11 +322,11 @@ mod tests {
 
     #[test]
     fn coarse_to_fine_trace_reports_timings() {
-        let img = GrayImage::from_pixel(32, 32, Luma([0u8]));
+        let img = ImageBuffer::new(32, 32);
         let params = ChessParams::default();
         let cf = CoarseToFineParams::default();
         let mut buffers = PyramidBuffers::new();
-        let res = find_corners_coarse_to_fine_image(&img, &params, &cf, &mut buffers);
+        let res = find_chess_corners(img.as_view(), &params, &cf, &mut buffers);
         assert!(res.corners.is_empty());
     }
 }

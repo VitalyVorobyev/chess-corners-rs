@@ -43,15 +43,17 @@ pub mod detect;
 pub mod response;
 pub mod ring;
 
+use crate::ring::RingOffsets;
+
 pub use crate::descriptor::CornerDescriptor;
 /// Tunable parameters for the ChESS response computation and corner detection.
 #[derive(Clone, Debug)]
 pub struct ChessParams {
-    /// Ring radius in pixels (canonical 5, or 10 for heavy blur).
-    pub radius: u32,
-    /// Optional override for the radius used when sampling descriptors
-    /// (e.g., for phase/orientation). Falls back to `radius` when `None`.
-    pub descriptor_radius: Option<u32>,
+    /// Use the larger r=10 ring instead of the canonical r=5.
+    pub use_radius10: bool,
+    /// Optional override for descriptor sampling ring (r=5 vs r=10). Falls back
+    /// to `use_radius10` when `None`.
+    pub descriptor_use_radius10: Option<bool>,
     /// Relative threshold as a fraction of max response (e.g. 0.015 = 1.5%).
     pub threshold_rel: f32,
     /// Absolute threshold override; if `Some`, this is used instead of `threshold_rel`.
@@ -66,13 +68,39 @@ pub struct ChessParams {
 impl Default for ChessParams {
     fn default() -> Self {
         Self {
-            radius: 5,
-            descriptor_radius: None,
+            use_radius10: false,
+            descriptor_use_radius10: None,
             threshold_rel: 0.015,
             threshold_abs: None,
             nms_radius: 1,
             min_cluster_size: 2,
         }
+    }
+}
+
+impl ChessParams {
+    #[inline]
+    pub fn ring_radius(&self) -> u32 {
+        if self.use_radius10 { 10 } else { 5 }
+    }
+
+    #[inline]
+    pub fn descriptor_ring_radius(&self) -> u32 {
+        match self.descriptor_use_radius10 {
+            Some(true) => 10,
+            Some(false) => 5,
+            None => self.ring_radius(),
+        }
+    }
+
+    #[inline]
+    pub fn ring(&self) -> RingOffsets {
+        RingOffsets::from_radius(self.ring_radius())
+    }
+
+    #[inline]
+    pub fn descriptor_ring(&self) -> RingOffsets {
+        RingOffsets::from_radius(self.descriptor_ring_radius())
     }
 }
 

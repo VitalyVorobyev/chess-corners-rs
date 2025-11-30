@@ -1,4 +1,4 @@
-//! Minimal logger for examples and binaries.
+//! Minimal logger.
 //!
 //! The logger prints `[elapsed LEVEL] message` to stderr with a simple
 //! elapsed-time prefix. Use `init_with_level` to install it once at startup.
@@ -54,9 +54,4 @@ pub fn init_with_level(level: LevelFilter) -> Result<(), log::SetLoggerError> {
         log::set_max_level(level);
     }
     Ok(())
-}
-
-/// Install the logger with the `Info` level filter.
-pub fn init() -> Result<(), log::SetLoggerError> {
-    init_with_level(LevelFilter::Info)
 }

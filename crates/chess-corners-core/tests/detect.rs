@@ -133,7 +133,6 @@ fn detect_corners_respects_threshold_and_cluster_size() {
     let resp = ResponseMap { w, h, data };
     let params = ChessParams {
         threshold_abs: Some(6.0),
-        descriptor_radius: None,
         ..Default::default()
     };
 

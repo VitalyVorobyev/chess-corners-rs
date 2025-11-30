@@ -1,15 +1,11 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-//! Ergonomic wrappers over `chess-corners-core` that accept `image::GrayImage` inputs.
+//! Ergonomic wrappers over `chess-corners-core` with optional `image` helpers.
 //!
 //! This crate is organized into a few focused modules:
-//! - [`image`] – single-scale helpers on `image::GrayImage`.
-//! - [`multiscale`] – pyramid-based multiscale and coarse-to-fine detection.
-//! - [`pyramid`] – reusable buffers and downsampling for image pyramids.
-//! - [`logger`] – a simple `log` implementation used by examples.
+//! - [`multiscale`] – unified single/multiscale corner finder.
+//! - [`pyramid`] – minimal u8 buffers and downsampling for pyramids.
+//! - optional `image` helpers for `image::GrayImage`.
 
-#[cfg(feature = "image")]
-pub mod image;
-pub mod logger;
 pub mod multiscale;
 pub mod pyramid;
 
@@ -20,11 +16,13 @@ pub use chess_corners_core::{ChessParams, CornerDescriptor, ResponseMap};
 
 // High-level helpers on `image::GrayImage`.
 #[cfg(feature = "image")]
-pub use crate::image::{chess_response_image, find_corners_image};
+pub mod image;
+#[cfg(feature = "image")]
+pub use image::find_chess_corners_image;
 
 // Multiscale/coarse-to-fine API.
 pub use crate::multiscale::{
-    find_corners_coarse_to_fine_image, CoarseToFineParams, CoarseToFineResult,
+    find_chess_corners, CoarseToFineParams, CoarseToFineResult,
 };
 
 // Pyramid utilities are re-exported from the crate root for ergonomic access.

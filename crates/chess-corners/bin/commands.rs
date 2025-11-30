@@ -5,42 +5,22 @@
 //! share the same behavior.
 
 use anyhow::{Context, Result};
-use chess_corners::image::find_corners_image;
-use chess_corners::multiscale::find_corners_coarse_to_fine_image;
-use chess_corners::pyramid::ImageView;
-use chess_corners::{ChessParams, CoarseToFineParams, PyramidBuffers};
+use chess_corners::{
+    ChessParams, CoarseToFineParams, PyramidBuffers,
+    image::find_chess_corners_image,
+    multiscale::find_chess_corners,
+    pyramid::ImageView,
+};
 use image::{
     imageops::{resize, FilterType},
     ImageBuffer, ImageReader, Luma,
 };
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Write, path::Path, path::PathBuf, str::FromStr};
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DetectionMode {
-    Single,
-    Multiscale,
-}
-
-impl FromStr for DetectionMode {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
-            "single" => Ok(DetectionMode::Single),
-            "multiscale" | "multi" => Ok(DetectionMode::Multiscale),
-            other => Err(format!(
-                "invalid mode '{other}', expected single|multiscale"
-            )),
-        }
-    }
-}
+use std::{fs::File, io::Write, path::Path, path::PathBuf};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DetectionConfig {
     pub image: PathBuf,
-    pub mode: Option<DetectionMode>,
     pub downsample: Option<u32>,
     pub pyramid_levels: Option<u8>,
     pub min_size: Option<u32>,
@@ -50,8 +30,8 @@ pub struct DetectionConfig {
     pub output_png: Option<PathBuf>,
     pub threshold_rel: Option<f32>,
     pub threshold_abs: Option<f32>,
-    pub radius: Option<u32>,
-    pub descriptor_radius: Option<u32>,
+    pub radius10: Option<bool>,
+    pub descriptor_radius10: Option<bool>,
     pub nms_radius: Option<u32>,
     pub min_cluster_size: Option<u32>,
     pub log_level: Option<String>,
@@ -82,10 +62,10 @@ pub struct DetectionDump {
 }
 
 pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
-    let mode = cfg.mode.unwrap_or(DetectionMode::Single);
-    match mode {
-        DetectionMode::Single => run_single(cfg),
-        DetectionMode::Multiscale => run_multiscale(cfg),
+    if cfg.pyramid_levels.unwrap_or(1) > 1 {
+        run_multiscale(cfg)
+    } else {
+        run_single(cfg)
     }
 }
 
@@ -103,7 +83,11 @@ fn run_single(cfg: DetectionConfig) -> Result<()> {
     let mut params = ChessParams::default();
     apply_params_overrides(&mut params, &cfg);
 
-    let mut corners = find_corners_image(&work_img, &params);
+    let mut cf = CoarseToFineParams::default();
+    cf.pyramid.num_levels = 1;
+    let mut buffers = PyramidBuffers::new();
+    let res = find_chess_corners_image(&work_img, &params, &cf, &mut buffers);
+    let mut corners = res.corners;
 
     if downsample > 1 {
         let s = downsample as f32;
@@ -186,7 +170,7 @@ fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
         ImageView::from_u8_slice(img.width(), img.height(), img.as_raw()).expect("valid image");
     buffers.prepare_for_image(&base_view, &cf.pyramid);
 
-    let res = find_corners_coarse_to_fine_image(&img, &params, &cf, &mut buffers);
+    let res = find_chess_corners(base_view, &params, &cf, &mut buffers);
 
     let json_out = cfg
         .output_json
@@ -227,11 +211,11 @@ fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
 }
 
 fn apply_params_overrides(params: &mut ChessParams, cfg: &DetectionConfig) {
-    if let Some(r) = cfg.radius {
-        params.radius = r;
+    if let Some(r) = cfg.radius10 {
+        params.use_radius10 = r;
     }
-    if let Some(r) = cfg.descriptor_radius {
-        params.descriptor_radius = Some(r);
+    if let Some(r) = cfg.descriptor_radius10 {
+        params.descriptor_use_radius10 = Some(r);
     }
     if let Some(t) = cfg.threshold_rel {
         params.threshold_rel = t;
