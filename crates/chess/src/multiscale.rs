@@ -9,8 +9,8 @@
 //! border.
 
 use crate::pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
-use chess_core::detect::{detect_corners_from_response};
-use chess_core::descriptor::{Corner, corners_to_descriptors};
+use chess_core::descriptor::{corners_to_descriptors, Corner};
+use chess_core::detect::detect_corners_from_response;
 use chess_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
 use chess_core::{ChessParams, CornerDescriptor};
 use image::GrayImage;
@@ -286,7 +286,7 @@ pub fn find_corners_coarse_to_fine_image(
     #[cfg(feature = "tracing")]
     drop(merge_span);
 
-    let descriptors = corners_to_descriptors(img.as_raw(), base_w, base_h, merged);
+    let descriptors = corners_to_descriptors(img.as_raw(), base_w, base_h, params.radius, merged);
 
     CoarseToFineResult {
         corners: descriptors,

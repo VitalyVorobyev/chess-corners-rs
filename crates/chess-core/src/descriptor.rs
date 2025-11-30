@@ -1,5 +1,7 @@
 //! Corner descriptor that can be used for chessboard detection
 //! #[cfg(feature = "tracing")]
+use crate::ring::ring_offsets;
+#[cfg(feature = "tracing")]
 use tracing::instrument;
 
 /// A detected ChESS corner (subpixel).
@@ -56,13 +58,15 @@ pub fn corners_to_descriptors(
     img: &[u8],
     w: usize,
     h: usize,
+    radius: u32,
     corners: Vec<Corner>,
 ) -> Vec<CornerDescriptor> {
+    let ring = ring_offsets(radius);
     let mut out = Vec::with_capacity(corners.len());
     for c in corners {
-        let (orientation, anisotropy) =
-            estimate_corner_orientation_anisotropy(img, w, h, c.xy[0], c.xy[1]);
-        let phase = estimate_corner_phase(img, w, h, c.xy[0], c.xy[1], orientation);
+        let samples = sample_ring(img, w, h, c.xy[0], c.xy[1], ring);
+        let (orientation, phase) = estimate_orientation_and_phase_from_ring(&samples, ring);
+        let anisotropy = estimate_corner_anisotropy(img, w, h, c.xy[0], c.xy[1]);
 
         out.push(CornerDescriptor {
             x: c.xy[0],
@@ -76,24 +80,97 @@ pub fn corners_to_descriptors(
     out
 }
 
-/// Estimate local orientation and anisotropy of a corner using the image gradients
-/// in a small window around (x, y) in full-res coordinates.
-///
-/// - `img` is a grayscale image in row-major layout.
-/// - `x`, `y` are subpixel positions; we round to the nearest integer for the window center.
-/// - The function returns (orientation, anisotropy).
-///
-/// The orientation is normalized to [0, PI); the anisotropy is a simple
-/// det/trace² proxy where higher values indicate more corner-like structure.
-fn estimate_corner_orientation_anisotropy(
+/// Sample the 16-point ChESS ring around (x, y) using bilinear interpolation.
+fn sample_ring(
     img: &[u8],
     w: usize,
     h: usize,
     x: f32,
     y: f32,
-) -> (f32, f32) {
+    ring: &[(i32, i32); 16],
+) -> [f32; 16] {
+    let mut samples = [0.0f32; 16];
+    for (i, &(dx, dy)) in ring.iter().enumerate() {
+        let sx = x + dx as f32;
+        let sy = y + dy as f32;
+        samples[i] = sample_bilinear(img, w, h, sx, sy);
+    }
+    samples
+}
+
+/// Estimate orientation and phase directly from the ChESS ring samples.
+///
+/// Orientation comes from the 2nd harmonic of the mean-subtracted ring
+/// (period π, normalized to [0, π)). Phase uses quadrant sums in a frame
+/// aligned to that orientation: bit0 tells which diagonal is darker, bit1
+/// resolves the darker diagonal’s direction.
+fn estimate_orientation_and_phase_from_ring(
+    samples: &[f32; 16],
+    ring: &[(i32, i32); 16],
+) -> (f32, u8) {
+    // Orientation from 2nd harmonic of mean-subtracted samples.
+    let mean = samples.iter().copied().sum::<f32>() / 16.0;
+    let mut c2 = 0.0f32;
+    let mut s2 = 0.0f32;
+    let step = core::f32::consts::PI / 8.0; // 2π/16
+    for (k, &v_raw) in samples.iter().enumerate() {
+        let v = v_raw - mean;
+        let angle = k as f32 * step;
+        let a2 = 2.0 * angle;
+        c2 += v * a2.cos();
+        s2 += v * a2.sin();
+    }
+    let mut theta = 0.5 * s2.atan2(c2);
+    if theta < 0.0 {
+        theta += core::f32::consts::PI;
+    }
+    if !theta.is_finite() {
+        theta = 0.0;
+    }
+
+    // Quadrant sums aligned to theta.
+    let ct = theta.cos();
+    let st = theta.sin();
+    let mut q00 = 0.0f32;
+    let mut q01 = 0.0f32;
+    let mut q10 = 0.0f32;
+    let mut q11 = 0.0f32;
+
+    for (val, &(dx_i, dy_i)) in samples.iter().zip(ring.iter()) {
+        let dx = dx_i as f32;
+        let dy = dy_i as f32;
+        let proj_u = dx * ct + dy * st;
+        let proj_v = -dx * st + dy * ct;
+        if proj_u < 0.0 {
+            if proj_v < 0.0 {
+                q00 += *val;
+            } else {
+                q01 += *val;
+            }
+        } else if proj_v < 0.0 {
+            q10 += *val;
+        } else {
+            q11 += *val;
+        }
+    }
+
+    let d0 = q00 + q11;
+    let d1 = q01 + q10;
+    let phase_bit0 = (d0 < d1) as u8;
+    let phase_bit1 = (q00 < q11) as u8;
+    let phase = phase_bit0 | (phase_bit1 << 1);
+
+    (theta, phase)
+}
+
+/// Estimate anisotropy of a corner using the image gradients
+/// in a small window around (x, y) in full-res coordinates.
+///
+/// The anisotropy is a simple det/trace² proxy where higher values indicate
+/// more corner-like structure.
+fn estimate_corner_anisotropy(img: &[u8], w: usize, h: usize, x: f32, y: f32) -> f32 {
     if w == 0 || h == 0 {
-        return (0.0, 0.0);
+        return 0.0;
     }
 
     let cx = x.round() as i32;
@@ -128,53 +205,10 @@ fn estimate_corner_orientation_anisotropy(
         }
     }
 
-    let theta_grad = 0.5 * (2.0 * s_xy).atan2(s_xx - s_yy);
-    let mut theta = theta_grad;
-    if theta < 0.0 {
-        theta += core::f32::consts::PI;
-    }
-
     let trace = s_xx + s_yy;
     let det = s_xx * s_yy - s_xy * s_xy;
     let eps = 1e-6_f32;
-    let anisotropy = det / (trace * trace + eps);
-
-    (theta, anisotropy)
-}
-
-/// Estimate a small discrete phase code (0..3) describing which quadrants
-/// around the corner are darker/brighter relative to the local grid axes. The
-/// two bits encode which diagonal is darker and its orientation.
-fn estimate_corner_phase(img: &[u8], w: usize, h: usize, x: f32, y: f32, theta: f32) -> u8 {
-    if w == 0 || h == 0 {
-        return 0;
-    }
-
-    let (st, ct) = theta.sin_cos();
-    let u = (ct, st);
-    let v = (-st, ct);
-    let r = 1.5_f32;
-
-    let p00x = x - r * u.0 - r * v.0;
-    let p00y = y - r * u.1 - r * v.1;
-    let p01x = x - r * u.0 + r * v.0;
-    let p01y = y - r * u.1 + r * v.1;
-    let p10x = x + r * u.0 - r * v.0;
-    let p10y = y + r * u.1 - r * v.1;
-    let p11x = x + r * u.0 + r * v.0;
-    let p11y = y + r * u.1 + r * v.1;
-
-    let i00 = sample_bilinear(img, w, h, p00x, p00y);
-    let i01 = sample_bilinear(img, w, h, p01x, p01y);
-    let i10 = sample_bilinear(img, w, h, p10x, p10y);
-    let i11 = sample_bilinear(img, w, h, p11x, p11y);
-
-    let d0 = i00 + i11;
-    let d1 = i01 + i10;
-
-    let phase_bit0 = (d0 < d1) as u8;
-    let phase_bit1 = (i00 < i11) as u8;
-    phase_bit0 | (phase_bit1 << 1)
+    det / (trace * trace + eps)
 }
 
 fn sample_bilinear(img: &[u8], w: usize, h: usize, x: f32, y: f32) -> f32 {

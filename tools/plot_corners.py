@@ -20,6 +20,7 @@ import json
 import math
 from pathlib import Path
 
+import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 
@@ -127,6 +128,10 @@ def main() -> None:
 
     phase_palette = ["#e63946", "#1d3557", "#2a9d8f", "#f4a261"]
     colors = [phase_palette[p % len(phase_palette)] for p in phases]
+
+    unique_vals, counts = np.unique(phases, return_counts=True)
+    for val, cnt in zip(unique_vals, counts):
+        print(val, "occurs", cnt, "times")
 
     ax.scatter(xs, ys, s=16, facecolors="none", edgecolors=colors, linewidths=0.7)
 

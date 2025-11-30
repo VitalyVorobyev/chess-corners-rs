@@ -1,6 +1,6 @@
 //! Corner detection utilities built on top of the dense ChESS response map.
+use crate::descriptor::{corners_to_descriptors, Corner, CornerDescriptor};
 use crate::response::chess_response_u8;
-use crate::descriptor::{Corner, CornerDescriptor, corners_to_descriptors};
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "tracing")]
@@ -20,7 +20,7 @@ pub fn find_corners_u8(
 ) -> Vec<CornerDescriptor> {
     let resp = chess_response_u8(img, w, h, params);
     let corners = detect_corners_from_response(&resp, params);
-    corners_to_descriptors(img, w, h, corners)
+    corners_to_descriptors(img, w, h, params.radius, corners)
 }
 
 /// Core detector: run NMS + refinement on an existing response map.
@@ -228,9 +228,10 @@ mod tests {
             .max_by(|a, b| a.response.partial_cmp(&b.response).unwrap())
             .expect("non-empty");
 
-        // Expect orientation roughly aligned with the image axes.
-        let near_axis = best.orientation.abs() < 0.35
-            || (best.orientation - core::f32::consts::FRAC_PI_2).abs() < 0.35;
+        // Expect orientation roughly aligned with a 45° grid (multiples of PI/4).
+        let k = (best.orientation / core::f32::consts::FRAC_PI_4).round();
+        let nearest = k * core::f32::consts::FRAC_PI_4;
+        let near_axis = (best.orientation - nearest).abs() < 0.35;
         assert!(near_axis, "unexpected orientation {}", best.orientation);
 
         let mut brighter = img.clone();

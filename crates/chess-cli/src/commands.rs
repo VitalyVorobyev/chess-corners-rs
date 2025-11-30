@@ -4,10 +4,10 @@
 //! output) around the `chess` detection APIs so both the CLI and examples can
 //! share the same behavior.
 
-use chess::{CoarseToFineParams, PyramidBuffers, ChessParams};
-use chess::multiscale::find_corners_coarse_to_fine_image;
-use chess::image::find_corners_image;
 use anyhow::{Context, Result};
+use chess::image::find_corners_image;
+use chess::multiscale::find_corners_coarse_to_fine_image;
+use chess::{ChessParams, CoarseToFineParams, PyramidBuffers};
 use image::{
     imageops::{resize, FilterType},
     ImageBuffer, ImageReader, Luma,
@@ -182,8 +182,7 @@ fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
     let mut buffers = PyramidBuffers::with_capacity(cf.pyramid.num_levels);
     buffers.prepare_for_image(&img, &cf.pyramid);
 
-    let res =
-        find_corners_coarse_to_fine_image(&img, &params, &cf, &mut buffers);
+    let res = find_corners_coarse_to_fine_image(&img, &params, &cf, &mut buffers);
 
     let json_out = cfg
         .output_json
