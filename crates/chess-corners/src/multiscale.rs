@@ -5,15 +5,17 @@
 //!   refines each seed in the base image (coarse-to-fine) and merges duplicates.
 
 use crate::pyramid::{build_pyramid, ImageView, PyramidBuffers, PyramidParams};
+use crate::ChessConfig;
 use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
 use chess_corners_core::detect::detect_corners_from_response;
 use chess_corners_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
-use chess_corners_core::{ChessParams, CornerDescriptor};
+use chess_corners_core::CornerDescriptor;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 #[cfg(feature = "tracing")]
 use tracing::{debug_span, instrument};
 
+#[derive(Clone, Debug)]
 pub struct CoarseToFineParams {
     pub pyramid: PyramidParams,
     /// ROI radius at the coarse level (ignored when `pyramid.num_levels <= 1`).
@@ -22,6 +24,7 @@ pub struct CoarseToFineParams {
 }
 
 /// Timing breakdown for the detector.
+#[derive(Clone, Debug)]
 pub struct CoarseToFineResult {
     pub corners: Vec<CornerDescriptor>,
     pub coarse_cols: usize,
@@ -54,16 +57,18 @@ impl CoarseToFineParams {
     feature = "tracing",
     instrument(
         level = "debug",
-        skip(base, params, cf, buffers),
-        fields(levels = cf.pyramid.num_levels, min_size = cf.pyramid.min_size)
+        skip(base, buffers),
+        fields(levels = cfg.multiscale.pyramid.num_levels, min_size = cfg.multiscale.pyramid.min_size)
     )
 )]
 pub fn find_chess_corners(
     base: ImageView<'_>,
-    params: &ChessParams,
-    cf: &CoarseToFineParams,
+    cfg: &ChessConfig,
     buffers: &mut PyramidBuffers,
 ) -> CoarseToFineResult {
+    let params = &cfg.params;
+    let cf = &cfg.multiscale;
+
     let pyramid = build_pyramid(base, &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
         return CoarseToFineResult {
@@ -327,10 +332,9 @@ mod tests {
     #[test]
     fn coarse_to_fine_trace_reports_timings() {
         let img = ImageBuffer::new(32, 32);
-        let params = ChessParams::default();
-        let cf = CoarseToFineParams::default();
         let mut buffers = PyramidBuffers::new();
-        let res = find_chess_corners(img.as_view(), &params, &cf, &mut buffers);
+        let cfg = ChessConfig::default();
+        let res = find_chess_corners(img.as_view(), &cfg, &mut buffers);
         assert!(res.corners.is_empty());
     }
 }

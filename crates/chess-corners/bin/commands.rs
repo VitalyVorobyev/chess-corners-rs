@@ -5,10 +5,7 @@
 //! share the same behavior.
 
 use anyhow::{Context, Result};
-use chess_corners::{
-    find_chess_corners_image, find_chess_corners, ImageView,
-    ChessParams, CoarseToFineParams, PyramidBuffers,
-};
+use chess_corners::{find_chess_corners_image, ChessConfig, ChessParams, CoarseToFineParams};
 use image::{
     imageops::{resize, FilterType},
     ImageBuffer, ImageReader, Luma,
@@ -78,13 +75,11 @@ fn run_single(cfg: DetectionConfig) -> Result<()> {
         img.clone()
     };
 
-    let mut params = ChessParams::default();
-    apply_params_overrides(&mut params, &cfg);
+    let mut config = ChessConfig::single_scale();
+    apply_params_overrides(&mut config.params, &cfg);
+    apply_multiscale_overrides(&mut config.multiscale, &cfg, Some(1))?;
 
-    let mut cf = CoarseToFineParams::default();
-    cf.pyramid.num_levels = 1;
-    let mut buffers = PyramidBuffers::new();
-    let res = find_chess_corners_image(&work_img, &params, &cf, &mut buffers);
+    let res = find_chess_corners_image(&work_img, &config);
     let mut corners = res.corners;
 
     if downsample > 1 {
@@ -133,42 +128,12 @@ fn run_single(cfg: DetectionConfig) -> Result<()> {
 }
 
 fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
-    let mut cf = CoarseToFineParams::default();
-    if let Some(v) = cfg.pyramid_levels {
-        if v == 0 {
-            anyhow::bail!("levels must be >= 1");
-        }
-        cf.pyramid.num_levels = v;
-    }
-    if let Some(v) = cfg.min_size {
-        if v == 0 {
-            anyhow::bail!("min-size must be >= 1");
-        }
-        cf.pyramid.min_size = v;
-    }
-    if let Some(v) = cfg.roi_radius {
-        if v == 0 {
-            anyhow::bail!("roi radius must be >= 1");
-        }
-        cf.roi_radius = v;
-    }
-    if let Some(v) = cfg.merge_radius {
-        if v <= 0.0 {
-            anyhow::bail!("merge radius must be > 0");
-        }
-        cf.merge_radius = v;
-    }
-
-    let mut params = ChessParams::default();
-    apply_params_overrides(&mut params, &cfg);
+    let mut config = ChessConfig::default();
+    apply_params_overrides(&mut config.params, &cfg);
+    apply_multiscale_overrides(&mut config.multiscale, &cfg, None)?;
 
     let img = ImageReader::open(&cfg.image)?.decode()?.to_luma8();
-    let mut buffers = PyramidBuffers::with_capacity(cf.pyramid.num_levels);
-    let base_view =
-        ImageView::from_u8_slice(img.width(), img.height(), img.as_raw()).expect("valid image");
-    buffers.prepare_for_image(&base_view, &cf.pyramid);
-
-    let res = find_chess_corners(base_view, &params, &cf, &mut buffers);
+    let res = find_chess_corners_image(&img, &config);
 
     let json_out = cfg
         .output_json
@@ -179,10 +144,10 @@ fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
         height: img.height(),
         mode: "multiscale".to_string(),
         downsample: None,
-        pyramid_levels: Some(cf.pyramid.num_levels),
-        min_size: Some(cf.pyramid.min_size),
-        roi_radius: Some(cf.roi_radius),
-        merge_radius: Some(cf.merge_radius),
+        pyramid_levels: Some(config.multiscale.pyramid.num_levels),
+        min_size: Some(config.multiscale.pyramid.min_size),
+        roi_radius: Some(config.multiscale.roi_radius),
+        merge_radius: Some(config.multiscale.merge_radius),
         corners: res
             .corners
             .iter()
@@ -227,6 +192,42 @@ fn apply_params_overrides(params: &mut ChessParams, cfg: &DetectionConfig) {
     if let Some(m) = cfg.min_cluster_size {
         params.min_cluster_size = m;
     }
+}
+
+fn apply_multiscale_overrides(
+    cf: &mut CoarseToFineParams,
+    cfg: &DetectionConfig,
+    force_levels: Option<u8>,
+) -> Result<()> {
+    if let Some(levels) = force_levels {
+        cf.pyramid.num_levels = levels;
+    } else if let Some(v) = cfg.pyramid_levels {
+        if v == 0 {
+            anyhow::bail!("levels must be >= 1");
+        }
+        cf.pyramid.num_levels = v;
+    }
+
+    if let Some(v) = cfg.min_size {
+        if v == 0 {
+            anyhow::bail!("min-size must be >= 1");
+        }
+        cf.pyramid.min_size = v;
+    }
+    if let Some(v) = cfg.roi_radius {
+        if v == 0 {
+            anyhow::bail!("roi radius must be >= 1");
+        }
+        cf.roi_radius = v;
+    }
+    if let Some(v) = cfg.merge_radius {
+        if v <= 0.0 {
+            anyhow::bail!("merge radius must be > 0");
+        }
+        cf.merge_radius = v;
+    }
+
+    Ok(())
 }
 fn draw_corners(
     vis: &mut ImageBuffer<Luma<u8>, Vec<u8>>,

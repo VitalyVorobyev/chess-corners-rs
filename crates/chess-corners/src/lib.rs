@@ -20,9 +20,46 @@ pub mod image;
 #[cfg(feature = "image")]
 pub use image::find_chess_corners_image;
 
-// Multiscale/coarse-to-fine API.
-pub use crate::multiscale::{find_chess_corners, CoarseToFineParams, CoarseToFineResult};
+// Multiscale/coarse-to-fine API types.
+pub use crate::multiscale::{CoarseToFineParams, CoarseToFineResult};
 
-// Pyramid utilities are re-exported from the crate root for ergonomic access.
-pub use crate::pyramid::{build_pyramid, Pyramid, PyramidBuffers, PyramidLevel, PyramidParams};
-pub use crate::pyramid::{ImageBuffer, ImageView};
+/// Unified detector configuration combining response/detector params and
+/// multiscale/pyramid tuning.
+#[derive(Clone, Debug)]
+pub struct ChessConfig {
+    pub params: ChessParams,
+    pub multiscale: CoarseToFineParams,
+}
+
+impl Default for ChessConfig {
+    fn default() -> Self {
+        Self {
+            params: ChessParams::default(),
+            multiscale: CoarseToFineParams::default(),
+        }
+    }
+}
+
+impl ChessConfig {
+    /// Convenience helper for single-scale detection.
+    pub fn single_scale() -> Self {
+        let mut cfg = Self::default();
+        cfg.multiscale.pyramid.num_levels = 1;
+        cfg
+    }
+}
+
+/// Detect chessboard corners from a raw grayscale image buffer.
+///
+/// The `img` slice must be `width * height` bytes in row-major order.
+pub fn find_chess_corners_u8(
+    img: &[u8],
+    width: u32,
+    height: u32,
+    cfg: &ChessConfig,
+) -> CoarseToFineResult {
+    let view = pyramid::ImageView::from_u8_slice(width, height, img)
+        .expect("image dimensions must match buffer length");
+    let mut buffers = pyramid::PyramidBuffers::with_capacity(cfg.multiscale.pyramid.num_levels);
+    multiscale::find_chess_corners(view, cfg, &mut buffers)
+}

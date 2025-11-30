@@ -94,37 +94,6 @@ impl PyramidBuffers {
         }
     }
 
-    /// Ensure buffers exist for all downsampled levels that will be produced
-    /// for `base` and `params`. Returns the number of downsampled levels
-    /// (excluding the base) that were sized.
-    pub fn prepare_for_image(&mut self, base: &ImageView<'_>, params: &PyramidParams) -> usize {
-        if params.num_levels == 0 || base.width < params.min_size || base.height < params.min_size {
-            return 0;
-        }
-
-        let mut w = base.width;
-        let mut h = base.height;
-        let mut prepared = 0usize;
-
-        for _ in 1..params.num_levels {
-            if w < 2 || h < 2 {
-                break;
-            }
-
-            w /= 2;
-            h /= 2;
-
-            if w < params.min_size || h < params.min_size {
-                break;
-            }
-
-            self.ensure_level_shape(prepared, w, h);
-            prepared += 1;
-        }
-
-        prepared
-    }
-
     fn ensure_level_shape(&mut self, idx: usize, w: u32, h: u32) {
         if idx >= self.levels.len() {
             self.levels.resize_with(idx + 1, || ImageBuffer::new(w, h));
@@ -149,6 +118,7 @@ pub struct Pyramid<'a> {
 }
 
 /// Parameters controlling pyramid generation.
+#[derive(Clone, Debug)]
 pub struct PyramidParams {
     /// Maximum number of levels (including the base).
     pub num_levels: u8,
