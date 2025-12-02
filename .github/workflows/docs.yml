@@ -28,6 +28,9 @@ jobs:
         with:
           components: rust-docs
 
+      - name: Install mdBook
+        run: cargo install mdbook --version ^0.4 --locked
+
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
@@ -38,7 +41,26 @@ jobs:
           RUSTDOCFLAGS: "-D warnings"
         run: |
           cargo doc --workspace --all-features --no-deps
-          echo '<meta http-equiv="refresh" content="0; url=chess-corners/index.html">' > target/doc/index.html
+          mdbook build book
+          mkdir -p target/doc/book
+          cp -R book/book/* target/doc/book/
+          cat > target/doc/index.html << 'EOF'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>chess-corners documentation</title>
+          </head>
+          <body>
+            <h1>chess-corners documentation</h1>
+            <ul>
+              <li><a href="book/">Guide (mdBook)</a></li>
+              <li><a href="chess_corners/index.html">Rust API docs: chess-corners</a></li>
+              <li><a href="chess_corners_core/index.html">Rust API docs: chess-corners-core</a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
 
       - name: Upload artifact for Pages
         uses: actions/upload-pages-artifact@v3

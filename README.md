@@ -8,6 +8,11 @@ Rust implementation of the **ChESS** (Chess-board Extraction by Subtraction and 
 
 ChESS is a classical, ID-free detector for chessboard **X-junction** corners. This workspace delivers a fast scalar kernel, corner extraction with non-maximum suppression and subpixel refinement, and convenient helpers for the `image` crate.
 
+The published documentation includes:
+
+- a guide-style book (API overview, internals, multiscale tuning), and
+- generated Rust API docs for both `chess-corners-core` and `chess-corners`.
+
 ## Highlights
 - Canonical 16-sample rings (r=5 default, r=10 for heavy blur).
 - Dense response computation plus NMS, minimum-cluster filtering, and 5x5 center-of-mass refinement.

@@ -29,6 +29,12 @@ Compared to other approaches:
 
 The `chess-corners-rs` workspace implements ChESS in Rust with an emphasis on clarity, testability, and high performance (scalar, `rayon`, and portable SIMD paths), plus ergonomic wrappers for common Rust image workflows.
 
+If you are reading this book online via GitHub Pages, the generated
+Rust API docs for the crates are also available:
+
+- `chess-corners-core` API reference: see `/chess_corners_core/`
+- `chess-corners` API reference: see `/chess_corners/`
+
 ---
 
 ## 1.2 Project layout
