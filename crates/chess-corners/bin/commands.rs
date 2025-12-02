@@ -79,8 +79,7 @@ fn run_single(cfg: DetectionConfig) -> Result<()> {
     apply_params_overrides(&mut config.params, &cfg);
     apply_multiscale_overrides(&mut config.multiscale, &cfg, Some(1))?;
 
-    let res = find_chess_corners_image(&work_img, &config);
-    let mut corners = res.corners;
+    let mut corners = find_chess_corners_image(&work_img, &config);
 
     if downsample > 1 {
         let s = downsample as f32;
@@ -133,7 +132,7 @@ fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
     apply_multiscale_overrides(&mut config.multiscale, &cfg, None)?;
 
     let img = ImageReader::open(&cfg.image)?.decode()?.to_luma8();
-    let res = find_chess_corners_image(&img, &config);
+    let corners = find_chess_corners_image(&img, &config);
 
     let json_out = cfg
         .output_json
@@ -148,8 +147,7 @@ fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
         min_size: Some(config.multiscale.pyramid.min_size),
         roi_radius: Some(config.multiscale.roi_radius),
         merge_radius: Some(config.multiscale.merge_radius),
-        corners: res
-            .corners
+        corners: corners
             .iter()
             .map(|c| CornerOut {
                 x: c.x,

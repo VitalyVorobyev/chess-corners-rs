@@ -23,16 +23,6 @@ pub struct CoarseToFineParams {
     pub merge_radius: f32,
 }
 
-/// Timing breakdown for the detector.
-#[derive(Clone, Debug)]
-pub struct CoarseToFineResult {
-    pub corners: Vec<CornerDescriptor>,
-    pub coarse_cols: usize,
-    pub coarse_rows: usize,
-}
-// Profiling helper; prefer enabling the `tracing` feature. Timing fields are
-// best-effort and may change.
-
 impl Default for CoarseToFineParams {
     fn default() -> Self {
         Self {
@@ -53,29 +43,17 @@ impl CoarseToFineParams {
     }
 }
 
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "debug",
-        skip(base, buffers),
-        fields(levels = cfg.multiscale.pyramid.num_levels, min_size = cfg.multiscale.pyramid.min_size)
-    )
-)]
 pub fn find_chess_corners_buff(
     base: ImageView<'_>,
     cfg: &ChessConfig,
-    buffers: &mut PyramidBuffers,
-) -> CoarseToFineResult {
+    buffers: &mut PyramidBuffers
+) -> Vec<CornerDescriptor> {
     let params = &cfg.params;
     let cf = &cfg.multiscale;
 
     let pyramid = build_pyramid(base, &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
-        return CoarseToFineResult {
-            corners: Vec::new(),
-            coarse_cols: 0,
-            coarse_rows: 0,
-        };
+        return Vec::new()
     }
 
     if pyramid.levels.len() == 1 {
@@ -94,11 +72,7 @@ pub fn find_chess_corners_buff(
             params.descriptor_ring_radius(),
             raw,
         );
-        return CoarseToFineResult {
-            corners: desc,
-            coarse_cols: lvl.img.width as usize,
-            coarse_rows: lvl.img.height as usize,
-        };
+        return desc
     }
 
     let base_w = base.width as usize;
@@ -124,11 +98,7 @@ pub fn find_chess_corners_buff(
     drop(coarse_span);
 
     if coarse_corners.is_empty() {
-        return CoarseToFineResult {
-            corners: Vec::new(),
-            coarse_cols: coarse_w,
-            coarse_rows: coarse_h,
-        };
+        return Vec::new()
     }
 
     let inv_scale = 1.0 / coarse_lvl.scale;
@@ -268,11 +238,23 @@ pub fn find_chess_corners_buff(
     let desc_radius = params.descriptor_ring_radius();
     let descriptors = corners_to_descriptors(base.data, base_w, base_h, desc_radius, merged);
 
-    CoarseToFineResult {
-        corners: descriptors,
-        coarse_cols: coarse_w,
-        coarse_rows: coarse_h,
-    }
+    descriptors
+}
+
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "debug",
+        skip(base, cfg),
+        fields(levels = cfg.multiscale.pyramid.num_levels, min_size = cfg.multiscale.pyramid.min_size)
+    )
+)]
+pub fn find_chess_corners(
+    base: ImageView<'_>,
+    cfg: &ChessConfig,
+) -> Vec<CornerDescriptor> {
+    let mut buffers = PyramidBuffers::with_capacity(cfg.multiscale.pyramid.num_levels);
+    find_chess_corners_buff(base, cfg, &mut buffers)
 }
 
 fn merge_corners_simple(corners: &mut Vec<Corner>, radius: f32) -> Vec<Corner> {
@@ -332,9 +314,8 @@ mod tests {
     #[test]
     fn coarse_to_fine_trace_reports_timings() {
         let img = ImageBuffer::new(32, 32);
-        let mut buffers = PyramidBuffers::new();
         let cfg = ChessConfig::default();
-        let res = find_chess_corners_buff(img.as_view(), &cfg, &mut buffers);
-        assert!(res.corners.is_empty());
+        let corners = find_chess_corners(img.as_view(), &cfg);
+        assert!(corners.is_empty());
     }
 }
