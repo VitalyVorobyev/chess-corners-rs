@@ -1,8 +1,21 @@
 //! Unified corner detection (single or multiscale).
 //!
-//! - If `pyramid.num_levels <= 1`, runs single-scale detection on the base.
-//! - Otherwise, runs a coarse detection on the smallest pyramid level, then
-//!   refines each seed in the base image (coarse-to-fine) and merges duplicates.
+//! This module implements the coarse-to-fine detector used by the
+//! `chess-corners` facade. It can:
+//!
+//! - run a single-scale detection when `pyramid.num_levels <= 1`, or
+//! - build an image pyramid, run a coarse detector on the smallest
+//!   level, and refine each seed in the base image (coarse-to-fine)
+//!   before merging duplicates.
+//!
+//! The main entry points are:
+//!
+//! - [`find_chess_corners`] – convenience wrapper that allocates
+//!   pyramid buffers internally and returns [`CornerDescriptor`]
+//!   values in base-image coordinates.
+//! - [`find_chess_corners_buff`] – lower-level helper that accepts a
+//!   caller-provided [`PyramidBuffers`] so you can reuse allocations
+//!   across frames in a tight loop.
 
 use crate::pyramid::{build_pyramid, ImageView, PyramidBuffers, PyramidParams};
 use crate::ChessConfig;
@@ -15,6 +28,7 @@ use rayon::prelude::*;
 #[cfg(feature = "tracing")]
 use tracing::{debug_span, instrument};
 
+/// Parameters controlling the coarse-to-fine multiscale detector.
 #[derive(Clone, Debug)]
 pub struct CoarseToFineParams {
     pub pyramid: PyramidParams,
@@ -43,6 +57,15 @@ impl CoarseToFineParams {
     }
 }
 
+/// Detect corners using a caller-provided pyramid buffer.
+///
+/// - When `cfg.multiscale.pyramid.num_levels <= 1`, this behaves as a
+///   single-scale detector on `base`.
+/// - Otherwise, it builds a pyramid into `buffers`, runs a coarse
+///   detector on the smallest level, refines each coarse seed inside a
+///   base-image ROI, merges near-duplicate corners, and finally
+///   converts them into [`CornerDescriptor`] values sampled at the
+///   full resolution.
 pub fn find_chess_corners_buff(
     base: ImageView<'_>,
     cfg: &ChessConfig,
@@ -241,6 +264,14 @@ pub fn find_chess_corners_buff(
     descriptors
 }
 
+/// Detect corners from a base-level grayscale view, allocating
+/// pyramid storage internally.
+///
+/// This is the high-level entry point used by
+/// [`crate::find_chess_corners_u8`] and the `image` helpers. For
+/// repeated calls on successive frames, prefer
+/// [`find_chess_corners_buff`] with a reusable [`PyramidBuffers`] to
+/// avoid repeated allocations.
 #[cfg_attr(
     feature = "tracing",
     instrument(

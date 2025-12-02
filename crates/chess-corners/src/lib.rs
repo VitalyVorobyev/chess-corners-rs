@@ -47,10 +47,10 @@
 //! // single-scale detection.
 //! cfg.multiscale.pyramid.num_levels = 3;
 //!
-//! let res = find_chess_corners_image(&img, &cfg);
-//! println!("found {} corners", res.corners.len());
+//! let corners = find_chess_corners_image(&img, &cfg);
+//! println!("found {} corners", corners.len());
 //!
-//! for c in &res.corners {
+//! for c in &corners {
 //!     println!(
 //!         "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad, phase {}",
 //!         c.x, c.y, c.response, c.orientation, c.phase,
@@ -65,16 +65,16 @@
 //! detector directly without depending on `image`:
 //!
 //! ```no_run
-//! use chess_corners::{ChessConfig, ChessParams, find_chess_corners};
+//! use chess_corners::{ChessConfig, ChessParams, find_chess_corners_u8};
 //!
 //! # fn detect(img: &[u8], width: u32, height: u32) {
 //! // Single-scale convenience configuration.
 //! let mut cfg = ChessConfig::single_scale();
 //! cfg.params = ChessParams::default();
 //!
-//! let res = find_chess_corners(img, width, height, &cfg);
-//! println!("found {} corners", res.corners.len());
-//! # let _ = res;
+//! let corners = find_chess_corners_u8(img, width, height, &cfg);
+//! println!("found {} corners", corners.len());
+//! # let _ = corners;
 //! # }
 //! ```
 //!
