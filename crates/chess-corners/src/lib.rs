@@ -1,10 +1,133 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-//! Ergonomic wrappers over `chess-corners-core` with optional `image` helpers.
+//! Ergonomic ChESS detector facade over `chess-corners-core`.
 //!
-//! This crate is organized into a few focused modules:
-//! - [`multiscale`] – unified single/multiscale corner finder.
-//! - [`pyramid`] – minimal u8 buffers and downsampling for pyramids.
-//! - optional `image` helpers for `image::GrayImage`.
+//! # Overview
+//!
+//! This crate is the high-level entry point for the ChESS
+//! (Chess-board Extraction by Subtraction and Summation) corner
+//! detector. It re-exports the main configuration/result types
+//! from [`chess_corners_core`] and adds:
+//!
+//! - single-scale detection on raw grayscale buffers via
+//!   [`find_chess_corners`],
+//! - optional `image::GrayImage` helpers (see
+//!   `find_chess_corners_image`) when the `image` feature is
+//!   enabled,
+//! - a coarse-to-fine multiscale detector configured through
+//!   [`ChessConfig`] and [`CoarseToFineParams`].
+//!
+//! The detector returns subpixel [`CornerDescriptor`] values in
+//! full-resolution image coordinates. In most applications you
+//! construct a [`ChessConfig`], optionally tweak its fields, and call
+//! [`find_chess_corners`] or `find_chess_corners_image`.
+//!
+//! # Quick start
+//!
+//! ## Using `image` (default)
+//!
+//! The default feature set includes integration with the `image`
+//! crate:
+//!
+//! ```no_run
+//! use chess_corners::{ChessConfig, ChessParams, find_chess_corners_image};
+//! use image::io::Reader as ImageReader;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Load a grayscale chessboard image.
+//! let img = ImageReader::open("board.png")?
+//!     .decode()?
+//!     .to_luma8();
+//!
+//! // Start from the recommended defaults.
+//! let mut cfg = ChessConfig::default();
+//! cfg.params = ChessParams::default();
+//!
+//! // For a single chessboard in the frame, 2–3 pyramid levels
+//! // are often enough. Setting `num_levels` to 1 forces
+//! // single-scale detection.
+//! cfg.multiscale.pyramid.num_levels = 3;
+//!
+//! let corners = find_chess_corners_image(&img, &cfg);
+//! println!("found {} corners", corners.len());
+//!
+//! for c in &corners {
+//!     println!(
+//!         "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad, phase {}",
+//!         c.x, c.y, c.response, c.orientation, c.phase,
+//!     );
+//! }
+//! # Ok(()) }
+//! ```
+//!
+//! ## Raw grayscale buffer
+//!
+//! If you already have an 8-bit grayscale buffer, you can call the
+//! detector directly without depending on `image`:
+//!
+//! ```no_run
+//! use chess_corners::{ChessConfig, ChessParams, find_chess_corners_u8};
+//!
+//! # fn detect(img: &[u8], width: u32, height: u32) {
+//! // Single-scale convenience configuration.
+//! let mut cfg = ChessConfig::single_scale();
+//! cfg.params = ChessParams::default();
+//!
+//! let corners = find_chess_corners_u8(img, width, height, &cfg);
+//! println!("found {} corners", corners.len());
+//! # let _ = corners;
+//! # }
+//! ```
+//!
+//! For tight processing loops you can also reuse pyramid storage
+//! explicitly via [`find_chess_corners_buff`] and the internal
+//! `pyramid` module; this avoids reallocating intermediate pyramid
+//! levels across frames. Most users should stick to
+//! [`find_chess_corners`] / `find_chess_corners_image` unless they
+//! need fine-grained control over allocations.
+//!
+//! # Configuration
+//!
+//! [`ChessConfig`] combines the low-level ChESS parameters with
+//! multiscale tuning:
+//!
+//! - [`ChessParams`] (re-exported from `chess-corners-core`) controls
+//!   the response kernel and detector behavior: ring radius, relative
+//!   or absolute threshold, non-maximum suppression radius, and the
+//!   minimum cluster size for accepting a corner.
+//! - [`CoarseToFineParams`] describes how the multiscale detector
+//!   behaves: number of pyramid levels, minimum level size, coarse
+//!   ROI radius (at the smallest level) and merge radius for
+//!   deduplicating refined corners.
+//!
+//! The shortcut [`ChessConfig::single_scale`] configures a
+//! single-scale run by setting `multiscale.pyramid.num_levels = 1`.
+//! Any `pyramid.num_levels > 1` triggers the coarse-to-fine path:
+//! corners are first detected on the smallest pyramid level and then
+//! refined inside base-image regions of interest.
+//!
+//! If you need raw response maps or more control, depend directly on
+//! `chess-corners-core` and use its [`chess_corners_core::response`]
+//! and [`chess_corners_core::detect`] modules alongside the
+//! re-exported [`ResponseMap`] and [`CornerDescriptor`] types.
+//!
+//! # Features
+//!
+//! - `image` *(default)* – enables `find_chess_corners_image` and
+//!   `image::GrayImage` integration.
+//! - `rayon` – parallelizes response computation and pyramid
+//!   construction over image rows.
+//! - `simd` – enables portable-SIMD accelerated inner loops for the
+//!   response kernel and pyramid downsampling (requires a nightly
+//!   compiler).
+//! - `tracing` – emits structured spans for multiscale detection,
+//!   suitable for use with `tracing-subscriber` or JSON tracing from
+//!   the CLI.
+//! - `cli` – builds the `chess-corners` binary shipped with this
+//!   crate; it is not required when using the library as a
+//!   dependency.
+//!
+//! The library API is stable across feature combinations; features
+//! only affect performance and observability, not numerical results.
 
 mod multiscale;
 mod pyramid;
@@ -21,7 +144,8 @@ pub mod image;
 pub use image::find_chess_corners_image;
 
 // Multiscale/coarse-to-fine API types.
-pub use crate::multiscale::{find_chess_corners_buff, CoarseToFineParams, CoarseToFineResult};
+pub use crate::multiscale::{find_chess_corners, find_chess_corners_buff, CoarseToFineParams};
+pub use crate::pyramid::{ImageView, PyramidBuffers};
 
 /// Unified detector configuration combining response/detector params and
 /// multiscale/pyramid tuning.
@@ -43,14 +167,13 @@ impl ChessConfig {
 /// Detect chessboard corners from a raw grayscale image buffer.
 ///
 /// The `img` slice must be `width * height` bytes in row-major order.
-pub fn find_chess_corners(
+pub fn find_chess_corners_u8(
     img: &[u8],
     width: u32,
     height: u32,
     cfg: &ChessConfig,
-) -> CoarseToFineResult {
+) -> Vec<CornerDescriptor> {
     let view = pyramid::ImageView::from_u8_slice(width, height, img)
         .expect("image dimensions must match buffer length");
-    let mut buffers = pyramid::PyramidBuffers::with_capacity(cfg.multiscale.pyramid.num_levels);
-    multiscale::find_chess_corners_buff(view, cfg, &mut buffers)
+    multiscale::find_chess_corners(view, cfg)
 }

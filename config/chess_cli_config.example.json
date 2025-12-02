@@ -1,7 +1,5 @@
 {
   "image": "testdata/images/Cam1.png",
-  "mode": "multiscale",
-  "downsample": null,
   "pyramid_levels": 3,
   "min_size": 256,
   "roi_radius":3,

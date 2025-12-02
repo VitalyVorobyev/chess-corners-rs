@@ -1,5 +1,14 @@
-//! Corner descriptor that can be used for chessboard detection
-//! #[cfg(feature = "tracing")]
+//! Corner descriptors and helpers for chessboard detection.
+//!
+//! This module turns raw ChESS corner candidates into richer
+//! [`CornerDescriptor`] values that carry subpixel position,
+//! response, orientation, phase, and a simple anisotropy score.
+//!
+//! The detector in [`crate::detect`] produces intermediate
+//! [`Corner`] values; [`corners_to_descriptors`] then samples the
+//! original image on a ChESS ring around each corner to estimate the
+//! additional attributes using the conventions documented on
+//! [`CornerDescriptor`].
 use crate::ring::ring_offsets;
 #[cfg(feature = "tracing")]
 use tracing::instrument;

@@ -68,9 +68,11 @@ impl ImageBuffer {
 
 /// Reusable backing storage for pyramid construction.
 ///
-/// Call [`PyramidBuffers::prepare_for_image`] once per frame to ensure the
-/// internal buffers match the planned pyramid shape, then pass the same
-/// instance to [`build_pyramid`] to fill those buffers.
+/// Typically you construct a [`PyramidBuffers`] once (for example with
+/// [`PyramidBuffers::with_capacity`]) and reuse it across frames by
+/// passing a mutable reference into higher-level helpers such as
+/// [`crate::find_chess_corners_buff`]. The internal level buffers are
+/// resized on demand to match the requested pyramid shape.
 pub struct PyramidBuffers {
     levels: Vec<ImageBuffer>,
 }

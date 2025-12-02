@@ -1,22 +1,18 @@
 //! Application-level helpers.
 //!
-//! These functions wire up I/O (load image, optional downsampling, JSON/PNG
+//! These functions wire up I/O (load image, JSON/PNG
 //! output) around the `chess` detection APIs so both the CLI and examples can
 //! share the same behavior.
 
 use anyhow::{Context, Result};
 use chess_corners::{find_chess_corners_image, ChessConfig, ChessParams, CoarseToFineParams};
-use image::{
-    imageops::{resize, FilterType},
-    ImageBuffer, ImageReader, Luma,
-};
+use image::{ImageBuffer, ImageReader, Luma};
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Write, path::Path, path::PathBuf};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DetectionConfig {
     pub image: PathBuf,
-    pub downsample: Option<u32>,
     pub pyramid_levels: Option<u8>,
     pub min_size: Option<u32>,
     pub roi_radius: Option<u32>,
@@ -47,62 +43,45 @@ pub struct DetectionDump {
     pub image: String,
     pub width: u32,
     pub height: u32,
-    pub mode: String,
-    pub downsample: Option<u32>,
-    pub pyramid_levels: Option<u8>,
-    pub min_size: Option<u32>,
-    pub roi_radius: Option<u32>,
-    pub merge_radius: Option<f32>,
+    pub pyramid_levels: u8,
+    pub min_size: u32,
+    pub roi_radius: u32,
+    pub merge_radius: f32,
     pub corners: Vec<CornerOut>,
 }
 
 pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
-    if cfg.pyramid_levels.unwrap_or(1) > 1 {
-        run_multiscale(cfg)
-    } else {
-        run_single(cfg)
-    }
-}
-
-fn run_single(cfg: DetectionConfig) -> Result<()> {
-    let downsample = cfg.downsample.unwrap_or(1);
     let img = ImageReader::open(&cfg.image)?.decode()?.to_luma8();
-    let work_img = if downsample > 1 {
-        let w = img.width().div_ceil(downsample);
-        let h = img.height().div_ceil(downsample);
-        resize(&img, w, h, FilterType::Triangle)
-    } else {
-        img.clone()
-    };
 
-    let mut config = ChessConfig::single_scale();
+    // Configure detector: `pyramid_levels` and `min_size` together
+    // determine whether the run is effectively single-scale
+    // (levels <= 1) or multiscale (levels > 1 with a valid pyramid).
+    let mut config = ChessConfig::default();
     apply_params_overrides(&mut config.params, &cfg);
-    apply_multiscale_overrides(&mut config.multiscale, &cfg, Some(1))?;
+    apply_multiscale_overrides(&mut config.multiscale, &cfg)?;
 
-    let res = find_chess_corners_image(&work_img, &config);
-    let mut corners = res.corners;
+    let corners = find_chess_corners_image(&img, &config);
 
-    if downsample > 1 {
-        let s = downsample as f32;
-        for c in &mut corners {
-            c.x *= s;
-            c.y *= s;
+    let levels = config.multiscale.pyramid.num_levels;
+    let min_size = config.multiscale.pyramid.min_size;
+    let roi_radius = config.multiscale.roi_radius;
+    let merge_radius = config.multiscale.merge_radius;
+
+    let json_out = cfg.output_json.unwrap_or_else(|| {
+        if levels <= 1 {
+            cfg.image.with_extension("corners.json")
+        } else {
+            cfg.image.with_extension("multiscale.corners.json")
         }
-    }
-
-    let json_out = cfg
-        .output_json
-        .unwrap_or_else(|| cfg.image.with_extension("corners.json"));
+    });
     let dump = DetectionDump {
         image: cfg.image.to_string_lossy().into_owned(),
         width: img.width(),
         height: img.height(),
-        mode: "single".to_string(),
-        downsample: Some(downsample),
-        pyramid_levels: None,
-        min_size: None,
-        roi_radius: None,
-        merge_radius: None,
+        pyramid_levels: levels,
+        min_size,
+        roi_radius,
+        merge_radius,
         corners: corners
             .iter()
             .map(|c| CornerOut {
@@ -117,55 +96,13 @@ fn run_single(cfg: DetectionConfig) -> Result<()> {
     };
     write_json(&json_out, &dump)?;
 
-    let png_out = cfg
-        .output_png
-        .unwrap_or_else(|| cfg.image.with_extension("corners.png"));
-    let mut vis: ImageBuffer<Luma<u8>, _> = img.clone();
-    draw_corners(&mut vis, dump.corners.iter().map(|c| (c.x, c.y)))?;
-    vis.save(&png_out)?;
-
-    Ok(())
-}
-
-fn run_multiscale(cfg: DetectionConfig) -> Result<()> {
-    let mut config = ChessConfig::default();
-    apply_params_overrides(&mut config.params, &cfg);
-    apply_multiscale_overrides(&mut config.multiscale, &cfg, None)?;
-
-    let img = ImageReader::open(&cfg.image)?.decode()?.to_luma8();
-    let res = find_chess_corners_image(&img, &config);
-
-    let json_out = cfg
-        .output_json
-        .unwrap_or_else(|| cfg.image.with_extension("multiscale.corners.json"));
-    let dump = DetectionDump {
-        image: cfg.image.to_string_lossy().into_owned(),
-        width: img.width(),
-        height: img.height(),
-        mode: "multiscale".to_string(),
-        downsample: None,
-        pyramid_levels: Some(config.multiscale.pyramid.num_levels),
-        min_size: Some(config.multiscale.pyramid.min_size),
-        roi_radius: Some(config.multiscale.roi_radius),
-        merge_radius: Some(config.multiscale.merge_radius),
-        corners: res
-            .corners
-            .iter()
-            .map(|c| CornerOut {
-                x: c.x,
-                y: c.y,
-                response: c.response,
-                orientation: c.orientation,
-                phase: c.phase,
-                anisotropy: c.anisotropy,
-            })
-            .collect(),
-    };
-    write_json(&json_out, &dump)?;
-
-    let png_out = cfg
-        .output_png
-        .unwrap_or_else(|| cfg.image.with_extension("multiscale.corners.png"));
+    let png_out = cfg.output_png.unwrap_or_else(|| {
+        if levels <= 1 {
+            cfg.image.with_extension("corners.png")
+        } else {
+            cfg.image.with_extension("multiscale.corners.png")
+        }
+    });
     let mut vis: ImageBuffer<Luma<u8>, _> = img.clone();
     draw_corners(&mut vis, dump.corners.iter().map(|c| (c.x, c.y)))?;
     vis.save(&png_out)?;
@@ -194,14 +131,8 @@ fn apply_params_overrides(params: &mut ChessParams, cfg: &DetectionConfig) {
     }
 }
 
-fn apply_multiscale_overrides(
-    cf: &mut CoarseToFineParams,
-    cfg: &DetectionConfig,
-    force_levels: Option<u8>,
-) -> Result<()> {
-    if let Some(levels) = force_levels {
-        cf.pyramid.num_levels = levels;
-    } else if let Some(v) = cfg.pyramid_levels {
+fn apply_multiscale_overrides(cf: &mut CoarseToFineParams, cfg: &DetectionConfig) -> Result<()> {
+    if let Some(v) = cfg.pyramid_levels {
         if v == 0 {
             anyhow::bail!("levels must be >= 1");
         }

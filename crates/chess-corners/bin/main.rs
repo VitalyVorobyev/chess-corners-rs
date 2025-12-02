@@ -33,9 +33,6 @@ enum Commands {
     Run {
         /// Path to config JSON.
         config: PathBuf,
-        /// Override downsample factor.
-        #[arg(long)]
-        downsample: Option<u32>,
         /// Override pyramid levels (0 or 1 => single scale).
         #[arg(long)]
         levels: Option<u8>,
@@ -85,7 +82,6 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Run {
             config,
-            downsample,
             levels,
             min_size,
             roi_radius,
@@ -104,9 +100,6 @@ fn main() -> Result<()> {
             #[cfg(feature = "tracing")]
             init_tracing(json_trace);
             let mut cfg = load_config(&config)?;
-            if let Some(v) = downsample {
-                cfg.downsample = Some(v);
-            }
             if let Some(v) = levels {
                 cfg.pyramid_levels = Some(v);
             }
