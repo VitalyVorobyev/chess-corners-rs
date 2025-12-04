@@ -147,7 +147,7 @@ impl Default for PyramidParams {
 #[cfg_attr(
     feature = "tracing",
     instrument(
-        level = "debug",
+        level = "info",
         skip(base, params, buffers),
         fields(levels = params.num_levels, min_size = params.min_size)
     )
@@ -228,25 +228,13 @@ fn downsample_2x_box(src: ImageView<'_>, dst: &mut ImageBuffer) {
     #[cfg(all(feature = "par_pyramid", feature = "rayon", feature = "simd"))]
     return downsample_2x_box_parallel_simd(src, dst);
 
-    #[cfg(all(
-        feature = "par_pyramid",
-        feature = "rayon",
-        not(feature = "simd")
-    ))]
+    #[cfg(all(feature = "par_pyramid", feature = "rayon", not(feature = "simd")))]
     return downsample_2x_box_parallel_scalar(src, dst);
 
-    #[cfg(all(
-        feature = "par_pyramid",
-        not(feature = "rayon"),
-        feature = "simd"
-    ))]
+    #[cfg(all(feature = "par_pyramid", not(feature = "rayon"), feature = "simd"))]
     return downsample_2x_box_simd(src, dst);
 
-    #[cfg(all(
-        feature = "par_pyramid",
-        not(feature = "rayon"),
-        not(feature = "simd")
-    ))]
+    #[cfg(all(feature = "par_pyramid", not(feature = "rayon"), not(feature = "simd")))]
     return downsample_2x_box_scalar(src, dst);
 
     #[cfg(not(feature = "par_pyramid"))]
@@ -278,11 +266,7 @@ fn downsample_2x_box_scalar(src: ImageView<'_>, dst: &mut ImageBuffer) {
     }
 }
 
-#[cfg(all(
-    feature = "par_pyramid",
-    not(feature = "rayon"),
-    feature = "simd"
-))]
+#[cfg(all(feature = "par_pyramid", not(feature = "rayon"), feature = "simd"))]
 fn downsample_2x_box_simd(src: ImageView<'_>, dst: &mut ImageBuffer) {
     debug_assert_eq!(src.width / 2, dst.width);
     debug_assert_eq!(src.height / 2, dst.height);
@@ -304,11 +288,7 @@ fn downsample_2x_box_simd(src: ImageView<'_>, dst: &mut ImageBuffer) {
     }
 }
 
-#[cfg(all(
-    feature = "par_pyramid",
-    feature = "rayon",
-    not(feature = "simd")
-))]
+#[cfg(all(feature = "par_pyramid", feature = "rayon", not(feature = "simd")))]
 fn downsample_2x_box_parallel_scalar(src: ImageView<'_>, dst: &mut ImageBuffer) {
     use rayon::prelude::*;
 
@@ -332,11 +312,7 @@ fn downsample_2x_box_parallel_scalar(src: ImageView<'_>, dst: &mut ImageBuffer) 
         });
 }
 
-#[cfg(all(
-    feature = "par_pyramid",
-    feature = "rayon",
-    feature = "simd"
-))]
+#[cfg(all(feature = "par_pyramid", feature = "rayon", feature = "simd"))]
 fn downsample_2x_box_parallel_simd(src: ImageView<'_>, dst: &mut ImageBuffer) {
     use rayon::prelude::*;
 

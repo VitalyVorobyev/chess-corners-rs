@@ -1,7 +1,4 @@
-#![cfg_attr(
-    all(feature = "simd", feature = "par_pyramid"),
-    feature(portable_simd)
-)]
+#![cfg_attr(all(feature = "simd", feature = "par_pyramid"), feature(portable_simd))]
 //! Ergonomic ChESS detector facade over `chess-corners-core`.
 //!
 //! # Overview
