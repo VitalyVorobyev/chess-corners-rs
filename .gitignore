@@ -2,5 +2,7 @@ target
 testdata
 .DS_Store
 config/config.json
+config/config_single.json
 output.json
 trace.json
+book/book

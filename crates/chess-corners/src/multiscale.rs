@@ -26,7 +26,7 @@ use chess_corners_core::CornerDescriptor;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 #[cfg(feature = "tracing")]
-use tracing::{debug_span, instrument};
+use tracing::{info_span, instrument};
 
 /// Parameters controlling the coarse-to-fine multiscale detector.
 #[derive(Clone, Debug)]
@@ -114,7 +114,7 @@ pub fn find_chess_corners_buff(
 
     // Full detection on coarse level
     #[cfg(feature = "tracing")]
-    let coarse_span = debug_span!("coarse").entered();
+    let coarse_span = info_span!("coarse").entered();
     let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, params);
     let coarse_corners = detect_corners_from_response(&coarse_resp, params);
     #[cfg(feature = "tracing")]
@@ -142,7 +142,7 @@ pub fn find_chess_corners_buff(
     let roi_r = roi_r_base.max(min_roi_r);
 
     #[cfg(feature = "tracing")]
-    let refine_span = debug_span!("refine").entered();
+    let refine_span = info_span!("refine").entered();
 
     let refine_one = |c: Corner| -> Option<Vec<Corner>> {
         // Project coarse coordinate to base image
@@ -253,7 +253,7 @@ pub fn find_chess_corners_buff(
     drop(refine_span);
 
     #[cfg(feature = "tracing")]
-    let merge_span = debug_span!("merge").entered();
+    let merge_span = info_span!("merge").entered();
     let merged = merge_corners_simple(&mut refined, cf.merge_radius);
     #[cfg(feature = "tracing")]
     drop(merge_span);
@@ -273,7 +273,7 @@ pub fn find_chess_corners_buff(
 #[cfg_attr(
     feature = "tracing",
     instrument(
-        level = "debug",
+        level = "info",
         skip(base, cfg),
         fields(levels = cfg.multiscale.pyramid.num_levels, min_size = cfg.multiscale.pyramid.min_size)
     )

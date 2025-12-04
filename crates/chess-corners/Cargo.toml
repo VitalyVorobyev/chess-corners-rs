@@ -13,6 +13,7 @@ image = ["dep:image"]
 rayon = ["chess-corners-core/rayon", "dep:rayon"]  # enable core’s rayon via this feature
 simd = ["chess-corners-core/simd"]
 tracing = ["chess-corners-core/tracing", "dep:tracing"]
+par_pyramid = []  # opt-in gate for SIMD/parallel pyramid downsampling
 cli = []
 
 [[bin]]

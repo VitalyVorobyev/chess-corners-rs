@@ -21,7 +21,8 @@ simple image pyramids. This part describes:
 The multiscale code lives in `crates/chess-corners/src/pyramid.rs`.
 It implements a minimal grayscale pyramid builder tuned for the
 detector’s needs: no color, no arbitrary scaling; just fixed 2×
-downsampling with optional SIMD/`rayon` acceleration.
+downsampling with optional SIMD/`rayon` acceleration when
+`par_pyramid` is enabled.
 
 ### 4.1.1 Image views and buffers
 
@@ -153,13 +154,16 @@ The downsampling kernel is a simple 2×2 **box filter**:
 
 Depending on features:
 
-- without `rayon` and `simd`, `downsample_2x_box_scalar` runs in a
-  single thread with a straightforward loop.
-- with `simd`, `downsample_2x_box_simd` uses portable SIMD to process
-  multiple pixels at once.
-- with `rayon`, `downsample_2x_box_parallel_scalar` splits work over
-  rows; with both `rayon` and `simd`, `downsample_2x_box_parallel_simd`
-  combines row‑level parallelism with SIMD inner loops.
+- without `par_pyramid`, downsampling always uses the scalar
+  single-thread path even if `rayon` / `simd` are enabled elsewhere.
+- with `par_pyramid` but no `rayon`/`simd`, `downsample_2x_box_scalar`
+  runs in a single thread.
+- with `par_pyramid` + `simd`, `downsample_2x_box_simd` uses portable
+  SIMD to process multiple pixels at once.
+- with `par_pyramid` + `rayon`, `downsample_2x_box_parallel_scalar`
+  splits work over rows; with both `rayon` and `simd`,
+  `downsample_2x_box_parallel_simd` combines row-level parallelism with
+  SIMD inner loops.
 
 As with the core ChESS response, all paths are designed to produce
 identical results except for small rounding differences; they only
@@ -420,4 +424,3 @@ the minimal pyramid builder, the coarse‑to‑fine detector, and how to
 choose multiscale parameters. In the next part we will look at
 performance considerations, tracing, and how to integrate the detector
 into larger systems while measuring and tuning its behavior.
-

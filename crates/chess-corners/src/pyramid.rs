@@ -2,8 +2,8 @@
 //!
 //! The API is allocation-friendly: construct a [`PyramidBuffers`] once, then
 //! reuse it to build pyramids for successive frames without re-allocating
-//! intermediate levels. When the `simd` feature is enabled, the 2× box
-//! downsample uses portable SIMD for higher throughput.
+//! intermediate levels. When both the `par_pyramid` and `simd` features are
+//! enabled, the 2× box downsample uses portable SIMD for higher throughput.
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
@@ -147,7 +147,7 @@ impl Default for PyramidParams {
 #[cfg_attr(
     feature = "tracing",
     instrument(
-        level = "debug",
+        level = "info",
         skip(base, params, buffers),
         fields(levels = params.num_levels, min_size = params.min_size)
     )
@@ -221,24 +221,31 @@ pub fn build_pyramid<'a>(
 
 /// Fast 2× downsample with a 2×2 box filter into a pre-allocated destination.
 ///
-/// Uses a SIMD specialization when the `simd` feature is enabled.
+/// Uses SIMD and/or `rayon` specializations when the `par_pyramid`
+/// feature is enabled alongside the relevant flags.
 #[inline]
 fn downsample_2x_box(src: ImageView<'_>, dst: &mut ImageBuffer) {
-    #[cfg(all(feature = "rayon", feature = "simd"))]
+    #[cfg(all(feature = "par_pyramid", feature = "rayon", feature = "simd"))]
     return downsample_2x_box_parallel_simd(src, dst);
 
-    #[cfg(all(feature = "rayon", not(feature = "simd")))]
+    #[cfg(all(feature = "par_pyramid", feature = "rayon", not(feature = "simd")))]
     return downsample_2x_box_parallel_scalar(src, dst);
 
-    #[cfg(all(not(feature = "rayon"), feature = "simd"))]
+    #[cfg(all(feature = "par_pyramid", not(feature = "rayon"), feature = "simd"))]
     return downsample_2x_box_simd(src, dst);
 
-    #[cfg(all(not(feature = "rayon"), not(feature = "simd")))]
+    #[cfg(all(feature = "par_pyramid", not(feature = "rayon"), not(feature = "simd")))]
+    return downsample_2x_box_scalar(src, dst);
+
+    #[cfg(not(feature = "par_pyramid"))]
     return downsample_2x_box_scalar(src, dst);
 }
 
 #[inline]
-#[cfg_attr(feature = "rayon", allow(dead_code))]
+#[cfg_attr(
+    all(feature = "par_pyramid", any(feature = "rayon", feature = "simd")),
+    allow(dead_code)
+)]
 fn downsample_2x_box_scalar(src: ImageView<'_>, dst: &mut ImageBuffer) {
     debug_assert_eq!(src.width / 2, dst.width);
     debug_assert_eq!(src.height / 2, dst.height);
@@ -259,7 +266,7 @@ fn downsample_2x_box_scalar(src: ImageView<'_>, dst: &mut ImageBuffer) {
     }
 }
 
-#[cfg(all(not(feature = "rayon"), feature = "simd"))]
+#[cfg(all(feature = "par_pyramid", not(feature = "rayon"), feature = "simd"))]
 fn downsample_2x_box_simd(src: ImageView<'_>, dst: &mut ImageBuffer) {
     debug_assert_eq!(src.width / 2, dst.width);
     debug_assert_eq!(src.height / 2, dst.height);
@@ -281,7 +288,7 @@ fn downsample_2x_box_simd(src: ImageView<'_>, dst: &mut ImageBuffer) {
     }
 }
 
-#[cfg(all(feature = "rayon", not(feature = "simd")))]
+#[cfg(all(feature = "par_pyramid", feature = "rayon", not(feature = "simd")))]
 fn downsample_2x_box_parallel_scalar(src: ImageView<'_>, dst: &mut ImageBuffer) {
     use rayon::prelude::*;
 
@@ -305,7 +312,7 @@ fn downsample_2x_box_parallel_scalar(src: ImageView<'_>, dst: &mut ImageBuffer) 
         });
 }
 
-#[cfg(all(feature = "rayon", feature = "simd"))]
+#[cfg(all(feature = "par_pyramid", feature = "rayon", feature = "simd"))]
 fn downsample_2x_box_parallel_simd(src: ImageView<'_>, dst: &mut ImageBuffer) {
     use rayon::prelude::*;
 
@@ -330,7 +337,6 @@ fn downsample_2x_box_parallel_simd(src: ImageView<'_>, dst: &mut ImageBuffer) {
 }
 
 #[inline]
-#[cfg_attr(feature = "simd", allow(dead_code))]
 fn downsample_row_scalar(row0: &[u8], row1: &[u8], dst_row: &mut [u8]) {
     let dst_w = dst_row.len();
 
@@ -345,7 +351,7 @@ fn downsample_row_scalar(row0: &[u8], row1: &[u8], dst_row: &mut [u8]) {
     }
 }
 
-#[cfg(feature = "simd")]
+#[cfg(all(feature = "par_pyramid", feature = "simd"))]
 fn downsample_row_simd(row0: &[u8], row1: &[u8], dst_row: &mut [u8]) {
     use std::ops::Shr;
     use std::simd::num::SimdUint;

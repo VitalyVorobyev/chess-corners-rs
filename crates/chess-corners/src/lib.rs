@@ -1,4 +1,4 @@
-#![cfg_attr(feature = "simd", feature(portable_simd))]
+#![cfg_attr(all(feature = "simd", feature = "par_pyramid"), feature(portable_simd))]
 //! Ergonomic ChESS detector facade over `chess-corners-core`.
 //!
 //! # Overview
@@ -114,11 +114,14 @@
 //!
 //! - `image` *(default)* – enables `find_chess_corners_image` and
 //!   `image::GrayImage` integration.
-//! - `rayon` – parallelizes response computation and pyramid
-//!   construction over image rows.
+//! - `rayon` – parallelizes response computation and multiscale
+//!   refinement over image rows. Combine with `par_pyramid` to
+//!   parallelize pyramid downsampling as well.
 //! - `simd` – enables portable-SIMD accelerated inner loops for the
-//!   response kernel and pyramid downsampling (requires a nightly
-//!   compiler).
+//!   response kernel (requires a nightly compiler). Combine with
+//!   `par_pyramid` to SIMD-accelerate pyramid downsampling.
+//! - `par_pyramid` – opt-in gate for SIMD/`rayon` acceleration inside
+//!   the pyramid builder.
 //! - `tracing` – emits structured spans for multiscale detection,
 //!   suitable for use with `tracing-subscriber` or JSON tracing from
 //!   the CLI.

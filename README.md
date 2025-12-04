@@ -16,7 +16,7 @@ The published documentation includes:
 ## Highlights
 - Canonical 16-sample rings (r=5 default, r=10 for heavy blur).
 - Dense response computation plus NMS, minimum-cluster filtering, and 5x5 center-of-mass refinement.
-- Optional `rayon` parallelism and portable SIMD acceleration on the dense response path and pyramid downsampling.
+- Optional `rayon` parallelism and portable SIMD acceleration on the dense response path; pyramid downsampling can also use these when `par_pyramid` is enabled.
 - Three crates:
 - `chess-corners-core`: lean core (std optional) meant to stay SIMD/parallel-friendly.
 - `chess-corners`: ergonomic facade (optionally with `image`/`multiscale` features). Internally uses a minimal u8 image buffer for pyramids; `image` is only pulled in when the feature is enabled.
@@ -76,7 +76,8 @@ coarse-level pixels and is automatically converted to a radius in base pixels,
 with a minimum margin derived from the ChESS detector’s own border logic. Both
 full-frame and ROI response computations honor the `rayon`/`simd` features so
 patch refinement benefits from the same SIMD and parallelism as the dense
-response path.
+response path. Pyramid downsampling stays scalar unless the `par_pyramid`
+feature is enabled alongside `simd` and/or `rayon`.
 
 ## Development
 
@@ -122,6 +123,7 @@ You can override many fields via CLI flags (e.g., `--levels 1 --min_size 64 --ou
 - SIMD and `rayon` are gated by Cargo features:
   - Enable SIMD (nightly only) on the core: `cargo test -p chess-corners-core --features simd`
   - Enable both SIMD and `rayon`: `cargo test -p chess-corners-core --features "simd,rayon"`
+  - Add `par_pyramid` on `chess-corners` to accelerate pyramid downsampling when using those features.
 
 - Tracing: enable structured spans for profiling by turning on the `tracing`
   feature in the libraries, and use env filters with the CLI:
@@ -134,7 +136,7 @@ You can override many fields via CLI flags (e.g., `--levels 1 --min_size 64 --ou
 Implemented:
 - response kernel, ring tables, NMS + thresholding + cluster filter, 5x5 subpixel refinement, image helpers, data-free unit tests, tracing instrumentation
 - multiscale pyramid builder with reusable buffers and coarse-to-fine corner refinement path
-- SIMD acceleration and optional `rayon` parallelism on the response and pyramid paths
+- SIMD acceleration and optional `rayon` parallelism on the response path; pyramid downsampling can opt into SIMD/parallelism via `par_pyramid`
 - CLI tooling and plotting helper for JSON/PNG-based inspection
 
 ## License

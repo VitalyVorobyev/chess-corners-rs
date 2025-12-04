@@ -68,7 +68,7 @@ This repository is a small Rust workspace with two main library crates and a CLI
         - `find_chess_corners_buff` / `find_chess_corners` – coarse‑to‑fine detector using image pyramids.
       - Pyramid internals (`pyramid` module):
         - `ImageView`, `ImageBuffer` – minimal grayscale image view and buffer.
-        - `PyramidParams`, `PyramidBuffers`, `build_pyramid` – reusable image pyramid construction with optional SIMD/`rayon`.
+        - `PyramidParams`, `PyramidBuffers`, `build_pyramid` – reusable image pyramid construction with optional SIMD/`rayon` via the `par_pyramid` feature.
     - Optionally ship a CLI binary for batch runs and visualization.
   - Intended audience:
     - Users who want “just detect chessboard corners” in a Rust image pipeline with minimal boilerplate.
@@ -162,8 +162,9 @@ Both crates use Cargo features to control performance and diagnostics:
 
 - On `chess-corners`:
   - `image` (default) – enable `image::GrayImage` integration and the image-based helpers.
-  - `rayon` – forward `rayon` to the core and enable parallel pyramid downsampling.
-  - `simd` – forward `simd` to the core and enable SIMD downsampling.
+  - `rayon` – forward `rayon` to the core and parallelize multiscale refinement. Combine with `par_pyramid` to parallelize pyramid downsampling.
+  - `simd` – forward `simd` to the core and enable SIMD on the response path (nightly). Combine with `par_pyramid` for SIMD downsampling.
+  - `par_pyramid` – opt-in gate for SIMD/`rayon` acceleration inside the pyramid builder.
   - `tracing` – enable tracing in the core and multiscale layers.
   - `cli` – build the `chess-corners` binary.
 
@@ -177,8 +178,8 @@ chess-corners = { version = "0.1", features = ["image", "rayon"] }
 For example:
 
 - **Default, single-threaded** (simplest): no extra features beyond `image`.
-- **Multi-core scalar**: add `"rayon"` to accelerate response and pyramid building on multi-core machines.
-- **SIMD-accelerated**: enable `"simd"` (and use a nightly compiler) to vectorize the inner loops.
+- **Multi-core scalar**: add `"rayon"` to accelerate response/refinement on multi-core machines; add `"par_pyramid"` as well to parallelize downsampling.
+- **SIMD-accelerated**: enable `"simd"` (and use a nightly compiler) to vectorize the inner loops; add `"par_pyramid"` to apply SIMD to pyramid downsampling too.
 - **Tracing-enabled**: enable `"tracing"` and run with `RUST_LOG` / `tracing-subscriber` to capture spans.
 
 All combinations are designed to produce the **same numerical results**; features only affect performance and observability.
