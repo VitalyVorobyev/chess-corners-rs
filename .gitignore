@@ -6,3 +6,4 @@ config/config_single.json
 output.json
 trace.json
 book/book
+*.pyc

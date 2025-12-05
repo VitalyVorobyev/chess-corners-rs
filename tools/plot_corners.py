@@ -178,8 +178,9 @@ def main() -> None:
 
     ax.set_axis_off()
     fig.tight_layout(pad=0)
-    fig.savefig(out_path, dpi=300, bbox_inches="tight", pad_inches=0)
-    print(f"Saved overlay to {out_path}")
+    if False:
+        fig.savefig(out_path, dpi=300, bbox_inches="tight", pad_inches=0)
+        print(f"Saved overlay to {out_path}")
     plt.show()
 
 
