@@ -8,6 +8,10 @@ repository.workspace = true
 readme = "README.md"
 autobins = false
 
+[lib]
+name = "chess_corners"
+path = "src/lib.rs"
+
 [features]
 default = ["image"]
 image = ["dep:image"]
