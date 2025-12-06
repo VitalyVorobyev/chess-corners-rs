@@ -5,6 +5,11 @@ description = "Core ChESS (Chess-board Extraction by Subtraction and Summation) 
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+
+[lib]
+name = "chess_corners_core"
+path = "src/lib.rs"
 
 [features]
 default = ["std"]

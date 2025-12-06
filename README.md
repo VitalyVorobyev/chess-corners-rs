@@ -19,25 +19,22 @@ The published documentation includes:
 - Canonical 16-sample rings (r=5 default, r=10 for heavy blur).
 - Dense response computation plus NMS, minimum-cluster filtering, and 5x5 center-of-mass refinement.
 - Optional `rayon` parallelism and portable SIMD acceleration on the dense response path; pyramid downsampling can also use these when `par_pyramid` is enabled.
-- Three crates:
-- `chess-corners-core`: lean core (std optional) meant to stay SIMD/parallel-friendly.
-- `chess-corners`: ergonomic facade (optionally with `image`/`multiscale` features). Internally uses a minimal u8 image buffer for pyramids; `image` is only pulled in when the feature is enabled.
-- `chess-corners` binary: CLI for single-scale and multiscale runs.
+- Crates: `chess-corners-core` (lean core, `std` optional) and `chess-corners` (ergonomic facade with optional `image`/multiscale integration and a CLI binary target).
 - Multiscale coarse-to-fine helpers with reusable pyramid buffers.
-- Corner descriptors that include subpixel position, scale, response,
-  orientation, phase, and anisotropy.
-- JSON/PNG output and a small Python helper (`tools/plot_corners.py`) for overlay visualization.
+- Corner descriptors that include subpixel position, scale, response, orientation, phase, and anisotropy.
+- JSON/PNG output and Python helpers under `tools/` for benchmarking and visualization.
 
 ## Quick start
 
 ```rust
-use chess_corners::{find_corners_image, ChessParams};
+use chess_corners::{ChessConfig, ChessParams, find_chess_corners_image};
 use image::io::Reader as ImageReader;
 
 let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-let params = ChessParams::default();
+let mut cfg = ChessConfig::single_scale();
+cfg.params = ChessParams::default();
 
-let corners = find_corners_image(&img, &params);
+let corners = find_chess_corners_image(&img, &cfg);
 println!("found {} corners", corners.len());
 if let Some(c) = corners.first() {
     println!(
@@ -47,7 +44,7 @@ if let Some(c) = corners.first() {
 }
 ```
 
-The `image` feature on `chess-corners` is enabled by default; disable them if you don't want to be dependent on the `ìmage` crate.
+The `image` feature on `chess-corners` is enabled by default; disable it if you don't want a dependency on the `image` crate.
 
 Need timings for profiling? Enable the `tracing` feature.
 
@@ -80,15 +77,15 @@ The config JSON drives both single-scale and multiscale runs:
 {
   "image": "testdata/images/Cam1.png",
   "pyramid_levels": 3,
-  "min_size": 12,
+  "min_size": 64,
   "roi_radius": 12,
   "merge_radius": 2.0,
   "output_json": null,
   "output_png": null,
   "threshold_rel": 0.015,
   "threshold_abs": null,
-  "radius": 5,
-  "descriptor_radius": null,
+  "radius10": false,
+  "descriptor_radius10": null,
   "nms_radius": 1,
   "min_cluster_size": 2,
   "log_level": "info"
@@ -96,7 +93,7 @@ The config JSON drives both single-scale and multiscale runs:
 ```
 
 - `pyramid_levels`, `min_size`, `roi_radius`, `merge_radius`: multiscale controls (`pyramid_levels <= 1` behaves as single-scale; larger values request a multiscale coarse-to-fine run, with `min_size` limiting how deep the pyramid goes)
-- `threshold_rel` / `threshold_abs`, `radius`, `descriptor_radius`, `nms_radius`, `min_cluster_size`: detector + descriptor tuning (`descriptor_radius` falls back to `radius` when null)
+- `threshold_rel` / `threshold_abs`, `radius10`, `descriptor_radius10`, `nms_radius`, `min_cluster_size`: detector + descriptor tuning (`descriptor_radius10` falls back to `radius10` when null)
 - `output_json` / `output_png`: override output paths (defaults next to the image)
 
 You can override many fields via CLI flags (e.g., `--levels 1 --min_size 64 --output_json out.json`).
@@ -122,7 +119,7 @@ Implemented:
 
 ## License
 
-Dual-licensed under MIT or Apache-2.0.
+Licensed under the MIT license (see `Cargo.toml`).
 
 ## References
 

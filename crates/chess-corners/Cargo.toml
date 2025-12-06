@@ -1,10 +1,11 @@
 [package]
 name = "chess-corners"
 version = "0.1.0"
-description = "Ergonomic ChESS detector crate"
+description = "High-level chessboard / ChESS corner detection API"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
 autobins = false
 
 [features]

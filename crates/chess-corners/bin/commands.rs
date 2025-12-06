@@ -187,6 +187,10 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     Ok(())
 }
 
+/// Load a `DetectionConfig` from a JSON file on disk.
+///
+/// The schema matches the fields of [`DetectionConfig`] and is shared between
+/// the CLI and the Python benchmarking scripts under `tools/`.
 pub fn load_config(path: &Path) -> Result<DetectionConfig> {
     let file = File::open(path).with_context(|| format!("opening config {}", path.display()))?;
     let cfg: DetectionConfig = serde_json::from_reader(file)

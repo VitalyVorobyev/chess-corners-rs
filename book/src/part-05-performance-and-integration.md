@@ -1,5 +1,5 @@
-# Part V: Performance
-This part summarizes where the ChESS detector stands today on accuracy and speed (measured on a MacBook Pro M4), how to interpret the traces we emit, and how to integrate the detector into larger pipelines.
+# Part V: Performance, Accuracy, and Integration
+This part summarizes where the ChESS detector stands today on accuracy and speed (measured on a MacBook Pro M4), how well it matches classic OpenCV detectors on a stereo calibration dataset, how to interpret the traces we emit, and how to integrate the detector into larger pipelines.
 
 We took three test images as use cases:
 
@@ -15,41 +15,41 @@ We took three test images as use cases:
 
 ![](img/large_chess.png)
 
-We traced the ChESS detector for each of these images, and the results are discussed in this part. The first image was also used to compare with OpenCV Harris features and the `findChessboardCornersSB` function.
+We traced the ChESS detector for each of these images, and the results are discussed in this part. The first image was also used to compare with OpenCV Harris features and the `findChessboardCornersSB` function. For accuracy, we additionally evaluated the detector on a 2×20‑frame stereo dataset (77 corners per frame).
 
 ## 5.1 Performance
 
-The tests are performed on MacBook Pro M4. The numbers may be very different on your hardware
+The tests below were run on a MacBook Pro M4 (release build). Absolute numbers will vary on your hardware, but the **relative** behavior between configurations is quite stable.
 
-| small | mid | large
-1 level, none | 3.01 | 4.46 | 26.0
-1 level, simd | 1.29 | 1.74 | 10.0
-1 level, rayon | 1.14 | 1.41 | 6.63
-1 level, rayon, simd | 0.92 | 1.15 | 5.34
-------
-3 levels, none | 0.63 | 0.70 | 4.87
-3 levels, simd | 0.40 | 0.42 | 2.77
-3 levels, rayon | 0.48 | 0.52 | 1.94
-3 levels, rayon, simd | 0.49 | 0.54 | 1.59
+Per‑image timings (ms, averaged over 10 runs; see `book/src/perf.txt` and `testdata/out/perf_report.json` for the full breakdown):
 
-Highlights from the timing profiles on small/mid/large images (3-level pyramid vs single-scale):
+| Config           | Features      | small |  mid | large |
+|------------------|--------------|------:|-----:|------:|
+| Single‑scale     | none         | 3.01  | 4.46 | 26.02 |
+| Single‑scale     | simd         | 1.29  | 1.74 | 10.00 |
+| Single‑scale     | rayon        | 1.14  | 1.41 |  6.63 |
+| Single‑scale     | simd+rayon   | 0.92  | 1.15 |  5.34 |
+| Multiscale (3 l) | none         | 0.63  | 0.70 |  4.87 |
+| Multiscale (3 l) | simd         | 0.40  | 0.42 |  2.77 |
+| Multiscale (3 l) | rayon        | 0.48  | 0.52 |  1.94 |
+| Multiscale (3 l) | simd+rayon   | 0.49  | 0.54 |  1.59 |
+
+Highlights from the timing profiles on small/mid/large images:
 
 - **Multiscale** is the clear winner for speed and robustness.
-  - Large image: best total ≈ **1.51 ms** with `simd+rayon` (vs 4.86 ms no features, 1.88 ms `rayon` only).
-  - Mid: best total ≈ **0.41 ms** with `simd` alone (rayon adds overhead on this size).
+  - Large image: best total ≈ **1.6 ms** with `simd+rayon` (vs ≈4.9 ms with no features, ≈1.9 ms with `rayon` only).
+  - Mid: best total ≈ **0.42 ms** with `simd` alone (rayon adds a bit of overhead at this size).
   - Small: best total ≈ **0.40 ms** with `simd`.
   - Breakdown: refine dominates (0.1–3 ms depending on seeds); coarse_detect sits around 0.08–0.75 ms; merge is negligible.
 - **Single-scale** is slower across the board:
-  - Large: ~24.6 ms, mid: ~4.5 ms, small: ~2.9 ms. Use only when you truly need one level.
+  - Large: ≈26 ms, mid: ≈4.5 ms, small: ≈3.0 ms. Use when you need maximal stability and can tollerate some performance drawback.
 - **Feature guidance**:
-  - Enable **simd** by default; it’s the dominant win on all sizes.
+  - Enable **simd** by default; it’s the dominant win on all sizes (although, it requires nightly RUST).
   - Add **rayon** for large inputs (wins on the largest image, minor cost on small/mid).
-  - **par_pyramid** was neutral-to-negative in these runs; keep it off unless profiling shows a gain on your workload.
-  - Trace fields include `total_ms`, `coarse_detect_ms`, `refine_ms`, `merge_ms`, `single_scale_ms`, and seed counts (`refine_seeds`) for the multiscale path.
 
-## 5.1 Comparison with Harrison detector
+## 5.2 Accuracy vs OpenCV
 
-The OpenCV Harris feature detector gives the following result:
+The OpenCV `cornerHarris` gives the following result:
 
 ![](img/mid_harris.png)
 
@@ -57,9 +57,9 @@ Here is the result of the OpenCV `findChessboardCornersSB` function:
 
 ![](img/mid_chessboard.png)
 
-Harris pixel-level feature detection took 3.9 ms. The final result is obtained by using the `cornerSubPix` and manual merge of duplicates. Chessboard detection took about 115 ms. The ChESS detector is much faster as you can see from the table above. Also, it provides corner orientation that can be handy for a grid reconstruction.
+Harris pixel-level feature detection took 3.9 ms. The final result is obtained by using the `cornerSubPix` and manual merge of duplicates. Chessboard detection took about 115 ms. The ChESS detector is much faster as is evident from the previous section. Also, it provides corner orientation that can be handy for a grid reconstruction.
 
-Below we compare the ChESS corners location with the two classical references. We took all images from the [Chessboard Pictures for Stereocamera Calibration](https://www.kaggle.com/datasets/danielwe14/stereocamera-chessboard-pictures) public repository. Below are distributions of pairwise distances between corresponding features:
+Below we compare the ChESS corners location with the two classical references. We took all images from the [Chessboard Pictures for Stereocamera Calibration](https://www.kaggle.com/datasets/danielwe14/stereocamera-chessboard-pictures) public repository as input. Below are distributions of pairwise distances between corresponding features:
 
 ![](img/harris_dist.png)
 
@@ -76,14 +76,6 @@ It is important that the offsets are not biased:
 ![](img/chessboard_dy.png)
 
 Mean values are much smaller than standard deviation.
-
-- Overall pixel error (nearest GT per detection): mean 0.24 px, median 0.22 px, 95th percentile 0.50 px, max 0.84 px across both cameras. Left/right are nearly symmetric (mean 0.23–0.25 px).
-- Per-frame consistency: most frames land in the 0.17–0.26 px mean range; histograms (`error_hist_overall.png`) show a tight unimodal distribution with a short tail.
-- What to look for in the plots:
-  - **Histograms** (`error_hist_left/right/overall.png`) reveal the spread and any skew.
-  - **Scatters** (`error_scatter_*.png`) highlight outlier detections; a few sparse points near 0.8 px are the worst cases.
-- Practical takeaway: at sub-pixel accuracy with <1 px max error, the detector is well within calibration tolerances for typical chessboard-based workflows.
-
 
 ## 5.3 Tracing and diagnostics
 

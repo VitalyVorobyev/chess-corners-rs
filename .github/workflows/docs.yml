@@ -32,7 +32,9 @@ jobs:
           components: rust-docs
 
       - name: Install mdBook
-        run: cargo install mdbook --version ^0.4 --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2

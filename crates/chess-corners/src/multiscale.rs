@@ -235,12 +235,7 @@ pub fn find_chess_corners_buff(
     };
 
     #[cfg(feature = "tracing")]
-    let refine_span = info_span!(
-        "refine",
-        seeds = coarse_corners.len(),
-        roi_r = roi_r
-    )
-    .entered();
+    let refine_span = info_span!("refine", seeds = coarse_corners.len(), roi_r = roi_r).entered();
 
     #[cfg(feature = "rayon")]
     let mut refined: Vec<Corner> = coarse_corners

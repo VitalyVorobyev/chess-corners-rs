@@ -261,6 +261,16 @@ detector settings without recompiling your code. Once you are happy
 with a configuration, you can port the settings into your own Rust
 code using `ChessConfig`, `ChessParams`, and `CoarseToFineParams`.
 
+### 2.3.3 Example overlays
+
+Running the CLI on the sample images in `testdata/` produces overlays like these:
+
+![](img/small_chess.png)
+
+![](img/mid_chess.png)
+
+![](img/large_chess.png)
+
 ---
 
 In this part we focused on the public faces of the detector: the

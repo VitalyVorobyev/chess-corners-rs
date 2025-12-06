@@ -25,6 +25,9 @@
 //!   computation, based on `portable_simd`. This feature currently requires a
 //!   nightly compiler and is intended as a performance optimization; the
 //!   scalar path remains the reference implementation.
+//! - `tracing` – emits structured spans around response and detector functions
+//!   using the [`tracing`](https://docs.rs/tracing) ecosystem, useful for
+//!   profiling and diagnostics.
 //!
 //! Feature combinations:
 //!
@@ -34,9 +37,9 @@
 //! - `rayon + simd` – rows are processed in parallel *and* each row uses the
 //!   SIMD‑accelerated inner loop.
 //!
-//! The detector in [`detect`] is independent of `rayon`/`simd` and runs the
-//! same logic regardless of these features; only the time to produce the dense
-//! response map changes.
+//! The detector in [`detect`] is independent of `rayon`/`simd`, and `tracing`
+//! only adds observability; none of these features change the numerical
+//! results, only performance and instrumentation.
 
 pub mod descriptor;
 pub mod detect;

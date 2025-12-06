@@ -193,10 +193,7 @@ fn refine_com_5x5(resp: &ResponseMap, x: usize, y: usize) -> [f32; 2] {
 }
 
 /// Merge corners within a given radius, keeping the strongest response.
-#[cfg_attr(
-    feature = "tracing",
-    instrument(level = "info", skip(corners))
-)]
+#[cfg_attr(feature = "tracing", instrument(level = "info", skip(corners)))]
 pub fn merge_corners_simple(corners: &mut Vec<Corner>, radius: f32) -> Vec<Corner> {
     let r2 = radius * radius;
     let mut out: Vec<Corner> = Vec::new();

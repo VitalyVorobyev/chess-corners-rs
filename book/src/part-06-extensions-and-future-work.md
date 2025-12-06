@@ -1,17 +1,22 @@
-# Part VI: Extensions and Future Work
+# Part VI: Contributing and experimentation
 
-> Placeholder for future content. This part will discuss possible extensions to the current API and future directions for the project.
+The repository is intended to be a practical reference implementation rather
+than a one‑off experiment. If you are interested in contributing or using it as
+the basis for research:
 
-Planned sections:
+- **Bug reports and feature requests** – if you run into issues on your own
+  images or have feature ideas (e.g., better defaults, new configuration
+  knobs), opening an issue with repro steps and sample data is extremely
+  helpful.
+- **Testing and benchmarks** – the Python helpers under `tools/` and the data
+  in `testdata/` are designed to make it easy to rerun accuracy and performance
+  experiments after code changes. Extending these scripts or adding new
+  datasets is a good way to validate improvements.
+- **Algorithmic experiments** – ChESS is only one point in the design space of
+  chessboard detectors. Variants of the response kernel, alternative refinement
+  strategies, or different multiscale schemes can all be explored while
+  reusing the same benchmarking and visualization tools.
 
-- **6.1 API extensions**
-  - Masks, multiple boards, color support.
-  - Additional descriptors or confidence measures.
-- **6.2 Portability and embedding**
-  - `no_std` scenarios and constrained devices.
-  - Cross-language bindings.
-- **6.3 Contributing and testing**
-  - Contribution guidelines.
-  - Testing strategy and coverage.
-  - Ideas for further research and experimentation.
-
+If you do build something interesting on top of this project—new bindings,
+specialized pipelines, or improved kernels—consider sharing it back so that
+other users can benefit and compare results on a common set of tools.
