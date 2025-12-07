@@ -1,8 +1,8 @@
 # chess-corners-rs
 
-[![CI](https://github.com/VitalyVorobyev/chess-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-rs/actions/workflows/ci.yml)
-[![Security audit](https://github.com/VitalyVorobyev/chess-rs/actions/workflows/audit.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-rs/actions/workflows/audit.yml)
-[![Docs](https://github.com/VitalyVorobyev/chess-rs/actions/workflows/docs.yml/badge.svg)](https://vitalyvorobyev.github.io/chess-rs/)
+[![CI](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/ci.yml)
+[![Security audit](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/audit.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/audit.yml)
+[![Docs](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/docs.yml/badge.svg)](https://vitalyvorobyev.github.io/chess-corners-rs/)
 
 Rust implementation of the [**ChESS**](https://arxiv.org/abs/1301.5491) (Chess-board Extraction by Subtraction and Summation) corner detector.
 
@@ -20,11 +20,29 @@ The published documentation includes:
 ## Highlights
 - Canonical 16-sample rings (r=5 default, r=10 for heavy blur).
 - Dense response computation plus NMS, minimum-cluster filtering, and 5x5 center-of-mass refinement.
-- Optional `rayon` parallelism and portable SIMD acceleration on the dense response path; pyramid downsampling can also use these when `par_pyramid` is enabled.
-- Crates: `chess-corners-core` (lean core, `std` optional) and `chess-corners` (ergonomic facade with optional `image`/multiscale integration and a CLI binary target).
+- Optional `rayon` parallelism and portable SIMD acceleration (requires nightly RUST channel) on the dense response path.
+- Crates: `chess-corners-core` (lean core) and `chess-corners` (ergonomic facade with optional `image`/multiscale integration and a CLI binary target).
 - Multiscale coarse-to-fine helpers with reusable pyramid buffers.
 - Corner descriptors that include subpixel position, scale, response, orientation, phase, and anisotropy.
 - JSON/PNG output and Python helpers under `tools/` for benchmarking and visualization.
+
+## Installation
+
+Add the high-level facade crate to your `Cargo.toml`:
+
+```toml
+[dependencies]
+chess-corners = "0.1"
+```
+
+If you need direct access to the low-level response / detector stages, you can also depend on the core crate:
+
+```toml
+[dependencies]
+chess-corners-core = "0.1"
+```
+
+The `chess-corners` crate enables the `image` feature by default so you can work with `image::GrayImage`; disable it if you prefer to stay on raw buffers.
 
 ## Quick start
 
@@ -94,8 +112,8 @@ The config JSON drives both single-scale and multiscale runs:
   "output_png": null,
   "threshold_rel": 0.2,
   "threshold_abs": null,
-  "radius10": false,
-  "descriptor_radius10": null,
+  "radius": 5,
+  "descriptor_radius": null,
   "nms_radius": 2,
   "min_cluster_size": 2,
   "log_level": "info"
@@ -103,7 +121,7 @@ The config JSON drives both single-scale and multiscale runs:
 ```
 
 - `pyramid_levels`, `min_size`, `roi_radius`, `merge_radius`: multiscale controls (`pyramid_levels <= 1` behaves as single-scale; larger values request a multiscale coarse-to-fine run, with `min_size` limiting how deep the pyramid goes)
-- `threshold_rel` / `threshold_abs`, `radius10`, `descriptor_radius10`, `nms_radius`, `min_cluster_size`: detector + descriptor tuning (`descriptor_radius10` falls back to `radius10` when null)
+- `threshold_rel` / `threshold_abs`, `radius` / `descriptor_radius`, `nms_radius`, `min_cluster_size`: detector + descriptor tuning (`descriptor_radius` falls back to `radius` when null)
 - `output_json` / `output_png`: override output paths (defaults next to the image)
 
 You can override many fields via CLI flags (e.g., `--levels 1 --min_size 64 --output_json out.json`).

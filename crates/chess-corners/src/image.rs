@@ -11,6 +11,7 @@ use image::GrayImage;
 /// [`ImageView`] from `img` and dispatches to single- or multiscale
 /// mode based on `cfg.multiscale.pyramid.num_levels`, returning
 /// [`CornerDescriptor`] values in full-resolution pixel coordinates.
+#[must_use]
 pub fn find_chess_corners_image(img: &GrayImage, cfg: &ChessConfig) -> Vec<CornerDescriptor> {
     let view =
         ImageView::from_u8_slice(img.width(), img.height(), img.as_raw()).expect("valid view");

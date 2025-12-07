@@ -1,10 +1,13 @@
 [package]
 name = "chess-corners-core"
-version = "0.1.1"
+version = "0.1.2"
 description = "Core ChESS (Chess-board Extraction by Subtraction and Summation) response + corner candidates"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+documentation = "https://vitalyvorobyev.github.io/chess-corners-rs/api/chess_corners_core"
+homepage = "https://vitalyvorobyev.github.io/chess-corners-rs"
+keywords = ["chessboard", "chess-corners", "corner-detection", "computer-vision", "image-processing"]
 readme = "README.md"
 
 [lib]

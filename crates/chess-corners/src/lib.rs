@@ -154,7 +154,11 @@ pub use crate::pyramid::{ImageView, PyramidBuffers};
 /// multiscale/pyramid tuning.
 #[derive(Clone, Debug, Default)]
 pub struct ChessConfig {
+    /// Low-level ChESS response/detector parameters (ring radius, thresholds,
+    /// NMS radius, minimum cluster size).
     pub params: ChessParams,
+    /// Coarse-to-fine multiscale configuration (pyramid shape, ROI radius,
+    /// merge radius).
     pub multiscale: CoarseToFineParams,
 }
 
@@ -170,6 +174,11 @@ impl ChessConfig {
 /// Detect chessboard corners from a raw grayscale image buffer.
 ///
 /// The `img` slice must be `width * height` bytes in row-major order.
+///
+/// # Panics
+///
+/// Panics if `img.len() != width * height`.
+#[must_use]
 pub fn find_chess_corners_u8(
     img: &[u8],
     width: u32,

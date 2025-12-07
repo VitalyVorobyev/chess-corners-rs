@@ -21,6 +21,13 @@ pub struct DetectionConfig {
     pub output_png: Option<PathBuf>,
     pub threshold_rel: Option<f32>,
     pub threshold_abs: Option<f32>,
+    /// Optional absolute ring radius (5 or 10) for the detector.
+    /// When present, this maps to `ChessParams::use_radius10` (10 ⇒ true, 5 ⇒ false).
+    pub radius: Option<u32>,
+    /// Optional absolute ring radius (5 or 10) for descriptors.
+    /// When present, this maps to `ChessParams::descriptor_use_radius10`
+    /// (10 ⇒ Some(true), 5 ⇒ Some(false)).
+    pub descriptor_radius: Option<u32>,
     pub radius10: Option<bool>,
     pub descriptor_radius10: Option<bool>,
     pub nms_radius: Option<u32>,
@@ -57,7 +64,7 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
     // determine whether the run is effectively single-scale
     // (levels <= 1) or multiscale (levels > 1 with a valid pyramid).
     let mut config = ChessConfig::default();
-    apply_params_overrides(&mut config.params, &cfg);
+    apply_params_overrides(&mut config.params, &cfg)?;
     apply_multiscale_overrides(&mut config.multiscale, &cfg)?;
 
     let corners = find_chess_corners_image(&img, &config);
@@ -110,7 +117,24 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
     Ok(())
 }
 
-fn apply_params_overrides(params: &mut ChessParams, cfg: &DetectionConfig) {
+fn apply_params_overrides(params: &mut ChessParams, cfg: &DetectionConfig) -> Result<()> {
+    // Radius overrides from config JSON (preferred for config files).
+    if let Some(r) = cfg.radius {
+        match r {
+            5 => params.use_radius10 = false,
+            10 => params.use_radius10 = true,
+            other => anyhow::bail!("radius must be 5 or 10 (got {other})"),
+        }
+    }
+    if let Some(r) = cfg.descriptor_radius {
+        match r {
+            5 => params.descriptor_use_radius10 = Some(false),
+            10 => params.descriptor_use_radius10 = Some(true),
+            other => anyhow::bail!("descriptor_radius must be 5 or 10 (got {other})"),
+        }
+    }
+
+    // Boolean overrides (typically from CLI flags) take precedence.
     if let Some(r) = cfg.radius10 {
         params.use_radius10 = r;
     }
@@ -129,6 +153,8 @@ fn apply_params_overrides(params: &mut ChessParams, cfg: &DetectionConfig) {
     if let Some(m) = cfg.min_cluster_size {
         params.min_cluster_size = m;
     }
+
+    Ok(())
 }
 
 fn apply_multiscale_overrides(cf: &mut CoarseToFineParams, cfg: &DetectionConfig) -> Result<()> {

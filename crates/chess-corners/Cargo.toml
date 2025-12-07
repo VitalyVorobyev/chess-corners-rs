@@ -1,10 +1,13 @@
 [package]
 name = "chess-corners"
-version = "0.1.1"
+version = "0.1.2"
 description = "High-level chessboard / ChESS corner detection API"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+documentation = "https://vitalyvorobyev.github.io/chess-corners-rs/api/chess_corners"
+homepage = "https://vitalyvorobyev.github.io/chess-corners-rs"
+keywords = ["chessboard", "chess-corners", "corner-detection", "computer-vision", "image-processing"]
 readme = "README.md"
 autobins = false
 
@@ -27,7 +30,7 @@ path = "bin/main.rs"
 required-features = ["image"]
 
 [dependencies]
-chess-corners-core = { path = "../chess-corners-core", version = "0.1.1" }
+chess-corners-core = { path = "../chess-corners-core", version = "0.1.2" }
 image = { version = "0.25", optional = true }
 log = "0.4"
 anyhow = "1"
