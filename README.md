@@ -51,7 +51,7 @@ use chess_corners::{ChessConfig, find_chess_corners_image};
 use image::io::Reader as ImageReader;
 
 let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-let mut cfg = ChessConfig::single_scale();
+let cfg = ChessConfig::single_scale();
 
 let corners = find_chess_corners_image(&img, &cfg);
 println!("found {} corners", corners.len());
@@ -62,8 +62,6 @@ if let Some(c) = corners.first() {
     );
 }
 ```
-
-The `image` feature on `chess-corners` is enabled by default; disable it if you don't want a dependency on the `image` crate.
 
 Need timings for profiling? Enable the `tracing` feature.
 
