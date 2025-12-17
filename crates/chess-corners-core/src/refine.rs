@@ -59,7 +59,7 @@ pub enum RefinerKind {
 
 impl Default for RefinerKind {
     fn default() -> Self {
-        Self::Forstner(ForstnerConfig::default())
+        Self::CenterOfMass(CenterOfMassConfig::default())
     }
 }
 
@@ -279,9 +279,9 @@ impl CornerRefiner for ForstnerRefiner {
                 a01 += w * gxgy;
                 a11 += w * gygy;
 
-                // b = -Σ w g gᵀ p  (derivation from minimizing first-moment error)
-                bx -= w * (gxgx * px + gxgy * py);
-                by -= w * (gxgy * px + gygy * py);
+                // b = Σ w g gᵀ p  (derivation from minimizing first-moment error)
+                bx += w * (gxgx * px + gxgy * py);
+                by += w * (gxgy * px + gygy * py);
             }
         }
 
@@ -329,7 +329,7 @@ impl CornerRefiner for ForstnerRefiner {
             };
         }
 
-        let score = det / (trace + 1e-6);
+        let score = det / (trace * trace + 1e-6);
         RefineResult::accepted([seed_xy[0] + ux, seed_xy[1] + uy], score)
     }
 }

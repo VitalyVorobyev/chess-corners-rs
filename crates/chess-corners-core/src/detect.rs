@@ -45,10 +45,6 @@ pub fn find_corners_u8_with_refiner(
 /// Useful if you want to reuse the response map for debugging or tuning. Honors
 /// relative vs absolute thresholds, enforces the configurable NMS radius, and
 /// rejects isolated responses via `min_cluster_size`.
-#[cfg_attr(
-    feature = "tracing",
-    instrument(level = "debug", skip(resp, params), fields(w = resp.w, h = resp.h))
-)]
 pub fn detect_corners_from_response(resp: &ResponseMap, params: &ChessParams) -> Vec<Corner> {
     let mut refiner = Refiner::from_kind(params.refiner.clone());
     detect_corners_from_response_with_refiner(resp, params, None, &mut refiner)
@@ -64,6 +60,10 @@ pub fn detect_corners_from_response_with_refiner(
     detect_corners_from_response_impl(resp, params, image, refiner)
 }
 
+#[cfg_attr(
+    feature = "tracing",
+    instrument(level = "info", skip(resp, params, image, refiner), fields(w = resp.w, h = resp.h))
+)]
 fn detect_corners_from_response_impl(
     resp: &ResponseMap,
     params: &ChessParams,
