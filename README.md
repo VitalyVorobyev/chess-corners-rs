@@ -23,10 +23,10 @@ recommended 3-level multiscale pipeline:
 
 | Features      | 720×540 | 1200×900 | 2048×1536 |
 |---------------|--------:|---------:|----------:|
-| none          | 0.63 ms | 0.70 ms  | 4.87 ms   |
-| `simd`        | 0.40 ms | 0.42 ms  | 2.77 ms   |
-| `rayon`       | 0.48 ms | 0.52 ms  | 1.94 ms   |
-| `simd+rayon`  | 0.49 ms | 0.54 ms  | 1.59 ms   |
+| none          | 0.6 ms | 0.7 ms  | 4.9 ms   |
+| `simd`        | 0.4 ms | 0.4 ms  | 2.8 ms   |
+| `rayon`       | 0.5 ms | 0.5 ms  | 1.9 ms   |
+| `simd+rayon`  | 0.5 ms | 0.5 ms  | 1.6 ms   |
 
 (`simd` uses portable SIMD and currently requires a nightly Rust toolchain.)
 
@@ -34,12 +34,8 @@ On a public stereo chessboard dataset, the mean nearest-neighbor distance to
 OpenCV’s `findChessboardCornersSB` corners is ≈ **0.21 px** (see the book for
 methodology and plots).
 
-For context, on the same 1200×900 benchmark image, OpenCV
-`findChessboardCornersSB` took ≈ **115 ms** in our setup, while the ChESS
-multiscale pipeline stayed under 1 ms.
-
-See `book/src/part-05-performance-and-integration.md` for the full breakdown,
-OpenCV comparisons, and how to reproduce the numbers with `tools/perf_bench.py`.
+See [`book/src/part-05-performance-and-integration.md`](book/src/part-05-performance-and-integration.md) for the full breakdown,
+OpenCV comparisons, and how to reproduce the numbers with [`tools/perf_bench.py`](tools/perf_bench.py).
 
 The published documentation includes:
 
