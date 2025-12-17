@@ -102,7 +102,7 @@ pub fn chess_response_u8(img: &[u8], w: usize, h: usize, params: &ChessParams) -
     // rayon path compiled only when feature is enabled
     #[cfg(feature = "rayon")]
     {
-        return compute_response_parallel(img, w, h, params);
+        compute_response_parallel(img, w, h, params)
     }
     #[cfg(not(feature = "rayon"))]
     {
@@ -423,8 +423,8 @@ fn compute_row_range_simd(
 
         // Sum of ring values (for neighbor mean)
         let mut sum_ring_v = I32s::splat(0);
-        for k in 0..16 {
-            sum_ring_v += s[k].cast::<i32>();
+        for &v in &s {
+            sum_ring_v += v.cast::<i32>();
         }
 
         // SR
@@ -451,7 +451,7 @@ fn compute_row_range_simd(
         // Per-lane local mean + final response
         for lane in 0..LANES {
             let xx = x + lane;
-            let px = (xx - x_start) as usize;
+            let px = xx - x_start;
 
             // center + 4-neighborhood (scalar) at base resolution
             let c = img[y_usize * w + xx] as f32;

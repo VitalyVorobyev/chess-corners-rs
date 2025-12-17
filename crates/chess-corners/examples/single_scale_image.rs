@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn print_corner(label: &str, c: &CornerDescriptor) {
     println!(
-        "{label}: ({:.2}, {:.2}), response {:.1}, theta {:.2} rad, phase {}, anisotropy {:.3}",
-        c.x, c.y, c.response, c.orientation, c.phase, c.anisotropy
+        "{label}: ({:.2}, {:.2}), response {:.1}, theta {:.2} rad",
+        c.x, c.y, c.response, c.orientation
     );
 }

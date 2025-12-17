@@ -62,7 +62,7 @@ pub fn detect_corners_from_response_with_refiner(
 
 #[cfg_attr(
     feature = "tracing",
-    instrument(level = "info", skip(resp, params, image, refiner), fields(w = resp.w, h = resp.h))
+    instrument(level = "debug", skip(resp, params, image, refiner), fields(w = resp.w, h = resp.h))
 )]
 fn detect_corners_from_response_impl(
     resp: &ResponseMap,
@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn descriptors_report_orientation_and_phase() {
+    fn descriptors_report_orientation_is_stable() {
         let size = 32u32;
         let params = ChessParams {
             threshold_rel: 0.01,
@@ -287,7 +287,13 @@ mod tests {
             .expect("non-empty brighter");
 
         assert!((best.x - best_brighter.x).abs() < 0.5 && (best.y - best_brighter.y).abs() < 0.5);
-        assert_eq!(best.phase, best_brighter.phase);
+
+        let dtheta = (best.orientation - best_brighter.orientation).abs();
+        let dtheta = dtheta.min(core::f32::consts::PI - dtheta);
+        assert!(
+            dtheta < 0.35,
+            "unexpected orientation delta after brightness shift: {dtheta}"
+        );
     }
 
     #[test]

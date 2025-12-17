@@ -114,24 +114,15 @@ pub fn find_chess_corners_buff_with_refiner(
         #[cfg(feature = "tracing")]
         let single_span =
             info_span!("single_scale", w = lvl.img.width, h = lvl.img.height).entered();
-        let resp = chess_response_u8(
-            lvl.img.data,
-            lvl.img.width as usize,
-            lvl.img.height as usize,
-            params,
-        );
-        let refine_view = ImageView::from_u8_slice(
-            lvl.img.width as usize,
-            lvl.img.height as usize,
-            lvl.img.data,
-        )
-        .expect("image dimensions must match buffer length");
+        let resp = chess_response_u8(lvl.img.data, lvl.img.width, lvl.img.height, params);
+        let refine_view = ImageView::from_u8_slice(lvl.img.width, lvl.img.height, lvl.img.data)
+            .expect("image dimensions must match buffer length");
         let mut raw = detect_with_refiner_kind(&resp, params, Some(refine_view), refiner);
         let merged = merge_corners_simple(&mut raw, cf.merge_radius);
         let desc = corners_to_descriptors(
             lvl.img.data,
-            lvl.img.width as usize,
-            lvl.img.height as usize,
+            lvl.img.width,
+            lvl.img.height,
             params.descriptor_ring_radius(),
             merged,
         );
@@ -140,8 +131,8 @@ pub fn find_chess_corners_buff_with_refiner(
         return desc;
     }
 
-    let base_w = base.width as usize;
-    let base_h = base.height as usize;
+    let base_w = base.width;
+    let base_h = base.height;
     let base_w_i = base_w as i32;
     let base_h_i = base_h as i32;
 
@@ -151,8 +142,8 @@ pub fn find_chess_corners_buff_with_refiner(
         .last()
         .expect("pyramid levels are non-empty after earlier check");
 
-    let coarse_w = coarse_lvl.img.width as usize;
-    let coarse_h = coarse_lvl.img.height as usize;
+    let coarse_w = coarse_lvl.img.width;
+    let coarse_h = coarse_lvl.img.height;
 
     #[cfg(feature = "tracing")]
     let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();

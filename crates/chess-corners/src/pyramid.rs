@@ -22,7 +22,7 @@ impl ImageBuffer {
         Self {
             width,
             height,
-            data: vec![0; width.saturating_mul(height) as usize],
+            data: vec![0; width.saturating_mul(height)],
         }
     }
 
@@ -215,9 +215,9 @@ fn downsample_2x_box_scalar(src: ImageView<'_>, dst: &mut ImageBuffer) {
     debug_assert_eq!(src.width / 2, dst.width);
     debug_assert_eq!(src.height / 2, dst.height);
 
-    let src_w = src.width as usize;
-    let dst_w = dst.width as usize;
-    let dst_h = dst.height as usize;
+    let src_w = src.width;
+    let dst_w = dst.width;
+    let dst_h = dst.height;
 
     for y in 0..dst_h {
         let row0 = (y * 2) * src_w;
@@ -236,9 +236,9 @@ fn downsample_2x_box_simd(src: ImageView<'_>, dst: &mut ImageBuffer) {
     debug_assert_eq!(src.width / 2, dst.width);
     debug_assert_eq!(src.height / 2, dst.height);
 
-    let src_w = src.width as usize;
-    let dst_w = dst.width as usize;
-    let dst_h = dst.height as usize;
+    let src_w = src.width;
+    let dst_w = dst.width;
+    let dst_h = dst.height;
 
     for y_out in 0..dst_h {
         let y0 = 2 * y_out;
@@ -260,8 +260,8 @@ fn downsample_2x_box_parallel_scalar(src: ImageView<'_>, dst: &mut ImageBuffer) 
     debug_assert_eq!(src.width / 2, dst.width);
     debug_assert_eq!(src.height / 2, dst.height);
 
-    let src_w = src.width as usize;
-    let dst_w = dst.width as usize;
+    let src_w = src.width;
+    let dst_w = dst.width;
 
     dst.data
         .par_chunks_mut(dst_w)
@@ -284,8 +284,8 @@ fn downsample_2x_box_parallel_simd(src: ImageView<'_>, dst: &mut ImageBuffer) {
     debug_assert_eq!(src.width / 2, dst.width);
     debug_assert_eq!(src.height / 2, dst.height);
 
-    let src_w = src.width as usize;
-    let dst_w = dst.width as usize;
+    let src_w = src.width;
+    let dst_w = dst.width;
 
     dst.data
         .par_chunks_mut(dst_w)

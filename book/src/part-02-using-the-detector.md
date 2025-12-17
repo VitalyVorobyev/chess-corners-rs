@@ -72,8 +72,8 @@ core crate. You can inspect the fields like this:
 ```rust
 for c in &corners {
     println!(
-        "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad, phase {}, anisotropy {:.3}",
-        c.x, c.y, c.response, c.orientation, c.phase, c.anisotropy,
+        "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad",
+        c.x, c.y, c.response, c.orientation,
     );
 }
 ```
@@ -88,17 +88,10 @@ Important details:
   corner.
 - `orientation` – orientation of one of the grid axes in radians,
   in `[0, π)`. The other axis is at `orientation + π/2`.
-- `phase` – a small discrete code (0–3) that encodes which quadrants
-  are darker/brighter. This can help distinguish inverted boards or
-  reason about pattern polarity.
-- `anisotropy` – a rough “corner‑likeness” measure based on local
-  gradients. Higher values correspond to more corner‑like structures
-  as opposed to flat or blob‑like regions.
 
 For basic camera calibration workflows you can often treat `response`
-as a confidence score and ignore `phase` and `anisotropy`. For more
-advanced quality checks, those extra fields can be used to filter or
-weight corners.
+as a confidence score and use `orientation` mainly for grid fitting
+or downstream topology checks.
 
 ### 2.1.3 Tweaking `ChessParams`
 
@@ -246,8 +239,7 @@ The CLI produces:
   - basic metadata (image path, width, height),
   - the multiscale configuration actually used (`pyramid_levels`,
     `min_size`, `roi_radius`, `merge_radius`), and
-  - an array of corners with `x`, `y`, `response`, `orientation`,
-    `phase`, and `anisotropy`.
+  - an array of corners with `x`, `y`, `response`, and `orientation`.
 - A PNG image with the detected corners drawn as small white squares
   over the original image.
 

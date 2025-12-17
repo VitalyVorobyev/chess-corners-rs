@@ -26,8 +26,18 @@ def plot_chess_corners(
     xs = [c.x for c in corner]
     ys = [c.y for c in corner]
 
-    phase_palette = ["#e63946", "#1d3557", "#2a9d8f", "#f4a261"]
-    colors = [phase_palette[c.phase % len(phase_palette)] for c in corner]
+    responses = np.array([c.response for c in corner], dtype=float)
+    if responses.size:
+        r_min = float(responses.min())
+        r_max = float(responses.max())
+        denom = r_max - r_min
+        if denom <= 1e-12:
+            t = np.zeros_like(responses)
+        else:
+            t = (responses - r_min) / denom
+        colors = plt.get_cmap("viridis")(t)
+    else:
+        colors = "#1d3557"
 
     if show_orientation:
         arrow_us = [np.cos(c.orientation) * arrow_length for c in corner]

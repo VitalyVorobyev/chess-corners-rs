@@ -11,8 +11,6 @@ class ChESSCorner:
     y: float
     response: float
     orientation: float
-    phase: int
-    anisotropy: float | None = None
     scale: float | None = None
 
     def to_json(self):

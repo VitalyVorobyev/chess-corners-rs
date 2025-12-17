@@ -23,7 +23,7 @@ The published documentation includes:
 - Optional `rayon` parallelism and portable SIMD acceleration (requires nightly RUST channel) on the dense response path.
 - Crates: `chess-corners-core` (lean core) and `chess-corners` (ergonomic facade with optional `image`/multiscale integration and a CLI binary target).
 - Multiscale coarse-to-fine helpers with reusable pyramid buffers.
-- Corner descriptors that include subpixel position, scale, response, orientation, phase, and anisotropy.
+- Corner descriptors that include subpixel position, response, and orientation.
 - JSON/PNG output and Python helpers under `tools/` for benchmarking and visualization.
 
 ## Installation
@@ -57,8 +57,8 @@ let corners = find_chess_corners_image(&img, &cfg);
 println!("found {} corners", corners.len());
 if let Some(c) = corners.first() {
     println!(
-        "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad, phase {}",
-        c.x, c.y, c.response, c.orientation, c.phase
+        "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad",
+        c.x, c.y, c.response, c.orientation
     );
 }
 ```

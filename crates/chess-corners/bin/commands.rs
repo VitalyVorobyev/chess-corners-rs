@@ -63,8 +63,6 @@ pub struct CornerOut {
     pub y: f32,
     pub response: f32,
     pub orientation: f32,
-    pub phase: u8,
-    pub anisotropy: f32,
 }
 
 #[derive(Serialize)]
@@ -118,8 +116,6 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
                 y: c.y,
                 response: c.response,
                 orientation: c.orientation,
-                phase: c.phase,
-                anisotropy: c.anisotropy,
             })
             .collect(),
     };

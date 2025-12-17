@@ -549,8 +549,8 @@ mod tests {
         let oy = offset.1;
         for y in 0..size {
             for x in 0..size {
-                let xf = x as f32 + 0.5 - ox;
-                let yf = y as f32 + 0.5 - oy;
+                let xf = x as f32 - ox;
+                let yf = y as f32 - oy;
                 let dark_quad = (xf >= 0.0 && yf >= 0.0) || (xf < 0.0 && yf < 0.0);
                 img[y * size + x] = if dark_quad { dark } else { bright };
             }

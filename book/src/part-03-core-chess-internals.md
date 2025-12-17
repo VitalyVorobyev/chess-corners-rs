@@ -242,7 +242,7 @@ like calibration.
 
 Raw corners (position + strength) are enough for many applications,
 but the core crate also offers a richer `CornerDescriptor` type that
-includes orientation, phase, and a simple anisotropy measure.
+includes an estimated grid orientation.
 
 ### 3.4.1 `CornerDescriptor`
 
@@ -254,8 +254,6 @@ pub struct CornerDescriptor {
     pub y: f32,
     pub response: f32,
     pub orientation: f32,
-    pub phase: u8,
-    pub anisotropy: f32,
 }
 ```
 
@@ -266,10 +264,6 @@ Fields:
 - `orientation` – orientation of one grid axis at the corner, in
   radians, constrained to `[0, π)`. The other axis is at
   `orientation + π/2`.
-- `phase` – a small discrete code (0..3) describing which quadrants
-  are darker or brighter, useful for reasoning about board polarity.
-- `anisotropy` – a scalar derived from local gradients that indicates
-  how corner‑like the structure is (higher is more corner‑like).
 
 ### 3.4.2 From corners to descriptors
 
@@ -293,12 +287,6 @@ turns raw `Corner` values into full descriptors by:
    (`estimate_orientation_from_ring`). This essentially measures a
    second‑harmonic over the ring’s angular positions to find the
    dominant grid axis.
-3. Deriving phase from the orientation
-   (`estimate_phase_from_orientation`), mapping continuous angles into
-   a few discrete cases.
-4. Estimating anisotropy from gradients in a small window around the
-   corner (`estimate_corner_anisotropy`), using a det/trace²‑style
-   proxy.
 
 All these steps are deterministic, local computations on the original
 grayscale image and its immediate neighborhood.
@@ -314,9 +302,9 @@ You get `CornerDescriptor` values when you use the high‑level APIs:
   `find_chess_corners_u8`, or the multiscale APIs.
 
 For many tasks, you might only use `x`, `y`, and `response`. When you
-need more insight into local structure (e.g., rejecting corners with
-poor anisotropy, or checking board polarity), orientation, phase, and
-anisotropy become very useful.
+need more insight into local structure (for example, fitting a grid or
+doing downstream topology checks), the `orientation` estimate can be
+useful.
 
 ---
 
@@ -326,4 +314,3 @@ computed, how the detector turns responses into subpixel candidates,
 and how those candidates are enriched into descriptors. In the next
 part we will build on this by examining the multiscale pyramids and
 coarse‑to‑fine refinement pipeline in more detail.
-

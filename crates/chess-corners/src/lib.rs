@@ -52,8 +52,8 @@
 //!
 //! for c in &corners {
 //!     println!(
-//!         "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad, phase {}",
-//!         c.x, c.y, c.response, c.orientation, c.phase,
+//!         "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad",
+//!         c.x, c.y, c.response, c.orientation,
 //!     );
 //! }
 //! # Ok(()) }

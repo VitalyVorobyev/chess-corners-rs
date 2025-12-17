@@ -49,7 +49,7 @@ This repository is a small Rust workspace with two main library crates and a CLI
     - Define the core types:
       - `ChessParams` – tunable parameters for the response and detector (ring radius, thresholds, NMS radius, minimum cluster size).
       - `ResponseMap` – a simple `w × h` `Vec<f32>` wrapper for the response.
-      - `CornerDescriptor` – a rich corner description with subpixel position, response, orientation, discrete phase, and a simple anisotropy score.
+      - `CornerDescriptor` – a rich corner description with subpixel position, response, and orientation.
     - Stay lean and portable: `no_std` is supported when the `std` feature is disabled.
   - Intended audience:
     - Users who need maximum control, want to integrate with custom image types, or want to experiment with the ChESS math and detector pipeline directly.
