@@ -4,17 +4,36 @@
 [![Security audit](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/audit.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/audit.yml)
 [![Docs](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/docs.yml/badge.svg)](https://vitalyvorobyev.github.io/chess-corners-rs/)
 
-Fast, deterministic Rust implementation of the [**ChESS**](https://arxiv.org/abs/1301.5491)
+Fast Rust implementation of the [**ChESS**](https://arxiv.org/abs/1301.5491)
 (Chess-board Extraction by Subtraction and Summation) corner detector.
 
 ![](book/src/img/mid_chess.png)
 
 ([image source](https://www.kaggle.com/datasets/danielwe14/stereocamera-chessboard-pictures))
 
-ChESS is a classical, ID-free **feature detector** for chessboard / checkerboard
-**X-junction** corners (including ChArUco-style boards). This workspace focuses
-on **deterministic outputs**, **subpixel accuracy**, and **real-time
+ChESS is a classical (not ML) **feature detector** for chessboard
+**X-junction** corners. This project focuses
+on **convenient use**, **subpixel accuracy**, and **real-time
 performance** (scalar, `rayon`, and portable SIMD paths).
+
+## Quick start
+
+```rust
+use chess_corners::{ChessConfig, find_chess_corners_image};
+use image::ImageReader;
+
+let img = ImageReader::open("board.png")?.decode()?.to_luma8();
+let cfg = ChessConfig::single_scale();
+
+let corners = find_chess_corners_image(&img, &cfg);
+println!("found {} corners", corners.len());
+if let Some(c) = corners.first() {
+    println!(
+        "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad",
+        c.x, c.y, c.response, c.orientation
+    );
+}
+```
 
 ## Performance snapshot
 
@@ -31,7 +50,7 @@ recommended 3-level multiscale pipeline:
 (`simd` uses portable SIMD and currently requires a nightly Rust toolchain.)
 
 On a public stereo chessboard dataset, the mean nearest-neighbor distance to
-OpenCV’s `findChessboardCornersSB` corners is ≈ **0.21 px** (see the book for
+OpenCV’s `findChessboardCornersSB` corners is below ≈ **0.2 px** (see the book for
 methodology and plots).
 
 See [`book/src/part-05-performance-and-integration.md`](book/src/part-05-performance-and-integration.md) for the full breakdown,
@@ -68,36 +87,6 @@ chess-corners-core = "0.2"
 ```
 
 The `chess-corners` crate enables the `image` feature by default so you can work with `image::GrayImage`; disable it if you prefer to stay on raw buffers.
-
-## Quick start
-
-```rust
-use chess_corners::{ChessConfig, find_chess_corners_image};
-use image::ImageReader;
-
-let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-let cfg = ChessConfig::single_scale();
-
-let corners = find_chess_corners_image(&img, &cfg);
-println!("found {} corners", corners.len());
-if let Some(c) = corners.first() {
-    println!(
-        "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad",
-        c.x, c.y, c.response, c.orientation
-    );
-}
-```
-
-Need timings for profiling? Enable the `tracing` feature.
-
-The multiscale path uses a coarse detector on the smallest pyramid level and
-refines each seed in a base-image ROI. The ROI radius is specified in
-coarse-level pixels and is automatically converted to a radius in base pixels,
-with a minimum margin derived from the ChESS detector’s own border logic. Both
-full-frame and ROI response computations honor the `rayon`/`simd` features so
-patch refinement benefits from the same SIMD and parallelism as the dense
-response path. Pyramid downsampling stays scalar unless the `par_pyramid`
-feature is enabled alongside `simd` and/or `rayon`.
 
 ### Examples
 
@@ -144,9 +133,18 @@ The config JSON drives both single-scale and multiscale runs:
 }
 ```
 
-- `pyramid_levels`, `min_size`, `roi_radius`, `merge_radius`: multiscale controls (`pyramid_levels <= 1` behaves as single-scale; larger values request a multiscale coarse-to-fine run, with `min_size` limiting how deep the pyramid goes)
-- `threshold_rel` / `threshold_abs`, `refiner`, `radius` / `descriptor_radius`, `nms_radius`, `min_cluster_size`: detector + descriptor tuning (`refiner` accepts `center_of_mass`, `forstner`, or `saddle_point`; `descriptor_radius` falls back to `radius` when null)
-- `output_json` / `output_png`: override output paths (defaults next to the image)
+- **Multiscale control**
+  - `pyramid_levels`: number of pyramid levels (`<= 1` behaves as single-scale; larger values enable coarse-to-fine refinementn
+  - `min_size`: smallest image size allowed in the pyramid (limits how deep the pyramid goes)
+  - `roi_radius`, `merge_radius`: multiscale refinement and deduplication
+- **Detection and refinement**
+  - `threshold_rel` / `threshold_abs`: response thresholding (relative thresholding is recommended in most cases)
+  - `refiner`: subpixel refinement method (`center_of_mass`, `forstner`, or `saddle_point`)
+  - `radius`: detection support radius: `5` or `10`
+  - `descriptor_radius`: descriptor support radius (defaults to `radius` when null)
+  - `nms_radius`, `min_cluster_size`: suppression and clustering
+- **Output**
+  - `output_json` / `output_png`: override output paths (defaults next to the image)
 
 You can override many fields via CLI flags (e.g., `--levels 1 --min_size 64 --output_json out.json`).
 
@@ -181,13 +179,9 @@ only need to touch a few knobs:
 
 ## Status
 
-Implemented:
-- response kernel, ring tables, NMS + thresholding + cluster filter, 5x5 subpixel refinement, image helpers, data-free unit tests, tracing instrumentation
-- multiscale pyramid builder with reusable buffers and coarse-to-fine corner refinement path
-- SIMD acceleration and optional `rayon` parallelism on the response path; pyramid downsampling can opt into SIMD/parallelism via `par_pyramid`
-- CLI tooling and plotting helper for JSON/PNG-based inspection
+Stable, ready to use, published on [`crates.io`](https://crates.io/crates/chess-corners). Public API still may change, mostly by changing parameters set. User feedback is very welcome (create an issue or write me).
 
-For contribution rules see [AGENTS.md](./AGENTS.md).
+For contribution rules see [CONTRIBUTING.md](./CONTRIBUTING.md) and [AGENTS.md](./AGENTS.md).
 
 ## License
 
