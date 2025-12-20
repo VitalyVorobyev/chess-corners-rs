@@ -35,6 +35,44 @@ if let Some(c) = corners.first() {
 }
 ```
 
+## Configuring `ChessConfig` (Rust API)
+
+`find_chess_corners_image` (enabled by the default `image` feature) is configured via `ChessConfig`, a small struct that groups:
+
+- `cfg.params: ChessParams` — ChESS response + detector knobs (ring radius, thresholding, NMS/clustering, and the subpixel refiner).
+- `cfg.multiscale: CoarseToFineParams` — coarse-to-fine pyramid settings (levels/min size) plus ROI/merge tuning for multiscale refinement.
+
+Single-scale vs multiscale is controlled by `cfg.multiscale.pyramid.num_levels`:
+
+- `<= 1`: single-scale detection (same as `ChessConfig::single_scale()`).
+- `> 1`: coarse-to-fine detection (the default `ChessConfig::default()` uses 3 levels).
+
+Common knobs you may want to adjust:
+
+- Sensitivity: `cfg.params.threshold_rel` (recommended) or `cfg.params.threshold_abs` (absolute override).
+- Blur / very small boards: `cfg.params.use_radius10 = true` (uses the r=10 ring instead of r=5).
+- Subpixel refinement: `cfg.params.refiner = RefinerKind::Forstner(ForstnerConfig::default())` (alternatives: `CenterOfMass`, `SaddlePoint`).
+- Multiscale trade-offs: `cfg.multiscale.pyramid.min_size`, `cfg.multiscale.refinement_radius`, `cfg.multiscale.merge_radius`.
+
+Example:
+
+```rust
+use chess_corners::{ChessConfig, ForstnerConfig, RefinerKind, find_chess_corners_image};
+use image::ImageReader;
+
+let img = ImageReader::open("board.png")?.decode()?.to_luma8();
+
+let mut cfg = ChessConfig::default(); // default: 3-level multiscale
+cfg.params.threshold_rel = 0.15;
+cfg.params.refiner = RefinerKind::Forstner(ForstnerConfig::default());
+
+// Force single-scale:
+// cfg.multiscale.pyramid.num_levels = 1;
+
+let corners = find_chess_corners_image(&img, &cfg);
+println!("found {} corners", corners.len());
+```
+
 ## Performance snapshot
 
 Measured on a MacBook Pro M4 (release build, averaged over 10 runs) using the
@@ -118,15 +156,15 @@ The config JSON drives both single-scale and multiscale runs:
   "image": "testimages/mid.png",
   "pyramid_levels": 3,
   "min_size": 64,
-  "roi_radius": 3,
+  "refinement_radius": 3,
   "merge_radius": 3.0,
   "output_json": null,
   "output_png": null,
   "threshold_rel": 0.2,
   "threshold_abs": null,
   "refiner": "forstner",
-  "radius": 5,
-  "descriptor_radius": null,
+  "radius10": false,
+  "descriptor_radius10": null,
   "nms_radius": 2,
   "min_cluster_size": 2,
   "log_level": "info"
@@ -134,14 +172,14 @@ The config JSON drives both single-scale and multiscale runs:
 ```
 
 - **Multiscale control**
-  - `pyramid_levels`: number of pyramid levels (`<= 1` behaves as single-scale; larger values enable coarse-to-fine refinementn
+  - `pyramid_levels`: number of pyramid levels (`<= 1` behaves as single-scale; larger values enable coarse-to-fine refinement)
   - `min_size`: smallest image size allowed in the pyramid (limits how deep the pyramid goes)
-  - `roi_radius`, `merge_radius`: multiscale refinement and deduplication
+  - `refinement_radius`, `merge_radius`: multiscale refinement and deduplication
 - **Detection and refinement**
   - `threshold_rel` / `threshold_abs`: response thresholding (relative thresholding is recommended in most cases)
   - `refiner`: subpixel refinement method (`center_of_mass`, `forstner`, or `saddle_point`)
-  - `radius`: detection support radius: `5` or `10`
-  - `descriptor_radius`: descriptor support radius (defaults to `radius` when null)
+  - `radius10`: use the larger r=10 ring instead of the canonical r=5 ring
+  - `descriptor_radius10`: optional r=10 override for descriptors (when null, follows `radius10`)
   - `nms_radius`, `min_cluster_size`: suppression and clustering
 - **Output**
   - `output_json` / `output_png`: override output paths (defaults next to the image)
@@ -158,12 +196,12 @@ only need to touch a few knobs:
   - `min_size`: controls how deep the pyramid goes; smaller values allow detecting smaller boards but cost more.
   - `threshold_rel`: main sensitivity knob (lower = more corners, higher = fewer/stronger corners).
   - `refiner`: `forstner` / `saddle_point` can improve localization vs `center_of_mass` (trade-offs depend on blur/noise).
-  - `radius`: use `10` for heavy blur / very small boards; otherwise `5`.
-  - `roi_radius` + `merge_radius` (multiscale): increase `roi_radius` if refinement misses corners; adjust `merge_radius` (typically `2–3`) if you see duplicates.
+  - `radius10`: set `true` for heavy blur / very small boards; otherwise keep `false`.
+  - `refinement_radius` + `merge_radius` (multiscale): increase `refinement_radius` if refinement misses corners; adjust `merge_radius` (typically `2–3`) if you see duplicates.
 
-- **Usually don’t touch**
+  - **Usually don’t touch**
   - `threshold_abs`: keep `null` unless you have a controlled pipeline and want a fixed absolute threshold (relative is more exposure/contrast robust).
-  - `descriptor_radius`: keep `null` so descriptors use the same ring radius as detection (avoids accidental mismatches).
+  - `descriptor_radius10`: keep `null` (or omit) so descriptors follow the detector ring radius (avoids accidental mismatches).
   - `nms_radius` / `min_cluster_size`: leave defaults unless you’re deliberately trading recall vs noise; these are easy to overtune.
 
 - SIMD and `rayon` are gated by Cargo features:

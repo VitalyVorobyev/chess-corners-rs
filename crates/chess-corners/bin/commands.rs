@@ -17,7 +17,7 @@ pub struct DetectionConfig {
     pub image: PathBuf,
     pub pyramid_levels: Option<u8>,
     pub min_size: Option<u32>,
-    pub roi_radius: Option<u32>,
+    pub refinement_radius: Option<u32>,
     pub merge_radius: Option<f32>,
     pub output_json: Option<PathBuf>,
     pub output_png: Option<PathBuf>,
@@ -25,13 +25,6 @@ pub struct DetectionConfig {
     pub threshold_abs: Option<f32>,
     /// Subpixel refiner selection (center_of_mass, forstner, saddle_point).
     pub refiner: Option<RefinerMethod>,
-    /// Optional absolute ring radius (5 or 10) for the detector.
-    /// When present, this maps to `ChessParams::use_radius10` (10 ⇒ true, 5 ⇒ false).
-    pub radius: Option<u32>,
-    /// Optional absolute ring radius (5 or 10) for descriptors.
-    /// When present, this maps to `ChessParams::descriptor_use_radius10`
-    /// (10 ⇒ Some(true), 5 ⇒ Some(false)).
-    pub descriptor_radius: Option<u32>,
     pub radius10: Option<bool>,
     pub descriptor_radius10: Option<bool>,
     pub nms_radius: Option<u32>,
@@ -72,7 +65,7 @@ pub struct DetectionDump {
     pub height: u32,
     pub pyramid_levels: u8,
     pub min_size: u32,
-    pub roi_radius: u32,
+    pub refinement_radius: u32,
     pub merge_radius: f32,
     pub corners: Vec<CornerOut>,
 }
@@ -91,7 +84,7 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
 
     let levels = config.multiscale.pyramid.num_levels;
     let min_size = config.multiscale.pyramid.min_size;
-    let roi_radius = config.multiscale.roi_radius;
+    let refinement_radius = config.multiscale.refinement_radius;
     let merge_radius = config.multiscale.merge_radius;
 
     let json_out = cfg.output_json.unwrap_or_else(|| {
@@ -107,7 +100,7 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
         height: img.height(),
         pyramid_levels: levels,
         min_size: min_size as u32,
-        roi_radius,
+        refinement_radius,
         merge_radius,
         corners: corners
             .iter()
@@ -136,23 +129,6 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
 }
 
 fn apply_params_overrides(params: &mut ChessParams, cfg: &DetectionConfig) -> Result<()> {
-    // Radius overrides from config JSON (preferred for config files).
-    if let Some(r) = cfg.radius {
-        match r {
-            5 => params.use_radius10 = false,
-            10 => params.use_radius10 = true,
-            other => anyhow::bail!("radius must be 5 or 10 (got {other})"),
-        }
-    }
-    if let Some(r) = cfg.descriptor_radius {
-        match r {
-            5 => params.descriptor_use_radius10 = Some(false),
-            10 => params.descriptor_use_radius10 = Some(true),
-            other => anyhow::bail!("descriptor_radius must be 5 or 10 (got {other})"),
-        }
-    }
-
-    // Boolean overrides (typically from CLI flags) take precedence.
     if let Some(r) = cfg.radius10 {
         params.use_radius10 = r;
     }
@@ -192,11 +168,11 @@ fn apply_multiscale_overrides(cf: &mut CoarseToFineParams, cfg: &DetectionConfig
         }
         cf.pyramid.min_size = v as usize;
     }
-    if let Some(v) = cfg.roi_radius {
+    if let Some(v) = cfg.refinement_radius {
         if v == 0 {
-            anyhow::bail!("roi radius must be >= 1");
+            anyhow::bail!("refinement radius must be >= 1");
         }
-        cf.roi_radius = v;
+        cf.refinement_radius = v;
     }
     if let Some(v) = cfg.merge_radius {
         if v <= 0.0 {

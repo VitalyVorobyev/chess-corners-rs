@@ -192,14 +192,14 @@ The main configuration structure is:
 pub struct CoarseToFineParams {
     pub pyramid: PyramidParams,
     /// ROI radius at the coarse level (ignored when num_levels <= 1).
-    pub roi_radius: u32,
+    pub refinement_radius: u32,
     pub merge_radius: f32,
 }
 ```
 
 - `pyramid` – controls how many levels are built and how small the
   smallest level is allowed to be.
-- `roi_radius` – radius of the ROI around each coarse corner in the
+- `refinement_radius` – radius of the ROI around each coarse corner in the
   **coarse‑level** pixels; internally converted to a base‑level radius
   using the pyramid scale.
 - `merge_radius` – radius in base‑image coordinates used to merge
@@ -209,8 +209,8 @@ pub struct CoarseToFineParams {
 `CoarseToFineParams::default()` provides a reasonable starting point:
 
 - 3 pyramid levels with minimum size 128,
-- ROI radius 12 at the coarse level (scaled up at the base),
-- merge radius 2.0 pixels.
+- ROI radius 3 at the coarse level (scaled up at the base; with 3 levels this is ≈12 px at full resolution),
+- merge radius 3.0 pixels.
 
 ### 4.2.2 The `find_chess_corners_buff` workflow
 
@@ -246,7 +246,7 @@ It proceeds in several steps:
      - map its coordinates up to base image space,
      - skip corners too close to the base image border (to keep enough
        room for the ring and refinement window),
-     - convert `cfg.multiscale.roi_radius` from coarse pixels to base
+     - convert `cfg.multiscale.refinement_radius` from coarse pixels to base
        pixels, enforcing a minimum based on the detector’s border
        requirements,
      - clamp the ROI to keep it entirely within safe bounds,
@@ -302,7 +302,7 @@ The behavior of the multiscale detector is driven primarily by
 
 - `pyramid.num_levels`,
 - `pyramid.min_size`,
-- `roi_radius`,
+- `refinement_radius`,
 - `merge_radius`.
 
 Here are some practical guidelines and starting points.
@@ -348,7 +348,7 @@ Recommendations:
 
 ### 4.3.3 ROI radius
 
-`roi_radius` is specified in **coarse‑level pixels** and converted to
+`refinement_radius` is specified in **coarse‑level pixels** and converted to
 base‑level pixels using the pyramid scale. Internally, the code also
 enforces a minimum ROI radius that respects:
 
@@ -367,7 +367,7 @@ Smaller ROIs:
 - are faster,
 - assume coarse positions are already fairly accurate.
 
-The default `roi_radius = 12` is a reasonable compromise. Increase it
+The default `refinement_radius = 3` is a reasonable compromise. Increase it
 if you see coarse corners that consistently refine to the wrong
 locations; decrease it if performance is tight and coarse positions
 are already good.
@@ -396,22 +396,22 @@ Some example presets:
 
   - `num_levels = 3`
   - `min_size = 128`–`256`
-  - `roi_radius = 12`
-  - `merge_radius = 2.0`
+  - `refinement_radius = 3`
+  - `merge_radius = 3.0`
 
 - **Fast single-scale**:
 
   - `num_levels = 1`
   - `min_size` ignored (no pyramid)
-  - `roi_radius` / `merge_radius` unused
+  - `refinement_radius` / `merge_radius` unused
 
 - **Robust small‑board detection**:
 
   - `num_levels = 3`–`4`
   - `min_size` tuned so the smallest level still has a handful of
     pixels per square (e.g., 64–128)
-  - `roi_radius` slightly larger (e.g., 16)
-  - `merge_radius` around 2.0–2.5
+  - `refinement_radius` slightly larger (e.g., 4–5)
+  - `merge_radius` around 2.0–3.0
 
 Once you’ve chosen parameters that work well for your dataset, you can
 encode them in your `ChessConfig` for library use or in a CLI config

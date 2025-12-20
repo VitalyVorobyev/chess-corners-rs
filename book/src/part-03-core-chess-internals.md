@@ -242,7 +242,7 @@ like calibration.
 
 Raw corners (position + strength) are enough for many applications,
 but the core crate also offers a richer `CornerDescriptor` type that
-includes an estimated grid orientation.
+includes an estimated corner orientation.
 
 ### 3.4.1 `CornerDescriptor`
 
@@ -261,9 +261,7 @@ Fields:
 
 - `x`, `y` – subpixel coordinates in full‑resolution image pixels.
 - `response` – ChESS response at the corner, copied from `Corner`.
-- `orientation` – orientation of one grid axis at the corner, in
-  radians, constrained to `[0, π)`. The other axis is at
-  `orientation + π/2`.
+- `orientation` – orientation of the corner — defined as the direction along the bisector of the light square — in radians, constrained to `[0, π)`.
 
 ### 3.4.2 From corners to descriptors
 

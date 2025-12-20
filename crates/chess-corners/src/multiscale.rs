@@ -37,7 +37,7 @@ pub struct CoarseToFineParams {
     /// ROI radius at the coarse level (ignored when `pyramid.num_levels <= 1`).
     /// Expressed in coarse-level pixels and automatically scaled to the base
     /// image, with a minimum enforced to keep refinement away from borders.
-    pub roi_radius: u32,
+    pub refinement_radius: u32,
     /// Radius (in base-image pixels) used to merge near-duplicate refined
     /// corners after coarse-to-fine refinement.
     pub merge_radius: f32,
@@ -50,7 +50,7 @@ impl Default for CoarseToFineParams {
             // Smaller coarse-level ROI around each coarse prediction. With the
             // default 3-level pyramid this maps to roughly a 12px radius
             // (~25px window) at the base resolution.
-            roi_radius: 3,
+            refinement_radius: 3,
             // merge duplicates within ~3 pixels
             merge_radius: 3.0,
         }
@@ -171,7 +171,7 @@ pub fn find_chess_corners_buff_with_refiner(
     // Convert the user-provided ROI radius (expressed in coarse-level pixels)
     // to base-image pixels. Enforce a minimum radius that leaves interior room
     // beyond the detector's own border margin so refinement can run.
-    let roi_r_base = (cf.roi_radius as f32 / coarse_lvl.scale).ceil() as i32;
+    let roi_r_base = (cf.refinement_radius as f32 / coarse_lvl.scale).ceil() as i32;
     let min_roi_r = border + 2;
     let roi_r = roi_r_base.max(min_roi_r);
 

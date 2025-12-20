@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Default behavior remains center-of-mass refinement, but the detector wiring now routes through the refiner abstraction; refinement window radius is driven by the selected refiner.
-- `_with_kind` detector helpers are removed in favor of `ChessParams::refiner`; `ChessConfig::refiner` is dropped, so set the params field (or use the `_with_refiner` helpers) to override per call.
+- The `CornerDescriptor` structure simplifed: fields `phase` and `anysotropy` are gone. Only essential `x`, `y`, `response`, and `orientation` stay.
+- CLI config schema simplified: `radius` / `descriptor_radius` are removed in favor of boolean `radius10` / `descriptor_radius10`.
+- CLI config naming: `roi_radius` is renamed to `refinement_radius`.
 
 ## [0.1.2]
 

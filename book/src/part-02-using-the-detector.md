@@ -21,7 +21,7 @@ Make sure your `Cargo.toml` has:
 
 ```toml
 [dependencies]
-chess-corners = "0.1"
+chess-corners = "0.2"
 image = "0.25"
 ```
 
@@ -43,8 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_luma8();
 
     // 2. Start from a single-scale configuration.
-    let mut cfg = ChessConfig::single_scale();
-    cfg.params = ChessParams::default();
+    let cfg = ChessConfig::single_scale();
 
     // 3. Run the detector.
     let corners = find_chess_corners_image(&img, &cfg);
@@ -215,7 +214,7 @@ The exact fields are defined by `DetectionConfig` in
 `crates/chess-corners/bin/commands.rs`. The example config under
 `config/` documents common settings:
 
-- `pyramid_levels`, `min_size`, `roi_radius`, `merge_radius` –
+- `pyramid_levels`, `min_size`, `refinement_radius`, `merge_radius` –
   multiscale controls (mapped onto `CoarseToFineParams`; with
   `pyramid_levels <= 1` the detector behaves as single‑scale, and
   larger values request a coarse‑to‑fine multiscale run, bounded by
@@ -238,7 +237,7 @@ The CLI produces:
 - A JSON file containing:
   - basic metadata (image path, width, height),
   - the multiscale configuration actually used (`pyramid_levels`,
-    `min_size`, `roi_radius`, `merge_radius`), and
+    `min_size`, `refinement_radius`, `merge_radius`), and
   - an array of corners with `x`, `y`, `response`, and `orientation`.
 - A PNG image with the detected corners drawn as small white squares
   over the original image.

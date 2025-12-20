@@ -24,10 +24,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let corners = chess_corners::find_chess_corners_image(&img, &cfg);
     println!("image: {}", img_path.display());
     println!(
-        "multiscale: levels={}, min_size={}, roi_radius={}, merge_radius={}",
+        "multiscale: levels={}, min_size={}, refinement_radius={}, merge_radius={}",
         cfg.multiscale.pyramid.num_levels,
         cfg.multiscale.pyramid.min_size,
-        cfg.multiscale.roi_radius,
+        cfg.multiscale.refinement_radius,
         cfg.multiscale.merge_radius
     );
     println!("found {} corners", corners.len());

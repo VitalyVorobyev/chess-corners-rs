@@ -33,15 +33,15 @@ enum Commands {
     Run {
         /// Path to config JSON.
         config: PathBuf,
-        /// Override pyramid levels (0 or 1 => single scale).
+        /// Override pyramid levels (1 => single scale, >=2 => multiscale).
         #[arg(long)]
         levels: Option<u8>,
         /// Override pyramid min size.
         #[arg(long)]
         min_size: Option<u32>,
-        /// Override ROI radius (coarse pixels).
+        /// Override refinement radius (coarse pixels).
         #[arg(long)]
-        roi_radius: Option<u32>,
+        refinement_radius: Option<u32>,
         /// Override merge radius.
         #[arg(long)]
         merge_radius: Option<f32>,
@@ -84,7 +84,7 @@ fn main() -> Result<()> {
             config,
             levels,
             min_size,
-            roi_radius,
+            refinement_radius,
             merge_radius,
             output_json,
             output_png,
@@ -106,8 +106,8 @@ fn main() -> Result<()> {
             if let Some(v) = min_size {
                 cfg.min_size = Some(v);
             }
-            if let Some(v) = roi_radius {
-                cfg.roi_radius = Some(v);
+            if let Some(v) = refinement_radius {
+                cfg.refinement_radius = Some(v);
             }
             if let Some(v) = merge_radius {
                 cfg.merge_radius = Some(v);
