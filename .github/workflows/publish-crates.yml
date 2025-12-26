@@ -1,0 +1,71 @@
+name: Publish Rust crates (crates.io)
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    # Needed for OIDC -> crates.io token exchange
+    permissions:
+      id-token: write
+      contents: read
+
+    # Optional but recommended: match this in crates.io Trusted Publisher config
+    environment: crates-io
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Verify versions match tag (vX.Y.Z)
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
+
+          CORE_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-core") | .version')"
+          MAIN_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners") | .version')"
+
+          echo "tag version:   $VER"
+          echo "core version:  $CORE_VER"
+          echo "main version:  $MAIN_VER"
+
+          test "$CORE_VER" = "$VER"
+          test "$MAIN_VER" = "$VER"
+
+      - name: Test workspace
+        run: cargo test --workspace
+
+      - name: Authenticate to crates.io via Trusted Publishing (OIDC)
+        id: cratesio
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish chess-corners-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.cratesio.outputs.token }}
+        run: cargo publish -p chess-corners-core --locked
+
+      # crates.io indexing can lag; retry publishing the dependent crate
+      - name: Publish chess-corners (retry)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.cratesio.outputs.token }}
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            echo "Attempt $attempt: publishing chess-corners..."
+            if cargo publish -p chess-corners --locked; then
+              exit 0
+            fi
+            echo "Publish failed (likely waiting for index). Sleeping 20s..."
+            sleep 20
+          done
+          echo "Failed to publish chess-corners after retries."
+          exit 1
