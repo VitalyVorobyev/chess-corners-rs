@@ -1,0 +1,26 @@
+[build-system]
+requires = ["maturin>=1.4"]
+build-backend = "maturin"
+
+[project]
+name = "chess_corners"
+version = "0.2.1"
+description = "Python bindings for the fast ChESS chessboard corner detector (Rust backend)"
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Vitaly Vorobyev" }]
+classifiers = [
+  "Programming Language :: Python",
+  "Programming Language :: Rust",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://vitalyvorobyev.github.io/chess-corners-rs/"
+Source = "https://github.com/VitalyVorobyev/chess-corners-rs"
+Issues = "https://github.com/VitalyVorobyev/chess-corners-rs/issues"
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "chess_corners"

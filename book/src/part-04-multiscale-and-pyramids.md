@@ -95,8 +95,7 @@ pub struct PyramidParams {
 - `min_size` – smallest allowed dimension (width or height) for any
   level; once a level would fall below this size, construction stops.
 
-The default is `num_levels = 3`, `min_size = 128`, which suits many
-moderate‑resolution calibration images.
+The default is `num_levels = 1`, `min_size = 128`. If you need to speed up ceature detection, try `num_levels = 2` or `num_levels = 3`.
 
 ### 4.1.3 Reusable buffers
 

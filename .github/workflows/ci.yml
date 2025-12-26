@@ -69,3 +69,29 @@ jobs:
         run: |
           cargo test -p chess-corners --lib --no-default-features --features simd
           cargo test -p chess-corners --lib --no-default-features --features "simd,rayon"
+
+  python-build-smoke:
+    name: Build wheel smoke test (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Builds a manylinux wheel into ./dist
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: >-
+            --release
+            -m crates/chess-corners-py/Cargo.toml
+            --out dist
+          manylinux: auto
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install wheel and import
+        run: |
+          python -m pip install -U pip
+          python -m pip install dist/*.whl
+          python -c "import chess_corners; print('ok', chess_corners.__doc__)"

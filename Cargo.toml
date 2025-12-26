@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/chess-corners-core",
   "crates/chess-corners",
+  "crates/chess-corners-py",
 ]
 
 [workspace.package]

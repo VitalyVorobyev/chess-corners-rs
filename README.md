@@ -107,6 +107,7 @@ The published documentation includes:
 - Multiscale coarse-to-fine pipeline with reusable pyramid buffers (fast + robust under blur/scale changes).
 - Corner descriptors that include subpixel position, response, and orientation.
 - JSON/PNG output plus Python helpers under `tools/` (synthetic dataset generator, accuracy benchmark, perf tooling).
+- Python bindings (`chess_corners` module) built with PyO3 + maturin.
 
 ## Installation
 
@@ -114,17 +115,40 @@ Add the high-level facade crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-chess-corners = "0.2"
+chess-corners = "0.2.1"
 ```
 
 If you need direct access to the low-level response / detector stages, you can also depend on the core crate:
 
 ```toml
 [dependencies]
-chess-corners-core = "0.2"
+chess-corners-core = "0.2.1"
 ```
 
 The `chess-corners` crate enables the `image` feature by default so you can work with `image::GrayImage`; disable it if you prefer to stay on raw buffers.
+
+### Python bindings
+
+Install the Python package (published as `chess_corners` and imported as `chess_corners`):
+
+```bash
+python -m pip install chess-corners
+```
+
+Minimal usage:
+
+```python
+import numpy as np
+import chess_corners
+
+img = np.zeros((128, 128), dtype=np.uint8)
+corners = chess_corners.find_chess_corners(img)
+print(corners.shape, corners.dtype)  # (N, 4), float32
+```
+
+The returned array columns are `[x, y, response, orientation]` in image pixels.
+For configuration, construct `chess_corners.ChessConfig()` and set its fields
+(`threshold_rel`, `nms_radius`, `pyramid_num_levels`, etc.).
 
 ### Examples
 

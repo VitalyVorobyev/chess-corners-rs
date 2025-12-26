@@ -103,7 +103,7 @@ The easiest way to use ChESS from your own project is to depend on the `chess-co
 
 ```toml
 [dependencies]
-chess-corners = "0.2"
+chess-corners = "0.2.1"
 image = "0.25" # if you want GrayImage integration
 ```
 

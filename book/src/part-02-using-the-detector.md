@@ -21,7 +21,7 @@ Make sure your `Cargo.toml` has:
 
 ```toml
 [dependencies]
-chess-corners = "0.2"
+chess-corners = "0.2.1"
 image = "0.25"
 ```
 
@@ -266,8 +266,40 @@ Running the CLI on the sample images in `testdata/` produces overlays like these
 
 ---
 
+## 2.4 Python bindings
+
+The workspace ships a PyO3-based Python extension in
+`crates/chess-corners-py`, published as the `chess_corners` package.
+It exposes the same detector with a NumPy-friendly API.
+
+Install (from PyPI):
+
+```bash
+python -m pip install chess-corners
+```
+
+Basic usage:
+
+```python
+import numpy as np
+import chess_corners
+
+img = np.zeros((128, 128), dtype=np.uint8)
+corners = chess_corners.find_chess_corners(img)
+print(corners.shape, corners.dtype)  # (N, 4), float32
+```
+
+`find_chess_corners` expects a 2D `uint8` array `(H, W)` and returns a
+float32 array with columns `[x, y, response, orientation]`. For
+configuration, create `ChessConfig()` and set fields such as
+`threshold_rel`, `nms_radius`, `pyramid_num_levels`, and
+`merge_radius`. See `crates/chess-corners-py/README.md` for a full
+parameter reference.
+
+---
+
 In this part we focused on the public faces of the detector: the
-`image` helper, the raw buffer API, and the CLI. In the next parts we
-will look under the hood at how the ChESS response is computed, how
-the detector turns responses into subpixel corners, and how the
-multiscale pipeline is structured.
+`image` helper, the raw buffer API, the CLI, and the Python bindings.
+In the next parts we will look under the hood at how the ChESS
+response is computed, how the detector turns responses into subpixel
+corners, and how the multiscale pipeline is structured.

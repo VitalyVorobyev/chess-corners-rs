@@ -96,7 +96,7 @@ pub struct PyramidParams {
 impl Default for PyramidParams {
     fn default() -> Self {
         Self {
-            num_levels: 3,
+            num_levels: 1,
             min_size: 128,
         }
     }

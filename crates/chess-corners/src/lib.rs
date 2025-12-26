@@ -78,6 +78,14 @@
 //! # }
 //! ```
 //!
+//! ## Python bindings
+//!
+//! The workspace includes a PyO3-based Python extension crate at
+//! `crates/chess-corners-py`. It exposes `chess_corners.find_chess_corners`,
+//! which accepts a 2D `uint8` NumPy array and returns a float32 `(N, 4)` array
+//! with columns `[x, y, response, orientation]`. See
+//! `crates/chess-corners-py/README.md` for usage and configuration details.
+//!
 //! For tight processing loops you can also reuse pyramid storage
 //! explicitly via [`find_chess_corners_buff`] and the internal
 //! `pyramid` module; this avoids reallocating intermediate pyramid

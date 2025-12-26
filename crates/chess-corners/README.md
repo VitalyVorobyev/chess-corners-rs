@@ -71,3 +71,6 @@ The full guide-style documentation and API docs are published at:
 
 - Book: https://vitalyvorobyev.github.io/chess-corners-rs
 - Rust docs: https://vitalyvorobyev.github.io/chess-corners-rs/api/
+
+Python bindings are available in this workspace under `crates/chess-corners-py`
+and are published as the `chess_corners` package on PyPI.

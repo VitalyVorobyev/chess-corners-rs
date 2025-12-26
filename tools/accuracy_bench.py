@@ -29,7 +29,7 @@ import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 try:
     import numpy as np  # type: ignore
