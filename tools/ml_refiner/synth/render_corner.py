@@ -83,6 +83,16 @@ def sample_patch_from_image(
 ) -> np.ndarray:
     xs = x_grid - dx
     ys = y_grid - dy
+    return sample_from_image(img, extent, super_res, xs, ys)
+
+
+def sample_from_image(
+    img: np.ndarray,
+    extent: float,
+    super_res: int,
+    xs: np.ndarray,
+    ys: np.ndarray,
+) -> np.ndarray:
     u = (xs + extent) * super_res
     v = (ys + extent) * super_res
     return bilinear_sample(img, u, v).astype(np.float32)

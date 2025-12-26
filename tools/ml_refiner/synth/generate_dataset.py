@@ -24,7 +24,7 @@ ML_ROOT = Path(__file__).resolve().parents[1]
 if str(ML_ROOT) not in sys.path:
     sys.path.insert(0, str(ML_ROOT))
 
-from synth import augment, io as synth_io, render_corner  # noqa: E402
+from synth import augment, homography, io as synth_io, render_corner  # noqa: E402
 
 
 REQUIRED_KEYS = (
@@ -85,17 +85,42 @@ def _compute_extent(cfg: Dict[str, Any]) -> float:
         abs(dy_range[1]),
     )
     margin = float(cfg.get("render_margin", 2.0))
-    return (patch_size - 1) / 2.0 + max_offset + margin
+    extent = (patch_size - 1) / 2.0 + max_offset + margin
+
+    homography_cfg = cfg.get("homography")
+    if isinstance(homography_cfg, dict) and homography_cfg.get("enabled", False):
+        if "scale_x" in homography_cfg:
+            sx_range = _as_range(homography_cfg, "scale_x")
+        else:
+            sx_range = (1.0, 1.0)
+        if "scale_y" in homography_cfg:
+            sy_range = _as_range(homography_cfg, "scale_y")
+        else:
+            sy_range = (1.0, 1.0)
+        min_scale = min(sx_range[0], sx_range[1], sy_range[0], sy_range[1])
+        if min_scale > 0.0:
+            extent *= 1.0 / min_scale
+        if "shear_range" in homography_cfg:
+            shear_range = _as_range(homography_cfg, "shear_range")
+            max_shear = max(abs(shear_range[0]), abs(shear_range[1]))
+            extent *= 1.0 + max_shear
+
+    return extent
 
 
 def _compute_confidence(
     blur_sigma: np.ndarray,
     noise_sigma: np.ndarray,
     conf_params: Dict[str, Any],
+    severity: np.ndarray | None = None,
 ) -> np.ndarray:
     a = float(conf_params.get("a", 0.0))
     b = float(conf_params.get("b", 0.0))
     conf = np.exp(-a * (blur_sigma**2) - b * (noise_sigma**2))
+    if severity is not None:
+        c = float(conf_params.get("c", 0.0))
+        if c != 0.0:
+            conf = conf * np.exp(-c * (severity**2))
     return np.clip(conf, 0.0, 1.0).astype(np.float32)
 
 
@@ -103,22 +128,37 @@ def _sample_params(
     cfg: Dict[str, Any],
     rng: np.random.Generator,
     count: int,
+    include_theta: bool,
 ) -> Dict[str, np.ndarray]:
     dx_range = _as_range(cfg, "dx_range")
     dy_range = _as_range(cfg, "dy_range")
-    rot_range = _as_range(cfg, "rotation")
     noise_range = _as_range(cfg, "noise_sigma")
     blur_range = _as_range(cfg, "blur_sigma")
     scale_range = _as_range(cfg, "scale") if "scale" in cfg else (1.0, 1.0)
 
-    return {
+    params = {
         "dx": rng.uniform(*dx_range, size=count).astype(np.float32),
         "dy": rng.uniform(*dy_range, size=count).astype(np.float32),
-        "theta": rng.uniform(*rot_range, size=count).astype(np.float32),
         "scale": rng.uniform(*scale_range, size=count).astype(np.float32),
         "noise_sigma": rng.uniform(*noise_range, size=count).astype(np.float32),
         "blur_sigma": rng.uniform(*blur_range, size=count).astype(np.float32),
     }
+    if include_theta:
+        rot_range = _as_range(cfg, "rotation")
+        params["theta"] = rng.uniform(*rot_range, size=count).astype(np.float32)
+    return params
+
+
+def _homography_cfg(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    raw = cfg.get("homography", {})
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("homography config must be a mapping")
+    merged = dict(raw)
+    if "rotation" not in merged and "rotation" in cfg:
+        merged["rotation"] = cfg["rotation"]
+    return merged
 
 
 def generate_samples(
@@ -139,30 +179,77 @@ def generate_samples(
     brightness_range = _as_range(cfg, "brightness")
     gamma_range = _as_range(cfg, "gamma")
 
-    params = _sample_params(cfg, rng, count)
-    conf = _compute_confidence(
-        params["blur_sigma"], params["noise_sigma"], cfg["conf_params"]
-    )
+    homography_cfg = _homography_cfg(cfg)
+    homography_enabled = bool(homography_cfg.get("enabled", False))
+    params = _sample_params(cfg, rng, count, include_theta=not homography_enabled)
+    max_outside_frac = float(homography_cfg.get("max_outside_frac", 0.05))
+    max_outside_attempts = int(homography_cfg.get("max_outside_attempts", 10))
 
     patches = np.empty((count, patch_size, patch_size), dtype=np.uint8)
+    Hs = np.empty((count, 3, 3), dtype=np.float32) if homography_enabled else None
+    severity = np.zeros(count, dtype=np.float32) if homography_enabled else None
 
     for idx in range(count):
+        theta = 0.0 if homography_enabled else float(params["theta"][idx])
         ideal = render_corner.render_ideal_corner_from_grid(
             render_x,
             render_y,
-            float(params["theta"][idx]),
+            theta,
             float(params["scale"][idx]),
             edge_softness,
         )
-        patch = render_corner.sample_patch_from_image(
-            ideal,
-            extent,
-            super_res,
-            patch_x,
-            patch_y,
-            float(params["dx"][idx]),
-            float(params["dy"][idx]),
-        )
+
+        dx = params["dx"][idx]
+        dy = params["dy"][idx]
+
+        if homography_enabled:
+            u_shift = patch_x - dx
+            v_shift = patch_y - dy
+            uv_shift = np.stack((u_shift, v_shift), axis=-1)
+
+            H = None
+            xs = ys = None
+            outside_frac = 1.0
+            for _ in range(max_outside_attempts):
+                H = homography.sample_homography(rng, homography_cfg, patch_size)
+                Hinv = homography.invert_homography(H)
+                coords = homography.apply_homography(Hinv, uv_shift)
+                xs = coords[..., 0]
+                ys = coords[..., 1]
+                outside = (
+                    (xs < -extent)
+                    | (xs > extent)
+                    | (ys < -extent)
+                    | (ys > extent)
+                )
+                outside_frac = float(np.mean(outside))
+                if outside_frac <= max_outside_frac:
+                    break
+            if H is None or xs is None or ys is None:
+                H = np.eye(3, dtype=np.float32)
+                xs = u_shift
+                ys = v_shift
+            elif outside_frac > max_outside_frac:
+                H = np.eye(3, dtype=np.float32)
+                xs = u_shift
+                ys = v_shift
+
+            Hs[idx] = H
+            if severity is not None:
+                severity[idx] = abs(float(H[2, 0])) + abs(float(H[2, 1]))
+            patch = render_corner.sample_from_image(
+                ideal, extent, super_res, xs, ys
+            )
+        else:
+            patch = render_corner.sample_patch_from_image(
+                ideal,
+                extent,
+                super_res,
+                patch_x,
+                patch_y,
+                dx,
+                dy,
+            )
         patch = augment.apply_blur(patch, float(params["blur_sigma"][idx]))
         patch = augment.apply_photometric(
             patch,
@@ -174,6 +261,10 @@ def generate_samples(
         patch = augment.apply_noise(patch, rng, float(params["noise_sigma"][idx]))
         patches[idx] = np.clip(patch * 255.0 + 0.5, 0.0, 255.0).astype(np.uint8)
 
+    conf = _compute_confidence(
+        params["blur_sigma"], params["noise_sigma"], cfg["conf_params"], severity
+    )
+
     return {
         "patches": patches,
         "dx": params["dx"],
@@ -181,6 +272,7 @@ def generate_samples(
         "conf": conf,
         "noise_sigma": params["noise_sigma"],
         "blur_sigma": params["blur_sigma"],
+        **({"H": Hs} if Hs is not None else {}),
     }
 
 
@@ -216,12 +308,20 @@ def run_self_test(cfg: Dict[str, Any]) -> None:
     assert np.all(dx >= dx_range[0]) and np.all(dx <= dx_range[1])
     assert np.all(dy >= dy_range[0]) and np.all(dy <= dy_range[1])
     assert np.all(conf >= 0.0) and np.all(conf <= 1.0)
+    if "H" in data:
+        H = data["H"]
+        assert H.dtype == np.float32
+        assert H.shape == (count, 3, 3)
 
     print("self-test OK")
 
 
 def save_preview(
-    out_dir: Path, patches: np.ndarray, dx: np.ndarray, dy: np.ndarray
+    out_dir: Path,
+    patches: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    H: np.ndarray | None = None,
 ) -> None:
     try:
         import matplotlib.pyplot as plt  # type: ignore
@@ -237,12 +337,32 @@ def save_preview(
     fig, axes = plt.subplots(grid, grid, figsize=(grid * 2.0, grid * 2.0))
     axes = np.array(axes).reshape(-1)
 
+    if H is not None:
+        for idx in range(min(3, H.shape[0])):
+            print(
+                f"preview H[{idx}] p=({H[idx, 2, 0]:.4g}, {H[idx, 2, 1]:.4g})"
+            )
+
     for idx, ax in enumerate(axes):
         ax.axis("off")
         if idx >= count:
             continue
         patch = patches[idx]
         ax.imshow(patch, cmap="gray", vmin=0, vmax=255, origin="upper")
+        corner_x = center + float(dx[idx])
+        corner_y = center + float(dy[idx])
+        ax.plot(
+            [corner_x - 1.5, corner_x + 1.5],
+            [corner_y, corner_y],
+            color="lime",
+            linewidth=1.0,
+        )
+        ax.plot(
+            [corner_x, corner_x],
+            [corner_y - 1.5, corner_y + 1.5],
+            color="lime",
+            linewidth=1.0,
+        )
         ax.arrow(
             center,
             center,
@@ -347,22 +467,31 @@ def main() -> None:
         )
 
         shard_path = out_dir / f"shard_{shard_idx:05d}.npz"
+        extra = {
+            "noise_sigma": data["noise_sigma"],
+            "blur_sigma": data["blur_sigma"],
+        }
+        if "H" in data:
+            extra["H"] = data["H"]
         synth_io.save_shard(
             shard_path,
             data["patches"],
             data["dx"],
             data["dy"],
             data["conf"],
-            extra={
-                "noise_sigma": data["noise_sigma"],
-                "blur_sigma": data["blur_sigma"],
-            },
+            extra=extra,
         )
         written += count
         print(f"wrote {shard_path} ({count} samples)")
 
     if preview_data is not None:
-        save_preview(out_dir, preview_data["patches"], preview_data["dx"], preview_data["dy"])
+        save_preview(
+            out_dir,
+            preview_data["patches"],
+            preview_data["dx"],
+            preview_data["dy"],
+            preview_data.get("H"),
+        )
 
 
 if __name__ == "__main__":

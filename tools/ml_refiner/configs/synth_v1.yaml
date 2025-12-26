@@ -21,3 +21,17 @@ render_margin: 2.0
 conf_params:
   a: 0.6
   b: 0.02
+
+homography:
+  enabled: true
+  p_range: [-0.0025, 0.0025]
+  shear_range: [-0.25, 0.25]
+  scale_x: [0.7, 1.3]
+  scale_y: [0.7, 1.3]
+  tx_range: [-2.0, 2.0]
+  ty_range: [-2.0, 2.0]
+  max_local_scale: 2.5
+  min_local_scale: 0.4
+  max_skew: 1.2
+  max_outside_frac: 0.05
+  max_attempts: 50

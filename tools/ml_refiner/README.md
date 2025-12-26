@@ -39,6 +39,7 @@ Each shard (`npz`) contains:
 - `conf`: `float32` array `[N]` (confidence in `[0, 1]`)
 - `noise_sigma`: `float32` array `[N]`
 - `blur_sigma`: `float32` array `[N]`
+- `H`: `float32` array `[N, 3, 3]` (homography from canonical plane to patch coords, when enabled)
 
 `meta.json` stores the full config plus a seed for reproducibility.
 
@@ -55,7 +56,7 @@ true_corner = patch_center + (dx, dy)
 
 ## Preview
 
-Save a preview grid (with red arrows for `(dx, dy)`):
+Save a preview grid (red arrows for `(dx, dy)` plus a green cross at the true corner):
 
 ```bash
 python tools/ml_refiner/synth/generate_dataset.py \
@@ -78,7 +79,12 @@ python tools/ml_refiner/synth/generate_dataset.py \
 
 ## Notes
 
-- The ideal corner is rendered as a smooth saddle pattern with random rotation
-  and a scale factor that adjusts edge sharpness.
+- When homography is enabled, the patch is sampled by inverse-warping a
+  canonical corner through a random projective transform; rotation is applied
+  in the homography stage.
+- Homographies are centered so the canonical origin maps to the patch origin
+  before applying the `(dx, dy)` shift.
+- The ideal corner is rendered as a smooth saddle pattern with a scale factor
+  that adjusts edge sharpness.
 - Gaussian blur and noise are sampled per patch; confidence is a deterministic
   function of their strengths.
