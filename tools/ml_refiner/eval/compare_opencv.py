@@ -335,16 +335,9 @@ def main() -> None:
     pt_y = center + dy_hat_pos
     in_bounds = (pt_x >= 0.0) & (pt_x <= patch_size - 1)
     in_bounds = in_bounds & (pt_y >= 0.0) & (pt_y <= patch_size - 1)
-    errors_ml_all = np.sqrt((pt_x - gt_x_pos) ** 2 + (pt_y - gt_y_pos) ** 2)
-    valid_ml_all = np.isfinite(errors_ml_all) & in_bounds
-
-    conf_threshold = float(ml_cfg.get("conf_threshold", 0.0))
-    gated = conf_pred_pos >= conf_threshold
-    gated = gated & in_bounds
-    errors_ml_gated = errors_ml_all.copy()
-    valid_ml_gated = valid_ml_all & gated
-    summary_ml_all = summarize_errors(errors_ml_all, valid_ml_all)
-    summary_ml_gated = summarize_errors(errors_ml_gated, valid_ml_gated)
+    errors_ml = np.sqrt((pt_x - gt_x_pos) ** 2 + (pt_y - gt_y_pos) ** 2)
+    valid_ml = np.isfinite(errors_ml) & in_bounds
+    summary_ml = summarize_errors(errors_ml, valid_ml)
 
     summary = {
         "dataset": {
@@ -353,12 +346,7 @@ def main() -> None:
             "neg": int(np.sum(~pos_mask)),
         },
         "opencv": summary_cv,
-        "ml_all": summary_ml_all,
-        "ml_gated": {
-            **summary_ml_gated,
-            "conf_threshold": conf_threshold,
-            "gated_fraction": float(1.0 - np.mean(gated)),
-        },
+        "ml": summary_ml,
         "conf": summarize_conf(conf_pred, is_pos),
     }
 
@@ -367,24 +355,14 @@ def main() -> None:
         bins = cfg.get("report", {}).get("blur_bins")
         if bins:
             summary["opencv_blur"] = summarize_binned(blur, errors_cv, valid_cv, bins)
-            summary["ml_all_blur"] = summarize_binned(
-                blur, errors_ml_all, valid_ml_all, bins
-            )
-            summary["ml_gated_blur"] = summarize_binned(
-                blur, errors_ml_gated, valid_ml_gated, bins
-            )
+            summary["ml_blur"] = summarize_binned(blur, errors_ml, valid_ml, bins)
 
     if "noise_sigma" in samples:
         noise = samples["noise_sigma"][pos_idx]
         bins = cfg.get("report", {}).get("noise_bins")
         if bins:
             summary["opencv_noise"] = summarize_binned(noise, errors_cv, valid_cv, bins)
-            summary["ml_all_noise"] = summarize_binned(
-                noise, errors_ml_all, valid_ml_all, bins
-            )
-            summary["ml_gated_noise"] = summarize_binned(
-                noise, errors_ml_gated, valid_ml_gated, bins
-            )
+            summary["ml_noise"] = summarize_binned(noise, errors_ml, valid_ml, bins)
 
     if "H" in samples:
         H = samples["H"][pos_idx]
@@ -394,11 +372,8 @@ def main() -> None:
             summary["opencv_severity"] = summarize_binned(
                 severity, errors_cv, valid_cv, bins
             )
-            summary["ml_all_severity"] = summarize_binned(
-                severity, errors_ml_all, valid_ml_all, bins
-            )
-            summary["ml_gated_severity"] = summarize_binned(
-                severity, errors_ml_gated, valid_ml_gated, bins
+            summary["ml_severity"] = summarize_binned(
+                severity, errors_ml, valid_ml, bins
             )
 
     report_cfg = cfg.get("report", {}) if isinstance(cfg.get("report"), dict) else {}
@@ -416,8 +391,7 @@ def main() -> None:
         plot_cdf(
             {
                 "opencv": errors_cv,
-                "ml_all": errors_ml_all,
-                "ml_gated": errors_ml_gated,
+                "ml": errors_ml,
             },
             str(out_dir / "cdf.png"),
         )
@@ -426,8 +400,7 @@ def main() -> None:
                 report_cfg["blur_bins"],
                 {
                     "opencv": summary.get("opencv_blur", []),
-                    "ml_all": summary.get("ml_all_blur", []),
-                    "ml_gated": summary.get("ml_gated_blur", []),
+                    "ml": summary.get("ml_blur", []),
                 },
                 "p50",
                 str(out_dir / "error_vs_blur.png"),
@@ -439,8 +412,7 @@ def main() -> None:
                 report_cfg["noise_bins"],
                 {
                     "opencv": summary.get("opencv_noise", []),
-                    "ml_all": summary.get("ml_all_noise", []),
-                    "ml_gated": summary.get("ml_gated_noise", []),
+                    "ml": summary.get("ml_noise", []),
                 },
                 "p50",
                 str(out_dir / "error_vs_noise.png"),
@@ -452,8 +424,7 @@ def main() -> None:
                 report_cfg["severity_bins"],
                 {
                     "opencv": summary.get("opencv_severity", []),
-                    "ml_all": summary.get("ml_all_severity", []),
-                    "ml_gated": summary.get("ml_gated_severity", []),
+                    "ml": summary.get("ml_severity", []),
                 },
                 "p50",
                 str(out_dir / "error_vs_severity.png"),

@@ -144,3 +144,31 @@ python tools/ml_refiner/eval/compare_opencv.py \\
 
 This writes a JSON summary and optional plots under
 `tools/ml_refiner/runs/compare_opencv/<timestamp>/`.
+
+## Export to ONNX
+
+Export a trained checkpoint and generate fixtures:
+
+```bash
+python tools/ml_refiner/export_onnx.py \
+  --checkpoint tools/ml_refiner/runs/<run>/model_best.pt \
+  --out assets/ml/chess_refiner_v1.onnx \
+  --patch-size 21 \
+  --opset 17 \
+  --num-fixtures 64 \
+  --fixtures-out assets/ml/fixtures
+```
+
+If opset 17 conversion fails, the exporter may fall back to opset 18; check the
+exporter output for the actual opset.
+
+I/O contract:
+
+- Input `patches`: float32 `[N,1,P,P]`, normalized from uint8 by `/255.0`, clamped to `[0,1]`.
+- Output `pred`: float32 `[N,3]` with `[dx, dy, conf_logit]` (apply sigmoid to get confidence).
+
+Run parity test (requires `onnxruntime`):
+
+```bash
+python -m pytest tools/ml_refiner/tests/test_onnx_parity.py
+```
