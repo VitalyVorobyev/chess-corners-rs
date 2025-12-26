@@ -8,7 +8,14 @@
   "output_png": null,
   "threshold_rel": 0.2,
   "threshold_abs": null,
-  "refiner": "saddle_point",
+  "refiner": "ml",
+  "ml": {
+    "model_path": null,
+    "patch_size": 21,
+    "batch_size": 64,
+    "conf_threshold": 0.2,
+    "fallback": "keep_candidate"
+  },
   "radius10": false,
   "nms_radius": 2,
   "min_cluster_size": 2,

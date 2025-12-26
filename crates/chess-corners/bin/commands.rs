@@ -8,6 +8,8 @@ use anyhow::{Context, Result};
 use chess_corners::{
     find_chess_corners_image, ChessConfig, ChessParams, CoarseToFineParams, RefinerKind,
 };
+#[cfg(feature = "ml-refiner")]
+use chess_corners::{MlFallback, MlRefinerParams};
 use image::{ImageBuffer, ImageReader, Luma};
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Write, path::Path, path::PathBuf};
@@ -23,8 +25,10 @@ pub struct DetectionConfig {
     pub output_png: Option<PathBuf>,
     pub threshold_rel: Option<f32>,
     pub threshold_abs: Option<f32>,
-    /// Subpixel refiner selection (center_of_mass, forstner, saddle_point).
+    /// Subpixel refiner selection (center_of_mass, forstner, saddle_point, ml).
     pub refiner: Option<RefinerMethod>,
+    /// ML refiner configuration (used when refiner = "ml").
+    pub ml: Option<MlConfig>,
     pub radius10: Option<bool>,
     pub descriptor_radius10: Option<bool>,
     pub nms_radius: Option<u32>,
@@ -38,16 +42,78 @@ pub enum RefinerMethod {
     CenterOfMass,
     Forstner,
     SaddlePoint,
+    Ml,
 }
 
 impl RefinerMethod {
-    fn to_refiner_kind(&self) -> RefinerKind {
+    fn to_refiner_kind(&self, ml: Option<&MlConfig>) -> Result<RefinerKind> {
         match self {
-            RefinerMethod::CenterOfMass => RefinerKind::CenterOfMass(Default::default()),
-            RefinerMethod::Forstner => RefinerKind::Forstner(Default::default()),
-            RefinerMethod::SaddlePoint => RefinerKind::SaddlePoint(Default::default()),
+            RefinerMethod::CenterOfMass => Ok(RefinerKind::CenterOfMass(Default::default())),
+            RefinerMethod::Forstner => Ok(RefinerKind::Forstner(Default::default())),
+            RefinerMethod::SaddlePoint => Ok(RefinerKind::SaddlePoint(Default::default())),
+            RefinerMethod::Ml => {
+                #[cfg(feature = "ml-refiner")]
+                {
+                    Ok(RefinerKind::Ml(build_ml_params(ml)))
+                }
+                #[cfg(not(feature = "ml-refiner"))]
+                {
+                    anyhow::bail!("ml refiner requires the \"ml-refiner\" feature")
+                }
+            }
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MlConfig {
+    pub model_path: Option<PathBuf>,
+    pub patch_size: Option<u32>,
+    pub batch_size: Option<u32>,
+    pub conf_threshold: Option<f32>,
+    pub fallback: Option<MlFallbackMethod>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MlFallbackMethod {
+    KeepCandidate,
+    UseClassicRefiner,
+    Reject,
+}
+
+#[cfg(feature = "ml-refiner")]
+impl MlFallbackMethod {
+    fn to_fallback(&self) -> MlFallback {
+        match self {
+            MlFallbackMethod::KeepCandidate => MlFallback::KeepCandidate,
+            MlFallbackMethod::UseClassicRefiner => MlFallback::UseClassicRefiner,
+            MlFallbackMethod::Reject => MlFallback::Reject,
+        }
+    }
+}
+
+#[cfg(feature = "ml-refiner")]
+fn build_ml_params(ml: Option<&MlConfig>) -> MlRefinerParams {
+    let mut params = MlRefinerParams::default();
+    if let Some(cfg) = ml {
+        if let Some(path) = cfg.model_path.clone() {
+            params.model_path = Some(path);
+        }
+        if let Some(v) = cfg.patch_size {
+            params.patch_size = v;
+        }
+        if let Some(v) = cfg.batch_size {
+            params.batch_size = v;
+        }
+        if let Some(v) = cfg.conf_threshold {
+            params.conf_threshold = Some(v);
+        }
+        if let Some(fallback) = cfg.fallback.as_ref() {
+            params.fallback = fallback.to_fallback();
+        }
+    }
+    params
 }
 
 #[derive(Serialize)]
@@ -136,7 +202,7 @@ fn apply_params_overrides(params: &mut ChessParams, cfg: &DetectionConfig) -> Re
         params.descriptor_use_radius10 = Some(r);
     }
     if let Some(refiner) = cfg.refiner.as_ref() {
-        params.refiner = refiner.to_refiner_kind();
+        params.refiner = refiner.to_refiner_kind(cfg.ml.as_ref())?;
     }
     if let Some(t) = cfg.threshold_rel {
         params.threshold_rel = t;

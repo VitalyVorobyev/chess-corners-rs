@@ -173,6 +173,12 @@ Run the bundled CLI for quick experiments:
 cargo run -p chess-corners --release --bin chess-corners -- run config/chess_cli_config.example.json
 ```
 
+To use the ML refiner from the CLI, enable the feature and set the config `refiner` to `ml`:
+
+```
+cargo run -p chess-corners --release --features ml-refiner --bin chess-corners -- run config/chess_cli_config.example.json
+```
+
 The config JSON drives both single-scale and multiscale runs:
 
 ```json
@@ -186,7 +192,14 @@ The config JSON drives both single-scale and multiscale runs:
   "output_png": null,
   "threshold_rel": 0.2,
   "threshold_abs": null,
-  "refiner": "forstner",
+  "refiner": "ml",
+  "ml": {
+    "model_path": null,
+    "patch_size": 21,
+    "batch_size": 64,
+    "conf_threshold": 0.2,
+    "fallback": "keep_candidate"
+  },
   "radius10": false,
   "descriptor_radius10": null,
   "nms_radius": 2,
@@ -201,7 +214,8 @@ The config JSON drives both single-scale and multiscale runs:
   - `refinement_radius`, `merge_radius`: multiscale refinement and deduplication
 - **Detection and refinement**
   - `threshold_rel` / `threshold_abs`: response thresholding (relative thresholding is recommended in most cases)
-  - `refiner`: subpixel refinement method (`center_of_mass`, `forstner`, or `saddle_point`)
+  - `refiner`: subpixel refinement method (`center_of_mass`, `forstner`, `saddle_point`, or `ml`)
+  - `ml`: optional ML refiner settings (used only when `refiner = "ml"`)
   - `radius10`: use the larger r=10 ring instead of the canonical r=5 ring
   - `descriptor_radius10`: optional r=10 override for descriptors (when null, follows `radius10`)
   - `nms_radius`, `min_cluster_size`: suppression and clustering

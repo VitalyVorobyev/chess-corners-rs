@@ -21,6 +21,7 @@ image = ["dep:image"]
 rayon = ["chess-corners-core/rayon", "dep:rayon"]  # enable core’s rayon via this feature
 simd = ["chess-corners-core/simd"]
 tracing = ["chess-corners-core/tracing", "dep:tracing"]
+ml-refiner = ["dep:chess-corners-ml", "chess-corners-core/ml-refiner"]
 par_pyramid = []  # opt-in gate for SIMD/parallel pyramid downsampling
 cli = []
 
@@ -31,6 +32,7 @@ required-features = ["image"]
 
 [dependencies]
 chess-corners-core = { path = "../chess-corners-core", version = "0.2" }
+chess-corners-ml = { path = "../chess-corners-ml", optional = true }
 image = { version = "0.25", optional = true }
 log = "0.4"
 anyhow = "1"

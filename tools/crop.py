@@ -13,11 +13,13 @@ def main():
     args = parser.parse_args()
 
     img = Image.open(args.image).convert("L")
-    img_np = np.array(img)[:, :720]
+    snap_idx = 1
+    col_lo, col_hi = snap_idx * 720, (snap_idx + 1) * 720
+    img_np = np.array(img)[:, col_lo:col_hi]
 
     print(f"Image shape: {img_np.shape}")
     # save image
-    out_path = args.image + ".cropped.png"
+    out_path = args.image + f".cropped{snap_idx}.png"
     Image.fromarray(img_np).save(out_path)
     print(f"Cropped image saved to: {out_path}")
 

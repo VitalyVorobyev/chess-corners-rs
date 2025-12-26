@@ -108,7 +108,8 @@
 //!   deduplicating refined corners.
 //! - [`RefinerKind`] (via [`ChessParams::refiner`]) selects the
 //!   subpixel refinement backend (center-of-mass default, Förstner,
-//!   or saddle-point) and exposes per-refiner tuning knobs.
+//!   saddle-point, or ML when the `ml-refiner` feature is enabled)
+//!   and exposes per-refiner tuning knobs.
 //!
 //! The shortcut [`ChessConfig::single_scale`] configures a
 //! single-scale run by setting `multiscale.pyramid.num_levels = 1`.
@@ -128,6 +129,8 @@
 //! - `rayon` – parallelizes response computation and multiscale
 //!   refinement over image rows. Combine with `par_pyramid` to
 //!   parallelize pyramid downsampling as well.
+//! - `ml-refiner` – enables the ML-backed subpixel refiner (`RefinerKind::Ml`)
+//!   via the `chess-corners-ml` crate and embedded ONNX model.
 //! - `simd` – enables portable-SIMD accelerated inner loops for the
 //!   response kernel (requires a nightly compiler). Combine with
 //!   `par_pyramid` to SIMD-accelerate pyramid downsampling.
@@ -146,6 +149,8 @@
 //! The ChESS idea was proposed in the papaer Bennett, Lasenby, *ChESS: A Fast and
 //! Accurate Chessboard Corner Detector*, CVIU 2014
 
+#[cfg(feature = "ml-refiner")]
+mod ml_refiner;
 mod multiscale;
 mod pyramid;
 
@@ -156,6 +161,8 @@ pub use chess_corners_core::{
     CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner, ForstnerConfig, ImageView,
     RefineResult, RefineStatus, Refiner, RefinerKind, ResponseMap, SaddlePointConfig,
 };
+#[cfg(feature = "ml-refiner")]
+pub use chess_corners_core::{MlFallback, MlRefinerParams};
 
 // High-level helpers on `image::GrayImage`.
 #[cfg(feature = "image")]

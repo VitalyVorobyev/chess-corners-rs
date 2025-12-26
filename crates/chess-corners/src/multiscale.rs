@@ -17,6 +17,8 @@
 //!   caller-provided [`PyramidBuffers`] so you can reuse allocations
 //!   across frames in a tight loop.
 
+#[cfg(feature = "ml-refiner")]
+use crate::ml_refiner;
 use crate::pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
 use crate::{ChessConfig, ChessParams};
 use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
@@ -28,6 +30,11 @@ use chess_corners_core::{CornerRefiner, ImageView, Refiner, RefinerKind, Respons
 use rayon::prelude::*;
 #[cfg(feature = "tracing")]
 use tracing::{info_span, instrument};
+
+#[cfg(feature = "ml-refiner")]
+type MlRefinerState = ml_refiner::MlRefinerState;
+#[cfg(not(feature = "ml-refiner"))]
+type MlRefinerState = ();
 
 /// Parameters controlling the coarse-to-fine multiscale detector.
 #[derive(Clone, Debug)]
@@ -68,12 +75,23 @@ fn detect_with_refiner_kind(
     params: &ChessParams,
     image: Option<ImageView<'_>>,
     refiner_kind: &RefinerKind,
+    ml_state: Option<&mut MlRefinerState>,
 ) -> Vec<Corner> {
+    #[cfg(feature = "ml-refiner")]
+    if let RefinerKind::Ml(_) = refiner_kind {
+        if let Some(state) = ml_state {
+            return ml_refiner::detect_corners_with_ml(resp, params, image, state);
+        }
+    }
     let mut refiner = Refiner::from_kind(refiner_kind.clone());
     detect_corners_from_response_with_refiner(resp, params, image, &mut refiner)
 }
 
 fn refiner_radius(refiner_kind: &RefinerKind) -> i32 {
+    #[cfg(feature = "ml-refiner")]
+    if let RefinerKind::Ml(params) = refiner_kind {
+        return ml_refiner::patch_radius(params);
+    }
     Refiner::from_kind(refiner_kind.clone()).radius()
 }
 
@@ -103,6 +121,17 @@ pub fn find_chess_corners_buff_with_refiner(
 ) -> Vec<CornerDescriptor> {
     let params = &cfg.params;
     let cf = &cfg.multiscale;
+    #[cfg(feature = "ml-refiner")]
+    let mut ml_state = match refiner {
+        RefinerKind::Ml(params) => Some(ml_refiner::MlRefinerState::new(params)),
+        _ => None,
+    };
+    #[cfg(not(feature = "ml-refiner"))]
+    let mut ml_state: Option<MlRefinerState> = None;
+    #[cfg(feature = "ml-refiner")]
+    let use_ml = matches!(refiner, RefinerKind::Ml(_));
+    #[cfg(not(feature = "ml-refiner"))]
+    let use_ml = false;
 
     let pyramid = build_pyramid(base, &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
@@ -117,7 +146,11 @@ pub fn find_chess_corners_buff_with_refiner(
         let resp = chess_response_u8(lvl.img.data, lvl.img.width, lvl.img.height, params);
         let refine_view = ImageView::from_u8_slice(lvl.img.width, lvl.img.height, lvl.img.data)
             .expect("image dimensions must match buffer length");
-        let mut raw = detect_with_refiner_kind(&resp, params, Some(refine_view), refiner);
+        let mut raw = if use_ml {
+            detect_with_refiner_kind(&resp, params, Some(refine_view), refiner, ml_state.as_mut())
+        } else {
+            detect_with_refiner_kind(&resp, params, Some(refine_view), refiner, None)
+        };
         let merged = merge_corners_simple(&mut raw, cf.merge_radius);
         let desc = corners_to_descriptors(
             lvl.img.data,
@@ -150,7 +183,15 @@ pub fn find_chess_corners_buff_with_refiner(
     // Full detection on coarse level
     let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, params);
     let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
-    let coarse_corners = detect_with_refiner_kind(&coarse_resp, params, Some(coarse_view), refiner);
+    let fallback_refiner = RefinerKind::CenterOfMass(Default::default());
+    let coarse_refiner = if use_ml { &fallback_refiner } else { refiner };
+    let coarse_corners = detect_with_refiner_kind(
+        &coarse_resp,
+        params,
+        Some(coarse_view),
+        coarse_refiner,
+        None,
+    );
     #[cfg(feature = "tracing")]
     drop(coarse_span);
 
@@ -175,7 +216,7 @@ pub fn find_chess_corners_buff_with_refiner(
     let min_roi_r = border + 2;
     let roi_r = roi_r_base.max(min_roi_r);
 
-    let refine_one = |c: Corner| -> Option<Vec<Corner>> {
+    let refine_one = |c: Corner, ml_state: Option<&mut MlRefinerState>| -> Option<Vec<Corner>> {
         // Project coarse coordinate to base image
         let cx_base = c.xy[0] * inv_scale;
         let cy_base = c.xy[1] * inv_scale;
@@ -251,7 +292,7 @@ pub fn find_chess_corners_buff_with_refiner(
         let refine_view = ImageView::with_origin(base_w, base_h, base.data, [x0, y0])
             .expect("base image dimensions must match buffer length");
         let mut patch_corners =
-            detect_with_refiner_kind(&patch_resp, params, Some(refine_view), refiner);
+            detect_with_refiner_kind(&patch_resp, params, Some(refine_view), refiner, ml_state);
 
         for pc in &mut patch_corners {
             pc.xy[0] += x0 as f32;
@@ -269,17 +310,27 @@ pub fn find_chess_corners_buff_with_refiner(
     let refine_span = info_span!("refine", seeds = coarse_corners.len(), roi_r = roi_r).entered();
 
     #[cfg(feature = "rayon")]
-    let mut refined: Vec<Corner> = coarse_corners
-        .into_par_iter()
-        .filter_map(refine_one)
-        .flatten()
-        .collect();
+    let mut refined: Vec<Corner> = if use_ml {
+        let mut acc = Vec::new();
+        for c in coarse_corners {
+            if let Some(mut v) = refine_one(c, ml_state.as_mut()) {
+                acc.append(&mut v);
+            }
+        }
+        acc
+    } else {
+        coarse_corners
+            .into_par_iter()
+            .filter_map(|c| refine_one(c, None))
+            .flatten()
+            .collect()
+    };
 
     #[cfg(not(feature = "rayon"))]
     let mut refined: Vec<Corner> = {
         let mut acc = Vec::new();
         for c in coarse_corners {
-            if let Some(mut v) = refine_one(c) {
+            if let Some(mut v) = refine_one(c, ml_state.as_mut()) {
                 acc.append(&mut v);
             }
         }
