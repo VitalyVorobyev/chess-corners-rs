@@ -8,9 +8,12 @@ import json
 import math
 import random
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
+
+from functools import partial
 
 import numpy as np
 import torch
@@ -57,6 +60,12 @@ def set_seed(seed: int) -> None:
     torch.backends.cudnn.benchmark = False
 
 
+def seed_worker(worker_id: int, base_seed: int) -> None:
+    worker_seed = base_seed + worker_id
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+
 def select_device(device_cfg: str) -> torch.device:
     device_cfg = device_cfg.lower()
     if device_cfg == "auto":
@@ -101,6 +110,7 @@ def compute_loss(
     dx = targets[:, 0]
     dy = targets[:, 1]
     conf = targets[:, 2]
+    is_pos = targets[:, 3]
 
     reg_weight_bias = float(loss_cfg.get("reg_weight_bias", 0.2))
     reg_weight_scale = float(loss_cfg.get("reg_weight_scale", 0.8))
@@ -108,8 +118,10 @@ def compute_loss(
 
     reg_err = nn.functional.smooth_l1_loss(dx_hat, dx, reduction="none")
     reg_err = reg_err + nn.functional.smooth_l1_loss(dy_hat, dy, reduction="none")
-    weights = reg_weight_bias + reg_weight_scale * conf.detach()
-    reg_loss = torch.mean(weights * reg_err)
+    mask = (is_pos > 0.5).float()
+    weights = (reg_weight_bias + reg_weight_scale * conf.detach()) * mask
+    denom = torch.clamp(weights.sum(), min=1.0)
+    reg_loss = torch.sum(weights * reg_err) / denom
 
     conf_loss = nn.functional.binary_cross_entropy_with_logits(conf_logit, conf)
 
@@ -160,6 +172,7 @@ def collect_metrics(
     dx = targets[:, 0].detach().cpu().numpy()
     dy = targets[:, 1].detach().cpu().numpy()
     conf = targets[:, 2].detach().cpu().numpy()
+    is_pos = targets[:, 3].detach().cpu().numpy()
 
     conf_pred = 1.0 / (1.0 + np.exp(-conf_logit))
 
@@ -168,24 +181,51 @@ def collect_metrics(
         "dy_err": dy_hat - dy,
         "conf_pred": conf_pred,
         "conf": conf,
+        "is_pos": is_pos,
     }
 
 
 def summarize_metrics(records: Dict[str, np.ndarray]) -> Dict[str, Any]:
     dx_err = records["dx_err"]
     dy_err = records["dy_err"]
-    radial = np.sqrt(dx_err * dx_err + dy_err * dy_err)
     conf_pred = records["conf_pred"]
     conf = records["conf"]
+    is_pos = records["is_pos"]
+
+    pos_mask = is_pos > 0.5
+    neg_mask = ~pos_mask
 
     metrics: Dict[str, Any] = {
-        "mae_dx": float(np.mean(np.abs(dx_err))),
-        "mae_dy": float(np.mean(np.abs(dy_err))),
-        "p50": float(np.percentile(radial, 50)),
-        "p90": float(np.percentile(radial, 90)),
-        "p95": float(np.percentile(radial, 95)),
+        "pos_frac": float(np.mean(pos_mask)),
         "conf_mse": float(np.mean((conf_pred - conf) ** 2)),
     }
+
+    if np.any(pos_mask):
+        dx_pos = dx_err[pos_mask]
+        dy_pos = dy_err[pos_mask]
+        radial = np.sqrt(dx_pos * dx_pos + dy_pos * dy_pos)
+        metrics.update(
+            {
+                "mae_dx": float(np.mean(np.abs(dx_pos))),
+                "mae_dy": float(np.mean(np.abs(dy_pos))),
+                "p50": float(np.percentile(radial, 50)),
+                "p90": float(np.percentile(radial, 90)),
+                "p95": float(np.percentile(radial, 95)),
+            }
+        )
+    else:
+        metrics.update({"mae_dx": None, "mae_dy": None, "p50": None, "p90": None, "p95": None})
+
+    if np.any(pos_mask):
+        metrics["conf_pred_pos_mean"] = float(np.mean(conf_pred[pos_mask]))
+    else:
+        metrics["conf_pred_pos_mean"] = None
+    if np.any(neg_mask):
+        metrics["conf_pred_neg_mean"] = float(np.mean(conf_pred[neg_mask]))
+        metrics["conf_pred_neg_p95"] = float(np.percentile(conf_pred[neg_mask], 95))
+    else:
+        metrics["conf_pred_neg_mean"] = None
+        metrics["conf_pred_neg_p95"] = None
 
     if np.std(conf_pred) > 1e-6 and np.std(conf) > 1e-6:
         metrics["conf_corr"] = float(np.corrcoef(conf_pred, conf)[0, 1])
@@ -220,6 +260,8 @@ def run_epoch(
     device: torch.device,
     optimizer: torch.optim.Optimizer | None,
     loss_cfg: Dict[str, Any],
+    split_name: str,
+    log_interval: int,
 ) -> Dict[str, Any]:
     is_train = optimizer is not None
     if is_train:
@@ -229,13 +271,16 @@ def run_epoch(
 
     total_loss = 0.0
     total_count = 0
+    total_batches = len(loader)
+    start_time = time.time()
 
     all_dx_err: list[np.ndarray] = []
     all_dy_err: list[np.ndarray] = []
     all_conf_pred: list[np.ndarray] = []
     all_conf: list[np.ndarray] = []
+    all_is_pos: list[np.ndarray] = []
 
-    for x, y in loader:
+    for batch_idx, (x, y) in enumerate(loader, start=1):
         x = x.to(device)
         y = y.to(device)
 
@@ -259,12 +304,43 @@ def run_epoch(
         all_dy_err.append(batch_metrics["dy_err"])
         all_conf_pred.append(batch_metrics["conf_pred"])
         all_conf.append(batch_metrics["conf"])
+        all_is_pos.append(batch_metrics["is_pos"])
+
+        if log_interval > 0 and (
+            batch_idx == 1
+            or batch_idx % log_interval == 0
+            or batch_idx == total_batches
+        ):
+            elapsed = max(time.time() - start_time, 1e-6)
+            rate = total_count / elapsed
+            avg_loss = total_loss / max(1, total_count)
+            batch_is_pos = batch_metrics["is_pos"] > 0.5
+            pos_frac = float(np.mean(batch_is_pos))
+            conf_pred = batch_metrics["conf_pred"]
+            conf_pos = float(np.mean(conf_pred[batch_is_pos])) if np.any(batch_is_pos) else None
+            conf_neg = (
+                float(np.mean(conf_pred[~batch_is_pos])) if np.any(~batch_is_pos) else None
+            )
+
+            def _fmt(value: float | None) -> str:
+                if value is None or not math.isfinite(float(value)):
+                    return "na"
+                return f"{value:.3f}"
+            print(
+                f"{split_name} {batch_idx:4d}/{total_batches:4d} "
+                f"loss={avg_loss:.4f} "
+                f"{rate:5.1f} samples/s "
+                f"pos_frac={pos_frac:.2f} "
+                f"conf_neg={_fmt(conf_neg)} "
+                f"conf_pos={_fmt(conf_pos)}"
+            )
 
     records = {
         "dx_err": np.concatenate(all_dx_err, axis=0),
         "dy_err": np.concatenate(all_dy_err, axis=0),
         "conf_pred": np.concatenate(all_conf_pred, axis=0),
         "conf": np.concatenate(all_conf, axis=0),
+        "is_pos": np.concatenate(all_is_pos, axis=0),
     }
     summary = summarize_metrics(records)
     summary["loss"] = total_loss / max(1, total_count)
@@ -290,11 +366,7 @@ def build_loader(
 
     generator = torch.Generator()
     generator.manual_seed(seed)
-
-    def seed_worker(worker_id: int) -> None:
-        worker_seed = seed + worker_id
-        np.random.seed(worker_seed)
-        random.seed(worker_seed)
+    seed_fn = partial(seed_worker, base_seed=seed)
 
     use_pin = device.type == "cuda"
     return DataLoader(
@@ -304,7 +376,7 @@ def build_loader(
         num_workers=num_workers,
         pin_memory=use_pin,
         persistent_workers=num_workers > 0,
-        worker_init_fn=seed_worker,
+        worker_init_fn=seed_fn,
         generator=generator,
     )
 
@@ -360,6 +432,9 @@ def main() -> None:
     metrics_path = run_dir / "metrics.jsonl"
     best_p95 = None
 
+    log_interval = int(cfg.get("log_interval", 50))
+    val_log_interval = int(cfg.get("log_interval_val", 0))
+
     for epoch in range(epochs):
         lr_epoch = adjust_lr(
             optimizer,
@@ -375,6 +450,8 @@ def main() -> None:
             device,
             optimizer,
             cfg.get("loss", {}) if isinstance(cfg.get("loss"), dict) else {},
+            split_name="train",
+            log_interval=log_interval,
         )
         val_metrics = run_epoch(
             model,
@@ -382,6 +459,8 @@ def main() -> None:
             device,
             None,
             cfg.get("loss", {}) if isinstance(cfg.get("loss"), dict) else {},
+            split_name="val",
+            log_interval=val_log_interval,
         )
 
         log = {
@@ -393,12 +472,27 @@ def main() -> None:
         with metrics_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(log) + "\n")
 
+        def _fmt(value: Any, fmt: str = ".3f") -> str:
+            if value is None:
+                return "na"
+            try:
+                value_f = float(value)
+            except (TypeError, ValueError):
+                return "na"
+            if not math.isfinite(value_f):
+                return "na"
+            return format(value_f, fmt)
+
+        val_p95 = val_metrics.get("p95")
+        val_p95_str = _fmt(val_p95, ".4g")
         print(
             f"epoch {epoch + 1:03d}/{epochs} "
             f"lr={lr_epoch:.3g} "
             f"train_loss={train_metrics['loss']:.4g} "
-            f"val_p95={val_metrics['p95']:.4g} "
-            f"val_conf_mse={val_metrics['conf_mse']:.4g}"
+            f"val_p95={val_p95_str} "
+            f"val_pos_frac={_fmt(val_metrics.get('pos_frac'))} "
+            f"val_conf_neg={_fmt(val_metrics.get('conf_pred_neg_mean'))} "
+            f"val_conf_pos={_fmt(val_metrics.get('conf_pred_pos_mean'))}"
         )
 
         state = {
@@ -412,10 +506,12 @@ def main() -> None:
             torch.save(state, run_dir / "model_last.pt")
 
         if run_cfg.get("save_best", True):
-            p95 = float(val_metrics["p95"])
-            if best_p95 is None or p95 < best_p95:
-                best_p95 = p95
-                torch.save(state, run_dir / "model_best.pt")
+            p95 = val_metrics.get("p95")
+            if p95 is not None and math.isfinite(float(p95)):
+                p95 = float(p95)
+                if best_p95 is None or p95 < best_p95:
+                    best_p95 = p95
+                    torch.save(state, run_dir / "model_best.pt")
 
     print(f"run saved to {run_dir}")
 

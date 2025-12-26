@@ -24,7 +24,7 @@ ML_ROOT = Path(__file__).resolve().parents[1]
 if str(ML_ROOT) not in sys.path:
     sys.path.insert(0, str(ML_ROOT))
 
-from synth import augment, homography, io as synth_io, render_corner  # noqa: E402
+from synth import augment, homography, io as synth_io, negatives, render_corner  # noqa: E402
 
 
 REQUIRED_KEYS = (
@@ -161,6 +161,15 @@ def _homography_cfg(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return merged
 
 
+def _neg_cfg(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    raw = cfg.get("neg", {})
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("neg config must be a mapping")
+    return dict(raw)
+
+
 def generate_samples(
     cfg: Dict[str, Any],
     rng: np.random.Generator,
@@ -182,74 +191,89 @@ def generate_samples(
     homography_cfg = _homography_cfg(cfg)
     homography_enabled = bool(homography_cfg.get("enabled", False))
     params = _sample_params(cfg, rng, count, include_theta=not homography_enabled)
+    neg_cfg = _neg_cfg(cfg)
+    neg_enabled = bool(neg_cfg.get("enabled", False))
+    neg_fraction = float(neg_cfg.get("fraction", 0.0)) if neg_enabled else 0.0
+    neg_fraction = float(np.clip(neg_fraction, 0.0, 1.0))
+    conf_negative = float(neg_cfg.get("conf_negative", 0.0))
     max_outside_frac = float(homography_cfg.get("max_outside_frac", 0.05))
     max_outside_attempts = int(homography_cfg.get("max_outside_attempts", 10))
+
+    is_pos = np.ones(count, dtype=bool)
+    if neg_enabled and neg_fraction > 0.0:
+        is_pos = rng.uniform(0.0, 1.0, size=count) >= neg_fraction
 
     patches = np.empty((count, patch_size, patch_size), dtype=np.uint8)
     Hs = np.empty((count, 3, 3), dtype=np.float32) if homography_enabled else None
     severity = np.zeros(count, dtype=np.float32) if homography_enabled else None
+    identity = np.eye(3, dtype=np.float32) if homography_enabled else None
 
     for idx in range(count):
-        theta = 0.0 if homography_enabled else float(params["theta"][idx])
-        ideal = render_corner.render_ideal_corner_from_grid(
-            render_x,
-            render_y,
-            theta,
-            float(params["scale"][idx]),
-            edge_softness,
-        )
+        if is_pos[idx]:
+            theta = 0.0 if homography_enabled else float(params["theta"][idx])
+            ideal = render_corner.render_ideal_corner_from_grid(
+                render_x,
+                render_y,
+                theta,
+                float(params["scale"][idx]),
+                edge_softness,
+            )
 
-        dx = params["dx"][idx]
-        dy = params["dy"][idx]
+            dx = params["dx"][idx]
+            dy = params["dy"][idx]
 
-        if homography_enabled:
-            u_shift = patch_x - dx
-            v_shift = patch_y - dy
-            uv_shift = np.stack((u_shift, v_shift), axis=-1)
+            if homography_enabled:
+                u_shift = patch_x - dx
+                v_shift = patch_y - dy
+                uv_shift = np.stack((u_shift, v_shift), axis=-1)
 
-            H = None
-            xs = ys = None
-            outside_frac = 1.0
-            for _ in range(max_outside_attempts):
-                H = homography.sample_homography(rng, homography_cfg, patch_size)
-                Hinv = homography.invert_homography(H)
-                coords = homography.apply_homography(Hinv, uv_shift)
-                xs = coords[..., 0]
-                ys = coords[..., 1]
-                outside = (
-                    (xs < -extent)
-                    | (xs > extent)
-                    | (ys < -extent)
-                    | (ys > extent)
+                H = None
+                xs = ys = None
+                outside_frac = 1.0
+                for _ in range(max_outside_attempts):
+                    H = homography.sample_homography(rng, homography_cfg, patch_size)
+                    Hinv = homography.invert_homography(H)
+                    coords = homography.apply_homography(Hinv, uv_shift)
+                    xs = coords[..., 0]
+                    ys = coords[..., 1]
+                    outside = (
+                        (xs < -extent)
+                        | (xs > extent)
+                        | (ys < -extent)
+                        | (ys > extent)
+                    )
+                    outside_frac = float(np.mean(outside))
+                    if outside_frac <= max_outside_frac:
+                        break
+                if H is None or xs is None or ys is None:
+                    H = np.eye(3, dtype=np.float32)
+                    xs = u_shift
+                    ys = v_shift
+                elif outside_frac > max_outside_frac:
+                    H = np.eye(3, dtype=np.float32)
+                    xs = u_shift
+                    ys = v_shift
+
+                Hs[idx] = H
+                if severity is not None:
+                    severity[idx] = abs(float(H[2, 0])) + abs(float(H[2, 1]))
+                patch = render_corner.sample_from_image(
+                    ideal, extent, super_res, xs, ys
                 )
-                outside_frac = float(np.mean(outside))
-                if outside_frac <= max_outside_frac:
-                    break
-            if H is None or xs is None or ys is None:
-                H = np.eye(3, dtype=np.float32)
-                xs = u_shift
-                ys = v_shift
-            elif outside_frac > max_outside_frac:
-                H = np.eye(3, dtype=np.float32)
-                xs = u_shift
-                ys = v_shift
-
-            Hs[idx] = H
-            if severity is not None:
-                severity[idx] = abs(float(H[2, 0])) + abs(float(H[2, 1]))
-            patch = render_corner.sample_from_image(
-                ideal, extent, super_res, xs, ys
-            )
+            else:
+                patch = render_corner.sample_patch_from_image(
+                    ideal,
+                    extent,
+                    super_res,
+                    patch_x,
+                    patch_y,
+                    dx,
+                    dy,
+                )
         else:
-            patch = render_corner.sample_patch_from_image(
-                ideal,
-                extent,
-                super_res,
-                patch_x,
-                patch_y,
-                dx,
-                dy,
-            )
+            patch = negatives.generate_negative_patch(rng, patch_size, neg_cfg)
+            if Hs is not None and identity is not None:
+                Hs[idx] = identity
         patch = augment.apply_blur(patch, float(params["blur_sigma"][idx]))
         patch = augment.apply_photometric(
             patch,
@@ -264,12 +288,18 @@ def generate_samples(
     conf = _compute_confidence(
         params["blur_sigma"], params["noise_sigma"], cfg["conf_params"], severity
     )
+    if neg_enabled:
+        conf = conf.copy()
+        conf[~is_pos] = conf_negative
+        params["dx"][~is_pos] = 0.0
+        params["dy"][~is_pos] = 0.0
 
     return {
         "patches": patches,
         "dx": params["dx"],
         "dy": params["dy"],
         "conf": conf,
+        "is_pos": is_pos.astype(np.uint8),
         "noise_sigma": params["noise_sigma"],
         "blur_sigma": params["blur_sigma"],
         **({"H": Hs} if Hs is not None else {}),
@@ -308,6 +338,13 @@ def run_self_test(cfg: Dict[str, Any]) -> None:
     assert np.all(dx >= dx_range[0]) and np.all(dx <= dx_range[1])
     assert np.all(dy >= dy_range[0]) and np.all(dy <= dy_range[1])
     assert np.all(conf >= 0.0) and np.all(conf <= 1.0)
+    if "is_pos" in data:
+        is_pos = data["is_pos"].astype(np.uint8)
+        assert is_pos.shape == (count,)
+        if np.any(is_pos == 0):
+            assert np.all(conf[is_pos == 0] == 0.0)
+            assert np.all(dx[is_pos == 0] == 0.0)
+            assert np.all(dy[is_pos == 0] == 0.0)
     if "H" in data:
         H = data["H"]
         assert H.dtype == np.float32
@@ -321,6 +358,7 @@ def save_preview(
     patches: np.ndarray,
     dx: np.ndarray,
     dy: np.ndarray,
+    is_pos: np.ndarray | None = None,
     H: np.ndarray | None = None,
 ) -> None:
     try:
@@ -349,30 +387,36 @@ def save_preview(
             continue
         patch = patches[idx]
         ax.imshow(patch, cmap="gray", vmin=0, vmax=255, origin="upper")
-        corner_x = center + float(dx[idx])
-        corner_y = center + float(dy[idx])
-        ax.plot(
-            [corner_x - 1.5, corner_x + 1.5],
-            [corner_y, corner_y],
-            color="lime",
-            linewidth=1.0,
-        )
-        ax.plot(
-            [corner_x, corner_x],
-            [corner_y - 1.5, corner_y + 1.5],
-            color="lime",
-            linewidth=1.0,
-        )
-        ax.arrow(
-            center,
-            center,
-            float(dx[idx]),
-            float(dy[idx]),
-            color="red",
-            width=0.3,
-            head_width=2.0,
-            length_includes_head=True,
-        )
+        sample_is_pos = True
+        if is_pos is not None:
+            sample_is_pos = bool(is_pos[idx])
+        label = "POS" if sample_is_pos else "NEG"
+        ax.text(1.0, 2.5, label, color="yellow", fontsize=6, weight="bold")
+        if sample_is_pos:
+            corner_x = center + float(dx[idx])
+            corner_y = center + float(dy[idx])
+            ax.plot(
+                [corner_x - 1.5, corner_x + 1.5],
+                [corner_y, corner_y],
+                color="lime",
+                linewidth=1.0,
+            )
+            ax.plot(
+                [corner_x, corner_x],
+                [corner_y - 1.5, corner_y + 1.5],
+                color="lime",
+                linewidth=1.0,
+            )
+            ax.arrow(
+                center,
+                center,
+                float(dx[idx]),
+                float(dy[idx]),
+                color="red",
+                width=0.3,
+                head_width=2.0,
+                length_includes_head=True,
+            )
 
     out_path = out_dir / "preview.png"
     fig.tight_layout()
@@ -451,6 +495,11 @@ def main() -> None:
     }
     synth_io.write_json(out_dir / "meta.json", meta)
 
+    neg_cfg = _neg_cfg(cfg)
+    neg_fraction = float(neg_cfg.get("fraction", 0.0)) if neg_cfg.get("enabled") else 0.0
+    total_pos = 0
+    total_count = 0
+
     written = 0
     for shard_idx in range(num_shards):
         count = min(shard_size, num_samples - written)
@@ -470,6 +519,7 @@ def main() -> None:
         extra = {
             "noise_sigma": data["noise_sigma"],
             "blur_sigma": data["blur_sigma"],
+            "is_pos": data["is_pos"],
         }
         if "H" in data:
             extra["H"] = data["H"]
@@ -482,7 +532,16 @@ def main() -> None:
             extra=extra,
         )
         written += count
+        shard_pos = int(np.sum(data["is_pos"]))
+        shard_neg = count - shard_pos
+        total_pos += shard_pos
+        total_count += count
         print(f"wrote {shard_path} ({count} samples)")
+        if neg_cfg.get("enabled"):
+            neg_frac = shard_neg / max(1, count)
+            print(
+                f"  pos={shard_pos} neg={shard_neg} neg_frac={neg_frac:.3f}"
+            )
 
     if preview_data is not None:
         save_preview(
@@ -490,7 +549,17 @@ def main() -> None:
             preview_data["patches"],
             preview_data["dx"],
             preview_data["dy"],
+            preview_data.get("is_pos"),
             preview_data.get("H"),
+        )
+
+    if neg_cfg.get("enabled"):
+        total_neg = total_count - total_pos
+        neg_frac = total_neg / max(1, total_count)
+        diff = abs(neg_frac - neg_fraction)
+        print(
+            f"overall neg_frac={neg_frac:.3f} "
+            f"(target={neg_fraction:.3f}, diff={diff:.3f})"
         )
 
 

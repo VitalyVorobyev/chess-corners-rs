@@ -1,5 +1,5 @@
 seed: 123
-data_dir: "tools/ml_refiner/data/synth_v1"
+data_dir: "tools/ml_refiner/data/synth_v2"
 patch_size: 21
 batch_size: 256
 num_workers: 2
@@ -8,6 +8,8 @@ lr: 1.0e-3
 weight_decay: 1.0e-4
 device: "auto"
 val_split: 0.1
+log_interval: 50
+log_interval_val: 0
 
 loss:
   lambda_conf: 0.2

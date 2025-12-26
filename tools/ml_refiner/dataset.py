@@ -40,6 +40,7 @@ class ShardData:
     dx: np.ndarray
     dy: np.ndarray
     conf: np.ndarray
+    is_pos: np.ndarray
 
 
 class ShardCache:
@@ -124,7 +125,11 @@ class ShardDataset(Dataset):
             dy = np.asarray(data["dy"], dtype=np.float32)
             conf = np.asarray(data["conf"], dtype=np.float32)
             conf = np.clip(conf, 0.0, 1.0)
-        return ShardData(patches=patches, dx=dx, dy=dy, conf=conf)
+            if "is_pos" in data:
+                is_pos = np.asarray(data["is_pos"], dtype=np.float32)
+            else:
+                is_pos = (conf > 0.0).astype(np.float32)
+        return ShardData(patches=patches, dx=dx, dy=dy, conf=conf, is_pos=is_pos)
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
         if index < 0 or index >= len(self):
@@ -142,6 +147,7 @@ class ShardDataset(Dataset):
                 float(shard.dx[local_idx]),
                 float(shard.dy[local_idx]),
                 float(shard.conf[local_idx]),
+                float(shard.is_pos[local_idx]),
             ],
             dtype=torch.float32,
         )

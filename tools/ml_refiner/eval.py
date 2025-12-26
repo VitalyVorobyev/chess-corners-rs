@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -79,6 +78,7 @@ def evaluate(model: torch.nn.Module, loader: DataLoader, device: torch.device) -
     all_dy_err: list[np.ndarray] = []
     all_conf_pred: list[np.ndarray] = []
     all_conf: list[np.ndarray] = []
+    all_is_pos: list[np.ndarray] = []
 
     with torch.no_grad():
         for x, y in loader:
@@ -93,6 +93,7 @@ def evaluate(model: torch.nn.Module, loader: DataLoader, device: torch.device) -
             dx = y[:, 0].detach().cpu().numpy()
             dy = y[:, 1].detach().cpu().numpy()
             conf = y[:, 2].detach().cpu().numpy()
+            is_pos = y[:, 3].detach().cpu().numpy()
 
             conf_pred = 1.0 / (1.0 + np.exp(-conf_logit))
 
@@ -100,22 +101,58 @@ def evaluate(model: torch.nn.Module, loader: DataLoader, device: torch.device) -
             all_dy_err.append(dy_hat - dy)
             all_conf_pred.append(conf_pred)
             all_conf.append(conf)
+            all_is_pos.append(is_pos)
 
     dx_err = np.concatenate(all_dx_err, axis=0)
     dy_err = np.concatenate(all_dy_err, axis=0)
     conf_pred = np.concatenate(all_conf_pred, axis=0)
     conf = np.concatenate(all_conf, axis=0)
+    is_pos = np.concatenate(all_is_pos, axis=0)
 
-    radial = np.sqrt(dx_err * dx_err + dy_err * dy_err)
+    pos_mask = is_pos > 0.5
+    neg_mask = ~pos_mask
 
     metrics: Dict[str, Any] = {
-        "mae_dx": float(np.mean(np.abs(dx_err))),
-        "mae_dy": float(np.mean(np.abs(dy_err))),
-        "p50": float(np.percentile(radial, 50)),
-        "p90": float(np.percentile(radial, 90)),
-        "p95": float(np.percentile(radial, 95)),
+        "pos_frac": float(np.mean(pos_mask)),
         "conf_mse": float(np.mean((conf_pred - conf) ** 2)),
     }
+
+    if np.any(pos_mask):
+        dx_pos = dx_err[pos_mask]
+        dy_pos = dy_err[pos_mask]
+        radial = np.sqrt(dx_pos * dx_pos + dy_pos * dy_pos)
+        metrics.update(
+            {
+                "mae_dx": float(np.mean(np.abs(dx_pos))),
+                "mae_dy": float(np.mean(np.abs(dy_pos))),
+                "p50": float(np.percentile(radial, 50)),
+                "p90": float(np.percentile(radial, 90)),
+                "p95": float(np.percentile(radial, 95)),
+            }
+        )
+    else:
+        metrics.update({"mae_dx": None, "mae_dy": None, "p50": None, "p90": None, "p95": None})
+
+    if np.any(pos_mask):
+        metrics["conf_pred_pos_mean"] = float(np.mean(conf_pred[pos_mask]))
+    else:
+        metrics["conf_pred_pos_mean"] = None
+    if np.any(neg_mask):
+        metrics["conf_pred_neg_mean"] = float(np.mean(conf_pred[neg_mask]))
+        metrics["conf_pred_neg_p95"] = float(np.percentile(conf_pred[neg_mask], 95))
+    else:
+        metrics["conf_pred_neg_mean"] = None
+        metrics["conf_pred_neg_p95"] = None
+
+    threshold = 0.5
+    if np.any(pos_mask):
+        metrics["tpr@0.5"] = float(np.mean(conf_pred[pos_mask] >= threshold))
+    else:
+        metrics["tpr@0.5"] = None
+    if np.any(neg_mask):
+        metrics["fpr@0.5"] = float(np.mean(conf_pred[neg_mask] >= threshold))
+    else:
+        metrics["fpr@0.5"] = None
 
     if np.std(conf_pred) > 1e-6 and np.std(conf) > 1e-6:
         metrics["conf_corr"] = float(np.corrcoef(conf_pred, conf)[0, 1])

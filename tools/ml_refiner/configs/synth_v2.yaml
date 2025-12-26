@@ -35,3 +35,10 @@ homography:
   max_skew: 1.2
   max_outside_frac: 0.05
   max_attempts: 50
+
+neg:
+  enabled: true
+  fraction: 0.30
+  types: ["flat", "edge", "stripe", "blob", "noise", "near_corner"]
+  near_corner_prob: 0.3
+  conf_negative: 0.0

@@ -43,6 +43,7 @@ Each shard (`npz`) contains:
 - `dx`: `float32` array `[N]`
 - `dy`: `float32` array `[N]`
 - `conf`: `float32` array `[N]` (confidence in `[0, 1]`)
+- `is_pos`: `uint8` array `[N]` (1 = corner present, 0 = negative)
 - `noise_sigma`: `float32` array `[N]`
 - `blur_sigma`: `float32` array `[N]`
 - `H`: `float32` array `[N, 3, 3]` (homography from canonical plane to patch coords, when enabled)
@@ -94,6 +95,8 @@ python tools/ml_refiner/synth/generate_dataset.py \
   that adjusts edge sharpness.
 - Gaussian blur and noise are sampled per patch; confidence is a deterministic
   function of their strengths.
+- Negatives can be enabled via `neg` in `synth_v1.yaml` to provide non-corner
+  patches with `conf=0` and `is_pos=0`.
 
 ## Train a baseline model
 
@@ -102,6 +105,10 @@ python tools/ml_refiner/train.py --config tools/ml_refiner/configs/train_v1.yaml
 ```
 
 By default, `device: auto` selects MPS if available, otherwise CPU.
+Progress logging is controlled by `log_interval` (train) and
+`log_interval_val` (validation) in the config.
+Regression loss is computed on positives only using `is_pos`, while confidence
+is trained on all samples.
 
 Outputs are stored under `tools/ml_refiner/runs/<timestamp>/` with:
 
