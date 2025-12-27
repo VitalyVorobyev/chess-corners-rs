@@ -1,0 +1,29 @@
+{
+  "patch_size": 21,
+  "num_fixtures": 64,
+  "input": {
+    "dtype": "float32",
+    "shape": [
+      64,
+      1,
+      21,
+      21
+    ],
+    "normalization": "uint8->float32/255, clamp to [0,1]"
+  },
+  "output": {
+    "dtype": "float32",
+    "shape": [
+      64,
+      3
+    ],
+    "semantics": [
+      "dx",
+      "dy",
+      "conf_logit"
+    ]
+  },
+  "seed": 1234,
+  "source": "data/synth_v3",
+  "git_commit": "eba74c2dca23271a3b45589a716937ee1acd2405"
+}

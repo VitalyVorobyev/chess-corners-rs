@@ -1,5 +1,5 @@
 seed: 137
-dataset_dir: "tools/ml_refiner/data/synth_v4"
+dataset_dir: "data/synth_v4"
 patch_size: 21
 num_samples_eval: 20000
 batch_size: 512
@@ -12,11 +12,11 @@ opencv:
   eps: 1.0e-4
 
 ml:
-  checkpoint: "tools/ml_refiner/runs/20251227_131025/model_best.pt"
+  checkpoint: "runs/20251227_181538/model_best.pt"
   conf_threshold: 0.0
 
 report:
-  out_dir: "tools/ml_refiner/runs/compare_opencv"
+  out_dir: "runs/compare_opencv"
   make_plots: true
   blur_bins: [0.0, 0.5, 1.0, 1.5, 2.5]
   noise_bins: [0.0, 2.0, 5.0, 10.0, 20.0]
