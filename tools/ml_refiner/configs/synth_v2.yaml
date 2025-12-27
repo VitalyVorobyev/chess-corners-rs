@@ -1,4 +1,4 @@
-seed: 123
+seed: 127
 patch_size: 21
 num_samples: 100000
 shard_size: 10000
@@ -37,7 +37,7 @@ homography:
   max_attempts: 50
 
 neg:
-  enabled: true
+  enabled: false
   fraction: 0.30
   types: ["flat", "edge", "stripe", "blob", "noise", "near_corner"]
   near_corner_prob: 0.3

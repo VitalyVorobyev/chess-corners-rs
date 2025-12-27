@@ -13,7 +13,7 @@ def main():
     args = parser.parse_args()
 
     img = Image.open(args.image).convert("L")
-    snap_idx = 1
+    snap_idx = 5
     col_lo, col_hi = snap_idx * 720, (snap_idx + 1) * 720
     img_np = np.array(img)[:, col_lo:col_hi]
 

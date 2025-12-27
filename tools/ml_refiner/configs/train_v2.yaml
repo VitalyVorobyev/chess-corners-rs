@@ -1,5 +1,5 @@
 seed: 123
-data_dir: "tools/ml_refiner/data/synth_v2"
+data_dir: "tools/ml_refiner/data/synth_v3"
 patch_size: 21
 batch_size: 256
 num_workers: 2

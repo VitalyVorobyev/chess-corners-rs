@@ -80,7 +80,7 @@ Quick sanity check:
 
 ```bash
 python tools/ml_refiner/synth/generate_dataset.py \
-  --config tools/ml_refiner/configs/synth_v1.yaml \
+  --config tools/ml_refiner/configs/synth_v2.yaml \
   --self-test
 ```
 
@@ -101,7 +101,7 @@ python tools/ml_refiner/synth/generate_dataset.py \
 ## Train a baseline model
 
 ```bash
-python tools/ml_refiner/train.py --config tools/ml_refiner/configs/train_v1.yaml
+python tools/ml_refiner/train.py --config tools/ml_refiner/configs/train_v2.yaml
 ```
 
 By default, `device: auto` selects MPS if available, otherwise CPU.

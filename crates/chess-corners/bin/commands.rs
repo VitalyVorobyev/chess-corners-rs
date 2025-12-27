@@ -5,6 +5,7 @@
 //! share the same behavior.
 
 use anyhow::{Context, Result};
+use log::info;
 use chess_corners::{
     find_chess_corners_image, ChessConfig, ChessParams, CoarseToFineParams, RefinerKind,
 };
@@ -145,6 +146,7 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
     let mut config = ChessConfig::default();
     apply_params_overrides(&mut config.params, &cfg)?;
     apply_multiscale_overrides(&mut config.multiscale, &cfg)?;
+    info!("refiner: {:?}", config.params.refiner);
 
     let corners = find_chess_corners_image(&img, &config);
 
