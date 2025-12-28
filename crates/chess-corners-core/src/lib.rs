@@ -59,8 +59,6 @@ pub use crate::refine::{
     RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind, SaddlePointConfig,
     SaddlePointRefiner,
 };
-#[cfg(feature = "ml-refiner")]
-pub use crate::refine::{MlFallback, MlRefinerParams};
 pub use imageview::ImageView;
 /// Tunable parameters for the ChESS response computation and corner detection.
 #[derive(Clone, Debug)]

@@ -5,13 +5,13 @@
 //! share the same behavior.
 
 use anyhow::{Context, Result};
-use log::info;
 use chess_corners::{
     find_chess_corners_image, ChessConfig, ChessParams, CoarseToFineParams, RefinerKind,
 };
 #[cfg(feature = "ml-refiner")]
-use chess_corners::{MlFallback, MlRefinerParams};
+use chess_corners::{find_chess_corners_image_with_ml, MlFallback, MlRefinerParams};
 use image::{ImageBuffer, ImageReader, Luma};
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Write, path::Path, path::PathBuf};
 
@@ -26,9 +26,9 @@ pub struct DetectionConfig {
     pub output_png: Option<PathBuf>,
     pub threshold_rel: Option<f32>,
     pub threshold_abs: Option<f32>,
-    /// Subpixel refiner selection (center_of_mass, forstner, saddle_point, ml).
+    /// Subpixel refiner selection (center_of_mass, forstner, saddle_point).
     pub refiner: Option<RefinerMethod>,
-    /// ML refiner configuration (used when refiner = "ml").
+    /// ML refiner configuration (enables ML pipeline when provided).
     pub ml: Option<MlConfig>,
     pub radius10: Option<bool>,
     pub descriptor_radius10: Option<bool>,
@@ -43,25 +43,14 @@ pub enum RefinerMethod {
     CenterOfMass,
     Forstner,
     SaddlePoint,
-    Ml,
 }
 
 impl RefinerMethod {
-    fn to_refiner_kind(&self, ml: Option<&MlConfig>) -> Result<RefinerKind> {
+    fn to_refiner_kind(&self) -> RefinerKind {
         match self {
-            RefinerMethod::CenterOfMass => Ok(RefinerKind::CenterOfMass(Default::default())),
-            RefinerMethod::Forstner => Ok(RefinerKind::Forstner(Default::default())),
-            RefinerMethod::SaddlePoint => Ok(RefinerKind::SaddlePoint(Default::default())),
-            RefinerMethod::Ml => {
-                #[cfg(feature = "ml-refiner")]
-                {
-                    Ok(RefinerKind::Ml(build_ml_params(ml)))
-                }
-                #[cfg(not(feature = "ml-refiner"))]
-                {
-                    anyhow::bail!("ml refiner requires the \"ml-refiner\" feature")
-                }
-            }
+            RefinerMethod::CenterOfMass => RefinerKind::CenterOfMass(Default::default()),
+            RefinerMethod::Forstner => RefinerKind::Forstner(Default::default()),
+            RefinerMethod::SaddlePoint => RefinerKind::SaddlePoint(Default::default()),
         }
     }
 }
@@ -148,7 +137,20 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
     apply_multiscale_overrides(&mut config.multiscale, &cfg)?;
     info!("refiner: {:?}", config.params.refiner);
 
-    let corners = find_chess_corners_image(&img, &config);
+    let corners = if cfg.ml.is_some() {
+        #[cfg(feature = "ml-refiner")]
+        {
+            info!("ml refiner: enabled");
+            let ml_params = build_ml_params(cfg.ml.as_ref());
+            find_chess_corners_image_with_ml(&img, &config, &ml_params)
+        }
+        #[cfg(not(feature = "ml-refiner"))]
+        {
+            anyhow::bail!("ml refiner requires the \"ml-refiner\" feature")
+        }
+    } else {
+        find_chess_corners_image(&img, &config)
+    };
 
     let levels = config.multiscale.pyramid.num_levels;
     let min_size = config.multiscale.pyramid.min_size;
@@ -204,7 +206,7 @@ fn apply_params_overrides(params: &mut ChessParams, cfg: &DetectionConfig) -> Re
         params.descriptor_use_radius10 = Some(r);
     }
     if let Some(refiner) = cfg.refiner.as_ref() {
-        params.refiner = refiner.to_refiner_kind(cfg.ml.as_ref())?;
+        params.refiner = refiner.to_refiner_kind();
     }
     if let Some(t) = cfg.threshold_rel {
         params.threshold_rel = t;

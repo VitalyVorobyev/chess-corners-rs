@@ -78,6 +78,33 @@
 //! # }
 //! ```
 //!
+//! ## ML refiner (feature `ml-refiner`)
+//!
+//! ```no_run
+//! # #[cfg(feature = "ml-refiner")]
+//! # {
+//! use chess_corners::{
+//!     ChessConfig, ChessParams, MlFallback, MlRefinerParams, find_chess_corners_image_with_ml,
+//! };
+//! use image::GrayImage;
+//!
+//! let img = GrayImage::new(1, 1);
+//! let mut cfg = ChessConfig::single_scale();
+//! cfg.params = ChessParams::default();
+//!
+//! let ml = MlRefinerParams {
+//!     model_path: None,
+//!     patch_size: 21,
+//!     batch_size: 64,
+//!     conf_threshold: Some(0.5),
+//!     fallback: MlFallback::KeepCandidate,
+//! };
+//!
+//! let corners = find_chess_corners_image_with_ml(&img, &cfg, &ml);
+//! # let _ = corners;
+//! # }
+//! ```
+//!
 //! ## Python bindings
 //!
 //! The workspace includes a PyO3-based Python extension crate at
@@ -107,9 +134,10 @@
 //!   ROI radius (at the smallest level) and merge radius for
 //!   deduplicating refined corners.
 //! - [`RefinerKind`] (via [`ChessParams::refiner`]) selects the
-//!   subpixel refinement backend (center-of-mass default, Förstner,
-//!   saddle-point, or ML when the `ml-refiner` feature is enabled)
-//!   and exposes per-refiner tuning knobs.
+//!   classic subpixel refinement backend (center-of-mass default,
+//!   Förstner, saddle-point) and exposes per-refiner tuning knobs.
+//! - ML refinement is exposed via explicit `find_chess_corners_*_with_ml`
+//!   entry points when the `ml-refiner` feature is enabled.
 //!
 //! The shortcut [`ChessConfig::single_scale`] configures a
 //! single-scale run by setting `multiscale.pyramid.num_levels = 1`.
@@ -129,8 +157,8 @@
 //! - `rayon` – parallelizes response computation and multiscale
 //!   refinement over image rows. Combine with `par_pyramid` to
 //!   parallelize pyramid downsampling as well.
-//! - `ml-refiner` – enables the ML-backed subpixel refiner (`RefinerKind::Ml`)
-//!   via the `chess-corners-ml` crate and embedded ONNX model.
+//! - `ml-refiner` – enables the ML-backed refiner entry points via the
+//!   `chess-corners-ml` crate and embedded ONNX model.
 //! - `simd` – enables portable-SIMD accelerated inner loops for the
 //!   response kernel (requires a nightly compiler). Combine with
 //!   `par_pyramid` to SIMD-accelerate pyramid downsampling.
@@ -157,16 +185,18 @@ mod pyramid;
 // Re-export a focused subset of core types for convenience. Consumers that
 // need lower-level primitives (rings, raw response functions, etc.) are
 // encouraged to depend on `chess-corners-core` directly.
+#[cfg(feature = "ml-refiner")]
+pub use crate::ml_refiner::{MlFallback, MlRefinerParams};
 pub use chess_corners_core::{
     CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner, ForstnerConfig, ImageView,
     RefineResult, RefineStatus, Refiner, RefinerKind, ResponseMap, SaddlePointConfig,
 };
-#[cfg(feature = "ml-refiner")]
-pub use chess_corners_core::{MlFallback, MlRefinerParams};
 
 // High-level helpers on `image::GrayImage`.
 #[cfg(feature = "image")]
 pub mod image;
+#[cfg(all(feature = "image", feature = "ml-refiner"))]
+pub use image::find_chess_corners_image_with_ml;
 #[cfg(feature = "image")]
 pub use image::{find_chess_corners_image, find_chess_corners_image_with_refiner};
 
@@ -175,6 +205,8 @@ pub use crate::multiscale::{
     find_chess_corners, find_chess_corners_buff, find_chess_corners_buff_with_refiner,
     find_chess_corners_with_refiner, CoarseToFineParams,
 };
+#[cfg(feature = "ml-refiner")]
+pub use crate::multiscale::{find_chess_corners_buff_with_ml, find_chess_corners_with_ml};
 pub use crate::pyramid::PyramidBuffers;
 
 /// Unified detector configuration combining response/detector params and
@@ -229,4 +261,19 @@ pub fn find_chess_corners_u8_with_refiner(
     let view = ImageView::from_u8_slice(width as usize, height as usize, img)
         .expect("image dimensions must match buffer length");
     multiscale::find_chess_corners_with_refiner(view, cfg, refiner)
+}
+
+/// Detect corners from a raw grayscale buffer using the ML refiner pipeline.
+#[must_use]
+#[cfg(feature = "ml-refiner")]
+pub fn find_chess_corners_u8_with_ml(
+    img: &[u8],
+    width: u32,
+    height: u32,
+    cfg: &ChessConfig,
+    ml: &MlRefinerParams,
+) -> Vec<CornerDescriptor> {
+    let view = ImageView::from_u8_slice(width as usize, height as usize, img)
+        .expect("image dimensions must match buffer length");
+    multiscale::find_chess_corners_with_ml(view, cfg, ml)
 }

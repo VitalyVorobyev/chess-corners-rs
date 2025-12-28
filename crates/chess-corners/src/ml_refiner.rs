@@ -6,9 +6,43 @@ use chess_corners_core::detect::detect_corners_from_response_with_refiner;
 use chess_corners_core::{ChessParams, CornerRefiner, RefineContext, ResponseMap};
 use chess_corners_ml::{MlModel, ModelSource};
 use log::{info, warn};
+use std::path::PathBuf;
+
+/// ML refiner fallback behavior when inference is unavailable or low-confidence.
+#[derive(Clone, Debug)]
+pub enum MlFallback {
+    /// Keep the original candidate without refinement.
+    KeepCandidate,
+    /// Use the classic refiner configured in `ChessParams::refiner`.
+    UseClassicRefiner,
+    /// Drop the candidate entirely.
+    Reject,
+}
+
+/// Configuration for the ML subpixel refiner.
+#[derive(Clone, Debug)]
+pub struct MlRefinerParams {
+    pub model_path: Option<PathBuf>,
+    pub patch_size: u32,
+    pub batch_size: u32,
+    pub conf_threshold: Option<f32>,
+    pub fallback: MlFallback,
+}
+
+impl Default for MlRefinerParams {
+    fn default() -> Self {
+        Self {
+            model_path: None,
+            patch_size: 21,
+            batch_size: 64,
+            conf_threshold: None,
+            fallback: MlFallback::KeepCandidate,
+        }
+    }
+}
 
 pub(crate) struct MlRefinerState {
-    params: crate::MlRefinerParams,
+    params: MlRefinerParams,
     model: Option<MlModel>,
     patch_size: usize,
     patch_area: usize,
@@ -19,16 +53,14 @@ pub(crate) struct MlRefinerState {
 }
 
 impl MlRefinerState {
-    pub(crate) fn new(params: &crate::MlRefinerParams) -> Self {
+    pub(crate) fn new(params: &MlRefinerParams, fallback_kind: &RefinerKind) -> Self {
         let patch_size = params.patch_size.max(1) as usize;
         let patch_area = patch_size * patch_size;
         let batch_size = params.batch_size.max(1) as usize;
         let buffer = vec![0.0f32; batch_size * patch_area];
         let indices = Vec::with_capacity(batch_size);
         let fallback_refiner = match params.fallback {
-            crate::MlFallback::UseClassicRefiner => Some(Refiner::from_kind(
-                RefinerKind::CenterOfMass(Default::default()),
-            )),
+            MlFallback::UseClassicRefiner => Some(Refiner::from_kind(fallback_kind.clone())),
             _ => None,
         };
         let model = load_model(params, patch_size);
@@ -46,7 +78,7 @@ impl MlRefinerState {
     }
 }
 
-pub(crate) fn patch_radius(params: &crate::MlRefinerParams) -> i32 {
+pub(crate) fn patch_radius(params: &MlRefinerParams) -> i32 {
     let size = params.patch_size.max(1) as i32;
     (size - 1) / 2
 }
@@ -200,7 +232,7 @@ pub(crate) fn detect_corners_with_ml(
     out
 }
 
-fn load_model(params: &crate::MlRefinerParams, patch_size: usize) -> Option<MlModel> {
+fn load_model(params: &MlRefinerParams, patch_size: usize) -> Option<MlModel> {
     let source = match &params.model_path {
         Some(path) => ModelSource::Path(path.clone()),
         None => ModelSource::EmbeddedDefault,
@@ -233,7 +265,7 @@ fn run_batch(
     batch_count: usize,
     indices: &[usize],
     candidates: &[Corner],
-    params: &crate::MlRefinerParams,
+    params: &MlRefinerParams,
     ctx: &RefineContext<'_>,
     fallback_refiner: &mut Option<Refiner>,
     results: &mut [Option<Corner>],
@@ -304,7 +336,7 @@ struct MlRefineStats {
 fn apply_fallbacks(
     resp: &ResponseMap,
     image: Option<ImageView<'_>>,
-    params: &crate::MlRefinerParams,
+    params: &MlRefinerParams,
     fallback_refiner: &mut Option<Refiner>,
     candidates: Vec<Corner>,
 ) -> Vec<Corner> {
@@ -323,17 +355,17 @@ fn apply_fallbacks(
 
 fn apply_fallback(
     corner: &Corner,
-    params: &crate::MlRefinerParams,
+    params: &MlRefinerParams,
     ctx: &RefineContext<'_>,
     fallback_refiner: &mut Option<Refiner>,
 ) -> Option<Corner> {
     match params.fallback {
-        crate::MlFallback::KeepCandidate => Some(Corner {
+        MlFallback::KeepCandidate => Some(Corner {
             xy: corner.xy,
             strength: corner.strength,
         }),
-        crate::MlFallback::Reject => None,
-        crate::MlFallback::UseClassicRefiner => {
+        MlFallback::Reject => None,
+        MlFallback::UseClassicRefiner => {
             let refiner = fallback_refiner.as_mut()?;
             let res = refiner.refine(corner.xy, *ctx);
             if matches!(res.status, RefineStatus::Accepted) {
@@ -476,5 +508,39 @@ mod tests {
         let view = ImageView::from_u8_slice(width, height, &img).unwrap();
         let mut out = vec![0.0f32; 9];
         assert!(extract_patch_u8_to_f32(view, 0.0, 0.0, 3, &mut out).is_none());
+    }
+
+    #[test]
+    fn ml_fallback_respects_refiner_config() {
+        let w = 32;
+        let h = 32;
+        let mut resp = ResponseMap {
+            w,
+            h,
+            data: vec![0.0f32; w * h],
+        };
+        let idx = |x: usize, y: usize| y * w + x;
+        resp.data[idx(16, 16)] = 10.0;
+        resp.data[idx(16, 17)] = 1.0;
+        resp.data[idx(17, 16)] = 1.0;
+        resp.data[idx(18, 16)] = 5.0;
+
+        let mut params = ChessParams::default();
+        params.refiner = RefinerKind::CenterOfMass(crate::CenterOfMassConfig { radius: 1 });
+
+        let mut ml_params = MlRefinerParams::default();
+        ml_params.model_path = Some(PathBuf::from("missing.onnx"));
+        ml_params.patch_size = 3;
+        ml_params.fallback = MlFallback::UseClassicRefiner;
+
+        let mut state = MlRefinerState::new(&ml_params, &params.refiner);
+        let corners = detect_corners_with_ml(&resp, &params, None, &mut state);
+        assert_eq!(corners.len(), 1);
+
+        let expected_x = (16.0 * 10.0 + 16.0 + 17.0) / 12.0;
+        let expected_y = (16.0 * 10.0 + 17.0 + 16.0) / 12.0;
+        let c = corners[0].xy;
+        assert!((c[0] - expected_x).abs() < 1e-4);
+        assert!((c[1] - expected_y).abs() < 1e-4);
     }
 }

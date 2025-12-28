@@ -57,23 +57,30 @@ You can also override the refiner per call without mutating your config via
 Enable the ML-backed refiner (feature `ml-refiner`) to run the exported ONNX model in Rust:
 
 ```rust
-use chess_corners::{ChessConfig, ChessParams, MlRefinerParams, RefinerKind};
+use chess_corners::{
+    ChessConfig, ChessParams, MlRefinerParams, MlFallback, find_chess_corners_image_with_ml,
+};
+use image::GrayImage;
 
 let mut cfg = ChessConfig::single_scale();
 cfg.params = ChessParams::default();
-cfg.params.refiner = RefinerKind::Ml(MlRefinerParams {
+
+let img = GrayImage::new(1, 1);
+let ml = MlRefinerParams {
     model_path: None, // use embedded ONNX model
     patch_size: 21,
     batch_size: 64,
     conf_threshold: Some(0.5),
-    fallback: chess_corners::MlFallback::KeepCandidate,
-});
+    fallback: MlFallback::KeepCandidate,
+};
+
+let corners = find_chess_corners_image_with_ml(&img, &cfg, &ml);
 ```
 
 The ML refiner expects normalized float32 patches with the same size as the
 exported model; set `patch_size` to match the ONNX metadata and prefer the
 embedded model for the default path.
-`MlFallback::UseClassicRefiner` uses the legacy center-of-mass refiner.
+`MlFallback::UseClassicRefiner` uses `cfg.params.refiner` (default center-of-mass).
 
 You can also try the bundled examples on sample images in `testimages/`:
 
@@ -86,7 +93,7 @@ Feature flags:
 
 - `image` *(default)* – enable `find_chess_corners_image` for `image::GrayImage`.
 - `rayon` – parallelize response computation and multiscale refinement.
-- `ml-refiner` – enable `RefinerKind::Ml` and ONNX inference via `chess-corners-ml`.
+- `ml-refiner` – enable ML entry points and ONNX inference via `chess-corners-ml`.
 - `simd` – enable portable-SIMD acceleration in the core response kernel (nightly only).
 - `par_pyramid` – opt into SIMD/`rayon` in the pyramid builder.
 - `tracing` – emit structured spans from multiscale detection and the CLI when enabled.

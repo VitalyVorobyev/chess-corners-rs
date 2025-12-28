@@ -6,8 +6,6 @@
 //! acceptance logic.
 use crate::imageview::ImageView;
 use crate::ResponseMap;
-#[cfg(feature = "ml-refiner")]
-use std::path::PathBuf;
 
 /// Status of a refinement attempt.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -51,47 +49,12 @@ pub trait CornerRefiner {
     fn refine(&mut self, seed_xy: [f32; 2], ctx: RefineContext<'_>) -> RefineResult;
 }
 
-/// ML refiner fallback behavior when inference is unavailable or low-confidence.
-#[cfg(feature = "ml-refiner")]
-#[derive(Clone, Debug)]
-pub enum MlFallback {
-    KeepCandidate,
-    UseClassicRefiner,
-    Reject,
-}
-
-/// Configuration for the ML subpixel refiner.
-#[cfg(feature = "ml-refiner")]
-#[derive(Clone, Debug)]
-pub struct MlRefinerParams {
-    pub model_path: Option<PathBuf>,
-    pub patch_size: u32,
-    pub batch_size: u32,
-    pub conf_threshold: Option<f32>,
-    pub fallback: MlFallback,
-}
-
-#[cfg(feature = "ml-refiner")]
-impl Default for MlRefinerParams {
-    fn default() -> Self {
-        Self {
-            model_path: None,
-            patch_size: 21,
-            batch_size: 64,
-            conf_threshold: None,
-            fallback: MlFallback::KeepCandidate,
-        }
-    }
-}
-
 /// User-facing enum selecting a refinement backend.
 #[derive(Clone, Debug)]
 pub enum RefinerKind {
     CenterOfMass(CenterOfMassConfig),
     Forstner(ForstnerConfig),
     SaddlePoint(SaddlePointConfig),
-    #[cfg(feature = "ml-refiner")]
-    Ml(MlRefinerParams),
 }
 
 impl Default for RefinerKind {
@@ -114,10 +77,6 @@ impl Refiner {
             RefinerKind::CenterOfMass(cfg) => Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg)),
             RefinerKind::Forstner(cfg) => Refiner::Forstner(ForstnerRefiner::new(cfg)),
             RefinerKind::SaddlePoint(cfg) => Refiner::SaddlePoint(SaddlePointRefiner::new(cfg)),
-            #[cfg(feature = "ml-refiner")]
-            RefinerKind::Ml(_) => {
-                Refiner::CenterOfMass(CenterOfMassRefiner::new(CenterOfMassConfig::default()))
-            }
         }
     }
 }

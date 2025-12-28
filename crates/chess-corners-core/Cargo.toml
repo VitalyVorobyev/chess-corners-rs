@@ -20,7 +20,6 @@ std = []
 rayon = ["dep:rayon"]
 simd = []
 tracing = ["dep:tracing"]
-ml-refiner = ["std"]
 
 [dependencies]
 rayon = { version = "1.10", optional=true }

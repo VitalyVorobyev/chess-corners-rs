@@ -4,15 +4,15 @@ use std::io::Cursor;
 
 const PATCHES: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../assets/ml/fixtures/patches.npy"
+    "/../../assets/ml/fixtures/v2/patches.npy"
 ));
 const TORCH_OUT: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../assets/ml/fixtures/torch_out.npy"
+    "/../../assets/ml/fixtures/v2/torch_out.npy"
 ));
 const META_JSON: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../assets/ml/fixtures/meta.json"
+    "/../../assets/ml/fixtures/v2/meta.json"
 ));
 
 #[test]
