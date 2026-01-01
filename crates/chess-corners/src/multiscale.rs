@@ -28,7 +28,7 @@ use crate::{ChessConfig, ChessParams};
 use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
 use chess_corners_core::detect::{detect_corners_from_response_with_refiner, merge_corners_simple};
 use chess_corners_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
-use chess_corners_core::CornerDescriptor;
+use chess_corners_core::{CornerDescriptor, CornerRefiner};
 use chess_corners_core::{ImageView, Refiner, RefinerKind, ResponseMap};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;

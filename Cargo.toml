@@ -4,6 +4,7 @@ members = [
   "crates/chess-corners-core",
   "crates/chess-corners",
   "crates/chess-corners-ml",
+  "crates/chess-corners-py",
 ]
 
 [workspace.package]
