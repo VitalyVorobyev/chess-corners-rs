@@ -52,6 +52,10 @@ jobs:
         if: matrix.toolchain == 'stable'
         run: cargo test --workspace --features tracing
 
+      - name: test (ml-refiner feature)
+        if: matrix.toolchain == 'stable'
+        run: cargo test --workspace --features ml-refiner
+
       - name: test chess-core feature matrix (no simd)
         if: matrix.toolchain == 'stable'
         run: |

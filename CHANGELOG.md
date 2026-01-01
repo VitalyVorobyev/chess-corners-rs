@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+## [0.3.0]
+
+### Added
+
+- ML-backed subpixel refiner (feature `ml-refiner`) with ONNX model support and explicit ML entry points (confidence output is ignored in this release).
+- CLI support for ML refinement via `ml: true` in the config (feature-gated).
+- Python bindings for full config structs, classic refiners, and the ML refiner entry point (using embedded defaults).
+- Tracing diagnostics for ML refiner timings.
+- Book + README coverage of ML refiner methodology, results, and usage.
+
+### Changed
+
+- Version bump across all crates and Python package to 0.3.0.
+
 ## [0.2.1]
 
 ### Added

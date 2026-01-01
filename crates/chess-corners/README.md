@@ -58,30 +58,22 @@ You can also override the refiner per call without mutating your config via
 Enable the ML-backed refiner (feature `ml-refiner`) to run the exported ONNX model in Rust:
 
 ```rust
-use chess_corners::{
-    ChessConfig, ChessParams, MlRefinerParams, MlFallback, find_chess_corners_image_with_ml,
-};
+use chess_corners::{ChessConfig, ChessParams, find_chess_corners_image_with_ml};
 use image::GrayImage;
 
 let mut cfg = ChessConfig::single_scale();
 cfg.params = ChessParams::default();
 
 let img = GrayImage::new(1, 1);
-let ml = MlRefinerParams {
-    model_path: None, // use embedded ONNX model
-    patch_size: 21,
-    batch_size: 64,
-    conf_threshold: Some(0.5),
-    fallback: MlFallback::KeepCandidate,
-};
-
-let corners = find_chess_corners_image_with_ml(&img, &cfg, &ml);
+let corners = find_chess_corners_image_with_ml(&img, &cfg);
 ```
 
-The ML refiner expects normalized float32 patches with the same size as the
-exported model; set `patch_size` to match the ONNX metadata and prefer the
-embedded model for the default path.
-`MlFallback::UseClassicRefiner` uses `cfg.params.refiner` (default center-of-mass).
+The ML refiner runs an ONNX model on normalized patches (uint8 / 255.0) centered
+on each candidate and predicts `[dx, dy, conf_logit]`. The current version
+ignores `conf_logit` and applies the offsets directly, using the embedded model
+defaults (patch size and batch size are fixed to match the model).
+Current evaluation is synthetic; real-world performance still needs validation.
+It is also slower (about 23.5 ms vs 0.6 ms for 77 corners on `testimages/mid.png`).
 
 You can also try the bundled examples on sample images in `testimages/`:
 

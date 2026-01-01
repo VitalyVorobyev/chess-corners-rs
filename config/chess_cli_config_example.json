@@ -1,5 +1,5 @@
 {
-  "image": "testdata/images/Cam1.png",
+  "image": "testimages/mid.png",
   "pyramid_levels": 3,
   "min_size": 256,
   "refinement_radius":3,
@@ -9,13 +9,6 @@
   "threshold_rel": 0.2,
   "threshold_abs": null,
   "refiner": "center_of_mass",
-  "ml": {
-    "model_path": null,
-    "patch_size": 21,
-    "batch_size": 64,
-    "conf_threshold": 0.2,
-    "fallback": "keep_candidate"
-  },
   "radius10": false,
   "nms_radius": 2,
   "min_cluster_size": 2,

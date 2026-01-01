@@ -106,14 +106,11 @@ is available via `find_chess_corners_with_ml`:
 
 ```python
 cfg = chess_corners.ChessConfig()
-ml = chess_corners.MlRefinerParams()
-ml.patch_size = 21
-ml.batch_size = 64
-ml.conf_threshold = 0.5
-ml.fallback = chess_corners.MlFallback.use_classic_refiner()
-
-corners = chess_corners.find_chess_corners_with_ml(img, cfg, ml)
+corners = chess_corners.find_chess_corners_with_ml(img, cfg)
 ```
+
+The ML refiner uses built-in defaults and ignores the model’s confidence
+output in the current version.
 
 ## Development
 

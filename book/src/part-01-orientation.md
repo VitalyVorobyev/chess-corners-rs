@@ -79,7 +79,7 @@ This repository is a small Rust workspace with two main library crates and a CLI
   - Entrypoints:
     - `bin/main.rs`, `bin/commands.rs`, `bin/logger.rs`
   - Responsibilities:
-    - Load images and optional config JSON (`config/chess_cli_config.example.json`).
+    - Load images and optional config JSON (`config/chess_cli_config_example.json`).
     - Run single-scale or multiscale detection using the library API.
     - Emit JSON summaries of detected corners and visualization PNG overlays.
     - Optionally emit JSON tracing spans for profiling.
@@ -103,7 +103,7 @@ The easiest way to use ChESS from your own project is to depend on the `chess-co
 
 ```toml
 [dependencies]
-chess-corners = "0.2.1"
+chess-corners = "0.3.0"
 image = "0.25" # if you want GrayImage integration
 ```
 
@@ -166,13 +166,14 @@ Both crates use Cargo features to control performance and diagnostics:
   - `simd` – forward `simd` to the core and enable SIMD on the response path (nightly). Combine with `par_pyramid` for SIMD downsampling.
   - `par_pyramid` – opt-in gate for SIMD/`rayon` acceleration inside the pyramid builder.
   - `tracing` – enable tracing in the core and multiscale layers.
+  - `ml-refiner` – enable the ONNX-backed ML subpixel refiner entry points.
   - `cli` – build the `chess-corners` binary.
 
 In your own `Cargo.toml`, you can opt into specific combinations:
 
 ```toml
 [dependencies]
-chess-corners = { version = "0.2", features = ["image", "rayon"] }
+chess-corners = { version = "0.3", features = ["image", "rayon"] }
 ```
 
 For example:
@@ -190,7 +191,7 @@ If you’re working inside this workspace, you can build and run the CLI directl
 
 ```bash
 cargo run -p chess-corners --release --bin chess-corners -- \
-  run config/chess_cli_config.example.json
+  run config/chess_cli_config_example.json
 ```
 
 This will:

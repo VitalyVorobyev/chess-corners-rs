@@ -1,6 +1,6 @@
 [package]
 name = "chess-corners"
-version = "0.2.1"
+version = "0.3.0"
 description = "High-level chessboard / ChESS corner detection API"
 edition.workspace = true
 license.workspace = true
@@ -31,8 +31,8 @@ path = "bin/main.rs"
 required-features = ["image"]
 
 [dependencies]
-chess-corners-core = { path = "../chess-corners-core", version = "0.2" }
-chess-corners-ml = { path = "../chess-corners-ml", optional = true }
+chess-corners-core = { path = "../chess-corners-core", version = "0.3" }
+chess-corners-ml = { path = "../chess-corners-ml", version = "0.3", optional = true }
 image = { version = "0.25", optional = true }
 log = "0.4"
 anyhow = "1"

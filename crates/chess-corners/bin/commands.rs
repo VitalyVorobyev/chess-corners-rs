@@ -5,11 +5,11 @@
 //! share the same behavior.
 
 use anyhow::{Context, Result};
+#[cfg(feature = "ml-refiner")]
+use chess_corners::find_chess_corners_image_with_ml;
 use chess_corners::{
     find_chess_corners_image, ChessConfig, ChessParams, CoarseToFineParams, RefinerKind,
 };
-#[cfg(feature = "ml-refiner")]
-use chess_corners::{find_chess_corners_image_with_ml, MlFallback, MlRefinerParams};
 use image::{ImageBuffer, ImageReader, Luma};
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -28,8 +28,8 @@ pub struct DetectionConfig {
     pub threshold_abs: Option<f32>,
     /// Subpixel refiner selection (center_of_mass, forstner, saddle_point).
     pub refiner: Option<RefinerMethod>,
-    /// ML refiner configuration (enables ML pipeline when provided).
-    pub ml: Option<MlConfig>,
+    /// Enable the ML refiner pipeline (requires the `ml-refiner` feature).
+    pub ml: Option<bool>,
     pub radius10: Option<bool>,
     pub descriptor_radius10: Option<bool>,
     pub nms_radius: Option<u32>,
@@ -53,57 +53,6 @@ impl RefinerMethod {
             RefinerMethod::SaddlePoint => RefinerKind::SaddlePoint(Default::default()),
         }
     }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct MlConfig {
-    pub model_path: Option<PathBuf>,
-    pub patch_size: Option<u32>,
-    pub batch_size: Option<u32>,
-    pub conf_threshold: Option<f32>,
-    pub fallback: Option<MlFallbackMethod>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MlFallbackMethod {
-    KeepCandidate,
-    UseClassicRefiner,
-    Reject,
-}
-
-#[cfg(feature = "ml-refiner")]
-impl MlFallbackMethod {
-    fn to_fallback(&self) -> MlFallback {
-        match self {
-            MlFallbackMethod::KeepCandidate => MlFallback::KeepCandidate,
-            MlFallbackMethod::UseClassicRefiner => MlFallback::UseClassicRefiner,
-            MlFallbackMethod::Reject => MlFallback::Reject,
-        }
-    }
-}
-
-#[cfg(feature = "ml-refiner")]
-fn build_ml_params(ml: Option<&MlConfig>) -> MlRefinerParams {
-    let mut params = MlRefinerParams::default();
-    if let Some(cfg) = ml {
-        if let Some(path) = cfg.model_path.clone() {
-            params.model_path = Some(path);
-        }
-        if let Some(v) = cfg.patch_size {
-            params.patch_size = v;
-        }
-        if let Some(v) = cfg.batch_size {
-            params.batch_size = v;
-        }
-        if let Some(v) = cfg.conf_threshold {
-            params.conf_threshold = Some(v);
-        }
-        if let Some(fallback) = cfg.fallback.as_ref() {
-            params.fallback = fallback.to_fallback();
-        }
-    }
-    params
 }
 
 #[derive(Serialize)]
@@ -137,12 +86,12 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
     apply_multiscale_overrides(&mut config.multiscale, &cfg)?;
     info!("refiner: {:?}", config.params.refiner);
 
-    let corners = if cfg.ml.is_some() {
+    let use_ml = cfg.ml.unwrap_or(false);
+    let corners = if use_ml {
         #[cfg(feature = "ml-refiner")]
         {
             info!("ml refiner: enabled");
-            let ml_params = build_ml_params(cfg.ml.as_ref());
-            find_chess_corners_image_with_ml(&img, &config, &ml_params)
+            find_chess_corners_image_with_ml(&img, &config)
         }
         #[cfg(not(feature = "ml-refiner"))]
         {

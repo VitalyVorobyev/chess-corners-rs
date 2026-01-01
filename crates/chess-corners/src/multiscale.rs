@@ -22,8 +22,6 @@
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
 use crate::pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
-#[cfg(feature = "ml-refiner")]
-use crate::MlRefinerParams;
 use crate::{ChessConfig, ChessParams};
 use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
 use chess_corners_core::detect::{detect_corners_from_response_with_refiner, merge_corners_simple};
@@ -326,10 +324,10 @@ pub fn find_chess_corners_buff_with_ml(
     base: ImageView<'_>,
     cfg: &ChessConfig,
     buffers: &mut PyramidBuffers,
-    ml: &MlRefinerParams,
 ) -> Vec<CornerDescriptor> {
-    let mut ml_state = ml_refiner::MlRefinerState::new(ml, &cfg.params.refiner);
-    find_chess_corners_buff_with_ml_state(base, cfg, buffers, ml, &mut ml_state)
+    let ml_params = ml_refiner::MlRefinerParams::default();
+    let mut ml_state = ml_refiner::MlRefinerState::new(&ml_params, &cfg.params.refiner);
+    find_chess_corners_buff_with_ml_state(base, cfg, buffers, &ml_params, &mut ml_state)
 }
 
 #[cfg(feature = "ml-refiner")]
@@ -337,7 +335,7 @@ fn find_chess_corners_buff_with_ml_state(
     base: ImageView<'_>,
     cfg: &ChessConfig,
     buffers: &mut PyramidBuffers,
-    ml: &MlRefinerParams,
+    ml: &ml_refiner::MlRefinerParams,
     ml_state: &mut ml_refiner::MlRefinerState,
 ) -> Vec<CornerDescriptor> {
     let params = &cfg.params;
@@ -584,13 +582,9 @@ pub fn find_chess_corners_with_refiner(
 /// Single-call helper that runs the ML refiner pipeline.
 #[cfg(feature = "ml-refiner")]
 #[must_use]
-pub fn find_chess_corners_with_ml(
-    base: ImageView<'_>,
-    cfg: &ChessConfig,
-    ml: &MlRefinerParams,
-) -> Vec<CornerDescriptor> {
+pub fn find_chess_corners_with_ml(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescriptor> {
     let mut buffers = PyramidBuffers::with_capacity(cfg.multiscale.pyramid.num_levels);
-    find_chess_corners_buff_with_ml(base, cfg, &mut buffers, ml)
+    find_chess_corners_buff_with_ml(base, cfg, &mut buffers)
 }
 
 #[cfg(test)]

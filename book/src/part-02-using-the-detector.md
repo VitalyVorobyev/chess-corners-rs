@@ -21,7 +21,7 @@ Make sure your `Cargo.toml` has:
 
 ```toml
 [dependencies]
-chess-corners = "0.2.1"
+chess-corners = "0.3.0"
 image = "0.25"
 ```
 
@@ -183,6 +183,25 @@ The simplest path is usually:
 1. Convert to a packed grayscale buffer once.
 2. Reuse it across calls to `find_chess_corners_u8`.
 
+### 2.2.3 ML refiner (feature `ml-refiner`)
+
+The ML refiner is an optional ONNX-backed subpixel refinement stage.
+Enable it by turning on the `ml-refiner` feature and calling the ML
+entry points:
+
+```rust
+use chess_corners::{ChessConfig, find_chess_corners_image_with_ml};
+use image::GrayImage;
+
+let img = GrayImage::new(1, 1);
+let cfg = ChessConfig::default();
+let corners = find_chess_corners_image_with_ml(&img, &cfg);
+```
+
+The ML refiner runs an ONNX model on normalized patches (uint8 / 255.0) and
+predicts `[dx, dy, conf_logit]`. The current version ignores the confidence
+output and applies the offsets directly, using the embedded model defaults.
+
 ---
 
 ## 2.3 CLI workflows
@@ -198,7 +217,7 @@ From the workspace root, you can run:
 
 ```bash
 cargo run -p chess-corners --release --bin chess-corners -- \
-  run config/chess_cli_config.example.json
+  run config/chess_cli_config_example.json
 ```
 
 This will:
@@ -224,13 +243,29 @@ The exact fields are defined by `DetectionConfig` in
   tuning (mapped onto `ChessParams`; `refiner` accepts
   `center_of_mass`, `forstner`, or `saddle_point` and uses default
   settings for each choice).
+- `ml` – set `true` to enable the ML refiner pipeline (requires the
+  `ml-refiner` feature).
 - `output_json`, `output_png` – output paths; when omitted, defaults
   are derived from the image filename.
 
 You can override many of these fields with CLI flags; the CLI uses
 `DetectionConfig` as a base and then applies overrides.
 
-### 2.3.2 Inspecting results
+### 2.3.2 ML refiner from the CLI
+
+The CLI switches to the ML pipeline when `ml` is `true` in
+the JSON config. You must also build the binary with the
+`ml-refiner` feature:
+
+```bash
+cargo run -p chess-corners --release --features ml-refiner --bin chess-corners -- \
+  run config/chess_cli_config_example_ml.json
+```
+
+The ML configuration is currently a boolean toggle; the refiner uses
+the embedded model defaults and ignores the confidence output.
+
+### 2.3.3 Inspecting results
 
 The CLI produces:
 
@@ -254,7 +289,7 @@ detector settings without recompiling your code. Once you are happy
 with a configuration, you can port the settings into your own Rust
 code using `ChessConfig`, `ChessParams`, and `CoarseToFineParams`.
 
-### 2.3.3 Example overlays
+### 2.3.4 Example overlays
 
 Running the CLI on the sample images in `testdata/` produces overlays like these:
 
@@ -295,6 +330,11 @@ configuration, create `ChessConfig()` and set fields such as
 `threshold_rel`, `nms_radius`, `pyramid_num_levels`, and
 `merge_radius`. See `crates/chess-corners-py/README.md` for a full
 parameter reference.
+
+If the bindings are built with the `ml-refiner` feature, you can call
+`find_chess_corners_with_ml` in Python as well. The ML path uses the
+embedded model defaults and is slower but can improve subpixel
+precision on synthetic data.
 
 ---
 

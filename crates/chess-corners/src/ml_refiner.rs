@@ -7,10 +7,14 @@ use chess_corners_core::{ChessParams, CornerRefiner, RefineContext, ResponseMap}
 use chess_corners_ml::{MlModel, ModelSource};
 use log::{info, warn};
 use std::path::PathBuf;
+#[cfg(feature = "tracing")]
+use std::time::{Duration, Instant};
+#[cfg(feature = "tracing")]
+use tracing::info_span;
 
-/// ML refiner fallback behavior when inference is unavailable or low-confidence.
+/// ML refiner fallback behavior when inference is unavailable.
 #[derive(Clone, Debug)]
-pub enum MlFallback {
+pub(crate) enum MlFallback {
     /// Keep the original candidate without refinement.
     KeepCandidate,
     /// Use the classic refiner configured in `ChessParams::refiner`.
@@ -21,21 +25,21 @@ pub enum MlFallback {
 
 /// Configuration for the ML subpixel refiner.
 #[derive(Clone, Debug)]
-pub struct MlRefinerParams {
+pub(crate) struct MlRefinerParams {
     pub model_path: Option<PathBuf>,
     pub patch_size: u32,
     pub batch_size: u32,
-    pub conf_threshold: Option<f32>,
     pub fallback: MlFallback,
 }
 
 impl Default for MlRefinerParams {
     fn default() -> Self {
+        // Keep fallback variants reachable for internal use without exposing them in the public API.
+        let _ = (MlFallback::UseClassicRefiner, MlFallback::Reject);
         Self {
             model_path: None,
             patch_size: 21,
             batch_size: 64,
-            conf_threshold: None,
             fallback: MlFallback::KeepCandidate,
         }
     }
@@ -155,6 +159,22 @@ pub(crate) fn detect_corners_with_ml(
         response: Some(resp),
     };
 
+    #[cfg(feature = "tracing")]
+    let ml_span = info_span!(
+        "ml_refiner",
+        candidates = stats.total,
+        patch_size = state.patch_size,
+        batch_size = state.batch_size
+    );
+    #[cfg(feature = "tracing")]
+    let _ml_guard = ml_span.enter();
+    #[cfg(feature = "tracing")]
+    let total_start = Instant::now();
+    #[cfg(feature = "tracing")]
+    let mut infer_time = Duration::ZERO;
+    #[cfg(feature = "tracing")]
+    let mut infer_batches = 0usize;
+
     let mut results: Vec<Option<Corner>> = vec![None; candidates.len()];
     state.indices.clear();
 
@@ -185,6 +205,10 @@ pub(crate) fn detect_corners_with_ml(
                 candidates: &candidates,
                 params: &state.params,
                 ctx: &ctx,
+                #[cfg(feature = "tracing")]
+                infer_time: &mut infer_time,
+                #[cfg(feature = "tracing")]
+                infer_batches: &mut infer_batches,
             };
             run_batch(
                 input,
@@ -206,6 +230,10 @@ pub(crate) fn detect_corners_with_ml(
             candidates: &candidates,
             params: &state.params,
             ctx: &ctx,
+            #[cfg(feature = "tracing")]
+            infer_time: &mut infer_time,
+            #[cfg(feature = "tracing")]
+            infer_batches: &mut infer_batches,
         };
         run_batch(
             input,
@@ -225,14 +253,31 @@ pub(crate) fn detect_corners_with_ml(
             out.push(c);
         }
     }
+    #[cfg(feature = "tracing")]
+    {
+        let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
+        let infer_ms = infer_time.as_secs_f64() * 1000.0;
+        tracing::info!(
+            target: "chess_corners::ml",
+            total_ms,
+            infer_ms,
+            infer_batches,
+            candidates = stats.total,
+            extracted = stats.extracted,
+            oob = stats.oob,
+            inferred = stats.inferred,
+            applied = stats.applied,
+            output = out.len(),
+            "ml refiner timing"
+        );
+    }
     info!(
-        "ml refiner: total={} extracted={} oob={} inferred={} applied={} low_conf={} output={}",
+        "ml refiner: total={} extracted={} oob={} inferred={} applied={} output={}",
         stats.total,
         stats.extracted,
         stats.oob,
         stats.inferred,
         stats.applied,
-        stats.low_conf,
         out.len()
     );
     out
@@ -271,6 +316,10 @@ struct BatchInput<'a> {
     candidates: &'a [Corner],
     params: &'a MlRefinerParams,
     ctx: &'a RefineContext<'a>,
+    #[cfg(feature = "tracing")]
+    infer_time: &'a mut Duration,
+    #[cfg(feature = "tracing")]
+    infer_batches: &'a mut usize,
 }
 
 fn run_batch(
@@ -283,20 +332,31 @@ fn run_batch(
 ) {
     let patch_area = input.patch_size * input.patch_size;
     let end = batch_count * patch_area;
-    let preds = match input.model.infer_batch(&input.buffer[..end], batch_count) {
+    #[cfg(feature = "tracing")]
+    let infer_start = Instant::now();
+    let preds_result = input.model.infer_batch(&input.buffer[..end], batch_count);
+    #[cfg(feature = "tracing")]
+    {
+        *input.infer_time += infer_start.elapsed();
+        *input.infer_batches += 1;
+    }
+    let preds = match preds_result {
         Ok(preds) => preds,
         Err(err) => {
             warn!("ML inference failed: {err}");
             stats.infer_fail += indices.len();
             for &idx in indices {
-                results[idx] =
-                    apply_fallback(&input.candidates[idx], input.params, input.ctx, fallback_refiner);
+                results[idx] = apply_fallback(
+                    &input.candidates[idx],
+                    input.params,
+                    input.ctx,
+                    fallback_refiner,
+                );
             }
             return;
         }
     };
 
-    let conf_threshold = input.params.conf_threshold;
     let used = preds.len().min(indices.len());
     stats.inferred += used;
     for (slot, pred) in preds.iter().take(used).enumerate() {
@@ -304,15 +364,6 @@ fn run_batch(
         let corner = &input.candidates[idx];
         let dx = pred[0];
         let dy = pred[1];
-        let conf = sigmoid(pred[2]);
-
-        if let Some(thr) = conf_threshold {
-            if conf < thr {
-                stats.low_conf += 1;
-                results[idx] = apply_fallback(corner, input.params, input.ctx, fallback_refiner);
-                continue;
-            }
-        }
 
         stats.applied += 1;
         results[idx] = Some(Corner {
@@ -328,8 +379,12 @@ fn run_batch(
         );
         stats.infer_fail += indices.len() - preds.len();
         for &idx in &indices[preds.len()..] {
-            results[idx] =
-                apply_fallback(&input.candidates[idx], input.params, input.ctx, fallback_refiner);
+            results[idx] = apply_fallback(
+                &input.candidates[idx],
+                input.params,
+                input.ctx,
+                fallback_refiner,
+            );
         }
     }
 }
@@ -341,7 +396,6 @@ struct MlRefineStats {
     oob: usize,
     inferred: usize,
     applied: usize,
-    low_conf: usize,
     infer_fail: usize,
 }
 
@@ -390,10 +444,6 @@ fn apply_fallback(
             }
         }
     }
-}
-
-fn sigmoid(x: f32) -> f32 {
-    1.0 / (1.0 + (-x).exp())
 }
 
 struct NoopRefiner {

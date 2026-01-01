@@ -83,27 +83,25 @@
 //! ```no_run
 //! # #[cfg(feature = "ml-refiner")]
 //! # {
-//! use chess_corners::{
-//!     ChessConfig, ChessParams, MlFallback, MlRefinerParams, find_chess_corners_image_with_ml,
-//! };
+//! use chess_corners::{ChessConfig, ChessParams, find_chess_corners_image_with_ml};
 //! use image::GrayImage;
 //!
 //! let img = GrayImage::new(1, 1);
 //! let mut cfg = ChessConfig::single_scale();
 //! cfg.params = ChessParams::default();
 //!
-//! let ml = MlRefinerParams {
-//!     model_path: None,
-//!     patch_size: 21,
-//!     batch_size: 64,
-//!     conf_threshold: Some(0.5),
-//!     fallback: MlFallback::KeepCandidate,
-//! };
-//!
-//! let corners = find_chess_corners_image_with_ml(&img, &cfg, &ml);
+//! let corners = find_chess_corners_image_with_ml(&img, &cfg);
 //! # let _ = corners;
 //! # }
 //! ```
+//!
+//! The ML refiner runs a small ONNX model on normalized intensity
+//! patches (uint8 / 255.0) centered at each candidate. The model
+//! predicts `[dx, dy, conf_logit]`, but the confidence output is
+//! currently ignored; the offsets are applied directly. Current
+//! benchmarks are synthetic; real-world accuracy still needs
+//! validation. It is also slower (about 23.5 ms vs 0.6 ms for 77
+//! corners on `testimages/mid.png`).
 //!
 //! ## Python bindings
 //!
@@ -185,8 +183,6 @@ mod pyramid;
 // Re-export a focused subset of core types for convenience. Consumers that
 // need lower-level primitives (rings, raw response functions, etc.) are
 // encouraged to depend on `chess-corners-core` directly.
-#[cfg(feature = "ml-refiner")]
-pub use crate::ml_refiner::{MlFallback, MlRefinerParams};
 pub use chess_corners_core::{
     CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner, ForstnerConfig, ImageView,
     RefineResult, RefineStatus, Refiner, RefinerKind, ResponseMap, SaddlePointConfig,
@@ -271,9 +267,8 @@ pub fn find_chess_corners_u8_with_ml(
     width: u32,
     height: u32,
     cfg: &ChessConfig,
-    ml: &MlRefinerParams,
 ) -> Vec<CornerDescriptor> {
     let view = ImageView::from_u8_slice(width as usize, height as usize, img)
         .expect("image dimensions must match buffer length");
-    multiscale::find_chess_corners_with_ml(view, cfg, ml)
+    multiscale::find_chess_corners_with_ml(view, cfg)
 }

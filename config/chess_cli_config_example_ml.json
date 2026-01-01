@@ -1,0 +1,18 @@
+{
+  "image": "testimages/mid.png",
+  "pyramid_levels": 1,
+  "min_size": 256,
+  "refinement_radius":3,
+  "merge_radius": 2.0,
+  "output_json": null,
+  "output_png": null,
+  "threshold_rel": 0.2,
+  "threshold_abs": null,
+  "refiner": "center_of_mass",
+  "ml": true,
+  "radius10": false,
+  "nms_radius": 2,
+  "min_cluster_size": 2,
+  "log_level": "info",
+  "json_trace": true
+}

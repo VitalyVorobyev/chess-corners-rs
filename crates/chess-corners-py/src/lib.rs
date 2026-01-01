@@ -3,8 +3,6 @@ use numpy::{ndarray::Array2, IntoPyArray, PyReadonlyArray2};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyDictMethods, PyModule, PyModuleMethods};
-#[cfg(feature = "ml-refiner")]
-use std::path::PathBuf;
 
 #[pyclass(name = "PyramidParams")]
 #[derive(Clone)]
@@ -150,7 +148,9 @@ impl CenterOfMassConfigPy {
     }
 
     fn to_rust(&self) -> chess_corners_rs::CenterOfMassConfig {
-        chess_corners_rs::CenterOfMassConfig { radius: self.radius }
+        chess_corners_rs::CenterOfMassConfig {
+            radius: self.radius,
+        }
     }
 }
 
@@ -635,11 +635,7 @@ impl ChessConfigPy {
     }
 
     #[setter]
-    fn set_descriptor_use_radius10(
-        &mut self,
-        py: Python<'_>,
-        value: Option<bool>,
-    ) -> PyResult<()> {
+    fn set_descriptor_use_radius10(&mut self, py: Python<'_>, value: Option<bool>) -> PyResult<()> {
         self.params.bind(py).borrow_mut().descriptor_use_radius10 = value;
         Ok(())
     }
@@ -690,46 +686,26 @@ impl ChessConfigPy {
 
     #[getter]
     fn pyramid_num_levels(&self, py: Python<'_>) -> PyResult<u8> {
-        let pyramid = self
-            .multiscale
-            .bind(py)
-            .borrow()
-            .pyramid
-            .clone_ref(py);
+        let pyramid = self.multiscale.bind(py).borrow().pyramid.clone_ref(py);
         Ok(pyramid.bind(py).borrow().num_levels)
     }
 
     #[setter]
     fn set_pyramid_num_levels(&mut self, py: Python<'_>, value: u8) -> PyResult<()> {
-        let pyramid = self
-            .multiscale
-            .bind(py)
-            .borrow()
-            .pyramid
-            .clone_ref(py);
+        let pyramid = self.multiscale.bind(py).borrow().pyramid.clone_ref(py);
         pyramid.bind(py).borrow_mut().num_levels = value;
         Ok(())
     }
 
     #[getter]
     fn pyramid_min_size(&self, py: Python<'_>) -> PyResult<usize> {
-        let pyramid = self
-            .multiscale
-            .bind(py)
-            .borrow()
-            .pyramid
-            .clone_ref(py);
+        let pyramid = self.multiscale.bind(py).borrow().pyramid.clone_ref(py);
         Ok(pyramid.bind(py).borrow().min_size)
     }
 
     #[setter]
     fn set_pyramid_min_size(&mut self, py: Python<'_>, value: usize) -> PyResult<()> {
-        let pyramid = self
-            .multiscale
-            .bind(py)
-            .borrow()
-            .pyramid
-            .clone_ref(py);
+        let pyramid = self.multiscale.bind(py).borrow().pyramid.clone_ref(py);
         pyramid.bind(py).borrow_mut().min_size = value;
         Ok(())
     }
@@ -775,165 +751,6 @@ impl ChessConfigPy {
         dict.set_item("merge_radius", multiscale.merge_radius())?;
         dict.set_item("params", params.to_dict(py)?)?;
         dict.set_item("multiscale", multiscale.to_dict(py)?)?;
-        Ok(dict.into_any().unbind())
-    }
-}
-
-#[cfg(feature = "ml-refiner")]
-#[pyclass(name = "MlFallback")]
-#[derive(Clone)]
-pub struct MlFallbackPy {
-    inner: chess_corners_rs::MlFallback,
-}
-
-#[cfg(feature = "ml-refiner")]
-impl MlFallbackPy {
-    fn from_rust(fallback: chess_corners_rs::MlFallback) -> Self {
-        Self { inner: fallback }
-    }
-
-    fn to_rust(&self) -> chess_corners_rs::MlFallback {
-        self.inner.clone()
-    }
-}
-
-#[cfg(feature = "ml-refiner")]
-#[pymethods]
-impl MlFallbackPy {
-    #[staticmethod]
-    fn keep_candidate() -> Self {
-        Self {
-            inner: chess_corners_rs::MlFallback::KeepCandidate,
-        }
-    }
-
-    #[staticmethod]
-    fn use_classic_refiner() -> Self {
-        Self {
-            inner: chess_corners_rs::MlFallback::UseClassicRefiner,
-        }
-    }
-
-    #[staticmethod]
-    fn reject() -> Self {
-        Self {
-            inner: chess_corners_rs::MlFallback::Reject,
-        }
-    }
-
-    #[getter]
-    fn name(&self) -> &'static str {
-        match &self.inner {
-            chess_corners_rs::MlFallback::KeepCandidate => "keep_candidate",
-            chess_corners_rs::MlFallback::UseClassicRefiner => "use_classic_refiner",
-            chess_corners_rs::MlFallback::Reject => "reject",
-        }
-    }
-
-    fn __repr__(&self) -> String {
-        format!("MlFallback.{}", self.name())
-    }
-}
-
-#[cfg(feature = "ml-refiner")]
-#[pyclass(name = "MlRefinerParams")]
-#[derive(Clone)]
-pub struct MlRefinerParamsPy {
-    model_path: Option<PathBuf>,
-    patch_size: u32,
-    batch_size: u32,
-    conf_threshold: Option<f32>,
-    fallback: chess_corners_rs::MlFallback,
-}
-
-#[cfg(feature = "ml-refiner")]
-impl MlRefinerParamsPy {
-    fn from_rust(params: &chess_corners_rs::MlRefinerParams) -> Self {
-        Self {
-            model_path: params.model_path.clone(),
-            patch_size: params.patch_size,
-            batch_size: params.batch_size,
-            conf_threshold: params.conf_threshold,
-            fallback: params.fallback.clone(),
-        }
-    }
-
-    fn to_rust(&self) -> chess_corners_rs::MlRefinerParams {
-        chess_corners_rs::MlRefinerParams {
-            model_path: self.model_path.clone(),
-            patch_size: self.patch_size,
-            batch_size: self.batch_size,
-            conf_threshold: self.conf_threshold,
-            fallback: self.fallback.clone(),
-        }
-    }
-}
-
-#[cfg(feature = "ml-refiner")]
-#[pymethods]
-impl MlRefinerParamsPy {
-    #[new]
-    fn new() -> Self {
-        Self::from_rust(&chess_corners_rs::MlRefinerParams::default())
-    }
-
-    #[getter]
-    fn model_path(&self) -> Option<PathBuf> {
-        self.model_path.clone()
-    }
-
-    #[setter]
-    fn set_model_path(&mut self, value: Option<PathBuf>) {
-        self.model_path = value;
-    }
-
-    #[getter]
-    fn patch_size(&self) -> u32 {
-        self.patch_size
-    }
-
-    #[setter]
-    fn set_patch_size(&mut self, value: u32) {
-        self.patch_size = value;
-    }
-
-    #[getter]
-    fn batch_size(&self) -> u32 {
-        self.batch_size
-    }
-
-    #[setter]
-    fn set_batch_size(&mut self, value: u32) {
-        self.batch_size = value;
-    }
-
-    #[getter]
-    fn conf_threshold(&self) -> Option<f32> {
-        self.conf_threshold
-    }
-
-    #[setter]
-    fn set_conf_threshold(&mut self, value: Option<f32>) {
-        self.conf_threshold = value;
-    }
-
-    #[getter]
-    fn fallback(&self) -> MlFallbackPy {
-        MlFallbackPy::from_rust(self.fallback.clone())
-    }
-
-    #[setter]
-    fn set_fallback(&mut self, value: &MlFallbackPy) {
-        self.fallback = value.to_rust();
-    }
-
-    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let dict = PyDict::new(py);
-        dict.set_item("model_path", self.model_path())?;
-        dict.set_item("patch_size", self.patch_size())?;
-        dict.set_item("batch_size", self.batch_size())?;
-        dict.set_item("conf_threshold", self.conf_threshold())?;
-        dict.set_item("fallback", self.fallback().name())?;
         Ok(dict.into_any().unbind())
     }
 }
@@ -1018,7 +835,6 @@ fn find_chess_corners_with_ml<'py>(
     py: Python<'py>,
     image: &Bound<'py, PyAny>,
     cfg: Option<&ChessConfigPy>,
-    ml: Option<&MlRefinerParamsPy>,
 ) -> PyResult<Py<PyAny>> {
     let (array, h, w) = extract_image(image)?;
     let view = array.as_array();
@@ -1032,9 +848,8 @@ fn find_chess_corners_with_ml<'py>(
         u32::try_from(h).map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
 
     let cfg_rust = resolve_cfg(py, cfg)?;
-    let ml_rust = ml.map(|m| m.to_rust()).unwrap_or_default();
     let corners =
-        chess_corners_rs::find_chess_corners_u8_with_ml(slice, width_u32, height_u32, &cfg_rust, &ml_rust);
+        chess_corners_rs::find_chess_corners_u8_with_ml(slice, width_u32, height_u32, &cfg_rust);
     corners_to_array(py, corners)
 }
 
@@ -1050,8 +865,6 @@ fn chess_corners(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RefinerKindPy>()?;
     #[cfg(feature = "ml-refiner")]
     {
-        m.add_class::<MlFallbackPy>()?;
-        m.add_class::<MlRefinerParamsPy>()?;
         m.add_function(wrap_pyfunction!(find_chess_corners_with_ml, m)?)?;
     }
     m.add_function(wrap_pyfunction!(find_chess_corners, m)?)?;
@@ -1069,7 +882,7 @@ fn chess_corners(m: &Bound<'_, PyModule>) -> PyResult<()> {
     ];
     #[cfg(feature = "ml-refiner")]
     {
-        exports.extend(["MlFallback", "MlRefinerParams", "find_chess_corners_with_ml"]);
+        exports.push("find_chess_corners_with_ml");
     }
     m.add("__all__", exports)?;
     Ok(())

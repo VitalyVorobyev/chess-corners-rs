@@ -50,9 +50,7 @@ def test_ml_refiner_api():
         pytest.skip("ml-refiner bindings not enabled")
     img = _checkerboard(square_size=8, squares=4)
     cfg = chess_corners.ChessConfig()
-    ml = chess_corners.MlRefinerParams()
-    ml.batch_size = 1
-    corners = chess_corners.find_chess_corners_with_ml(img, cfg, ml)
+    corners = chess_corners.find_chess_corners_with_ml(img, cfg)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
     assert corners.shape[1] == 4

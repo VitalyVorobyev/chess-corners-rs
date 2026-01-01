@@ -12,9 +12,10 @@ Fast Rust implementation of the [**ChESS**](https://arxiv.org/abs/1301.5491)
 ([image source](https://www.kaggle.com/datasets/danielwe14/stereocamera-chessboard-pictures))
 
 ChESS is a classical (not ML) **feature detector** for chessboard
-**X-junction** corners. This project focuses
-on **convenient use**, **subpixel accuracy**, and **real-time
-performance** (scalar, `rayon`, and portable SIMD paths).
+**X-junction** corners. This project focuses on **convenient use**,
+**subpixel accuracy**, and **real-time performance** (scalar, `rayon`,
+and portable SIMD paths), with an optional ML-backed subpixel refiner
+for higher precision on synthetic data.
 
 ## Quick start
 
@@ -94,6 +95,34 @@ methodology and plots).
 See [`book/src/part-05-performance-and-integration.md`](book/src/part-05-performance-and-integration.md) for the full breakdown,
 OpenCV comparisons, and how to reproduce the numbers with [`tools/perf_bench.py`](tools/perf_bench.py).
 
+## ML refiner (optional)
+
+The ML refiner is an ONNX-backed subpixel refinement stage. It runs on
+small intensity patches centered at each candidate corner and predicts
+`dx`, `dy` (the confidence output is ignored in the current version).
+The input patches are normalized to `[0, 1]` by dividing `uint8` values
+by `255.0`, and the model outputs `[dx, dy, conf_logit]`.
+
+Use it in Rust by enabling the `ml-refiner` feature and calling the
+explicit ML entry points:
+
+```rust
+use chess_corners::{ChessConfig, find_chess_corners_image_with_ml};
+
+let cfg = ChessConfig::default();
+let corners = find_chess_corners_image_with_ml(&img, &cfg);
+```
+
+ML refinement is **not** claimed to work well in all realistic cases
+yet; it has been evaluated primarily on synthetic data. On that data,
+it yields much tighter errors than OpenCV `cornerSubPix` (see the book
+for plots). It is also slower: on `testimages/mid.png` (77 corners),
+ML refinement takes about **23.5 ms** vs **0.6 ms** for the classic
+refiner.
+
+The current version applies all predicted offsets directly and does
+not threshold by the model’s confidence output.
+
 The published documentation includes:
 
 - a guide-style book (API overview, internals, multiscale tuning), and
@@ -102,6 +131,7 @@ The published documentation includes:
 ## Highlights
 - Canonical 16-sample rings (r=5 default, r=10 for heavy blur).
 - Dense response computation plus NMS, minimum-cluster filtering, and pluggable subpixel refinement (center-of-mass, Förstner, saddle-point).
+- Optional ML-backed refiner (`ml-refiner` feature) for higher synthetic accuracy.
 - Optional `rayon` parallelism and portable SIMD acceleration (requires nightly Rust toolchain) on the dense response path.
 - Crates: `chess-corners-core` (lean core) and `chess-corners` (ergonomic facade with optional `image`/multiscale integration and a CLI binary target).
 - Multiscale coarse-to-fine pipeline with reusable pyramid buffers (fast + robust under blur/scale changes).
@@ -115,14 +145,14 @@ Add the high-level facade crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-chess-corners = "0.2.1"
+chess-corners = "0.3.0"
 ```
 
 If you need direct access to the low-level response / detector stages, you can also depend on the core crate:
 
 ```toml
 [dependencies]
-chess-corners-core = "0.2.1"
+chess-corners-core = "0.3.0"
 ```
 
 The `chess-corners` crate enables the `image` feature by default so you can work with `image::GrayImage`; disable it if you prefer to stay on raw buffers.
@@ -170,13 +200,13 @@ These examples rely on the optional `image` feature on `chess-corners` (enabled 
 Run the bundled CLI for quick experiments:
 
 ```
-cargo run -p chess-corners --release --bin chess-corners -- run config/chess_cli_config.example.json
+cargo run -p chess-corners --release --bin chess-corners -- run config/chess_cli_config_example.json
 ```
 
-To use the ML refiner from the CLI, enable the feature and provide the `ml` config block:
+To use the ML refiner from the CLI, enable the feature and set `ml: true` in the config:
 
 ```
-cargo run -p chess-corners --release --features ml-refiner --bin chess-corners -- run config/chess_cli_config.example.json
+cargo run -p chess-corners --release --features ml-refiner --bin chess-corners -- run config/chess_cli_config_example_ml.json
 ```
 
 The config JSON drives both single-scale and multiscale runs:
@@ -193,13 +223,7 @@ The config JSON drives both single-scale and multiscale runs:
   "threshold_rel": 0.2,
   "threshold_abs": null,
   "refiner": "center_of_mass",
-  "ml": {
-    "model_path": null,
-    "patch_size": 21,
-    "batch_size": 64,
-    "conf_threshold": 0.2,
-    "fallback": "keep_candidate"
-  },
+  "ml": true,
   "radius10": false,
   "descriptor_radius10": null,
   "nms_radius": 2,
@@ -215,7 +239,7 @@ The config JSON drives both single-scale and multiscale runs:
 - **Detection and refinement**
   - `threshold_rel` / `threshold_abs`: response thresholding (relative thresholding is recommended in most cases)
   - `refiner`: subpixel refinement method (`center_of_mass`, `forstner`, `saddle_point`)
-  - `ml`: optional ML refiner settings (enables ML pipeline when present)
+  - `ml`: set `true` to enable the ML refiner pipeline
   - `radius10`: use the larger r=10 ring instead of the canonical r=5 ring
   - `descriptor_radius10`: optional r=10 override for descriptors (when null, follows `radius10`)
   - `nms_radius`, `min_cluster_size`: suppression and clustering
@@ -250,7 +274,7 @@ only need to touch a few knobs:
 - Tracing: enable structured spans for profiling by turning on the `tracing`
   feature in the libraries, and use env filters with the CLI:
   - `cargo test -p chess-corners-core --features tracing`
-  - `RUST_LOG=info cargo run -p chess-corners --release --bin chess-corners -- run config/chess_cli_config.example.json`
+  - `RUST_LOG=info cargo run -p chess-corners --release --bin chess-corners -- run config/chess_cli_config_example.json`
   - `--json-trace` switches the CLI to emit JSON-formatted spans.
 
 ## Status

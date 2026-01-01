@@ -1,6 +1,6 @@
 [package]
 name = "chess-corners-py"
-version = "0.2.1"
+version = "0.3.0"
 description = "Python bindings for chess-corners"
 edition.workspace = true
 license.workspace = true
@@ -21,7 +21,7 @@ ml-refiner = ["chess-corners/ml-refiner"]
 [dependencies]
 pyo3 = { version = "0.27", features = ["extension-module", "abi3-py310"] }
 numpy = "0.27"
-chess-corners = { path = "../chess-corners", version = "0.2" }
+chess-corners = { path = "../chess-corners", version = "0.3" }
 
 [build-dependencies]
 pyo3-build-config = "0.27"
