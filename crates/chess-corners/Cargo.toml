@@ -1,6 +1,6 @@
 [package]
 name = "chess-corners"
-version = "0.3.0"
+version = "0.3.1"
 description = "High-level chessboard / ChESS corner detection API"
 edition.workspace = true
 license.workspace = true

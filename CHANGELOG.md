@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+## [0.3.1]
+
+### Added
+
+- `chess-corners-ml` README + crates.io metadata (documentation/homepage/keywords).
+
+### Changed
+
+- ML refiner configuration is now internal-only; the public API uses ML entry points with built-in defaults.
+- CLI uses `ml: true` to enable ML refinement; Python bindings mirror the simplified ML entry point.
+- Version bump across all crates and the Python package to 0.3.1.
+
+### Fixed
+
+- `chess-corners-ml` now bundles the embedded ONNX model and fixtures inside the crate to support publishing.
+
 ## [0.3.0]
 
 ### Added

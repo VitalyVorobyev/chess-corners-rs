@@ -1,6 +1,6 @@
 [package]
 name = "chess-corners-py"
-version = "0.3.0"
+version = "0.3.1"
 description = "Python bindings for chess-corners"
 edition.workspace = true
 license.workspace = true

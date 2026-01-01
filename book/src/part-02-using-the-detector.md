@@ -21,7 +21,7 @@ Make sure your `Cargo.toml` has:
 
 ```toml
 [dependencies]
-chess-corners = "0.3.0"
+chess-corners = "0.3.1"
 image = "0.25"
 ```
 
