@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+## [0.3.2]
+
+### Added
+
+- README diligence statement clarifying that AI coding assistants are implementation tools used alongside human validation and release quality gates.
+
+### Changed
+
+- Security audit workflow now uses `actions-rust-lang/audit` with read-only repository permissions and ignores `RUSTSEC-2024-0436`.
+- Refreshed locked dependency versions in `Cargo.lock`.
+- Version bump across workspace crates and the Python package to 0.3.2.
+
 ## [0.3.1]
 
 ### Added

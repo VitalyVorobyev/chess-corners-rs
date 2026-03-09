@@ -17,6 +17,10 @@ ChESS is a classical (not ML) **feature detector** for chessboard
 and portable SIMD paths), with an optional ML-backed subpixel refiner
 for higher precision on synthetic data.
 
+## Diligence Statement
+
+This project is developed with AI coding assistants (`Codex` and `Claude Code`) as implementation tools. Not every code path is manually line-reviewed by a human before merge. The project author is an expert in computer vision, validates algorithmic behavior and numerical results, and enforces quality gates (`fmt`/`clippy`/tests/docs/Python checks) before release. This is engineering-assisted development, not "vibe coding."
+
 ## Quick start
 
 ```rust
@@ -145,14 +149,14 @@ Add the high-level facade crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-chess-corners = "0.3.1"
+chess-corners = "0.3.2"
 ```
 
 If you need direct access to the low-level response / detector stages, you can also depend on the core crate:
 
 ```toml
 [dependencies]
-chess-corners-core = "0.3.1"
+chess-corners-core = "0.3.2"
 ```
 
 The `chess-corners` crate enables the `image` feature by default so you can work with `image::GrayImage`; disable it if you prefer to stay on raw buffers.

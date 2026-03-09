@@ -22,7 +22,8 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Build wheels
+      - name: Build wheels (linux)
+        if: matrix.os == 'ubuntu-latest'
         uses: PyO3/maturin-action@v1
         with:
           command: build
@@ -30,7 +31,18 @@ jobs:
             --release
             -m crates/chess-corners-py/Cargo.toml
             --out dist
-          manylinux: auto
+            -i python3.10
+          manylinux: 2014
+
+      - name: Build wheels (non-linux)
+        if: matrix.os != 'ubuntu-latest'
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: >-
+            --release
+            -m crates/chess-corners-py/Cargo.toml
+            --out dist
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
