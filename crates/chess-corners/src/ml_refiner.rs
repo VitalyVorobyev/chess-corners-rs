@@ -247,7 +247,7 @@ pub(crate) fn detect_corners_with_ml(
     }
 
     let mut out = Vec::with_capacity(candidates.len());
-    for (corner, refined) in candidates.into_iter().zip(results.into_iter()) {
+    for (corner, refined) in candidates.into_iter().zip(results) {
         if let Some(mut c) = refined {
             c.strength = corner.strength;
             out.push(c);
