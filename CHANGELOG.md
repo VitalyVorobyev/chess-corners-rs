@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Version bump across workspace crates and the Python package to 0.3.3.
 - `Corner` and `RefineResult` now use separate `x`, `y` fields instead of
   `xy: [f32; 2]`, matching `CornerDescriptor` for consistent coordinate
   representation across the codebase.
