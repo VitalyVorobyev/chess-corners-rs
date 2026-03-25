@@ -1,9 +1,10 @@
 use box_image_pyramid::{build_pyramid, ImageView, PyramidBuffers, PyramidParams};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use fast_image_resize as fir;
 use image::imageops::FilterType as ImageFilterType;
 use image::{GrayImage, ImageBuffer, Luma};
 use rgb::FromSlice;
+use std::hint::black_box;
 use std::time::Duration;
 
 const NUM_LEVELS: u8 = 6;

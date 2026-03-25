@@ -113,7 +113,7 @@ The easiest way to use ChESS from your own project is to depend on the `chess-co
 
 ```toml
 [dependencies]
-chess-corners = "0.3.3"
+chess-corners = "0.4.0"
 image = "0.25" # if you want GrayImage integration
 ```
 
@@ -191,7 +191,7 @@ In your own `Cargo.toml`, you can opt into specific combinations:
 
 ```toml
 [dependencies]
-chess-corners = { version = "0.3", features = ["image", "rayon"] }
+chess-corners = { version = "0.4", features = ["image", "rayon"] }
 ```
 
 For example:

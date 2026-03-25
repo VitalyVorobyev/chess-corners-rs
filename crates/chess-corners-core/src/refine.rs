@@ -141,7 +141,8 @@ impl CornerRefiner for CenterOfMassRefiner {
             Some(r) => r,
             None => {
                 return RefineResult {
-                    x: seed_xy[0], y: seed_xy[1],
+                    x: seed_xy[0],
+                    y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::Rejected,
                 }
@@ -161,7 +162,8 @@ impl CornerRefiner for CenterOfMassRefiner {
 
         if x < r || y < r || x >= w - r || y >= h - r {
             return RefineResult {
-                x: seed_xy[0], y: seed_xy[1],
+                x: seed_xy[0],
+                y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::OutOfBounds,
             };
@@ -182,7 +184,8 @@ impl CornerRefiner for CenterOfMassRefiner {
             RefineResult::accepted([sx / sw, sy / sw], sw)
         } else {
             RefineResult {
-                x: seed_xy[0], y: seed_xy[1],
+                x: seed_xy[0],
+                y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::Accepted,
             }
@@ -264,7 +267,8 @@ impl CornerRefiner for ForstnerRefiner {
             Some(view) => view,
             None => {
                 return RefineResult {
-                    x: seed_xy[0], y: seed_xy[1],
+                    x: seed_xy[0],
+                    y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::Rejected,
                 }
@@ -277,7 +281,8 @@ impl CornerRefiner for ForstnerRefiner {
 
         if !img.supports_patch(cx, cy, patch_r + 1) {
             return RefineResult {
-                x: seed_xy[0], y: seed_xy[1],
+                x: seed_xy[0],
+                y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::OutOfBounds,
             };
@@ -324,7 +329,8 @@ impl CornerRefiner for ForstnerRefiner {
         let det = a00 * a11 - a01 * a01;
         if trace < self.cfg.min_trace || det <= self.cfg.min_det {
             return RefineResult {
-                x: seed_xy[0], y: seed_xy[1],
+                x: seed_xy[0],
+                y: seed_xy[1],
                 score: det,
                 status: RefineStatus::IllConditioned,
             };
@@ -336,7 +342,8 @@ impl CornerRefiner for ForstnerRefiner {
 
         if lambda_min <= 0.0 {
             return RefineResult {
-                x: seed_xy[0], y: seed_xy[1],
+                x: seed_xy[0],
+                y: seed_xy[1],
                 score: det,
                 status: RefineStatus::IllConditioned,
             };
@@ -345,7 +352,8 @@ impl CornerRefiner for ForstnerRefiner {
         let cond = lambda_max / lambda_min;
         if !cond.is_finite() || cond > self.cfg.max_condition_number {
             return RefineResult {
-                x: seed_xy[0], y: seed_xy[1],
+                x: seed_xy[0],
+                y: seed_xy[1],
                 score: det,
                 status: RefineStatus::IllConditioned,
             };
@@ -358,7 +366,8 @@ impl CornerRefiner for ForstnerRefiner {
         let max_off = self.cfg.max_offset.min(self.cfg.radius as f32 + 0.5);
         if ux.abs() > max_off || uy.abs() > max_off {
             return RefineResult {
-                x: seed_xy[0], y: seed_xy[1],
+                x: seed_xy[0],
+                y: seed_xy[1],
                 score: det,
                 status: RefineStatus::Rejected,
             };
@@ -469,7 +478,8 @@ impl CornerRefiner for SaddlePointRefiner {
             Some(view) => view,
             None => {
                 return RefineResult {
-                    x: seed_xy[0], y: seed_xy[1],
+                    x: seed_xy[0],
+                    y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::Rejected,
                 }
@@ -482,7 +492,8 @@ impl CornerRefiner for SaddlePointRefiner {
 
         if !img.supports_patch(cx, cy, r) {
             return RefineResult {
-                x: seed_xy[0], y: seed_xy[1],
+                x: seed_xy[0],
+                y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::OutOfBounds,
             };
@@ -534,7 +545,8 @@ impl CornerRefiner for SaddlePointRefiner {
             Some(c) => c,
             None => {
                 return RefineResult {
-                    x: seed_xy[0], y: seed_xy[1],
+                    x: seed_xy[0],
+                    y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::IllConditioned,
                 }
@@ -550,7 +562,8 @@ impl CornerRefiner for SaddlePointRefiner {
         let det_h = 4.0 * a * c - b * b;
         if det_h > -self.cfg.det_margin || det_h.abs() < self.cfg.min_abs_det {
             return RefineResult {
-                x: seed_xy[0], y: seed_xy[1],
+                x: seed_xy[0],
+                y: seed_xy[1],
                 score: det_h,
                 status: RefineStatus::IllConditioned,
             };
@@ -563,7 +576,8 @@ impl CornerRefiner for SaddlePointRefiner {
         let max_off = self.cfg.max_offset.min(r as f32 + 0.5);
         if ux.abs() > max_off || uy.abs() > max_off {
             return RefineResult {
-                x: seed_xy[0], y: seed_xy[1],
+                x: seed_xy[0],
+                y: seed_xy[1],
                 score: det_h,
                 status: RefineStatus::Rejected,
             };
@@ -659,8 +673,7 @@ mod tests {
         assert_eq!(res.status, RefineStatus::Accepted);
         let true_xy = [7.35f32, 7.8f32];
         let seed_err = ((7.0 - true_xy[0]).powi(2) + (8.0 - true_xy[1]).powi(2)).sqrt();
-        let refined_err =
-            ((res.x - true_xy[0]).powi(2) + (res.y - true_xy[1]).powi(2)).sqrt();
+        let refined_err = ((res.x - true_xy[0]).powi(2) + (res.y - true_xy[1]).powi(2)).sqrt();
         assert!(
             refined_err <= seed_err * 1.6 && refined_err < 1.0,
             "refined_err {refined_err} seed_err {seed_err} res {:?}",
@@ -681,8 +694,7 @@ mod tests {
         assert_eq!(res.status, RefineStatus::Accepted);
         let true_xy = [8.2f32, 8.6f32];
         let seed_err = ((8.0 - true_xy[0]).powi(2) + (9.0 - true_xy[1]).powi(2)).sqrt();
-        let refined_err =
-            ((res.x - true_xy[0]).powi(2) + (res.y - true_xy[1]).powi(2)).sqrt();
+        let refined_err = ((res.x - true_xy[0]).powi(2) + (res.y - true_xy[1]).powi(2)).sqrt();
         assert!(
             refined_err <= seed_err * 1.6 && refined_err < 1.0,
             "refined_err {refined_err} seed_err {seed_err} res {:?}",

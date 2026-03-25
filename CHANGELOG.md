@@ -7,11 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
-## [0.3.3]
+## [0.4.0]
 
 ### Changed
 
-- Version bump across workspace crates and the Python package to 0.3.3.
+- Version bump across the breaking `chess-corners*` crates and the Python package to 0.4.0.
 - `Corner` and `RefineResult` now use separate `x`, `y` fields instead of
   `xy: [f32; 2]`, matching `CornerDescriptor` for consistent coordinate
   representation across the codebase.
@@ -30,8 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ML refiner path no longer has a dead `#[cfg(feature = "rayon")]` block that
   silently skipped parallelization. The ML path now explicitly runs
   sequentially (required by `&mut MlRefinerState`).
-- Embedded ONNX model extraction (`chess-corners-ml`) now skips writes when
-  the file already exists with the correct size, avoiding redundant I/O.
+- Embedded ONNX model extraction (`chess-corners-ml`) now compares bytes, not
+  only file size, before reusing extracted temp files.
 
 ## [0.3.2]
 

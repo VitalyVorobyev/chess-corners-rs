@@ -371,15 +371,18 @@ mod tests {
     fn merge_corners_prefers_stronger_entries() {
         let mut corners = vec![
             Corner {
-                x: 10.0, y: 10.0,
+                x: 10.0,
+                y: 10.0,
                 strength: 1.0,
             },
             Corner {
-                x: 11.0, y: 11.0,
+                x: 11.0,
+                y: 11.0,
                 strength: 5.0,
             },
             Corner {
-                x: 20.0, y: 20.0,
+                x: 20.0,
+                y: 20.0,
                 strength: 3.0,
             },
         ];

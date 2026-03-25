@@ -181,14 +181,8 @@ pub(crate) fn detect_corners_with_ml(
     for (idx, corner) in candidates.iter().enumerate() {
         let offset = state.indices.len() * state.patch_area;
         let patch_slice = &mut state.buffer[offset..offset + state.patch_area];
-        if extract_patch_u8_to_f32(
-            image,
-            corner.x,
-            corner.y,
-            state.patch_size,
-            patch_slice,
-        )
-        .is_none()
+        if extract_patch_u8_to_f32(image, corner.x, corner.y, state.patch_size, patch_slice)
+            .is_none()
         {
             stats.oob += 1;
             results[idx] = apply_fallback(corner, &state.params, &ctx, &mut state.fallback_refiner);

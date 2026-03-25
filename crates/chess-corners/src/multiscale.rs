@@ -317,8 +317,7 @@ pub fn find_chess_corners_buff_with_refiner(
     let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
     let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, params);
     let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
-    let coarse_corners =
-        detect_with_refiner_kind(&coarse_resp, params, Some(coarse_view), refiner);
+    let coarse_corners = detect_with_refiner_kind(&coarse_resp, params, Some(coarse_view), refiner);
     #[cfg(feature = "tracing")]
     drop(coarse_span);
 
@@ -336,8 +335,12 @@ pub fn find_chess_corners_buff_with_refiner(
     };
 
     #[cfg(feature = "tracing")]
-    let refine_span =
-        info_span!("refine", seeds = coarse_corners.len(), roi_r = roi_ctx.roi_r).entered();
+    let refine_span = info_span!(
+        "refine",
+        seeds = coarse_corners.len(),
+        roi_r = roi_ctx.roi_r
+    )
+    .entered();
 
     #[cfg(feature = "rayon")]
     let mut refined: Vec<Corner> = coarse_corners
@@ -433,8 +436,12 @@ fn find_chess_corners_buff_with_ml_state(
     );
 
     #[cfg(feature = "tracing")]
-    let refine_span =
-        info_span!("refine", seeds = coarse_corners.len(), roi_r = roi_ctx.roi_r).entered();
+    let refine_span = info_span!(
+        "refine",
+        seeds = coarse_corners.len(),
+        roi_r = roi_ctx.roi_r
+    )
+    .entered();
 
     // ML refiner holds mutable state, so refinement is sequential.
     let mut refined: Vec<Corner> = coarse_corners

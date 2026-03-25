@@ -149,14 +149,14 @@ Add the high-level facade crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-chess-corners = "0.3.3"
+chess-corners = "0.4.0"
 ```
 
 If you need direct access to the low-level response / detector stages, you can also depend on the core crate:
 
 ```toml
 [dependencies]
-chess-corners-core = "0.3.3"
+chess-corners-core = "0.4.0"
 ```
 
 If you only need the standalone fixed-2x grayscale pyramid builder used by the multiscale pipeline:

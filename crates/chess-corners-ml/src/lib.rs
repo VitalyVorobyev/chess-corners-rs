@@ -182,8 +182,8 @@ fn embedded_model_path() -> Result<PathBuf> {
     let onnx_path = dir.join(EMBED_ONNX_NAME);
     let data_path = dir.join(EMBED_ONNX_DATA_NAME);
 
-    // Only write files if they don't exist or have a different size,
-    // avoiding redundant I/O across repeated invocations.
+    // Only rewrite files when the exact bytes change, so fixed filenames in a
+    // shared temp dir never serve stale model artifacts across upgrades.
     write_if_changed(&onnx_path, EMBED_ONNX).context("write embedded ONNX model")?;
     write_if_changed(&data_path, EMBED_ONNX_DATA).context("write embedded ONNX data")?;
 
@@ -191,13 +191,34 @@ fn embedded_model_path() -> Result<PathBuf> {
     Ok(onnx_path)
 }
 
-/// Write `data` to `path` only if the file doesn't exist or differs in size.
+/// Write `data` to `path` only if the file doesn't already contain the same bytes.
 #[cfg(feature = "embed-model")]
 fn write_if_changed(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
     if let Ok(meta) = std::fs::metadata(path) {
         if meta.len() == data.len() as u64 {
-            return Ok(());
+            if let Ok(existing) = std::fs::read(path) {
+                if existing == data {
+                    return Ok(());
+                }
+            }
         }
     }
     std::fs::write(path, data)
+}
+
+#[cfg(all(test, feature = "embed-model"))]
+mod tests {
+    use super::write_if_changed;
+
+    #[test]
+    fn write_if_changed_rewrites_same_size_changed_bytes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("model.bin");
+
+        write_if_changed(&path, b"abc").expect("initial write");
+        write_if_changed(&path, b"xyz").expect("rewrite same-size bytes");
+
+        let bytes = std::fs::read(&path).expect("read rewritten bytes");
+        assert_eq!(bytes, b"xyz");
+    }
 }

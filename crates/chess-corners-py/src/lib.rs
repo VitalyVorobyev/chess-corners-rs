@@ -4,7 +4,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyDictMethods, PyModule, PyModuleMethods};
 
-#[pyclass(name = "PyramidParams")]
+#[pyclass(name = "PyramidParams", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyramidParamsPy {
     num_levels: u8,
@@ -136,7 +136,7 @@ impl CoarseToFineParamsPy {
     }
 }
 
-#[pyclass(name = "CenterOfMassConfig")]
+#[pyclass(name = "CenterOfMassConfig", skip_from_py_object)]
 #[derive(Clone)]
 pub struct CenterOfMassConfigPy {
     radius: i32,
@@ -178,7 +178,7 @@ impl CenterOfMassConfigPy {
     }
 }
 
-#[pyclass(name = "ForstnerConfig")]
+#[pyclass(name = "ForstnerConfig", skip_from_py_object)]
 #[derive(Clone)]
 pub struct ForstnerConfigPy {
     radius: i32,
@@ -278,7 +278,7 @@ impl ForstnerConfigPy {
     }
 }
 
-#[pyclass(name = "SaddlePointConfig")]
+#[pyclass(name = "SaddlePointConfig", skip_from_py_object)]
 #[derive(Clone)]
 pub struct SaddlePointConfigPy {
     radius: i32,
@@ -364,7 +364,7 @@ impl SaddlePointConfigPy {
     }
 }
 
-#[pyclass(name = "RefinerKind")]
+#[pyclass(name = "RefinerKind", skip_from_py_object)]
 #[derive(Clone)]
 pub struct RefinerKindPy {
     inner: chess_corners_rs::RefinerKind,
