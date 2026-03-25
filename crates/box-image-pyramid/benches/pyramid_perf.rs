@@ -174,10 +174,9 @@ fn bench_image_resize(input: &BenchInput) -> usize {
     acc
 }
 fn pyramid_benchmarks(c: &mut Criterion) {
-    let params = PyramidParams {
-        num_levels: NUM_LEVELS,
-        min_size: MIN_SIZE,
-    };
+    let mut params = PyramidParams::default();
+    params.num_levels = NUM_LEVELS;
+    params.min_size = MIN_SIZE;
     let cases = [
         BenchCase {
             name: "640x480",
