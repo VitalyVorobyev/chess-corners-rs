@@ -32,6 +32,7 @@ The `chess-corners-rs` workspace implements ChESS in Rust with an emphasis on cl
 If you are reading this book online via GitHub Pages, the generated
 Rust API docs for the crates are also available:
 
+- `box-image-pyramid` API reference: see `/box_image_pyramid/`
 - `chess-corners-core` API reference: see `/chess_corners_core/`
 - `chess-corners` API reference: see `/chess_corners/`
 
@@ -39,7 +40,7 @@ Rust API docs for the crates are also available:
 
 ## 1.2 Project layout
 
-This repository is a small Rust workspace with two main library crates and a CLI:
+This repository is a small Rust workspace with three main library crates and a CLI:
 
 - `chess-corners-core` – **low-level core**
   - Path: `crates/chess-corners-core`
@@ -58,6 +59,7 @@ This repository is a small Rust workspace with two main library crates and a CLI
   - Path: `crates/chess-corners`
   - Responsibilities:
     - Re-export core types (`ChessParams`, `CornerDescriptor`, `ResponseMap`) so you can usually depend on this crate alone.
+    - Re-export `PyramidParams`, `PyramidBuffers`, and `ImageBuffer` from `box-image-pyramid` for multiscale tuning and buffer reuse.
     - Provide a high-level detector configuration:
       - `ChessConfig` – combines `ChessParams` with multiscale tuning (`CoarseToFineParams`).
     - Implement single-scale and multiscale detection:
@@ -66,13 +68,21 @@ This repository is a small Rust workspace with two main library crates and a CLI
       - Multiscale internals (`multiscale` module):
         - `CoarseToFineParams` – pyramid + ROI + merge tuning.
         - `find_chess_corners_buff` / `find_chess_corners` – coarse‑to‑fine detector using image pyramids.
-      - Pyramid internals (`pyramid` module):
-        - `ImageView`, `ImageBuffer` – minimal grayscale image view and buffer.
-        - `PyramidParams`, `PyramidBuffers`, `build_pyramid` – reusable image pyramid construction with optional SIMD/`rayon` via the `par_pyramid` feature.
     - Optionally ship a CLI binary for batch runs and visualization.
   - Intended audience:
     - Users who want “just detect chessboard corners” in a Rust image pipeline with minimal boilerplate.
     - Users who want multiscale detection and performance tuning without touching the lowest-level core types.
+
+- `box-image-pyramid` – **standalone pyramid utility**
+  - Path: `crates/box-image-pyramid`
+  - Responsibilities:
+    - Provide minimal `u8` grayscale image storage types (`ImageView`, `ImageBuffer`).
+    - Build fixed 2x box-filter pyramids with `build_pyramid`.
+    - Reuse per-level allocations across frames via `PyramidBuffers`.
+    - Optionally accelerate downsampling with `rayon` and portable SIMD behind `par_pyramid`.
+  - Intended audience:
+    - The `chess-corners` multiscale pipeline.
+    - Users who only need fast fixed-2x grayscale pyramids without a full image-processing library.
 
 - `chess-corners` CLI – **command-line tool**
   - Path: `crates/chess-corners/bin`
@@ -103,7 +113,7 @@ The easiest way to use ChESS from your own project is to depend on the `chess-co
 
 ```toml
 [dependencies]
-chess-corners = "0.3.2"
+chess-corners = "0.3.3"
 image = "0.25" # if you want GrayImage integration
 ```
 
@@ -113,6 +123,14 @@ This gives you:
 - `find_chess_corners_image` for `image::GrayImage`.
 - `find_chess_corners_u8` for raw `&[u8]` buffers.
 - Access to `CornerDescriptor` and `ResponseMap`.
+
+If you only need the standalone fixed-2x grayscale pyramid builder used by the
+multiscale pipeline:
+
+```toml
+[dependencies]
+box-image-pyramid = "0.3.3"
+```
 
 A minimal single‑scale example with `image`:
 

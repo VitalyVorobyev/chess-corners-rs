@@ -130,14 +130,14 @@ not threshold by the model’s confidence output.
 The published documentation includes:
 
 - a guide-style book (API overview, internals, multiscale tuning), and
-- generated Rust API docs for both `chess-corners-core` and `chess-corners`.
+- generated Rust API docs for `box-image-pyramid`, `chess-corners-core`, and `chess-corners`.
 
 ## Highlights
 - Canonical 16-sample rings (r=5 default, r=10 for heavy blur).
 - Dense response computation plus NMS, minimum-cluster filtering, and pluggable subpixel refinement (center-of-mass, Förstner, saddle-point).
 - Optional ML-backed refiner (`ml-refiner` feature) for higher synthetic accuracy.
 - Optional `rayon` parallelism and portable SIMD acceleration (requires nightly Rust toolchain) on the dense response path.
-- Crates: `chess-corners-core` (lean core) and `chess-corners` (ergonomic facade with optional `image`/multiscale integration and a CLI binary target).
+- Crates: `box-image-pyramid` (standalone fixed-2x grayscale pyramid builder), `chess-corners-core` (lean core), and `chess-corners` (ergonomic facade with optional `image`/multiscale integration and a CLI binary target).
 - Multiscale coarse-to-fine pipeline with reusable pyramid buffers (fast + robust under blur/scale changes).
 - Corner descriptors that include subpixel position, response, and orientation.
 - JSON/PNG output plus Python helpers under `tools/` (synthetic dataset generator, accuracy benchmark, perf tooling).
@@ -157,6 +157,13 @@ If you need direct access to the low-level response / detector stages, you can a
 ```toml
 [dependencies]
 chess-corners-core = "0.3.3"
+```
+
+If you only need the standalone fixed-2x grayscale pyramid builder used by the multiscale pipeline:
+
+```toml
+[dependencies]
+box-image-pyramid = "0.3.3"
 ```
 
 The `chess-corners` crate enables the `image` feature by default so you can work with `image::GrayImage`; disable it if you prefer to stay on raw buffers.

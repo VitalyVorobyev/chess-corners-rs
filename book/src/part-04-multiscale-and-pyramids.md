@@ -18,11 +18,15 @@ simple image pyramids. This part describes:
 
 ## 4.1 Image pyramids
 
-The multiscale code lives in `crates/chess-corners/src/pyramid.rs`.
-It implements a minimal grayscale pyramid builder tuned for the
-detector’s needs: no color, no arbitrary scaling; just fixed 2×
-downsampling with optional SIMD/`rayon` acceleration when
-`par_pyramid` is enabled.
+The pyramid builder itself lives in the standalone
+`crates/box-image-pyramid` crate. The `chess-corners` facade depends on
+it for multiscale detection and re-exports the main configuration and
+buffer types (`PyramidParams`, `PyramidBuffers`, `ImageBuffer`) for
+convenience.
+
+The builder is intentionally narrow: no color, no arbitrary scaling;
+just fixed 2x downsampling on `u8` grayscale images, with optional
+SIMD/`rayon` acceleration when `par_pyramid` is enabled.
 
 ### 4.1.1 Image views and buffers
 
@@ -32,23 +36,21 @@ Two basic types represent images:
 
   ```rust
   pub struct ImageView<'a> {
-      pub width: u32,
-      pub height: u32,
       pub data: &'a [u8],
+      pub width: usize,
+      pub height: usize,
   }
   ```
 
-  - `from_u8_slice(width, height, data)` validates that
+  - `ImageView::new(width, height, data)` validates that
     `width * height == data.len()` and returns a view on success.
-  - With the `image` feature, `ImageView` can also be constructed
-    directly from `image::GrayImage` via `From<&GrayImage>`.
 
 - `ImageBuffer` – an owned buffer:
 
   ```rust
   pub struct ImageBuffer {
-      pub width: u32,
-      pub height: u32,
+      pub width: usize,
+      pub height: usize,
       pub data: Vec<u8>,
   }
   ```
@@ -56,8 +58,10 @@ Two basic types represent images:
   It is used as backing storage for pyramid levels and exposes
   `as_view()` to obtain an `ImageView<'_>`.
 
-These types keep the pyramid code decoupled from any particular image
-crate while remaining easy to integrate when `image` is enabled.
+These types keep the pyramid crate decoupled from any particular image
+crate. When you call `find_chess_corners_image`, the `chess-corners`
+facade converts from `image::GrayImage` to the raw-slice pyramid API
+internally.
 
 ### 4.1.2 Pyramid structures and parameters
 
@@ -87,7 +91,7 @@ The shape of the pyramid is controlled by:
 ```rust
 pub struct PyramidParams {
     pub num_levels: u8,
-    pub min_size: u32,
+    pub min_size: usize,
 }
 ```
 
@@ -95,7 +99,12 @@ pub struct PyramidParams {
 - `min_size` – smallest allowed dimension (width or height) for any
   level; once a level would fall below this size, construction stops.
 
-The default is `num_levels = 1`, `min_size = 128`. If you need to speed up ceature detection, try `num_levels = 2` or `num_levels = 3`.
+The actual type is `#[non_exhaustive]`, so external code should start
+from `PyramidParams::default()` and mutate the public fields.
+
+The default is `num_levels = 1`, `min_size = 128`. If you need more
+coarse-to-fine help on small or blurred boards, `num_levels = 2` or
+`num_levels = 3` is a common starting point.
 
 ### 4.1.3 Reusable buffers
 
