@@ -1,0 +1,26 @@
+[package]
+name = "box-image-pyramid"
+version = "0.1.0"
+description = "Minimal u8 grayscale image pyramid using 2x box-filter downsampling with reusable buffers"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["image-pyramid", "downsample", "box-filter", "computer-vision"]
+
+[lib]
+name = "box_image_pyramid"
+path = "src/lib.rs"
+
+[features]
+default = []
+rayon = ["dep:rayon"]
+simd = []
+par_pyramid = []  # opt-in gate for SIMD/parallel pyramid downsampling
+tracing = ["dep:tracing"]
+
+[dependencies]
+rayon = { version = "1.10", optional = true }
+tracing = { version = "0.1", optional = true }
+
+[dev-dependencies]
+image = "0.25"

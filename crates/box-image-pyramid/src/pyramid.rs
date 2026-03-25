@@ -1,43 +1,20 @@
-//! Simple image pyramid utilities used by the multiscale corner finder.
+//! Image pyramid construction using fixed 2x box-filter downsampling.
 //!
 //! The API is allocation-friendly: construct a [`PyramidBuffers`] once, then
 //! reuse it to build pyramids for successive frames without re-allocating
 //! intermediate levels. When both the `par_pyramid` and `simd` features are
-//! enabled, the 2× box downsample uses portable SIMD for higher throughput.
+//! enabled, the 2x box downsample uses portable SIMD for higher throughput.
 
-use chess_corners_core::ImageView;
+use crate::imageview::{ImageBuffer, ImageView};
 #[cfg(feature = "tracing")]
 use tracing::instrument;
-
-/// Owned grayscale image buffer (u8).
-#[derive(Clone, Debug)]
-pub struct ImageBuffer {
-    pub width: usize,
-    pub height: usize,
-    pub data: Vec<u8>,
-}
-
-impl ImageBuffer {
-    pub fn new(width: usize, height: usize) -> Self {
-        Self {
-            width,
-            height,
-            data: vec![0; width.saturating_mul(height)],
-        }
-    }
-
-    pub fn as_view(&self) -> ImageView<'_> {
-        ImageView::from_u8_slice(self.width, self.height, &self.data).unwrap()
-    }
-}
 
 /// Reusable backing storage for pyramid construction.
 ///
 /// Typically you construct a [`PyramidBuffers`] once (for example with
 /// [`PyramidBuffers::with_capacity`]) and reuse it across frames by
-/// passing a mutable reference into higher-level helpers such as
-/// [`crate::find_chess_corners_buff`]. The internal level buffers are
-/// resized on demand to match the requested pyramid shape.
+/// passing a mutable reference into [`build_pyramid`]. The internal level
+/// buffers are resized on demand to match the requested pyramid shape.
 pub struct PyramidBuffers {
     levels: Vec<ImageBuffer>,
 }
@@ -102,10 +79,10 @@ impl Default for PyramidParams {
     }
 }
 
-/// Build a top-down image pyramid using fixed 2× downsampling.
+/// Build a top-down image pyramid using fixed 2x downsampling.
 ///
 /// The base image is always included as level 0. Each subsequent level is a
-/// 2× downsampled copy (box filter) written into `buffers`. Construction stops
+/// 2x downsampled copy (box filter) written into `buffers`. Construction stops
 /// when:
 /// - either dimension would fall below `min_size`, or
 /// - `num_levels` is reached.
@@ -184,7 +161,7 @@ pub fn build_pyramid<'a>(
     Pyramid { levels }
 }
 
-/// Fast 2× downsample with a 2×2 box filter into a pre-allocated destination.
+/// Fast 2x downsample with a 2x2 box filter into a pre-allocated destination.
 ///
 /// Uses SIMD and/or `rayon` specializations when the `par_pyramid`
 /// feature is enabled alongside the relevant flags.
@@ -369,24 +346,22 @@ mod tests {
         dst
     }
 
-    #[cfg(feature = "image")]
-    fn gray_to_buffer(img: &image::GrayImage) -> ImageBuffer {
+    fn gray_to_buffer(w: u32, h: u32, data: Vec<u8>) -> ImageBuffer {
         ImageBuffer {
-            width: img.width() as usize,
-            height: img.height() as usize,
-            data: img.as_raw().clone(),
+            width: w as usize,
+            height: h as usize,
+            data,
         }
     }
 
-    #[cfg(feature = "image")]
-    fn make_checker(w: u32, h: u32, a: u8, b: u8) -> image::GrayImage {
-        image::GrayImage::from_fn(w, h, |x, y| {
-            if (x + y) % 2 == 0 {
-                image::Luma([a])
-            } else {
-                image::Luma([b])
+    fn make_checker(w: u32, h: u32, a: u8, b: u8) -> ImageBuffer {
+        let mut data = vec![0u8; (w * h) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                data[(y * w + x) as usize] = if (x + y) % 2 == 0 { a } else { b };
             }
-        })
+        }
+        gray_to_buffer(w, h, data)
     }
 
     #[test]
@@ -401,14 +376,54 @@ mod tests {
         assert_eq!(dst.data, expected.data);
     }
 
-    #[cfg(feature = "image")]
     #[test]
     fn downsample_matches_reference_on_checker() {
-        let img = make_checker(17, 15, 0, 255);
-        let src = gray_to_buffer(&img);
+        let src = make_checker(16, 14, 0, 255);
         let mut dst = ImageBuffer::new(src.width / 2, src.height / 2);
         downsample_2x_box(src.as_view(), &mut dst);
         let expected = reference_downsample(&src);
         assert_eq!(dst.data, expected.data);
+    }
+
+    #[test]
+    fn build_pyramid_single_level() {
+        let img = ImageBuffer::new(64, 64);
+        let params = PyramidParams {
+            num_levels: 1,
+            min_size: 16,
+        };
+        let mut buffers = PyramidBuffers::new();
+        let pyramid = build_pyramid(img.as_view(), &params, &mut buffers);
+        assert_eq!(pyramid.levels.len(), 1);
+        assert_eq!(pyramid.levels[0].scale, 1.0);
+    }
+
+    #[test]
+    fn build_pyramid_multiple_levels() {
+        let img = ImageBuffer::new(128, 128);
+        let params = PyramidParams {
+            num_levels: 4,
+            min_size: 16,
+        };
+        let mut buffers = PyramidBuffers::new();
+        let pyramid = build_pyramid(img.as_view(), &params, &mut buffers);
+        assert_eq!(pyramid.levels.len(), 4);
+        assert_eq!(pyramid.levels[0].img.width, 128);
+        assert_eq!(pyramid.levels[1].img.width, 64);
+        assert_eq!(pyramid.levels[2].img.width, 32);
+        assert_eq!(pyramid.levels[3].img.width, 16);
+        assert!((pyramid.levels[3].scale - 0.125).abs() < 1e-6);
+    }
+
+    #[test]
+    fn build_pyramid_stops_at_min_size() {
+        let img = ImageBuffer::new(64, 64);
+        let params = PyramidParams {
+            num_levels: 10,
+            min_size: 32,
+        };
+        let mut buffers = PyramidBuffers::new();
+        let pyramid = build_pyramid(img.as_view(), &params, &mut buffers);
+        assert_eq!(pyramid.levels.len(), 2); // 64 -> 32, stops before 16
     }
 }

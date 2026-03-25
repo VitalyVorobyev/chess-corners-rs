@@ -18,11 +18,11 @@ path = "src/lib.rs"
 [features]
 default = ["image"]
 image = ["dep:image"]
-rayon = ["chess-corners-core/rayon", "dep:rayon"]  # enable core’s rayon via this feature
-simd = ["chess-corners-core/simd"]
-tracing = ["chess-corners-core/tracing", "dep:tracing"]
+rayon = ["chess-corners-core/rayon", "dep:rayon", "box-image-pyramid/rayon"]
+simd = ["chess-corners-core/simd", "box-image-pyramid/simd"]
+tracing = ["chess-corners-core/tracing", "dep:tracing", "box-image-pyramid/tracing"]
 ml-refiner = ["dep:chess-corners-ml"]
-par_pyramid = []  # opt-in gate for SIMD/parallel pyramid downsampling
+par_pyramid = ["box-image-pyramid/par_pyramid"]
 cli = []
 
 [[bin]]
@@ -31,6 +31,7 @@ path = "bin/main.rs"
 required-features = ["image"]
 
 [dependencies]
+box-image-pyramid = { path = "../box-image-pyramid", version = "0.1" }
 chess-corners-core = { path = "../chess-corners-core", version = "0.3" }
 chess-corners-ml = { path = "../chess-corners-ml", version = "0.3", optional = true }
 image = { version = "0.25", optional = true }

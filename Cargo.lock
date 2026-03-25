@@ -242,6 +242,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "box-image-pyramid"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "rayon",
+ "tracing",
+]
+
+[[package]]
 name = "built"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -300,6 +309,7 @@ name = "chess-corners"
 version = "0.3.2"
 dependencies = [
  "anyhow",
+ "box-image-pyramid",
  "chess-corners-core",
  "chess-corners-ml",
  "clap",

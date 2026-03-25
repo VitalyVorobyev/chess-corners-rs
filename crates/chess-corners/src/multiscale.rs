@@ -21,13 +21,18 @@
 
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
-use crate::pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
 use crate::{ChessConfig, ChessParams};
+use box_image_pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
 use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
 use chess_corners_core::detect::{detect_corners_from_response_with_refiner, merge_corners_simple};
 use chess_corners_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
 use chess_corners_core::{CornerDescriptor, CornerRefiner};
 use chess_corners_core::{ImageView, Refiner, RefinerKind, ResponseMap};
+
+/// Bridge from `chess_corners_core::ImageView` to `box_image_pyramid::ImageView`.
+fn to_pyramid_view(v: ImageView<'_>) -> box_image_pyramid::ImageView<'_> {
+    box_image_pyramid::ImageView::new(v.width, v.height, v.data).unwrap()
+}
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 #[cfg(feature = "tracing")]
@@ -118,7 +123,7 @@ pub fn find_chess_corners_buff_with_refiner(
     let params = &cfg.params;
     let cf = &cfg.multiscale;
 
-    let pyramid = build_pyramid(base, &cf.pyramid, buffers);
+    let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
         return Vec::new();
     }
@@ -341,7 +346,7 @@ fn find_chess_corners_buff_with_ml_state(
     let params = &cfg.params;
     let cf = &cfg.multiscale;
 
-    let pyramid = build_pyramid(base, &cf.pyramid, buffers);
+    let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
         return Vec::new();
     }
@@ -590,13 +595,15 @@ pub fn find_chess_corners_with_ml(base: ImageView<'_>, cfg: &ChessConfig) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pyramid::ImageBuffer;
+    use box_image_pyramid::ImageBuffer;
 
     #[test]
     fn coarse_to_fine_trace_reports_timings() {
-        let img = ImageBuffer::new(32, 32);
+        let buf = ImageBuffer::new(32, 32);
+        let view = ImageView::from_u8_slice(buf.width, buf.height, &buf.data)
+            .expect("dimensions must match");
         let cfg = ChessConfig::default();
-        let corners = find_chess_corners(img.as_view(), &cfg);
+        let corners = find_chess_corners(view, &cfg);
         assert!(corners.is_empty());
     }
 }
