@@ -16,8 +16,10 @@ use tracing::instrument;
 /// A detected ChESS corner (subpixel).
 #[derive(Clone, Debug)]
 pub struct Corner {
-    /// Subpixel location in image coordinates (x, y).
-    pub xy: [f32; 2],
+    /// Subpixel x coordinate in image pixels.
+    pub x: f32,
+    /// Subpixel y coordinate in image pixels.
+    pub y: f32,
     /// Raw ChESS response at the integer peak (before COM refinement).
     pub strength: f32,
 }
@@ -61,12 +63,12 @@ pub fn corners_to_descriptors(
     let ring = ring_offsets(radius);
     let mut out = Vec::with_capacity(corners.len());
     for c in corners {
-        let samples = sample_ring(img, w, h, c.xy[0], c.xy[1], ring);
+        let samples = sample_ring(img, w, h, c.x, c.y, ring);
         let orientation = estimate_orientation_from_ring(&samples, ring);
 
         out.push(CornerDescriptor {
-            x: c.xy[0],
-            y: c.xy[1],
+            x: c.x,
+            y: c.y,
             response: c.strength,
             orientation,
         });

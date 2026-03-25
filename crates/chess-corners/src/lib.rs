@@ -206,6 +206,7 @@ pub use box_image_pyramid::{ImageBuffer, PyramidBuffers, PyramidParams};
 /// Unified detector configuration combining response/detector params and
 /// multiscale/pyramid tuning.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct ChessConfig {
     /// Low-level ChESS response/detector parameters (ring radius, thresholds,
     /// NMS radius, minimum cluster size, and subpixel refinement backend).

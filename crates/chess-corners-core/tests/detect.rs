@@ -26,9 +26,9 @@ fn response_on_uniform_image_is_zero() {
     let img = vec![7u8; w * h];
 
     let resp = chess_response_u8(&img, w, h, &params);
-    assert_eq!(resp.w, w);
-    assert_eq!(resp.h, h);
-    assert!(resp.data.iter().all(|v| v.abs() < 1e-6));
+    assert_eq!(resp.width(), w);
+    assert_eq!(resp.height(), h);
+    assert!(resp.data().iter().all(|v| v.abs() < 1e-6));
 }
 
 #[cfg(feature = "simd")]
@@ -43,7 +43,7 @@ fn simd_matches_scalar_reasonably() {
     let simd_map = chess_response_u8(img.as_raw(), w, h, &params);
 
     let eps = 1e-3_f32;
-    for (a, b) in ref_map.data.iter().zip(simd_map.data.iter()) {
+    for (a, b) in ref_map.data().iter().zip(simd_map.data().iter()) {
         assert!((a - b).abs() <= eps, "diff: {a} vs {b}");
     }
 }
@@ -62,7 +62,7 @@ fn simd_parallel_matches_scalar() {
     let simd_map = chess_response_u8(img.as_raw(), w, h, &params);
 
     let eps = 1e-3_f32;
-    for (a, b) in ref_map.data.iter().zip(simd_map.data.iter()) {
+    for (a, b) in ref_map.data().iter().zip(simd_map.data().iter()) {
         assert!((a - b).abs() <= eps, "diff: {a} vs {b}");
     }
 }
@@ -106,7 +106,7 @@ fn response_matches_manual_ring_layout() {
         "expected center response {expected}, got {center}"
     );
 
-    for (i, v) in resp.data.iter().enumerate() {
+    for (i, v) in resp.data().iter().enumerate() {
         if i == idx(w, cx, cy) {
             continue;
         }
@@ -130,29 +130,23 @@ fn detect_corners_respects_threshold_and_cluster_size() {
         let y = (cy as i32 + dy) as usize;
         data[idx(w, x, y)] = 4.0;
     }
-    let resp = ResponseMap { w, h, data };
-    let params = ChessParams {
-        threshold_abs: Some(6.0),
-        ..Default::default()
-    };
+    let resp = ResponseMap::new(w, h, data);
+    let mut params = ChessParams::default();
+    params.threshold_abs = Some(6.0);
 
     let corners = detect_corners_from_response(&resp, &params);
     assert_eq!(corners.len(), 1);
 
     let c = &corners[0];
-    assert!((c.xy[0] - cx as f32).abs() < 0.2);
-    assert!((c.xy[1] - cy as f32).abs() < 0.2);
+    assert!((c.x - cx as f32).abs() < 0.2);
+    assert!((c.y - cy as f32).abs() < 0.2);
     assert!((c.strength - 10.0).abs() < f32::EPSILON);
 }
 
 #[test]
 fn detect_corners_rejects_maps_without_margin() {
     let params = ChessParams::default();
-    let resp = ResponseMap {
-        w: 8,
-        h: 8,
-        data: vec![1.0; 64],
-    };
+    let resp = ResponseMap::new(8, 8, vec![1.0; 64]);
 
     let corners = detect_corners_from_response(&resp, &params);
     assert!(corners.is_empty());
@@ -178,21 +172,16 @@ fn patch_response_matches_full_map_slice() {
 
     let full = chess_response_u8(img.as_raw(), w, h, &params);
 
-    let roi = response::Roi {
-        x0: 5,
-        y0: 7,
-        x1: 37,
-        y1: 29,
-    };
+    let roi = response::Roi::new(5, 7, 37, 29).unwrap();
     let patch = chess_response_u8_patch(img.as_raw(), w, h, &params, roi);
 
-    assert_eq!(patch.w, roi.x1 - roi.x0);
-    assert_eq!(patch.h, roi.y1 - roi.y0);
+    assert_eq!(patch.width(), roi.x1() - roi.x0());
+    assert_eq!(patch.height(), roi.y1() - roi.y0());
 
-    for py in 0..patch.h {
-        for px in 0..patch.w {
-            let gx = roi.x0 + px;
-            let gy = roi.y0 + py;
+    for py in 0..patch.height() {
+        for px in 0..patch.width() {
+            let gx = roi.x0() + px;
+            let gy = roi.y0() + py;
             let full_val = full.at(gx, gy);
             let patch_val = patch.at(px, py);
             assert!(

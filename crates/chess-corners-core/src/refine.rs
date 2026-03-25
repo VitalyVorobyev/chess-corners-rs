@@ -9,6 +9,7 @@ use crate::ResponseMap;
 
 /// Status of a refinement attempt.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RefineStatus {
     Accepted,
     Rejected,
@@ -19,7 +20,10 @@ pub enum RefineStatus {
 /// Result of refining a single corner candidate.
 #[derive(Copy, Clone, Debug)]
 pub struct RefineResult {
-    pub xy: [f32; 2],
+    /// Refined subpixel x coordinate.
+    pub x: f32,
+    /// Refined subpixel y coordinate.
+    pub y: f32,
     pub score: f32,
     pub status: RefineStatus,
 }
@@ -28,7 +32,8 @@ impl RefineResult {
     #[inline]
     pub fn accepted(xy: [f32; 2], score: f32) -> Self {
         Self {
-            xy,
+            x: xy[0],
+            y: xy[1],
             score,
             status: RefineStatus::Accepted,
         }
@@ -51,6 +56,7 @@ pub trait CornerRefiner {
 
 /// User-facing enum selecting a refinement backend.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum RefinerKind {
     CenterOfMass(CenterOfMassConfig),
     Forstner(ForstnerConfig),
@@ -135,7 +141,7 @@ impl CornerRefiner for CenterOfMassRefiner {
             Some(r) => r,
             None => {
                 return RefineResult {
-                    xy: seed_xy,
+                    x: seed_xy[0], y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::Rejected,
                 }
@@ -155,7 +161,7 @@ impl CornerRefiner for CenterOfMassRefiner {
 
         if x < r || y < r || x >= w - r || y >= h - r {
             return RefineResult {
-                xy: seed_xy,
+                x: seed_xy[0], y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::OutOfBounds,
             };
@@ -176,7 +182,7 @@ impl CornerRefiner for CenterOfMassRefiner {
             RefineResult::accepted([sx / sw, sy / sw], sw)
         } else {
             RefineResult {
-                xy: seed_xy,
+                x: seed_xy[0], y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::Accepted,
             }
@@ -185,12 +191,41 @@ impl CornerRefiner for CenterOfMassRefiner {
 }
 
 /// Förstner-style gradient-based refiner.
+///
+/// The Förstner operator fits a subpixel corner location by solving a
+/// weighted least-squares system on the image gradient structure tensor
+/// within a local window. The thresholds below control when the system
+/// is well-conditioned enough to yield a reliable estimate.
+///
+/// Reference: Förstner, W. & Gülch, E. (1987). "A fast operator for
+/// detection and precise location of distinct points, corners and centres
+/// of circular features."
 #[derive(Clone, Copy, Debug)]
 pub struct ForstnerConfig {
+    /// Half-size of the local gradient window (full window is `2*radius+1`).
+    /// A radius of 2 gives a 5×5 patch — large enough to capture the
+    /// gradient structure around a corner while staying local.
     pub radius: i32,
+    /// Minimum trace of the structure tensor (sum of eigenvalues).
+    /// Rejects flat regions where gradient energy is too low. The value
+    /// 25.0 corresponds roughly to an average gradient magnitude of ~5
+    /// per pixel in a 5×5 window (5² = 25), filtering out textureless areas.
     pub min_trace: f32,
+    /// Minimum determinant of the structure tensor (product of eigenvalues).
+    /// Guards against singular or near-singular systems where the least-squares
+    /// solution is numerically unstable. 1e-3 is a conservative floor that
+    /// rejects only truly degenerate cases.
     pub min_det: f32,
+    /// Maximum ratio of the larger to the smaller eigenvalue. A high
+    /// condition number indicates an edge rather than a corner (one dominant
+    /// gradient direction). The threshold 50.0 is permissive — standard
+    /// Harris/Förstner literature suggests values in the 10–100 range
+    /// depending on noise level and corner sharpness.
     pub max_condition_number: f32,
+    /// Maximum displacement (in pixels) from the initial integer seed to
+    /// the refined subpixel location. Offsets larger than ~1.5 px suggest
+    /// the seed was mislocated and the refinement is extrapolating rather
+    /// than interpolating; such results are rejected.
     pub max_offset: f32,
 }
 
@@ -229,7 +264,7 @@ impl CornerRefiner for ForstnerRefiner {
             Some(view) => view,
             None => {
                 return RefineResult {
-                    xy: seed_xy,
+                    x: seed_xy[0], y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::Rejected,
                 }
@@ -242,7 +277,7 @@ impl CornerRefiner for ForstnerRefiner {
 
         if !img.supports_patch(cx, cy, patch_r + 1) {
             return RefineResult {
-                xy: seed_xy,
+                x: seed_xy[0], y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::OutOfBounds,
             };
@@ -289,7 +324,7 @@ impl CornerRefiner for ForstnerRefiner {
         let det = a00 * a11 - a01 * a01;
         if trace < self.cfg.min_trace || det <= self.cfg.min_det {
             return RefineResult {
-                xy: seed_xy,
+                x: seed_xy[0], y: seed_xy[1],
                 score: det,
                 status: RefineStatus::IllConditioned,
             };
@@ -301,7 +336,7 @@ impl CornerRefiner for ForstnerRefiner {
 
         if lambda_min <= 0.0 {
             return RefineResult {
-                xy: seed_xy,
+                x: seed_xy[0], y: seed_xy[1],
                 score: det,
                 status: RefineStatus::IllConditioned,
             };
@@ -310,7 +345,7 @@ impl CornerRefiner for ForstnerRefiner {
         let cond = lambda_max / lambda_min;
         if !cond.is_finite() || cond > self.cfg.max_condition_number {
             return RefineResult {
-                xy: seed_xy,
+                x: seed_xy[0], y: seed_xy[1],
                 score: det,
                 status: RefineStatus::IllConditioned,
             };
@@ -323,7 +358,7 @@ impl CornerRefiner for ForstnerRefiner {
         let max_off = self.cfg.max_offset.min(self.cfg.radius as f32 + 0.5);
         if ux.abs() > max_off || uy.abs() > max_off {
             return RefineResult {
-                xy: seed_xy,
+                x: seed_xy[0], y: seed_xy[1],
                 score: det,
                 status: RefineStatus::Rejected,
             };
@@ -434,7 +469,7 @@ impl CornerRefiner for SaddlePointRefiner {
             Some(view) => view,
             None => {
                 return RefineResult {
-                    xy: seed_xy,
+                    x: seed_xy[0], y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::Rejected,
                 }
@@ -447,7 +482,7 @@ impl CornerRefiner for SaddlePointRefiner {
 
         if !img.supports_patch(cx, cy, r) {
             return RefineResult {
-                xy: seed_xy,
+                x: seed_xy[0], y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::OutOfBounds,
             };
@@ -499,7 +534,7 @@ impl CornerRefiner for SaddlePointRefiner {
             Some(c) => c,
             None => {
                 return RefineResult {
-                    xy: seed_xy,
+                    x: seed_xy[0], y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::IllConditioned,
                 }
@@ -515,7 +550,7 @@ impl CornerRefiner for SaddlePointRefiner {
         let det_h = 4.0 * a * c - b * b;
         if det_h > -self.cfg.det_margin || det_h.abs() < self.cfg.min_abs_det {
             return RefineResult {
-                xy: seed_xy,
+                x: seed_xy[0], y: seed_xy[1],
                 score: det_h,
                 status: RefineStatus::IllConditioned,
             };
@@ -528,7 +563,7 @@ impl CornerRefiner for SaddlePointRefiner {
         let max_off = self.cfg.max_offset.min(r as f32 + 0.5);
         if ux.abs() > max_off || uy.abs() > max_off {
             return RefineResult {
-                xy: seed_xy,
+                x: seed_xy[0], y: seed_xy[1],
                 score: det_h,
                 status: RefineStatus::Rejected,
             };
@@ -607,8 +642,8 @@ mod tests {
             }
         }
         let expected = [sx / sw, sy / sw];
-        assert!((res.xy[0] - expected[0]).abs() < 1e-4);
-        assert!((res.xy[1] - expected[1]).abs() < 1e-4);
+        assert!((res.x - expected[0]).abs() < 1e-4);
+        assert!((res.y - expected[1]).abs() < 1e-4);
     }
 
     #[test]
@@ -625,11 +660,11 @@ mod tests {
         let true_xy = [7.35f32, 7.8f32];
         let seed_err = ((7.0 - true_xy[0]).powi(2) + (8.0 - true_xy[1]).powi(2)).sqrt();
         let refined_err =
-            ((res.xy[0] - true_xy[0]).powi(2) + (res.xy[1] - true_xy[1]).powi(2)).sqrt();
+            ((res.x - true_xy[0]).powi(2) + (res.y - true_xy[1]).powi(2)).sqrt();
         assert!(
             refined_err <= seed_err * 1.6 && refined_err < 1.0,
             "refined_err {refined_err} seed_err {seed_err} res {:?}",
-            res.xy
+            (res.x, res.y)
         );
     }
 
@@ -647,11 +682,11 @@ mod tests {
         let true_xy = [8.2f32, 8.6f32];
         let seed_err = ((8.0 - true_xy[0]).powi(2) + (9.0 - true_xy[1]).powi(2)).sqrt();
         let refined_err =
-            ((res.xy[0] - true_xy[0]).powi(2) + (res.xy[1] - true_xy[1]).powi(2)).sqrt();
+            ((res.x - true_xy[0]).powi(2) + (res.y - true_xy[1]).powi(2)).sqrt();
         assert!(
             refined_err <= seed_err * 1.6 && refined_err < 1.0,
             "refined_err {refined_err} seed_err {seed_err} res {:?}",
-            res.xy
+            (res.x, res.y)
         );
 
         let flat = vec![128u8; 25];

@@ -5,6 +5,7 @@ description = "Minimal u8 grayscale image pyramid using 2x box-filter downsampli
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
 keywords = ["image-pyramid", "downsample", "box-filter", "computer-vision"]
 
 [lib]
@@ -23,4 +24,12 @@ rayon = { version = "1.10", optional = true }
 tracing = { version = "0.1", optional = true }
 
 [dev-dependencies]
+criterion = "0.5"
+fast_image_resize = { version = "6.0", features = ["image"] }
 image = "0.25"
+resize = "0.8"
+rgb = "0.8"
+
+[[bench]]
+name = "pyramid_perf"
+harness = false

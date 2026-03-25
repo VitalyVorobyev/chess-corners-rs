@@ -181,8 +181,23 @@ fn embedded_model_path() -> Result<PathBuf> {
     std::fs::create_dir_all(&dir).context("create ML model temp dir")?;
     let onnx_path = dir.join(EMBED_ONNX_NAME);
     let data_path = dir.join(EMBED_ONNX_DATA_NAME);
-    std::fs::write(&onnx_path, EMBED_ONNX).context("write embedded ONNX model")?;
-    std::fs::write(&data_path, EMBED_ONNX_DATA).context("write embedded ONNX data")?;
+
+    // Only write files if they don't exist or have a different size,
+    // avoiding redundant I/O across repeated invocations.
+    write_if_changed(&onnx_path, EMBED_ONNX).context("write embedded ONNX model")?;
+    write_if_changed(&data_path, EMBED_ONNX_DATA).context("write embedded ONNX data")?;
+
     let _ = PATH.set(onnx_path.clone());
     Ok(onnx_path)
+}
+
+/// Write `data` to `path` only if the file doesn't exist or differs in size.
+#[cfg(feature = "embed-model")]
+fn write_if_changed(path: &std::path::Path, data: &[u8]) -> std::io::Result<()> {
+    if let Ok(meta) = std::fs::metadata(path) {
+        if meta.len() == data.len() as u64 {
+            return Ok(());
+        }
+    }
+    std::fs::write(path, data)
 }

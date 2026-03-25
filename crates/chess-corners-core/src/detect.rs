@@ -140,7 +140,8 @@ fn detect_corners_from_response_impl(
 
             if matches!(res.status, RefineStatus::Accepted) {
                 corners.push(Corner {
-                    xy: res.xy,
+                    x: res.x,
+                    y: res.y,
                     strength: v,
                 });
             }
@@ -211,8 +212,8 @@ pub fn merge_corners_simple(corners: &mut Vec<Corner>, radius: f32) -> Vec<Corne
     // naive O(N^2) for now; N is small for a single chessboard frame
     'outer: for c in corners.drain(..) {
         for o in &mut out {
-            let dx = c.xy[0] - o.xy[0];
-            let dy = c.xy[1] - o.xy[1];
+            let dx = c.x - o.x;
+            let dy = c.y - o.y;
             if dx * dx + dy * dy <= r2 {
                 // keep the stronger
                 if c.strength > o.strength {
@@ -329,8 +330,8 @@ mod tests {
         let corners = detect_corners_from_response(&resp, &params);
         assert_eq!(corners.len(), 1);
         let c = &corners[0];
-        assert!((c.xy[0] - expected.xy[0]).abs() < 1e-6);
-        assert!((c.xy[1] - expected.xy[1]).abs() < 1e-6);
+        assert!((c.x - expected.x).abs() < 1e-6);
+        assert!((c.y - expected.y).abs() < 1e-6);
     }
 
     #[test]
@@ -370,25 +371,25 @@ mod tests {
     fn merge_corners_prefers_stronger_entries() {
         let mut corners = vec![
             Corner {
-                xy: [10.0, 10.0],
+                x: 10.0, y: 10.0,
                 strength: 1.0,
             },
             Corner {
-                xy: [11.0, 11.0],
+                x: 11.0, y: 11.0,
                 strength: 5.0,
             },
             Corner {
-                xy: [20.0, 20.0],
+                x: 20.0, y: 20.0,
                 strength: 3.0,
             },
         ];
         let merged = merge_corners_simple(&mut corners, 2.5);
         assert_eq!(merged.len(), 2);
-        assert!(merged.iter().any(|c| (c.xy[0] - 11.0).abs() < 1e-6
-            && (c.xy[1] - 11.0).abs() < 1e-6
+        assert!(merged.iter().any(|c| (c.x - 11.0).abs() < 1e-6
+            && (c.y - 11.0).abs() < 1e-6
             && (c.strength - 5.0).abs() < 1e-6));
         assert!(merged
             .iter()
-            .any(|c| (c.xy[0] - 20.0).abs() < 1e-6 && (c.xy[1] - 20.0).abs() < 1e-6));
+            .any(|c| (c.x - 20.0).abs() < 1e-6 && (c.y - 20.0).abs() < 1e-6));
     }
 }

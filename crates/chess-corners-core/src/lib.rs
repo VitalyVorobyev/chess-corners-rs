@@ -62,6 +62,7 @@ pub use crate::refine::{
 pub use imageview::ImageView;
 /// Tunable parameters for the ChESS response computation and corner detection.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct ChessParams {
     /// Use the larger r=10 ring instead of the canonical r=5.
     pub use_radius10: bool,
@@ -129,12 +130,46 @@ impl ChessParams {
 /// Dense response map in row-major layout.
 #[derive(Clone, Debug)]
 pub struct ResponseMap {
-    pub w: usize,
-    pub h: usize,
-    pub data: Vec<f32>,
+    pub(crate) w: usize,
+    pub(crate) h: usize,
+    pub(crate) data: Vec<f32>,
 }
 
 impl ResponseMap {
+    /// Create a new response map. `data` must have exactly `w * h` elements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `data.len() != w * h`.
+    pub fn new(w: usize, h: usize, data: Vec<f32>) -> Self {
+        assert_eq!(data.len(), w * h, "ResponseMap data length mismatch");
+        Self { w, h, data }
+    }
+
+    /// Width of the response map.
+    #[inline]
+    pub fn width(&self) -> usize {
+        self.w
+    }
+
+    /// Height of the response map.
+    #[inline]
+    pub fn height(&self) -> usize {
+        self.h
+    }
+
+    /// Raw response data in row-major order.
+    #[inline]
+    pub fn data(&self) -> &[f32] {
+        &self.data
+    }
+
+    /// Mutable access to the raw response data.
+    #[inline]
+    pub fn data_mut(&mut self) -> &mut [f32] {
+        &mut self.data
+    }
+
     #[inline]
     /// Response value at an integer coordinate.
     pub fn at(&self, x: usize, y: usize) -> f32 {

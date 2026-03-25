@@ -51,18 +51,21 @@ impl PyramidBuffers {
 }
 
 /// A single pyramid level. The `scale` is relative to the base image.
+#[non_exhaustive]
 pub struct PyramidLevel<'a> {
     pub img: ImageView<'a>,
     pub scale: f32, // relative to base (e.g. 1.0, 0.5, 0.25, ...)
 }
 
 /// A top-down pyramid where `levels[0]` is the base (full resolution).
+#[non_exhaustive]
 pub struct Pyramid<'a> {
     pub levels: Vec<PyramidLevel<'a>>, // levels[0] is base
 }
 
 /// Parameters controlling pyramid generation.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct PyramidParams {
     /// Maximum number of levels (including the base).
     pub num_levels: u8,

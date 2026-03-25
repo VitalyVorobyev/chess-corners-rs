@@ -24,7 +24,9 @@
 //! let pixels = vec![128u8; 256 * 256];
 //! let base = ImageView::new(256, 256, &pixels).unwrap();
 //!
-//! let params = PyramidParams { num_levels: 3, min_size: 32 };
+//! let mut params = PyramidParams::default();
+//! params.num_levels = 3;
+//! params.min_size = 32;
 //! let mut buffers = PyramidBuffers::new();
 //! let pyramid = build_pyramid(base, &params, &mut buffers);
 //!
