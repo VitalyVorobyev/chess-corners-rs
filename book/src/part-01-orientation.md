@@ -113,7 +113,7 @@ The easiest way to use ChESS from your own project is to depend on the `chess-co
 
 ```toml
 [dependencies]
-chess-corners = "0.4.0"
+chess-corners = "0.4"
 image = "0.25" # if you want GrayImage integration
 ```
 
@@ -129,7 +129,7 @@ multiscale pipeline:
 
 ```toml
 [dependencies]
-box-image-pyramid = "0.3.3"
+box-image-pyramid = "0.4"
 ```
 
 A minimal single‑scale example with `image`:
