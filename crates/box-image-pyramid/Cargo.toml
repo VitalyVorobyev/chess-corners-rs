@@ -1,6 +1,6 @@
 [package]
 name = "box-image-pyramid"
-version = "0.4.0"
+version = "0.4.1"
 description = "Minimal u8 grayscale image pyramid using 2x box-filter downsampling with reusable buffers"
 edition.workspace = true
 license.workspace = true

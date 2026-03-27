@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+## [0.4.1]
+
+### Changed
+
+- Version bump across all workspace crates and the Python package to 0.4.1.
+- The crates.io release workflow for `vX.Y.Z` tags now verifies
+  `box-image-pyramid`, `chess-corners-core`, `chess-corners-ml`, and
+  `chess-corners` against the release tag before publishing.
+
+### Fixed
+
+- Rust crate publishing now happens in dependency order from the shared release
+  tag: `box-image-pyramid`, then `chess-corners-core`, then
+  `chess-corners-ml`, and finally `chess-corners`.
+- The release workflow now waits for each published crate version to become
+  visible on crates.io before attempting to publish dependent crates, fixing
+  the CI failure where `box-image-pyramid` was not yet available before the
+  chess crates were published.
+- Release reruns and flows that publish `box-image-pyramid` first via the
+  dedicated `box-image-pyramid-vX.Y.Z` tag now skip crates whose target version
+  is already visible on crates.io instead of failing on an "already exists"
+  publish error.
+
 ## [0.4.0]
 
 ### Changed
