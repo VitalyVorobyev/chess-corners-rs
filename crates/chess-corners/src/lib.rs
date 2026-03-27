@@ -37,14 +37,9 @@
 //!     .decode()?
 //!     .to_luma8();
 //!
-//! // Start from the recommended defaults.
-//! let mut cfg = ChessConfig::default();
+//! // Start from the recommended coarse-to-fine preset.
+//! let mut cfg = ChessConfig::multiscale();
 //! cfg.params = ChessParams::default();
-//!
-//! // For a single chessboard in the frame, 2–3 pyramid levels
-//! // are often enough. Setting `num_levels` to 1 forces
-//! // single-scale detection.
-//! cfg.multiscale.pyramid.num_levels = 3;
 //!
 //! let corners = find_chess_corners_image(&img, &cfg);
 //! println!("found {} corners", corners.len());
@@ -136,11 +131,13 @@
 //! - ML refinement is exposed via explicit `find_chess_corners_*_with_ml`
 //!   entry points when the `ml-refiner` feature is enabled.
 //!
-//! The shortcut [`ChessConfig::single_scale`] configures a
-//! single-scale run by setting `multiscale.pyramid.num_levels = 1`.
-//! Any `pyramid.num_levels > 1` triggers the coarse-to-fine path:
-//! corners are first detected on the smallest pyramid level and then
-//! refined inside base-image regions of interest.
+//! [`ChessConfig::default`] and the shortcut
+//! [`ChessConfig::single_scale`] both configure a single-scale run.
+//! [`ChessConfig::multiscale`] returns the recommended coarse-to-fine
+//! starting point with a 3-level pyramid. Any
+//! `pyramid.num_levels > 1` triggers the coarse-to-fine path: corners
+//! are first detected on the smallest pyramid level and then refined
+//! inside base-image regions of interest.
 //!
 //! If you need raw response maps or more control, depend directly on
 //! `chess-corners-core` and use its [`chess_corners_core::response`]
@@ -205,6 +202,10 @@ pub use box_image_pyramid::{ImageBuffer, PyramidBuffers, PyramidParams};
 
 /// Unified detector configuration combining response/detector params and
 /// multiscale/pyramid tuning.
+///
+/// [`ChessConfig::default`] keeps the detector in the single-scale regime.
+/// Use [`ChessConfig::multiscale`] for the recommended coarse-to-fine starting
+/// point on high-resolution, small-board, or textured projected patterns.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct ChessConfig {
@@ -217,11 +218,26 @@ pub struct ChessConfig {
 }
 
 impl ChessConfig {
-    /// Convenience helper for single-scale detection.
-    pub fn single_scale() -> Self {
+    /// Recommended coarse-to-fine starting point.
+    ///
+    /// This uses the canonical r=5 ChESS ring together with:
+    /// - 3 pyramid levels,
+    /// - `min_size = 128`,
+    /// - coarse ROI radius 3,
+    /// - merge radius 3.0.
+    pub fn multiscale() -> Self {
         let mut cfg = Self::default();
-        cfg.multiscale.pyramid.num_levels = 1;
+        cfg.multiscale.pyramid.num_levels = 3;
+        cfg.multiscale.pyramid.min_size = 128;
         cfg
+    }
+
+    /// Convenience helper for single-scale detection.
+    ///
+    /// This is equivalent to [`ChessConfig::default`] but kept as an explicit
+    /// readability helper at call sites.
+    pub fn single_scale() -> Self {
+        Self::default()
     }
 }
 

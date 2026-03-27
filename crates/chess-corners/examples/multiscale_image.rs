@@ -17,8 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let img = ImageReader::open(&img_path)?.decode()?.to_luma8();
 
-    let mut cfg = ChessConfig::default();
-    cfg.multiscale.pyramid.num_levels = 3;
+    let mut cfg = ChessConfig::multiscale();
     cfg.multiscale.pyramid.min_size = 64;
 
     let corners = chess_corners::find_chess_corners_image(&img, &cfg);

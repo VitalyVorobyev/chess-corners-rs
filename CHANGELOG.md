@@ -5,7 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [unreleased]
+## [0.4.2]
+
+### Added
+
+- `ChessConfig::multiscale()` as an explicit 3-level coarse-to-fine preset for
+  projected, textured, or otherwise cluttered chessboard-like targets.
+
+### Changed
+
+- `ChessConfig::default()` / `ChessConfig::single_scale()` now remain in the
+  stable single-scale regime, while multiscale usage is opt-in via
+  `ChessConfig::multiscale()`.
+- README, crate docs, and the multiscale example now point callers at the
+  explicit multiscale preset instead of implying that `default()` is
+  coarse-to-fine.
+- Version bump across all workspace crates and the Python package to 0.4.2.
+- GitHub Actions workflows now use `actions/checkout@v5`, and crates.io
+  trusted publishing is pinned to `rust-lang/crates-io-auth-action@v1.0.4`
+  for Node 24 compatibility.
+
+### Fixed
+
+- Rust crate publishing now checks the crates.io sparse index instead of the
+  web API, avoiding false negatives from API `403` responses during release.
+- Release reruns now treat `cargo publish` "already exists on crates.io index"
+  responses as success, making both release paths idempotent.
 
 ## [0.4.1]
 

@@ -39,6 +39,9 @@ use rayon::prelude::*;
 use tracing::{info_span, instrument};
 
 /// Parameters controlling the coarse-to-fine multiscale detector.
+///
+/// The default keeps `num_levels = 1`, so callers start in the single-scale
+/// regime unless they explicitly opt into a pyramid.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct CoarseToFineParams {
@@ -537,6 +540,24 @@ pub fn find_chess_corners_with_ml(base: ImageView<'_>, cfg: &ChessConfig) -> Vec
 mod tests {
     use super::*;
     use box_image_pyramid::ImageBuffer;
+
+    #[test]
+    fn default_coarse_to_fine_config_is_single_scale() {
+        let cfg = CoarseToFineParams::default();
+        assert_eq!(cfg.pyramid.num_levels, 1);
+        assert_eq!(cfg.pyramid.min_size, 128);
+        assert_eq!(cfg.refinement_radius, 3);
+        assert_eq!(cfg.merge_radius, 3.0);
+    }
+
+    #[test]
+    fn chess_config_multiscale_preset_has_expected_pyramid() {
+        let cfg = ChessConfig::multiscale();
+        assert_eq!(cfg.multiscale.pyramid.num_levels, 3);
+        assert_eq!(cfg.multiscale.pyramid.min_size, 128);
+        assert_eq!(cfg.multiscale.refinement_radius, 3);
+        assert_eq!(cfg.multiscale.merge_radius, 3.0);
+    }
 
     #[test]
     fn coarse_to_fine_trace_reports_timings() {
