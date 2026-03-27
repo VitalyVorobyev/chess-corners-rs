@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   visible on crates.io before attempting to publish dependent crates, fixing
   the CI failure where `box-image-pyramid` was not yet available before the
   chess crates were published.
+- Release reruns and flows that publish `box-image-pyramid` first via the
+  dedicated `box-image-pyramid-vX.Y.Z` tag now skip crates whose target version
+  is already visible on crates.io instead of failing on an "already exists"
+  publish error.
 
 ## [0.4.0]
 

@@ -117,14 +117,25 @@ jobs:
             exit 1
           }
 
+          crate_url() {
+            local package="$1"
+            local version="$2"
+            echo "https://crates.io/api/v1/crates/$package/$version"
+          }
+
+          crate_is_published() {
+            local package="$1"
+            local version="$2"
+            curl --fail --silent --show-error "$(crate_url "$package" "$version")" >/dev/null
+          }
+
           wait_for_crate() {
             local package="$1"
             local version="$2"
-            local url="https://crates.io/api/v1/crates/$package/$version"
 
             echo "Waiting for $package $version to appear on crates.io..."
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if curl --fail --silent --show-error "$url" >/dev/null; then
+              if crate_is_published "$package" "$version"; then
                 echo "$package $version is now visible on crates.io."
                 return 0
               fi
@@ -135,17 +146,25 @@ jobs:
             exit 1
           }
 
+          ensure_published() {
+            local package="$1"
+            local version="$2"
+
+            if crate_is_published "$package" "$version"; then
+              echo "$package $version is already visible on crates.io. Skipping publish."
+              return 0
+            fi
+
+            publish_with_retry "$package"
+            wait_for_crate "$package" "$version"
+          }
+
           BOX_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="box-image-pyramid") | .version')"
           CORE_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-core") | .version')"
           ML_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-ml") | .version')"
+          MAIN_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners") | .version')"
 
-          publish_with_retry box-image-pyramid
-          wait_for_crate box-image-pyramid "$BOX_VER"
-
-          publish_with_retry chess-corners-core
-          wait_for_crate chess-corners-core "$CORE_VER"
-
-          publish_with_retry chess-corners-ml
-          wait_for_crate chess-corners-ml "$ML_VER"
-
-          publish_with_retry chess-corners
+          ensure_published box-image-pyramid "$BOX_VER"
+          ensure_published chess-corners-core "$CORE_VER"
+          ensure_published chess-corners-ml "$ML_VER"
+          ensure_published chess-corners "$MAIN_VER"
