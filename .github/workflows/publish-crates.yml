@@ -73,29 +73,21 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VER="${TAG#v}"
 
+          BOX_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="box-image-pyramid") | .version')"
           CORE_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-core") | .version')"
+          ML_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-ml") | .version')"
           MAIN_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners") | .version')"
 
           echo "tag version:   $VER"
+          echo "box version:   $BOX_VER"
           echo "core version:  $CORE_VER"
+          echo "ml version:    $ML_VER"
           echo "main version:  $MAIN_VER"
 
+          test "$BOX_VER" = "$VER"
           test "$CORE_VER" = "$VER"
+          test "$ML_VER" = "$VER"
           test "$MAIN_VER" = "$VER"
-
-      - name: Verify box-image-pyramid dependency is already published
-        shell: bash
-        run: |
-          BOX_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="box-image-pyramid") | .version')"
-          BOX_URL="https://crates.io/api/v1/crates/box-image-pyramid/$BOX_VER"
-
-          echo "required box-image-pyramid version: $BOX_VER"
-
-          if ! curl --fail --silent --show-error "$BOX_URL" >/dev/null; then
-            echo "box-image-pyramid $BOX_VER is not available on crates.io." >&2
-            echo "Publish it first with the tag box-image-pyramid-v$BOX_VER." >&2
-            exit 1
-          fi
 
       - name: Test workspace
         run: cargo test --workspace
@@ -104,25 +96,56 @@ jobs:
         id: cratesio
         uses: rust-lang/crates-io-auth-action@v1
 
-      - name: Publish chess-corners-core
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.cratesio.outputs.token }}
-        run: cargo publish -p chess-corners-core --locked
-
-      # Publish box-image-pyramid via a dedicated box-image-pyramid-vX.Y.Z tag
-      # before cutting a chess release that depends on a newer box version.
-      - name: Publish chess-corners (retry)
+      - name: Publish crates in dependency order
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.cratesio.outputs.token }}
         shell: bash
         run: |
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            echo "Attempt $attempt: publishing chess-corners..."
-            if cargo publish -p chess-corners --locked; then
-              exit 0
-            fi
-            echo "Publish failed (likely waiting for index). Sleeping 20s..."
-            sleep 20
-          done
-          echo "Failed to publish chess-corners after retries."
-          exit 1
+          set -euo pipefail
+
+          publish_with_retry() {
+            local package="$1"
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              echo "Attempt $attempt: publishing $package..."
+              if cargo publish -p "$package" --locked; then
+                return 0
+              fi
+              echo "Publish failed for $package. Sleeping 20s..."
+              sleep 20
+            done
+            echo "Failed to publish $package after retries."
+            exit 1
+          }
+
+          wait_for_crate() {
+            local package="$1"
+            local version="$2"
+            local url="https://crates.io/api/v1/crates/$package/$version"
+
+            echo "Waiting for $package $version to appear on crates.io..."
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              if curl --fail --silent --show-error "$url" >/dev/null; then
+                echo "$package $version is now visible on crates.io."
+                return 0
+              fi
+              echo "Attempt $attempt: $package $version not visible yet. Sleeping 20s..."
+              sleep 20
+            done
+            echo "$package $version did not appear on crates.io in time."
+            exit 1
+          }
+
+          BOX_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="box-image-pyramid") | .version')"
+          CORE_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-core") | .version')"
+          ML_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-ml") | .version')"
+
+          publish_with_retry box-image-pyramid
+          wait_for_crate box-image-pyramid "$BOX_VER"
+
+          publish_with_retry chess-corners-core
+          wait_for_crate chess-corners-core "$CORE_VER"
+
+          publish_with_retry chess-corners-ml
+          wait_for_crate chess-corners-ml "$ML_VER"
+
+          publish_with_retry chess-corners

@@ -1,6 +1,6 @@
 [package]
 name = "chess-corners"
-version = "0.4.0"
+version = "0.4.1"
 description = "High-level chessboard / ChESS corner detection API"
 edition.workspace = true
 license.workspace = true
@@ -31,9 +31,9 @@ path = "bin/main.rs"
 required-features = ["image"]
 
 [dependencies]
-box-image-pyramid = { path = "../box-image-pyramid", version = "0.4" }
-chess-corners-core = { path = "../chess-corners-core", version = "0.4" }
-chess-corners-ml = { path = "../chess-corners-ml", version = "0.4", optional = true }
+box-image-pyramid = { path = "../box-image-pyramid", version = "0.4.1" }
+chess-corners-core = { path = "../chess-corners-core", version = "0.4.1" }
+chess-corners-ml = { path = "../chess-corners-ml", version = "0.4.1", optional = true }
 image = { version = "0.25", optional = true }
 log = "0.4"
 anyhow = "1"
