@@ -79,6 +79,63 @@ let corners = find_chess_corners_image(&img, &cfg);
 println!("found {} corners", corners.len());
 ```
 
+### Troubleshooting noisy high-resolution images
+
+If you expect a few dozen chessboard corners but the detector returns
+hundreds or thousands of points, you are usually in the wrong scale regime.
+This happens most often on:
+
+- high-resolution frames where the board occupies only part of the image,
+- projected patterns with textured bright regions,
+- coded boards where square interiors contain extra local structure,
+- noisy images where full-resolution texture produces many local maxima.
+
+Typical symptoms:
+
+- most detections are clearly wrong by eye,
+- corners appear inside square interiors or other textured regions,
+- nearest-neighbor spacing is much smaller than the real grid spacing,
+- the result count is off by an order of magnitude.
+
+In that situation, do not start by lowering thresholds aggressively. First
+switch to a coarse-to-fine setup so the detector seeds on a downscaled image:
+
+```rust
+use chess_corners::{ChessConfig, find_chess_corners_image};
+
+let mut cfg = ChessConfig::multiscale();
+cfg.params.threshold_rel = 0.2; // start here
+
+let corners = find_chess_corners_image(&img, &cfg);
+```
+
+Practical tuning order:
+
+- Start with `ChessConfig::multiscale()`.
+- Keep the canonical ring first: leave `cfg.params.use_radius10 = false`.
+- If textured regions still leak through, raise `cfg.params.threshold_rel` from `0.2` to `0.25`-`0.30`.
+- If the board is very small in the frame, keep `num_levels = 3` and try `min_size = 128` or `256`.
+- Only try `use_radius10 = true` when the board is heavily blurred or the corner signal is genuinely too broad for the r=5 ring.
+
+Equivalent CLI settings:
+
+```bash
+cargo run -p chess-corners --release --bin chess-corners -- run your_config.json \
+  --levels 3 \
+  --min-size 128 \
+  --threshold-rel 0.25
+```
+
+When single-scale is still the right choice:
+
+- the board dominates the frame,
+- corners are already clean and well separated at full resolution,
+- you want maximum recall on large, sharp boards.
+
+In short: if full-resolution detection explodes into nonsense on a noisy
+high-resolution image, switch to `ChessConfig::multiscale()` before trying
+more exotic parameter changes.
+
 ## Performance snapshot
 
 Measured on a MacBook Pro M4 (release build, averaged over 10 runs) using the
