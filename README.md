@@ -50,7 +50,7 @@ if let Some(c) = corners.first() {
 Single-scale vs multiscale is controlled by `cfg.multiscale.pyramid.num_levels`:
 
 - `<= 1`: single-scale detection (same as `ChessConfig::single_scale()`).
-- `> 1`: coarse-to-fine detection (the default `ChessConfig::default()` uses 3 levels).
+- `> 1`: coarse-to-fine detection (use `ChessConfig::multiscale()` for the recommended 3-level starting point).
 
 Common knobs you may want to adjust:
 
@@ -58,6 +58,7 @@ Common knobs you may want to adjust:
 - Blur / very small boards: `cfg.params.use_radius10 = true` (uses the r=10 ring instead of r=5).
 - Subpixel refinement: `cfg.params.refiner = RefinerKind::Forstner(ForstnerConfig::default())` (alternatives: `CenterOfMass`, `SaddlePoint`).
 - Multiscale trade-offs: `cfg.multiscale.pyramid.min_size`, `cfg.multiscale.refinement_radius`, `cfg.multiscale.merge_radius`.
+- High-resolution projected patterns with textured bright regions: start with `ChessConfig::multiscale()` and only opt into `ChessConfig::single_scale()` when the board dominates the frame.
 
 Example:
 
@@ -67,7 +68,7 @@ use image::ImageReader;
 
 let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
-let mut cfg = ChessConfig::default(); // default: 3-level multiscale
+let mut cfg = ChessConfig::multiscale(); // recommended 3-level multiscale preset
 cfg.params.threshold_rel = 0.15;
 cfg.params.refiner = RefinerKind::Forstner(ForstnerConfig::default());
 
@@ -113,7 +114,7 @@ explicit ML entry points:
 ```rust
 use chess_corners::{ChessConfig, find_chess_corners_image_with_ml};
 
-let cfg = ChessConfig::default();
+let cfg = ChessConfig::multiscale();
 let corners = find_chess_corners_image_with_ml(&img, &cfg);
 ```
 

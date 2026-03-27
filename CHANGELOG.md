@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+### Added
+
+- `ChessConfig::multiscale()` as an explicit 3-level coarse-to-fine preset for
+  projected, textured, or otherwise cluttered chessboard-like targets.
+
+### Changed
+
+- `ChessConfig::default()` / `ChessConfig::single_scale()` now remain in the
+  stable single-scale regime, while multiscale usage is opt-in via
+  `ChessConfig::multiscale()`.
+- README, crate docs, and the multiscale example now point callers at the
+  explicit multiscale preset instead of implying that `default()` is
+  coarse-to-fine.
+
 ## [0.4.2]
 
 ### Changed
