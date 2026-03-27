@@ -18,7 +18,7 @@ jobs:
     environment: crates-io
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -42,12 +42,55 @@ jobs:
 
       - name: Authenticate to crates.io via Trusted Publishing (OIDC)
         id: cratesio
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@v1.0.4
 
       - name: Publish box-image-pyramid
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.cratesio.outputs.token }}
-        run: cargo publish -p box-image-pyramid --locked
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          crate_index_path() {
+            local package="$1"
+            local len="${#package}"
+            package="$(printf '%s' "$package" | tr '[:upper:]' '[:lower:]')"
+
+            if (( len == 1 )); then
+              echo "1/$package"
+            elif (( len == 2 )); then
+              echo "2/$package"
+            elif (( len == 3 )); then
+              echo "3/${package:0:1}/$package"
+            else
+              echo "${package:0:2}/${package:2:2}/$package"
+            fi
+          }
+
+          crate_is_published() {
+            local package="$1"
+            local version="$2"
+            curl --fail --silent --show-error "https://index.crates.io/$(crate_index_path "$package")" \
+              | jq -s -e --arg version "$version" 'any(.[]; .vers == $version)' >/dev/null
+          }
+
+          VERSION="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="box-image-pyramid") | .version')"
+
+          if crate_is_published box-image-pyramid "$VERSION"; then
+            echo "box-image-pyramid $VERSION is already visible in the crates.io index. Skipping publish."
+            exit 0
+          fi
+
+          output="$(cargo publish -p box-image-pyramid --locked 2>&1)" || {
+            printf '%s\n' "$output"
+            if grep -Fq "already exists on crates.io index" <<<"$output"; then
+              echo "box-image-pyramid is already published. Treating this attempt as success."
+              exit 0
+            fi
+            exit 1
+          }
+
+          printf '%s\n' "$output"
 
   publish-chess-crates:
     if: startsWith(github.ref_name, 'v')
@@ -60,7 +103,7 @@ jobs:
     environment: crates-io
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -94,7 +137,7 @@ jobs:
 
       - name: Authenticate to crates.io via Trusted Publishing (OIDC)
         id: cratesio
-        uses: rust-lang/crates-io-auth-action@v1
+        uses: rust-lang/crates-io-auth-action@v1.0.4
 
       - name: Publish crates in dependency order
         env:
@@ -107,7 +150,14 @@ jobs:
             local package="$1"
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
               echo "Attempt $attempt: publishing $package..."
-              if cargo publish -p "$package" --locked; then
+              local output
+              if output="$(cargo publish -p "$package" --locked 2>&1)"; then
+                printf '%s\n' "$output"
+                return 0
+              fi
+              printf '%s\n' "$output"
+              if grep -Fq "already exists on crates.io index" <<<"$output"; then
+                echo "$package is already published. Treating this attempt as success."
                 return 0
               fi
               echo "Publish failed for $package. Sleeping 20s..."
@@ -117,32 +167,48 @@ jobs:
             exit 1
           }
 
-          crate_url() {
+          crate_index_path() {
             local package="$1"
-            local version="$2"
-            echo "https://crates.io/api/v1/crates/$package/$version"
+            local len="${#package}"
+            package="$(printf '%s' "$package" | tr '[:upper:]' '[:lower:]')"
+
+            if (( len == 1 )); then
+              echo "1/$package"
+            elif (( len == 2 )); then
+              echo "2/$package"
+            elif (( len == 3 )); then
+              echo "3/${package:0:1}/$package"
+            else
+              echo "${package:0:2}/${package:2:2}/$package"
+            fi
+          }
+
+          crate_index_url() {
+            local package="$1"
+            echo "https://index.crates.io/$(crate_index_path "$package")"
           }
 
           crate_is_published() {
             local package="$1"
             local version="$2"
-            curl --fail --silent --show-error "$(crate_url "$package" "$version")" >/dev/null
+            curl --fail --silent --show-error "$(crate_index_url "$package")" \
+              | jq -s -e --arg version "$version" 'any(.[]; .vers == $version)' >/dev/null
           }
 
           wait_for_crate() {
             local package="$1"
             local version="$2"
 
-            echo "Waiting for $package $version to appear on crates.io..."
+            echo "Waiting for $package $version to appear in the crates.io index..."
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
               if crate_is_published "$package" "$version"; then
-                echo "$package $version is now visible on crates.io."
+                echo "$package $version is now visible in the crates.io index."
                 return 0
               fi
-              echo "Attempt $attempt: $package $version not visible yet. Sleeping 20s..."
+              echo "Attempt $attempt: $package $version not visible in the index yet. Sleeping 20s..."
               sleep 20
             done
-            echo "$package $version did not appear on crates.io in time."
+            echo "$package $version did not appear in the crates.io index in time."
             exit 1
           }
 
@@ -151,7 +217,7 @@ jobs:
             local version="$2"
 
             if crate_is_published "$package" "$version"; then
-              echo "$package $version is already visible on crates.io. Skipping publish."
+              echo "$package $version is already visible in the crates.io index. Skipping publish."
               return 0
             fi
 
