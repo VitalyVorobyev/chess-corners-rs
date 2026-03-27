@@ -1,4 +1,3 @@
-#![cfg_attr(all(feature = "simd", feature = "par_pyramid"), feature(portable_simd))]
 //! Ergonomic ChESS detector facade over `chess-corners-core`.
 //!
 //! # Overview
@@ -178,7 +177,6 @@
 #[cfg(feature = "ml-refiner")]
 mod ml_refiner;
 mod multiscale;
-mod pyramid;
 
 // Re-export a focused subset of core types for convenience. Consumers that
 // need lower-level primitives (rings, raw response functions, etc.) are
@@ -203,11 +201,12 @@ pub use crate::multiscale::{
 };
 #[cfg(feature = "ml-refiner")]
 pub use crate::multiscale::{find_chess_corners_buff_with_ml, find_chess_corners_with_ml};
-pub use crate::pyramid::{PyramidBuffers, PyramidParams};
+pub use box_image_pyramid::{ImageBuffer, PyramidBuffers, PyramidParams};
 
 /// Unified detector configuration combining response/detector params and
 /// multiscale/pyramid tuning.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct ChessConfig {
     /// Low-level ChESS response/detector parameters (ring radius, thresholds,
     /// NMS radius, minimum cluster size, and subpixel refinement backend).

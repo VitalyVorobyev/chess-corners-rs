@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [unreleased]
 
+## [0.4.0]
+
+### Changed
+
+- Version bump across the breaking `chess-corners*` crates and the Python package to 0.4.0.
+- `Corner` and `RefineResult` now use separate `x`, `y` fields instead of
+  `xy: [f32; 2]`, matching `CornerDescriptor` for consistent coordinate
+  representation across the codebase.
+- `ResponseMap` fields (`w`, `h`, `data`) are now private; use `new()`,
+  `width()`, `height()`, `data()`, `data_mut()` instead.
+- `Roi` fields are now private with validated construction via `Roi::new()`
+  (returns `None` if `x0 >= x1` or `y0 >= y1`) and `x0()`, `y0()`, `x1()`,
+  `y1()` accessors.
+- Deduplicated the ML and classic coarse-to-fine pipelines in `multiscale.rs`,
+  extracting shared helpers (`RoiContext`, `refine_seed_in_roi`,
+  `single_scale_detect`, `merge_and_describe`).
+- `ForstnerConfig` default values are now documented with derivation rationale.
+
+### Fixed
+
+- ML refiner path no longer has a dead `#[cfg(feature = "rayon")]` block that
+  silently skipped parallelization. The ML path now explicitly runs
+  sequentially (required by `&mut MlRefinerState`).
+- Embedded ONNX model extraction (`chess-corners-ml`) now compares bytes, not
+  only file size, before reusing extracted temp files.
+
 ## [0.3.2]
 
 ### Added

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "crates/box-image-pyramid",
   "crates/chess-corners-core",
   "crates/chess-corners",
   "crates/chess-corners-ml",

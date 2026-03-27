@@ -181,14 +181,8 @@ pub(crate) fn detect_corners_with_ml(
     for (idx, corner) in candidates.iter().enumerate() {
         let offset = state.indices.len() * state.patch_area;
         let patch_slice = &mut state.buffer[offset..offset + state.patch_area];
-        if extract_patch_u8_to_f32(
-            image,
-            corner.xy[0],
-            corner.xy[1],
-            state.patch_size,
-            patch_slice,
-        )
-        .is_none()
+        if extract_patch_u8_to_f32(image, corner.x, corner.y, state.patch_size, patch_slice)
+            .is_none()
         {
             stats.oob += 1;
             results[idx] = apply_fallback(corner, &state.params, &ctx, &mut state.fallback_refiner);
@@ -367,7 +361,8 @@ fn run_batch(
 
         stats.applied += 1;
         results[idx] = Some(Corner {
-            xy: [corner.xy[0] + dx, corner.xy[1] + dy],
+            x: corner.x + dx,
+            y: corner.y + dy,
             strength: corner.strength,
         });
     }
@@ -427,16 +422,18 @@ fn apply_fallback(
 ) -> Option<Corner> {
     match params.fallback {
         MlFallback::KeepCandidate => Some(Corner {
-            xy: corner.xy,
+            x: corner.x,
+            y: corner.y,
             strength: corner.strength,
         }),
         MlFallback::Reject => None,
         MlFallback::UseClassicRefiner => {
             let refiner = fallback_refiner.as_mut()?;
-            let res = refiner.refine(corner.xy, *ctx);
+            let res = refiner.refine([corner.x, corner.y], *ctx);
             if matches!(res.status, RefineStatus::Accepted) {
                 Some(Corner {
-                    xy: res.xy,
+                    x: res.x,
+                    y: res.y,
                     strength: corner.strength,
                 })
             } else {
@@ -576,21 +573,15 @@ mod tests {
     fn ml_fallback_respects_refiner_config() {
         let w = 32;
         let h = 32;
-        let mut resp = ResponseMap {
-            w,
-            h,
-            data: vec![0.0f32; w * h],
-        };
+        let mut resp = ResponseMap::new(w, h, vec![0.0f32; w * h]);
         let idx = |x: usize, y: usize| y * w + x;
-        resp.data[idx(16, 16)] = 10.0;
-        resp.data[idx(16, 17)] = 1.0;
-        resp.data[idx(17, 16)] = 1.0;
-        resp.data[idx(18, 16)] = 5.0;
+        resp.data_mut()[idx(16, 16)] = 10.0;
+        resp.data_mut()[idx(16, 17)] = 1.0;
+        resp.data_mut()[idx(17, 16)] = 1.0;
+        resp.data_mut()[idx(18, 16)] = 5.0;
 
-        let params = ChessParams {
-            refiner: RefinerKind::CenterOfMass(crate::CenterOfMassConfig { radius: 1 }),
-            ..Default::default()
-        };
+        let mut params = ChessParams::default();
+        params.refiner = RefinerKind::CenterOfMass(crate::CenterOfMassConfig { radius: 1 });
 
         let ml_params = MlRefinerParams {
             model_path: Some(PathBuf::from("missing.onnx")),
@@ -605,8 +596,8 @@ mod tests {
 
         let expected_x = (16.0 * 10.0 + 16.0 + 17.0) / 12.0;
         let expected_y = (16.0 * 10.0 + 17.0 + 16.0) / 12.0;
-        let c = corners[0].xy;
-        assert!((c[0] - expected_x).abs() < 1e-4);
-        assert!((c[1] - expected_y).abs() < 1e-4);
+        let c = &corners[0];
+        assert!((c.x - expected_x).abs() < 1e-4);
+        assert!((c.y - expected_y).abs() < 1e-4);
     }
 }

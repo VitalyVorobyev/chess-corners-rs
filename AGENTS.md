@@ -2,10 +2,11 @@
 
 # AGENTS.md — chess-corners
 
-This repository contains **two published crates**:
+This repository contains **three published crates**:
 
 * **`chess-corners`** — the *public*, user-facing API crate (stable surface, ergonomic types).
 * **`chess-corners-core`** — a *low-level*, performance-oriented core crate (almost internal; minimal deps; sharper edges).
+* **`box-image-pyramid`** — a small standalone crate for fixed 2x grayscale pyramid construction with reusable buffers.
 
 The codebase prioritizes:
 
@@ -22,12 +23,14 @@ If you are an automated agent (Codex, etc.), follow these rules strictly.
 
 ### Dependency direction
 
-* `chess-corners` **may depend on** `chess-corners-core`.
+* `chess-corners` **may depend on** `chess-corners-core` and `box-image-pyramid`.
 * `chess-corners-core` **must not depend on** `chess-corners`.
+* `box-image-pyramid` **must not depend on** chess-specific crates.
 
 ### Where code goes
 
 * **Core algorithms / hot path** → `chess-corners-core`
+* **Standalone grayscale pyramid construction / reusable pyramid buffers** → `box-image-pyramid`
 * **Convenience wrappers, builders, user-friendly enums, feature gating, docs** → `chess-corners`
 
 ### API exposure
@@ -103,6 +106,7 @@ If benches exist and you touched hot-path code:
 ### Compatibility
 
 * `chess-corners` is the compatibility boundary. Keep its public API stable.
+* `box-image-pyramid` should remain a small, stable API for the fixed 2x grayscale pyramid use case.
 * If behavior changes, gate it behind configuration or feature flags.
 
 ---
@@ -202,10 +206,11 @@ Any new dependency must be justified in the PR description and be license-compat
 
 ## 10) Versioning and releases (practical guidance)
 
-Because both crates are published:
+Because multiple crates are published:
 
 * Avoid breaking changes in `chess-corners` without a major bump and clear migration notes.
 * `chess-corners-core` may evolve faster, but breaking changes still require semver discipline.
+* `box-image-pyramid` is also a published crate; keep its API narrow and semver-clean because other projects may depend on it directly.
 * If `chess-corners` re-exports `core` types, consider whether that couples versions tightly.
 
 ---

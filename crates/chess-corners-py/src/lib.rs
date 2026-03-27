@@ -4,7 +4,7 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict, PyDictMethods, PyModule, PyModuleMethods};
 
-#[pyclass(name = "PyramidParams")]
+#[pyclass(name = "PyramidParams", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyramidParamsPy {
     num_levels: u8,
@@ -20,10 +20,10 @@ impl PyramidParamsPy {
     }
 
     fn to_rust(&self) -> chess_corners_rs::PyramidParams {
-        chess_corners_rs::PyramidParams {
-            num_levels: self.num_levels,
-            min_size: self.min_size,
-        }
+        let mut p = chess_corners_rs::PyramidParams::default();
+        p.num_levels = self.num_levels;
+        p.min_size = self.min_size;
+        p
     }
 }
 
@@ -81,11 +81,11 @@ impl CoarseToFineParamsPy {
 
     fn to_rust(&self, py: Python<'_>) -> PyResult<chess_corners_rs::CoarseToFineParams> {
         let pyramid = self.pyramid.bind(py).borrow();
-        Ok(chess_corners_rs::CoarseToFineParams {
-            pyramid: pyramid.to_rust(),
-            refinement_radius: self.refinement_radius,
-            merge_radius: self.merge_radius,
-        })
+        let mut p = chess_corners_rs::CoarseToFineParams::default();
+        p.pyramid = pyramid.to_rust();
+        p.refinement_radius = self.refinement_radius;
+        p.merge_radius = self.merge_radius;
+        Ok(p)
     }
 }
 
@@ -136,7 +136,7 @@ impl CoarseToFineParamsPy {
     }
 }
 
-#[pyclass(name = "CenterOfMassConfig")]
+#[pyclass(name = "CenterOfMassConfig", skip_from_py_object)]
 #[derive(Clone)]
 pub struct CenterOfMassConfigPy {
     radius: i32,
@@ -178,7 +178,7 @@ impl CenterOfMassConfigPy {
     }
 }
 
-#[pyclass(name = "ForstnerConfig")]
+#[pyclass(name = "ForstnerConfig", skip_from_py_object)]
 #[derive(Clone)]
 pub struct ForstnerConfigPy {
     radius: i32,
@@ -278,7 +278,7 @@ impl ForstnerConfigPy {
     }
 }
 
-#[pyclass(name = "SaddlePointConfig")]
+#[pyclass(name = "SaddlePointConfig", skip_from_py_object)]
 #[derive(Clone)]
 pub struct SaddlePointConfigPy {
     radius: i32,
@@ -364,7 +364,7 @@ impl SaddlePointConfigPy {
     }
 }
 
-#[pyclass(name = "RefinerKind")]
+#[pyclass(name = "RefinerKind", skip_from_py_object)]
 #[derive(Clone)]
 pub struct RefinerKindPy {
     inner: chess_corners_rs::RefinerKind,
@@ -414,6 +414,7 @@ impl RefinerKindPy {
             chess_corners_rs::RefinerKind::CenterOfMass(_) => "center_of_mass",
             chess_corners_rs::RefinerKind::Forstner(_) => "forstner",
             chess_corners_rs::RefinerKind::SaddlePoint(_) => "saddle_point",
+            _ => "unknown",
         }
     }
 
@@ -429,6 +430,9 @@ impl RefinerKindPy {
             chess_corners_rs::RefinerKind::SaddlePoint(cfg) => {
                 Ok(Py::new(py, SaddlePointConfigPy::from_rust(cfg))?.into_any())
             }
+            _ => Err(pyo3::exceptions::PyValueError::new_err(
+                "unknown refiner kind",
+            )),
         }
     }
 
@@ -467,15 +471,15 @@ impl ChessParamsPy {
 
     fn to_rust(&self, py: Python<'_>) -> PyResult<chess_corners_rs::ChessParams> {
         let refiner = self.refiner.bind(py).borrow();
-        Ok(chess_corners_rs::ChessParams {
-            use_radius10: self.use_radius10,
-            descriptor_use_radius10: self.descriptor_use_radius10,
-            threshold_rel: self.threshold_rel,
-            threshold_abs: self.threshold_abs,
-            nms_radius: self.nms_radius,
-            min_cluster_size: self.min_cluster_size,
-            refiner: refiner.to_rust(),
-        })
+        let mut p = chess_corners_rs::ChessParams::default();
+        p.use_radius10 = self.use_radius10;
+        p.descriptor_use_radius10 = self.descriptor_use_radius10;
+        p.threshold_rel = self.threshold_rel;
+        p.threshold_abs = self.threshold_abs;
+        p.nms_radius = self.nms_radius;
+        p.min_cluster_size = self.min_cluster_size;
+        p.refiner = refiner.to_rust();
+        Ok(p)
     }
 }
 
@@ -587,7 +591,10 @@ impl ChessConfigPy {
     fn to_rust(&self, py: Python<'_>) -> PyResult<chess_corners_rs::ChessConfig> {
         let params = self.params.bind(py).borrow().to_rust(py)?;
         let multiscale = self.multiscale.bind(py).borrow().to_rust(py)?;
-        Ok(chess_corners_rs::ChessConfig { params, multiscale })
+        let mut cfg = chess_corners_rs::ChessConfig::default();
+        cfg.params = params;
+        cfg.multiscale = multiscale;
+        Ok(cfg)
     }
 }
 

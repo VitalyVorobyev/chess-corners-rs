@@ -26,13 +26,43 @@ type I32s = Simd<i32, LANES>;
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
-/// Rectangular region of interest, in image coordinates.
+/// Rectangular region of interest, in image coordinates `[x0, x1) × [y0, y1)`.
+///
+/// Invariant: `x0 < x1` and `y0 < y1`.
 #[derive(Clone, Copy, Debug)]
 pub struct Roi {
-    pub x0: usize,
-    pub y0: usize,
-    pub x1: usize,
-    pub y1: usize,
+    x0: usize,
+    y0: usize,
+    x1: usize,
+    y1: usize,
+}
+
+impl Roi {
+    /// Create a new ROI. Returns `None` if `x0 >= x1` or `y0 >= y1`.
+    pub fn new(x0: usize, y0: usize, x1: usize, y1: usize) -> Option<Self> {
+        if x0 < x1 && y0 < y1 {
+            Some(Self { x0, y0, x1, y1 })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn x0(&self) -> usize {
+        self.x0
+    }
+    #[inline]
+    pub fn y0(&self) -> usize {
+        self.y0
+    }
+    #[inline]
+    pub fn x1(&self) -> usize {
+        self.x1
+    }
+    #[inline]
+    pub fn y1(&self) -> usize {
+        self.y1
+    }
 }
 
 #[inline]
