@@ -61,7 +61,7 @@ This repository is a small Rust workspace with three main library crates and a C
     - Re-export core types (`ChessParams`, `CornerDescriptor`, `ResponseMap`) so you can usually depend on this crate alone.
     - Re-export `PyramidParams`, `PyramidBuffers`, and `ImageBuffer` from `box-image-pyramid` for multiscale tuning and buffer reuse.
     - Provide a high-level detector configuration:
-      - `ChessConfig` – combines `ChessParams` with multiscale tuning (`CoarseToFineParams`).
+      - `ChessConfig` – a flat public config with explicit ring, threshold, refiner, and multiscale fields.
     - Implement single-scale and multiscale detection:
       - `find_chess_corners_image` – detect corners from an `image::GrayImage` (when the `image` feature is enabled).
       - `find_chess_corners_u8` – detect corners directly from `&[u8]` buffers.
@@ -113,13 +113,13 @@ The easiest way to use ChESS from your own project is to depend on the `chess-co
 
 ```toml
 [dependencies]
-chess-corners = "0.4"
+chess-corners = "0.5"
 image = "0.25" # if you want GrayImage integration
 ```
 
 This gives you:
 
-- High-level `ChessConfig` / `ChessParams`.
+- High-level `ChessConfig`.
 - `find_chess_corners_image` for `image::GrayImage`.
 - `find_chess_corners_u8` for raw `&[u8]` buffers.
 - Access to `CornerDescriptor` and `ResponseMap`.
@@ -129,13 +129,13 @@ multiscale pipeline:
 
 ```toml
 [dependencies]
-box-image-pyramid = "0.4"
+box-image-pyramid = "0.5"
 ```
 
 A minimal single‑scale example with `image`:
 
 ```rust
-use chess_corners::{ChessConfig, ChessParams, find_chess_corners_image};
+use chess_corners::{ChessConfig, RefinementMethod, find_chess_corners_image};
 use image::io::Reader as ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -144,7 +144,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_luma8();
 
     let mut cfg = ChessConfig::single_scale();
-    cfg.params = ChessParams::default();
+    cfg.threshold_value = 0.15;
+    cfg.refiner.kind = RefinementMethod::Forstner;
 
     let corners = find_chess_corners_image(&img, &cfg);
     println!("found {} corners", corners.len());
@@ -155,11 +156,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 If you don’t use `image`, you can work directly with raw buffers:
 
 ```rust
-use chess_corners::{ChessConfig, ChessParams, find_chess_corners_u8};
+use chess_corners::{ChessConfig, ThresholdMode, find_chess_corners_u8};
 
 fn detect(img: &[u8], width: u32, height: u32) {
     let mut cfg = ChessConfig::single_scale();
-    cfg.params = ChessParams::default();
+    cfg.threshold_mode = ThresholdMode::Relative;
+    cfg.threshold_value = 0.2;
 
     let corners = find_chess_corners_u8(img, width, height, &cfg);
     println!("found {} corners", corners.len());
@@ -191,7 +193,7 @@ In your own `Cargo.toml`, you can opt into specific combinations:
 
 ```toml
 [dependencies]
-chess-corners = { version = "0.4", features = ["image", "rayon"] }
+chess-corners = { version = "0.5", features = ["image", "rayon"] }
 ```
 
 For example:
@@ -215,7 +217,7 @@ cargo run -p chess-corners --release --bin chess-corners -- \
 This will:
 
 - Load the image specified in the config.
-- Run single-scale or multiscale detection depending on the `pyramid_levels` and `min_size` settings (with `pyramid_levels <= 1` behaving as single-scale).
+- Run single-scale or multiscale detection depending on the `pyramid_levels` and `pyramid_min_size` settings (with `pyramid_levels <= 1` behaving as single-scale).
 - Save JSON output with detected corners and optional PNG overlays.
 
 You can treat the CLI as:
@@ -223,6 +225,10 @@ You can treat the CLI as:
 - A quick way to sanity‑check your installation.
 - A reference implementation of how to wire up the library APIs.
 - A convenient debugging/profiling harness when you tweak configuration or features.
+
+The CLI uses the same flat algorithm config schema as the Rust and Python
+public APIs. See `config/chess_algorithm_config_example.json` for the shared
+algorithm-only example.
 
 ---
 

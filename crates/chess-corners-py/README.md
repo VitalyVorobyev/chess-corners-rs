@@ -1,6 +1,11 @@
 # chess_corners (Python)
 
-Python bindings for the `chess-corners` detector.
+Python-first bindings for the `chess-corners` detector.
+
+The installed package is a mixed Rust/Python package:
+
+- `chess_corners` is a pure-Python public API with type hints, docstrings, JSON helpers, and readable config objects.
+- `chess_corners._native` is the private PyO3 extension module that runs the detector.
 
 ## Quick start
 
@@ -10,110 +15,181 @@ import chess_corners
 
 img = np.zeros((128, 128), dtype=np.uint8)
 
-cfg = chess_corners.ChessConfig()
-cfg.threshold_rel = 0.2
-cfg.min_cluster_size = 1
+cfg = chess_corners.ChessConfig.multiscale()
+cfg.threshold_value = 0.15
+cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
 
 corners = chess_corners.find_chess_corners(img, cfg)
 print(corners.shape, corners.dtype)
+print(cfg)
 ```
-
-You can also configure the detector via nested config objects:
-
-```python
-cfg = chess_corners.ChessConfig()
-cfg.params.threshold_rel = 0.2
-cfg.multiscale.pyramid.num_levels = 2
-```
-
-## What `find_chess_corners` returns
 
 `find_chess_corners(image, cfg=None)` returns a NumPy `float32` array of shape
 `(N, 4)` with columns:
 
-1. `x` – subpixel x coordinate (pixels, image space)
-2. `y` – subpixel y coordinate (pixels, image space)
-3. `response` – ChESS response strength at the corner
-4. `orientation` – local grid axis orientation in radians, in `[0, pi)`
-
-The rows are sorted deterministically by the binding:
-`response` (descending), then `x`, then `y`.
+1. `x`
+2. `y`
+3. `response`
+4. `orientation`
 
 Input requirements:
+
 - `image` must be a 2D `uint8` NumPy array with shape `(H, W)`
-- it must be C-contiguous (non-contiguous arrays raise `ValueError`)
+- it must be C-contiguous
 
-## ChessConfig parameters
+The rows are sorted deterministically by `response` descending, then `x`, then `y`.
 
-`ChessConfig` mirrors the most important Rust settings. Defaults match the
-Rust `ChessConfig::default()`.
+## Public config API
 
-Response / detector parameters (`cfg.*`):
-- `use_radius10` (bool, default `False`)
-  - Use the larger ring radius (r=10) instead of r=5 for response computation.
-- `descriptor_use_radius10` (Optional[bool], default `None`)
-  - Override the descriptor sampling ring radius; when `None`, uses `use_radius10`.
-- `threshold_rel` (float, default `0.2`)
-  - Relative threshold as a fraction of the max response.
-- `threshold_abs` (Optional[float], default `None`)
-  - Absolute threshold; when set, it overrides `threshold_rel`.
-- `nms_radius` (int, default `2`)
-  - Non-maximum suppression radius in pixels.
-- `min_cluster_size` (int, default `2`)
-  - Minimum count of positive neighbors in the NMS window to accept a corner.
-
-Multiscale parameters (`cfg.*`):
-- `pyramid_num_levels` (int, default `3`)
-  - Number of pyramid levels (including base). Set to `1` for single-scale.
-- `pyramid_min_size` (int, default `128`)
-  - Minimum dimension to keep building the pyramid.
-- `refinement_radius` (int, default `3`)
-  - Coarse-level ROI radius used for coarse-to-fine refinement.
-- `merge_radius` (float, default `3.0`)
-  - Merge near-duplicate refined corners within this radius (pixels).
-
-## Full configuration structs
-
-The Python bindings expose all configuration structs directly. You can use the
-nested API for clarity:
-
-- `ChessConfig.params` → `ChessParams`
-- `ChessConfig.multiscale` → `CoarseToFineParams`
-- `CoarseToFineParams.pyramid` → `PyramidParams`
-
-All fields listed above are available in the nested structs as well.
-
-## Classical refiners
-
-Select the classic refiner via `ChessParams.refiner`:
+The public config shape is intentionally flat. There is no `params` section and
+no nested `pyramid` object.
 
 ```python
 cfg = chess_corners.ChessConfig()
-cfg.params.refiner = chess_corners.RefinerKind.forstner(
-    chess_corners.ForstnerConfig()
-)
+cfg.detector_mode = chess_corners.DetectorMode.BROAD
+cfg.descriptor_mode = chess_corners.DescriptorMode.FOLLOW_DETECTOR
+cfg.threshold_mode = chess_corners.ThresholdMode.RELATIVE
+cfg.threshold_value = 0.2
+cfg.nms_radius = 2
+cfg.min_cluster_size = 2
+cfg.pyramid_levels = 3
+cfg.pyramid_min_size = 128
+cfg.refinement_radius = 3
+cfg.merge_radius = 3.0
 ```
 
-Available configs:
-- `CenterOfMassConfig`
-- `ForstnerConfig`
-- `SaddlePointConfig`
+All nested objects are default-initialized, so you can always do:
+
+```python
+cfg = chess_corners.ChessConfig()
+cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
+cfg.refiner.forstner.max_offset = 2.0
+```
+
+Supported enums:
+
+- `DetectorMode`: `canonical`, `broad`
+- `DescriptorMode`: `follow_detector`, `canonical`, `broad`
+- `ThresholdMode`: `relative`, `absolute`
+- `RefinementMethod`: `center_of_mass`, `forstner`, `saddle_point`
+
+`broad` uses the wider, blur-tolerant detector sampling pattern. Leave
+`descriptor_mode` at `follow_detector` unless you have a reason to override
+descriptor or orientation sampling separately.
+
+## Refiner configuration
+
+`cfg.refiner` always contains every leaf config:
+
+- `cfg.refiner.center_of_mass`
+- `cfg.refiner.forstner`
+- `cfg.refiner.saddle_point`
+
+Only `cfg.refiner.kind` selects which one is active.
+
+```python
+cfg = chess_corners.ChessConfig()
+cfg.refiner.kind = chess_corners.RefinementMethod.SADDLE_POINT
+cfg.refiner.saddle_point.radius = 3
+cfg.refiner.saddle_point.max_offset = 2.0
+```
+
+## JSON helpers and printing
+
+Every public config object supports:
+
+- `to_dict()`
+- `from_dict(...)`
+- `to_json()`
+- `from_json(...)`
+- `pretty()`
+- `print()`
+
+Example:
+
+```python
+cfg = chess_corners.ChessConfig.multiscale()
+text = cfg.to_json(indent=2)
+restored = chess_corners.ChessConfig.from_json(text)
+
+print(restored)
+restored.print()
+```
+
+If `rich` is installed, `.print()` uses it automatically and the config objects
+also expose a Rich render hook.
+
+## Canonical JSON schema
+
+The same algorithm config schema is used by Rust, Python, docs, and the CLI:
+
+```json
+{
+  "detector_mode": "broad",
+  "descriptor_mode": "canonical",
+  "threshold_mode": "absolute",
+  "threshold_value": 0.5,
+  "nms_radius": 3,
+  "min_cluster_size": 1,
+  "refiner": {
+    "kind": "forstner",
+    "center_of_mass": {
+      "radius": 2
+    },
+    "forstner": {
+      "radius": 3,
+      "min_trace": 20.0,
+      "min_det": 0.001,
+      "max_condition_number": 60.0,
+      "max_offset": 2.0
+    },
+    "saddle_point": {
+      "radius": 3,
+      "det_margin": 0.002,
+      "max_offset": 1.75,
+      "min_abs_det": 0.0002
+    }
+  },
+  "pyramid_levels": 3,
+  "pyramid_min_size": 96,
+  "refinement_radius": 4,
+  "merge_radius": 2.5
+}
+```
+
+Unknown keys are rejected with a clear `ConfigError`.
+
+## Example runners
+
+For a complete Pillow-based example that loads the full config from JSON, run:
+
+```bash
+uv run --python .venv/bin/python python crates/chess-corners-py/examples/run_with_full_config.py \
+  testimages/mid.png \
+  config/chess_algorithm_config_example.json
+```
+
+For a complete Pillow-based example that defines the entire config directly in
+Python code and only takes the image path as an argument, run:
+
+```bash
+uv run --python .venv/bin/python python crates/chess-corners-py/examples/run_with_code_config.py \
+  testimages/mid.png
+```
+
+Both examples use Pillow only for image loading:
+
+```bash
+uv pip install --python .venv/bin/python Pillow
+```
 
 ## ML refiner
 
-If the bindings are built with the `ml-refiner` feature, an ML-backed refiner
-is available via `find_chess_corners_with_ml`:
+If the bindings are built with the `ml-refiner` feature, the package also exports:
 
 ```python
-cfg = chess_corners.ChessConfig()
 corners = chess_corners.find_chess_corners_with_ml(img, cfg)
 ```
 
-The ML refiner uses built-in defaults and ignores the model’s confidence
-output in the current version.
-
-## Development
-
-```bash
-maturin develop -m crates/chess-corners-py/pyproject.toml
-```
+That toggles the separate ML-backed refinement path. It does not change the
+canonical `ChessConfig` schema.

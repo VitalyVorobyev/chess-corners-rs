@@ -267,7 +267,7 @@ fn merge_and_describe(
 
 /// Detect corners using a caller-provided pyramid buffer.
 ///
-/// - When `cfg.multiscale.pyramid.num_levels <= 1`, this behaves as a
+/// - When `cfg.pyramid_levels <= 1`, this behaves as a
 ///   single-scale detector on `base`.
 /// - Otherwise, it builds a pyramid into `buffers`, runs a coarse
 ///   detector on the smallest level, refines each coarse seed inside a
@@ -279,7 +279,8 @@ pub fn find_chess_corners_buff(
     cfg: &ChessConfig,
     buffers: &mut PyramidBuffers,
 ) -> Vec<CornerDescriptor> {
-    find_chess_corners_buff_with_refiner(base, cfg, buffers, &cfg.params.refiner)
+    let refiner = cfg.refiner.to_refiner_kind();
+    find_chess_corners_buff_with_refiner(base, cfg, buffers, &refiner)
 }
 
 /// Variant of [`find_chess_corners_buff`] that accepts an explicit refiner selection.
@@ -289,8 +290,8 @@ pub fn find_chess_corners_buff_with_refiner(
     buffers: &mut PyramidBuffers,
     refiner: &RefinerKind,
 ) -> Vec<CornerDescriptor> {
-    let params = &cfg.params;
-    let cf = &cfg.multiscale;
+    let params = cfg.to_chess_params();
+    let cf = cfg.to_coarse_to_fine_params();
 
     let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
@@ -304,7 +305,7 @@ pub fn find_chess_corners_buff_with_refiner(
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
-            params,
+            &params,
             cf.merge_radius,
             |resp, params, image| detect_with_refiner_kind(resp, params, image, refiner),
         );
@@ -318,9 +319,10 @@ pub fn find_chess_corners_buff_with_refiner(
 
     #[cfg(feature = "tracing")]
     let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
-    let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, params);
+    let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, &params);
     let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
-    let coarse_corners = detect_with_refiner_kind(&coarse_resp, params, Some(coarse_view), refiner);
+    let coarse_corners =
+        detect_with_refiner_kind(&coarse_resp, &params, Some(coarse_view), refiner);
     #[cfg(feature = "tracing")]
     drop(coarse_span);
 
@@ -328,11 +330,17 @@ pub fn find_chess_corners_buff_with_refiner(
         return Vec::new();
     }
 
-    let roi_ctx = make_roi_context(base, coarse_lvl.scale, params, refiner_radius(refiner), cf);
+    let roi_ctx = make_roi_context(
+        base,
+        coarse_lvl.scale,
+        &params,
+        refiner_radius(refiner),
+        &cf,
+    );
 
     let refine_one = |c: Corner| -> Option<Vec<Corner>> {
         let roi_bounds = roi_ctx.compute_roi(&c)?;
-        refine_seed_in_roi(base, params, roi_bounds, |resp, params, image| {
+        refine_seed_in_roi(base, &params, roi_bounds, |resp, params, image| {
             detect_with_refiner_kind(resp, params, image, refiner)
         })
     };
@@ -362,7 +370,7 @@ pub fn find_chess_corners_buff_with_refiner(
     #[cfg(feature = "tracing")]
     drop(refine_span);
 
-    merge_and_describe(base, params, cf.merge_radius, &mut refined)
+    merge_and_describe(base, &params, cf.merge_radius, &mut refined)
 }
 
 // ---------------------------------------------------------------------------
@@ -377,7 +385,8 @@ pub fn find_chess_corners_buff_with_ml(
     buffers: &mut PyramidBuffers,
 ) -> Vec<CornerDescriptor> {
     let ml_params = ml_refiner::MlRefinerParams::default();
-    let mut ml_state = ml_refiner::MlRefinerState::new(&ml_params, &cfg.params.refiner);
+    let fallback_refiner = cfg.refiner.to_refiner_kind();
+    let mut ml_state = ml_refiner::MlRefinerState::new(&ml_params, &fallback_refiner);
     find_chess_corners_buff_with_ml_state(base, cfg, buffers, &ml_params, &mut ml_state)
 }
 
@@ -389,8 +398,8 @@ fn find_chess_corners_buff_with_ml_state(
     ml: &ml_refiner::MlRefinerParams,
     ml_state: &mut ml_refiner::MlRefinerState,
 ) -> Vec<CornerDescriptor> {
-    let params = &cfg.params;
-    let cf = &cfg.multiscale;
+    let params = cfg.to_chess_params();
+    let cf = cfg.to_coarse_to_fine_params();
 
     let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
@@ -404,7 +413,7 @@ fn find_chess_corners_buff_with_ml_state(
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
-            params,
+            &params,
             cf.merge_radius,
             |resp, params, image| detect_with_ml_refiner(resp, params, image, ml_state),
         );
@@ -419,10 +428,10 @@ fn find_chess_corners_buff_with_ml_state(
 
     #[cfg(feature = "tracing")]
     let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
-    let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, params);
+    let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, &params);
     let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
     let coarse_corners =
-        detect_with_refiner_kind(&coarse_resp, params, Some(coarse_view), &params.refiner);
+        detect_with_refiner_kind(&coarse_resp, &params, Some(coarse_view), &params.refiner);
     #[cfg(feature = "tracing")]
     drop(coarse_span);
 
@@ -433,9 +442,9 @@ fn find_chess_corners_buff_with_ml_state(
     let roi_ctx = make_roi_context(
         base,
         coarse_lvl.scale,
-        params,
+        &params,
         ml_refiner::patch_radius(ml),
-        cf,
+        &cf,
     );
 
     #[cfg(feature = "tracing")]
@@ -451,7 +460,7 @@ fn find_chess_corners_buff_with_ml_state(
         .into_iter()
         .filter_map(|c| {
             let roi_bounds = roi_ctx.compute_roi(&c)?;
-            refine_seed_in_roi(base, params, roi_bounds, |resp, params, image| {
+            refine_seed_in_roi(base, &params, roi_bounds, |resp, params, image| {
                 detect_with_ml_refiner(resp, params, image, ml_state)
             })
         })
@@ -461,7 +470,7 @@ fn find_chess_corners_buff_with_ml_state(
     #[cfg(feature = "tracing")]
     drop(refine_span);
 
-    merge_and_describe(base, params, cf.merge_radius, &mut refined)
+    merge_and_describe(base, &params, cf.merge_radius, &mut refined)
 }
 
 // ---------------------------------------------------------------------------
@@ -510,11 +519,12 @@ fn make_roi_context(
     instrument(
         level = "info",
         skip(base, cfg),
-        fields(levels = cfg.multiscale.pyramid.num_levels, min_size = cfg.multiscale.pyramid.min_size)
+        fields(levels = cfg.pyramid_levels, min_size = cfg.pyramid_min_size)
     )
 )]
 pub fn find_chess_corners(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescriptor> {
-    find_chess_corners_with_refiner(base, cfg, &cfg.params.refiner)
+    let refiner = cfg.refiner.to_refiner_kind();
+    find_chess_corners_with_refiner(base, cfg, &refiner)
 }
 
 /// Single-call helper that lets callers pick the refiner.
@@ -524,7 +534,7 @@ pub fn find_chess_corners_with_refiner(
     cfg: &ChessConfig,
     refiner: &RefinerKind,
 ) -> Vec<CornerDescriptor> {
-    let mut buffers = PyramidBuffers::with_capacity(cfg.multiscale.pyramid.num_levels);
+    let mut buffers = PyramidBuffers::with_capacity(cfg.pyramid_levels);
     find_chess_corners_buff_with_refiner(base, cfg, &mut buffers, refiner)
 }
 
@@ -532,7 +542,7 @@ pub fn find_chess_corners_with_refiner(
 #[cfg(feature = "ml-refiner")]
 #[must_use]
 pub fn find_chess_corners_with_ml(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescriptor> {
-    let mut buffers = PyramidBuffers::with_capacity(cfg.multiscale.pyramid.num_levels);
+    let mut buffers = PyramidBuffers::with_capacity(cfg.pyramid_levels);
     find_chess_corners_buff_with_ml(base, cfg, &mut buffers)
 }
 
@@ -553,10 +563,10 @@ mod tests {
     #[test]
     fn chess_config_multiscale_preset_has_expected_pyramid() {
         let cfg = ChessConfig::multiscale();
-        assert_eq!(cfg.multiscale.pyramid.num_levels, 3);
-        assert_eq!(cfg.multiscale.pyramid.min_size, 128);
-        assert_eq!(cfg.multiscale.refinement_radius, 3);
-        assert_eq!(cfg.multiscale.merge_radius, 3.0);
+        assert_eq!(cfg.pyramid_levels, 3);
+        assert_eq!(cfg.pyramid_min_size, 128);
+        assert_eq!(cfg.refinement_radius, 3);
+        assert_eq!(cfg.merge_radius, 3.0);
     }
 
     #[test]

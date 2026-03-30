@@ -1,17 +1,19 @@
 {
   "image": "testimages/mid.png",
+  "detector_mode": "canonical",
+  "descriptor_mode": "follow_detector",
+  "threshold_mode": "relative",
+  "threshold_value": 0.2,
+  "nms_radius": 2,
+  "min_cluster_size": 2,
+  "refiner": {
+    "kind": "center_of_mass"
+  },
   "pyramid_levels": 3,
-  "min_size": 256,
-  "refinement_radius":3,
+  "pyramid_min_size": 256,
+  "refinement_radius": 3,
   "merge_radius": 2.0,
   "output_json": null,
   "output_png": null,
-  "threshold_rel": 0.2,
-  "threshold_abs": null,
-  "refiner": "center_of_mass",
-  "radius10": false,
-  "nms_radius": 2,
-  "min_cluster_size": 2,
-  "log_level": "info",
-  "json_trace": true
+  "log_level": "info"
 }

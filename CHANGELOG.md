@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `chess-corners-wasm` crate: WebAssembly bindings via `wasm-bindgen` for running
+  the ChESS corner detector in the browser. Exposes a `ChessDetector` class with
+  `detect`/`detect_rgba` (returns corners as `Float32Array`) and
+  `response`/`response_rgba` (returns the raw ChESS response map). Supports
+  webcam RGBA frames and grayscale input, reusable pyramid buffers for streaming,
+  and configurable threshold, NMS radius, detector mode, pyramid levels, and refiner.
+  Ships as an npm package via `wasm-pack` (~23 KB gzipped).
+- Shared canonical algorithm config example at `config/chess_algorithm_config_example.json`.
+- New ADR-007 documenting the Python-native public API with a private native module.
+
+### Changed
+
+- Version bump across all workspace crates, the Python package, and the WASM
+  package to `0.5.0` for the upcoming release.
+- `chess-corners` facade: CLI-only dependencies (`clap`, `anyhow`, `serde_json`,
+  `tracing-subscriber`) are now feature-gated behind the `cli` feature,
+  reducing the dependency tree for library consumers and WASM builds.
+- Breaking public API redesign across Rust and Python:
+  - `chess-corners::ChessConfig` is now a flat public config with explicit
+    enums for detector mode, descriptor mode, threshold mode, and refiner kind.
+  - `RefinerConfig` now always contains default-initialized
+    `center_of_mass`, `forstner`, and `saddle_point` leaf configs.
+  - The CLI now uses the same canonical flat algorithm schema via flattened
+    `ChessConfig` fields in JSON.
+- Public high-level ring selection now uses semantic modes instead of exposing
+  radius-specific names:
+  - Rust and Python use `DetectorMode::{Canonical,Broad}` /
+    `DescriptorMode::{FollowDetector,Canonical,Broad}`
+  - CLI and JSON use `canonical`, `broad`, and `follow_detector`
+  - the numeric radius implementation detail remains in `chess-corners-core`
+- `chess-corners-py` is now a mixed Rust/Python package:
+  - public API lives in pure Python under `chess_corners`
+  - native PyO3 extension moved behind the private `chess_corners._native` module
+  - public Python config objects now provide typed enums/dataclasses, strict
+    JSON helpers, readable printing, and proper wrapper signatures.
+- Python example and docs now use Pillow plus the shared canonical config schema.
+- Repository docs and guidance now use the `uv` + `.venv` workflow for local
+  Python verification.
+- The npm release workflow now uses GitHub OIDC trusted publishing instead of
+  `secrets.NPM_TOKEN`, and builds with Node 24 to satisfy npm's current trusted
+  publishing requirements.
+
 ## [0.4.2]
 
 ### Added

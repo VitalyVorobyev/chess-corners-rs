@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "chess_corners"
-version = "0.4.2"
+dynamic = ["version"]
 description = "Python bindings for the fast ChESS chessboard corner detector (Rust backend)"
 requires-python = ">=3.10"
 readme = "README.md"
@@ -23,4 +23,5 @@ Issues = "https://github.com/VitalyVorobyev/chess-corners-rs/issues"
 
 [tool.maturin]
 bindings = "pyo3"
-module-name = "chess_corners"
+module-name = "chess_corners._native"
+python-source = "python"

@@ -1,6 +1,6 @@
 [package]
 name = "box-image-pyramid"
-version = "0.4.2"
+version.workspace = true
 description = "Minimal u8 grayscale image pyramid using 2x box-filter downsampling with reusable buffers"
 edition.workspace = true
 license.workspace = true
@@ -20,15 +20,15 @@ par_pyramid = []  # opt-in gate for SIMD/parallel pyramid downsampling
 tracing = ["dep:tracing"]
 
 [dependencies]
-rayon = { version = "1", optional = true }
-tracing = { version = "0.1", optional = true }
+rayon = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
-criterion = "0.8"
-fast_image_resize = { version = "6", features = ["image"] }
-image = "0.25"
-resize = "0.8"
-rgb = "0.8"
+criterion.workspace = true
+fast_image_resize.workspace = true
+image.workspace = true
+resize.workspace = true
+rgb.workspace = true
 
 [[bench]]
 name = "pyramid_perf"

@@ -21,7 +21,7 @@ Make sure your `Cargo.toml` has:
 
 ```toml
 [dependencies]
-chess-corners = "0.4"
+chess-corners = "0.5"
 image = "0.25"
 ```
 
@@ -33,7 +33,7 @@ get convenient helpers on `image::GrayImage` without any extra work.
 Here is a complete single‑scale example:
 
 ```rust
-use chess_corners::{ChessConfig, ChessParams, find_chess_corners_image};
+use chess_corners::{ChessConfig, find_chess_corners_image};
 use image::io::Reader as ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,10 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 The key pieces are:
 
 - `ChessConfig::single_scale()` – configures a single‑scale detector
-  by setting `multiscale.pyramid.num_levels = 1`.
-- `ChessParams::default()` – provides reasonable defaults for the
-  ChESS response and detector (ring radius, thresholds, NMS radius,
-  minimum cluster size).
+  with `pyramid_levels = 1`.
 - `find_chess_corners_image` – runs the detector on a `GrayImage` and
   returns a `Vec<CornerDescriptor>`.
 
@@ -92,29 +89,20 @@ For basic camera calibration workflows you can often treat `response`
 as a confidence score and use `orientation` mainly for grid fitting
 or downstream topology checks.
 
-### 2.1.3 Tweaking `ChessParams`
+### 2.1.3 Tweaking `ChessConfig`
 
-The default `ChessParams` values are tuned to work well on typical
-calibration images, but it is useful to know what they do:
+The public config is intentionally flat. The most important fields are:
 
-- `use_radius10` – switch from the canonical r=5 ring to a larger
-  r=10 ring, which is more robust under heavy blur or when the board
-  covers fewer pixels.
-- `threshold_rel` / `threshold_abs` – control how strong a response
-  must be to be considered a candidate corner. If `threshold_abs` is
-  `Some`, it takes precedence over `threshold_rel`; otherwise a
-  relative threshold (fraction of the maximum response) is used.
-- `nms_radius` – radius of the non‑maximum suppression window in
-  pixels. Larger values give sparser corners.
-- `min_cluster_size` – minimum number of positive‑response neighbors
-  in the NMS window required to accept a corner, which suppresses
-  isolated noise.
+- `detector_mode` – choose `Canonical` (default) or `Broad` for the response pattern. `Broad` uses the wider, blur-tolerant detector mode.
+- `descriptor_mode` – usually leave `FollowDetector`, but you can override descriptor/orientation sampling with `Canonical` or `Broad`.
+- `threshold_mode` + `threshold_value` – control candidate thresholding. Relative thresholding is the default and is usually the right starting point.
+- `nms_radius` – radius of the non‑maximum suppression window.
+- `min_cluster_size` – reject isolated positives in the NMS neighborhood.
+- `pyramid_levels`, `pyramid_min_size`, `refinement_radius`, `merge_radius` – multiscale tuning.
+- `refiner.kind` – choose `CenterOfMass`, `Forstner`, or `SaddlePoint`.
 
-Small `threshold_rel` and `nms_radius` values tend to produce more
-corners (including weaker or spurious ones), while larger values
-produce fewer, stronger corners. It’s often helpful to log or plot the
-detected corners on your own images and adjust these parameters once
-per dataset.
+Small thresholds and NMS radii tend to produce more corners; larger values
+produce fewer and stronger corners.
 
 ---
 
@@ -147,11 +135,12 @@ Requirements:
 Usage is nearly identical to the `image`‑based helper:
 
 ```rust
-use chess_corners::{ChessConfig, ChessParams, find_chess_corners_u8};
+use chess_corners::{ChessConfig, ThresholdMode, find_chess_corners_u8};
 
 fn detect(img: &[u8], width: u32, height: u32) {
     let mut cfg = ChessConfig::single_scale();
-    cfg.params = ChessParams::default();
+    cfg.threshold_mode = ThresholdMode::Relative;
+    cfg.threshold_value = 0.2;
 
     let corners = find_chess_corners_u8(img, width, height, &cfg);
     println!("found {} corners", corners.len());
@@ -233,16 +222,12 @@ The exact fields are defined by `DetectionConfig` in
 `crates/chess-corners/bin/commands.rs`. The example config under
 `config/` documents common settings:
 
-- `pyramid_levels`, `min_size`, `refinement_radius`, `merge_radius` –
-  multiscale controls (mapped onto `CoarseToFineParams`; with
-  `pyramid_levels <= 1` the detector behaves as single‑scale, and
-  larger values request a coarse‑to‑fine multiscale run, bounded by
-  `min_size`).
-- `threshold_rel`, `threshold_abs`, `refiner`, `radius10`,
-  `descriptor_radius10`, `nms_radius`, `min_cluster_size` – detector
-  tuning (mapped onto `ChessParams`; `refiner` accepts
-  `center_of_mass`, `forstner`, or `saddle_point` and uses default
-  settings for each choice).
+- `detector_mode`, `descriptor_mode`, `threshold_mode`,
+  `threshold_value`, `nms_radius`, `min_cluster_size` – detector
+  tuning.
+- `refiner` – nested refiner selection plus leaf config objects.
+- `pyramid_levels`, `pyramid_min_size`, `refinement_radius`,
+  `merge_radius` – multiscale controls.
 - `ml` – set `true` to enable the ML refiner pipeline (requires the
   `ml-refiner` feature).
 - `output_json`, `output_png` – output paths; when omitted, defaults
@@ -272,7 +257,7 @@ The CLI produces:
 - A JSON file containing:
   - basic metadata (image path, width, height),
   - the multiscale configuration actually used (`pyramid_levels`,
-    `min_size`, `refinement_radius`, `merge_radius`), and
+    `pyramid_min_size`, `refinement_radius`, `merge_radius`), and
   - an array of corners with `x`, `y`, `response`, and `orientation`.
 - A PNG image with the detected corners drawn as small white squares
   over the original image.
@@ -286,8 +271,8 @@ You can:
 
 Combined with the configuration file, this makes it easy to iterate on
 detector settings without recompiling your code. Once you are happy
-with a configuration, you can port the settings into your own Rust
-code using `ChessConfig`, `ChessParams`, and `CoarseToFineParams`.
+with a configuration, you can port the settings into your own Rust or
+Python code using the same public `ChessConfig` schema.
 
 ### 2.3.4 Example overlays
 
@@ -327,9 +312,9 @@ print(corners.shape, corners.dtype)  # (N, 4), float32
 `find_chess_corners` expects a 2D `uint8` array `(H, W)` and returns a
 float32 array with columns `[x, y, response, orientation]`. For
 configuration, create `ChessConfig()` and set fields such as
-`threshold_rel`, `nms_radius`, `pyramid_num_levels`, and
-`merge_radius`. See `crates/chess-corners-py/README.md` for a full
-parameter reference.
+`threshold_mode`, `threshold_value`, `nms_radius`, `pyramid_levels`,
+and `merge_radius`. The Python package also provides `to_dict`,
+`from_dict`, `to_json`, `from_json`, `pretty`, and `print()` helpers.
 
 If the bindings are built with the `ml-refiner` feature, you can call
 `find_chess_corners_with_ml` in Python as well. The ML path uses the

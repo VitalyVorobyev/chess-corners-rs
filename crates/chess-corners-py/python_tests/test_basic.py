@@ -13,7 +13,7 @@ def _checkerboard(square_size: int = 16, squares: int = 8) -> np.ndarray:
 def test_find_chess_corners_basic():
     img = _checkerboard(square_size=16, squares=8)
     cfg = chess_corners.ChessConfig()
-    cfg.threshold_rel = 0.1
+    cfg.threshold_value = 0.1
     cfg.min_cluster_size = 1
 
     corners = chess_corners.find_chess_corners(img, cfg)
@@ -31,18 +31,39 @@ def test_find_chess_corners_rejects_wrong_dtype():
 
 def test_nested_config_objects():
     cfg = chess_corners.ChessConfig()
-    cfg.params.threshold_rel = 0.15
-    cfg.multiscale.pyramid.num_levels = 1
-    assert cfg.params.threshold_rel == pytest.approx(0.15)
-    assert cfg.multiscale.pyramid.num_levels == 1
+    cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
+    cfg.refiner.forstner.max_offset = 2.0
+    assert cfg.refiner.kind is chess_corners.RefinementMethod.FORSTNER
+    assert cfg.refiner.forstner.max_offset == pytest.approx(2.0)
 
 
-def test_refiner_kind_config():
+def test_config_roundtrip_and_print_helpers():
+    cfg = chess_corners.ChessConfig.multiscale()
+    cfg.detector_mode = chess_corners.DetectorMode.BROAD
+    cfg.descriptor_mode = chess_corners.DescriptorMode.CANONICAL
+    cfg.threshold_mode = chess_corners.ThresholdMode.ABSOLUTE
+    cfg.threshold_value = 4.5
+    cfg.refiner.kind = chess_corners.RefinementMethod.SADDLE_POINT
+    cfg.refiner.saddle_point.max_offset = 2.0
+
+    encoded = cfg.to_json()
+    decoded = chess_corners.ChessConfig.from_json(encoded)
+
+    assert decoded.to_dict() == cfg.to_dict()
+    assert "threshold_mode" in str(cfg)
+    assert "_native" not in chess_corners.__all__
+
+
+def test_public_signature_and_defaults():
+    import inspect
+
+    sig = inspect.signature(chess_corners.find_chess_corners)
+    assert str(sig) == "(image: 'Any', cfg: 'ChessConfig | None' = None) -> 'Any'"
+
     cfg = chess_corners.ChessConfig()
-    forstner = chess_corners.ForstnerConfig()
-    forstner.max_offset = 2.0
-    cfg.params.refiner = chess_corners.RefinerKind.forstner(forstner)
-    assert cfg.params.refiner.kind == "forstner"
+    assert isinstance(cfg.refiner, chess_corners.RefinerConfig)
+    assert isinstance(cfg.refiner.forstner, chess_corners.ForstnerConfig)
+    assert isinstance(cfg.refiner.saddle_point, chess_corners.SaddlePointConfig)
 
 
 def test_ml_refiner_api():

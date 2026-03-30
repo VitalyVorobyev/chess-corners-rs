@@ -12,3 +12,4 @@ tools/ml_refiner/data/
 tools/ml_refiner/runs/
 tools/ml_refiner/data/**/*.npz
 tools/ml_refiner/runs/**/*.npz
+*.so

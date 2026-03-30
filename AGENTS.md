@@ -1,5 +1,3 @@
-}
-
 # AGENTS.md — chess-corners
 
 This repository contains **three published crates**:
@@ -82,6 +80,19 @@ If benches exist and you touched hot-path code:
 * run the relevant bench target (only if requested or CI requires it)
 
 **Do not** introduce new warnings. Avoid `#[allow(...)]` unless justified in the PR.
+
+### Python workflow
+
+For Python package work in this repository:
+
+* prefer **`uv`** over raw `pip` / ad hoc virtualenv commands
+* use the checked-in **`.venv`** for local Python verification unless told otherwise
+* run Python commands through `uv run --python .venv/bin/python ...`
+* install Python packages into that venv with `uv pip install --python .venv/bin/python ...`
+* build the Python wheel with `uv run --python .venv/bin/python maturin build -m crates/chess-corners-py/Cargo.toml ...`
+
+When updating Python bindings, examples, or docs, verify the **installed wheel**
+when practical, not only the source tree import.
 
 ---
 
