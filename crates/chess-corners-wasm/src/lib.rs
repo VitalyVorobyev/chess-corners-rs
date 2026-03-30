@@ -85,9 +85,15 @@ impl ChessDetector {
     }
 
     /// Set the number of pyramid levels (1 = single-scale, >=2 = multiscale).
-    pub fn set_pyramid_levels(&mut self, n: u8) {
+    ///
+    /// Returns an error if `n` is 0.
+    pub fn set_pyramid_levels(&mut self, n: u8) -> Result<(), JsValue> {
+        if n == 0 {
+            return Err(JsValue::from_str("pyramid_levels must be >= 1"));
+        }
         self.config.pyramid_levels = n;
         self.buffers = PyramidBuffers::with_capacity(n);
+        Ok(())
     }
 
     /// Set the minimum pyramid level size in pixels (default 128).
