@@ -1,4 +1,4 @@
-use chess_corners::{ChessConfig, PyramidBuffers, RefinerKind};
+use chess_corners::{ChessConfig, DetectorMode, PyramidBuffers, RefinementMethod, ThresholdMode};
 use chess_corners_core::response::chess_response_u8;
 use chess_corners_core::ResponseMap;
 use wasm_bindgen::prelude::*;
@@ -49,7 +49,7 @@ impl ChessDetector {
     /// Create a detector with the recommended multiscale preset.
     pub fn multiscale() -> Self {
         let config = ChessConfig::multiscale();
-        let levels = config.multiscale.pyramid.num_levels;
+        let levels = config.pyramid_levels;
         Self {
             config,
             buffers: PyramidBuffers::with_capacity(levels),
@@ -61,41 +61,46 @@ impl ChessDetector {
 
     /// Set the relative threshold (fraction of max response, default 0.2).
     pub fn set_threshold(&mut self, rel: f32) {
-        self.config.params.threshold_rel = rel;
+        self.config.threshold_mode = ThresholdMode::Relative;
+        self.config.threshold_value = rel;
     }
 
     /// Set the non-maximum suppression radius (default 2).
     pub fn set_nms_radius(&mut self, r: u32) {
-        self.config.params.nms_radius = r;
+        self.config.nms_radius = r;
     }
 
     /// Toggle the large r=10 ring (default: r=5).
-    pub fn set_use_radius10(&mut self, v: bool) {
-        self.config.params.use_radius10 = v;
+    pub fn set_broad_mode(&mut self, v: bool) {
+        self.config.detector_mode = if v {
+            DetectorMode::Broad
+        } else {
+            DetectorMode::Canonical
+        };
     }
 
     /// Set the minimum cluster size for accepting a corner (default 2).
     pub fn set_min_cluster_size(&mut self, v: u32) {
-        self.config.params.min_cluster_size = v;
+        self.config.min_cluster_size = v;
     }
 
     /// Set the number of pyramid levels (1 = single-scale, >=2 = multiscale).
     pub fn set_pyramid_levels(&mut self, n: u8) {
-        self.config.multiscale.pyramid.num_levels = n;
+        self.config.pyramid_levels = n;
         self.buffers = PyramidBuffers::with_capacity(n);
     }
 
     /// Set the minimum pyramid level size in pixels (default 128).
     pub fn set_pyramid_min_size(&mut self, v: u32) {
-        self.config.multiscale.pyramid.min_size = v as usize;
+        self.config.pyramid_min_size = v as usize;
     }
 
     /// Set the subpixel refiner: "center_of_mass", "forstner", or "saddle_point".
     pub fn set_refiner(&mut self, name: &str) -> Result<(), JsValue> {
-        self.config.params.refiner = match name {
-            "center_of_mass" => RefinerKind::CenterOfMass(Default::default()),
-            "forstner" => RefinerKind::Forstner(Default::default()),
-            "saddle_point" => RefinerKind::SaddlePoint(Default::default()),
+        self.config.refiner.kind = match name {
+            "center_of_mass" => RefinementMethod::CenterOfMass,
+            "forstner" => RefinementMethod::Forstner,
+            "saddle_point" => RefinementMethod::SaddlePoint,
             _ => {
                 return Err(JsValue::from_str(
                     "unknown refiner: use center_of_mass, forstner, or saddle_point",
@@ -129,7 +134,8 @@ impl ChessDetector {
     ///
     /// Returns a `Float32Array` in row-major order (width x height).
     pub fn response(&mut self, pixels: &[u8], width: u32, height: u32) -> js_sys::Float32Array {
-        let resp = chess_response_u8(pixels, width as usize, height as usize, &self.config.params);
+        let params = self.config.to_chess_params();
+        let resp = chess_response_u8(pixels, width as usize, height as usize, &params);
         let arr = js_sys::Float32Array::new_with_length(resp.data().len() as u32);
         arr.copy_from(resp.data());
         self.last_response = Some(resp);

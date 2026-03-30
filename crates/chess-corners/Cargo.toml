@@ -23,7 +23,7 @@ simd = ["chess-corners-core/simd", "box-image-pyramid/simd"]
 tracing = ["chess-corners-core/tracing", "dep:tracing", "box-image-pyramid/tracing"]
 ml-refiner = ["dep:chess-corners-ml"]
 par_pyramid = ["box-image-pyramid/par_pyramid"]
-cli = ["dep:clap", "dep:anyhow", "dep:serde", "dep:serde_json", "dep:tracing-subscriber"]
+cli = ["dep:clap", "dep:anyhow", "dep:serde_json", "dep:tracing-subscriber"]
 
 [[bin]]
 name = "chess-corners"
@@ -37,7 +37,7 @@ chess-corners-ml = { path = "../chess-corners-ml", version = "0.4.2", optional =
 image = { version = "0.25", optional = true }
 log = "0.4"
 anyhow = { version = "1", optional = true }
-serde = { version = "1", features = ["derive"], optional = true }
+serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"], optional = true }

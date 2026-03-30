@@ -1,0 +1,31 @@
+{
+  "detector_mode": "broad",
+  "descriptor_mode": "canonical",
+  "threshold_mode": "absolute",
+  "threshold_value": 0.5,
+  "nms_radius": 3,
+  "min_cluster_size": 1,
+  "refiner": {
+    "kind": "forstner",
+    "center_of_mass": {
+      "radius": 2
+    },
+    "forstner": {
+      "radius": 3,
+      "min_trace": 20.0,
+      "min_det": 0.001,
+      "max_condition_number": 60.0,
+      "max_offset": 2.0
+    },
+    "saddle_point": {
+      "radius": 3,
+      "det_margin": 0.002,
+      "max_offset": 1.75,
+      "min_abs_det": 0.0002
+    }
+  },
+  "pyramid_levels": 3,
+  "pyramid_min_size": 96,
+  "refinement_radius": 4,
+  "merge_radius": 2.5
+}

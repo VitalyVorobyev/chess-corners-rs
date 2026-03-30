@@ -18,16 +18,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let img = ImageReader::open(&img_path)?.decode()?.to_luma8();
 
     let mut cfg = ChessConfig::multiscale();
-    cfg.multiscale.pyramid.min_size = 64;
+    cfg.pyramid_min_size = 64;
 
     let corners = chess_corners::find_chess_corners_image(&img, &cfg);
     println!("image: {}", img_path.display());
     println!(
         "multiscale: levels={}, min_size={}, refinement_radius={}, merge_radius={}",
-        cfg.multiscale.pyramid.num_levels,
-        cfg.multiscale.pyramid.min_size,
-        cfg.multiscale.refinement_radius,
-        cfg.multiscale.merge_radius
+        cfg.pyramid_levels, cfg.pyramid_min_size, cfg.refinement_radius, cfg.merge_radius
     );
     println!("found {} corners", corners.len());
 

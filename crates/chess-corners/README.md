@@ -1,32 +1,30 @@
 # chess-corners
 
-Ergonomic ChESS (Chess-board Extraction by Subtraction and Summation) detector on top of
-`chess-corners-core`.
+Ergonomic ChESS (Chess-board Extraction by Subtraction and Summation) detector
+on top of `chess-corners-core`.
 
-This crate:
+This crate is the public Rust API:
 
-- Re-exports the main types from `chess-corners-core` (`ChessParams`, `CornerDescriptor`, `ResponseMap`).
-- Provides a unified `ChessConfig` for single-scale and multiscale detection.
-- Exposes `PyramidParams` for tuning pyramid construction via `CoarseToFineParams`.
-- Adds optional `image::GrayImage` integration and a small CLI binary for batch runs.
-- Exposes pluggable subpixel refiners (`RefinerKind` via `ChessParams::refiner`) so you can choose
-  between center-of-mass (default), Förstner, or saddle-point refinement.
+- flat `ChessConfig` with explicit semantic modes, threshold mode, and refiner selection
+- single-scale and multiscale detection entry points
+- optional `image::GrayImage` helpers
+- optional CLI binary and ML-backed refinement entry points
 
-## Examples
+`chess-corners-core` and `box-image-pyramid` remain available as lower-level
+sharp tools, but `chess-corners` is the intended compatibility boundary.
 
-By default the `image` feature is enabled so you can work directly with `GrayImage`:
+## Quick start
 
 ```rust
-use chess_corners::{ChessConfig, ChessParams, find_chess_corners_image};
-use image::io::Reader as ImageReader;
+use chess_corners::{ChessConfig, RefinementMethod, find_chess_corners_image};
+use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let img = ImageReader::open("board.png")?
-        .decode()?
-        .to_luma8();
+    let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
-    let mut cfg = ChessConfig::single_scale();
-    cfg.params = ChessParams::default();
+    let mut cfg = ChessConfig::multiscale();
+    cfg.threshold_value = 0.15;
+    cfg.refiner.kind = RefinementMethod::Forstner;
 
     let corners = find_chess_corners_image(&img, &cfg);
     println!("found {} corners", corners.len());
@@ -34,67 +32,95 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Selecting a refiner
+## Public config shape
 
-The default refiner matches the legacy center-of-mass behavior. To opt into the
-Förstner or saddle-point refiners on image intensities:
+`ChessConfig` is intentionally flat:
 
 ```rust
-use chess_corners::{ChessConfig, ChessParams, RefinerKind, find_chess_corners_image};
+use chess_corners::{
+    ChessConfig, DescriptorMode, DetectorMode, RefinementMethod, ThresholdMode,
+};
 
 let mut cfg = ChessConfig::single_scale();
-cfg.params = ChessParams::default();
-
-let refiner = RefinerKind::Forstner(Default::default());
-cfg.params.refiner = refiner;
-let corners = find_chess_corners_image(&img, &cfg);
+cfg.detector_mode = DetectorMode::Canonical;
+cfg.descriptor_mode = DescriptorMode::FollowDetector;
+cfg.threshold_mode = ThresholdMode::Relative;
+cfg.threshold_value = 0.2;
+cfg.nms_radius = 2;
+cfg.min_cluster_size = 2;
+cfg.pyramid_levels = 1;
+cfg.pyramid_min_size = 128;
+cfg.refinement_radius = 3;
+cfg.merge_radius = 3.0;
+cfg.refiner.kind = RefinementMethod::CenterOfMass;
 ```
 
-You can also override the refiner per call without mutating your config via
-`find_chess_corners_image_with_refiner`.
+Use `ChessConfig::single_scale()` for the default one-level detector and
+`ChessConfig::multiscale()` for the recommended 3-level preset.
 
-### ML refiner (feature `ml-refiner`)
+`DetectorMode::Broad` enables the wider, blur-tolerant detector response mode.
+`DescriptorMode` can either follow the detector or override descriptor and
+orientation sampling explicitly.
 
-Enable the ML-backed refiner (feature `ml-refiner`) to run the exported ONNX model in Rust:
+## Refiner configuration
+
+`cfg.refiner` always contains all supported leaf configs:
+
+- `cfg.refiner.center_of_mass`
+- `cfg.refiner.forstner`
+- `cfg.refiner.saddle_point`
+
+Only `cfg.refiner.kind` selects which one is active:
 
 ```rust
-use chess_corners::{ChessConfig, ChessParams, find_chess_corners_image_with_ml};
-use image::GrayImage;
+use chess_corners::{ChessConfig, RefinementMethod};
 
 let mut cfg = ChessConfig::single_scale();
-cfg.params = ChessParams::default();
+cfg.refiner.kind = RefinementMethod::Forstner;
+cfg.refiner.forstner.max_offset = 2.0;
+```
+
+You can also bypass the configured refiner for a single call with
+`find_chess_corners_image_with_refiner` or `find_chess_corners_with_refiner`.
+
+## CLI config shape
+
+The CLI uses the same flat algorithm schema at the top level, combined with
+application fields such as `image`, `output_json`, `output_png`, `log_level`,
+and `ml`.
+
+See:
+
+- `config/chess_algorithm_config_example.json` for the shared algorithm config
+- `config/chess_cli_config_example.json` for a complete CLI input
+
+## ML refiner
+
+Enable the `ml-refiner` feature to use the separate ML-backed pipeline:
+
+```rust
+use chess_corners::{ChessConfig, find_chess_corners_image_with_ml};
+use image::GrayImage;
 
 let img = GrayImage::new(1, 1);
+let cfg = ChessConfig::single_scale();
 let corners = find_chess_corners_image_with_ml(&img, &cfg);
 ```
 
-The ML refiner runs an ONNX model on normalized patches (uint8 / 255.0) centered
-on each candidate and predicts `[dx, dy, conf_logit]`. The current version
-ignores `conf_logit` and applies the offsets directly, using the embedded model
-defaults (patch size and batch size are fixed to match the model).
-Current evaluation is synthetic; real-world performance still needs validation.
-It is also slower (about 23.5 ms vs 0.6 ms for 77 corners on `testimages/mid.png`).
+The ML path is slower than the classic refiners and intentionally stays outside
+the canonical `ChessConfig` schema.
 
-You can also try the bundled examples on sample images in `testimages/`:
+## Examples
 
 - Single-scale: `cargo run -p chess-corners --example single_scale_image -- testimages/mid.png`
 - Multiscale: `cargo run -p chess-corners --example multiscale_image -- testimages/large.png`
 
-Both examples require the `image` feature, which is enabled by default. If you build with `--no-default-features`, re-enable it when running examples: `--features image`.
+## Feature flags
 
-Feature flags:
-
-- `image` *(default)* – enable `find_chess_corners_image` for `image::GrayImage`.
-- `rayon` – parallelize response computation and multiscale refinement.
-- `ml-refiner` – enable ML entry points and ONNX inference via `chess-corners-ml`.
-- `simd` – enable portable-SIMD acceleration in the core response kernel (nightly only).
-- `par_pyramid` – opt into SIMD/`rayon` in the pyramid builder.
-- `tracing` – emit structured spans from multiscale detection and the CLI when enabled.
-
-The full guide-style documentation and API docs are published at:
-
-- Book: https://vitalyvorobyev.github.io/chess-corners-rs
-- Rust docs: https://vitalyvorobyev.github.io/chess-corners-rs/api/
-
-Python bindings are available in this workspace under `crates/chess-corners-py`
-and are published as the `chess_corners` package on PyPI.
+- `image` (default): `image::GrayImage` integration
+- `rayon`: parallel response/refinement
+- `simd`: portable-SIMD acceleration in the core response path
+- `par_pyramid`: SIMD/`rayon` in pyramid construction
+- `tracing`: structured spans
+- `ml-refiner`: ONNX-backed ML refinement
+- `cli`: build the `chess-corners` binary

@@ -106,3 +106,31 @@ jobs:
           python -m pip install -U pip
           python -m pip install --no-index --find-links dist chess_corners
           python -c "import chess_corners; print('ok', chess_corners.__doc__)"
+
+  wasm-build-smoke:
+    name: Build WASM smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM package
+        run: wasm-pack build crates/chess-corners-wasm --target web --release
+
+      - name: Verify package output
+        run: |
+          test -f crates/chess-corners-wasm/pkg/chess_corners_wasm.js
+          test -f crates/chess-corners-wasm/pkg/chess_corners_wasm_bg.wasm
+          test -f crates/chess-corners-wasm/pkg/chess_corners_wasm.d.ts
+          echo "WASM package built successfully"
+          ls -lh crates/chess-corners-wasm/pkg/chess_corners_wasm_bg.wasm

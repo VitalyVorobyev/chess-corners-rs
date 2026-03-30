@@ -6,6 +6,7 @@
 //! acceptance logic.
 use crate::imageview::ImageView;
 use crate::ResponseMap;
+use serde::{Deserialize, Serialize};
 
 /// Status of a refinement attempt.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -55,7 +56,7 @@ pub trait CornerRefiner {
 }
 
 /// User-facing enum selecting a refinement backend.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum RefinerKind {
     CenterOfMass(CenterOfMassConfig),
@@ -108,7 +109,8 @@ impl CornerRefiner for Refiner {
 }
 
 /// Legacy center-of-mass refinement on the response map.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CenterOfMassConfig {
     pub radius: i32,
 }
@@ -203,7 +205,8 @@ impl CornerRefiner for CenterOfMassRefiner {
 /// Reference: Förstner, W. & Gülch, E. (1987). "A fast operator for
 /// detection and precise location of distinct points, corners and centres
 /// of circular features."
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ForstnerConfig {
     /// Half-size of the local gradient window (full window is `2*radius+1`).
     /// A radius of 2 gives a 5×5 patch — large enough to capture the
@@ -379,7 +382,8 @@ impl CornerRefiner for ForstnerRefiner {
 }
 
 /// Quadratic saddle-point surface refiner.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SaddlePointConfig {
     pub radius: i32,
     pub det_margin: f32,

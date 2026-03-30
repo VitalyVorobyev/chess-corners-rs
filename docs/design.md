@@ -26,7 +26,7 @@ box-image-pyramid   (Standalone u8 pyramid, 2x box-filter downsample)
 
 ## Multiscale Architecture
 
-When `pyramid.num_levels > 1`, the detector follows a coarse-to-fine strategy:
+When `pyramid_levels > 1`, the detector follows a coarse-to-fine strategy:
 
 1. Build image pyramid via `box-image-pyramid` (2x box-filter downsample at each level)
 2. Detect corners on the smallest (coarsest) level
@@ -49,10 +49,13 @@ Performance choices are compile-time features. Behavioral choices are runtime co
 | `image` | Compile-time | `image::GrayImage` integration |
 | `ml-refiner` | Compile-time | ONNX ML refinement via `chess-corners-ml` |
 | `tracing` | Compile-time | Structured diagnostic spans |
-| `threshold_rel` | Runtime | Relative detection threshold |
+| `threshold_mode` | Runtime | Relative vs absolute threshold interpretation |
+| `threshold_value` | Runtime | Threshold value used by the selected mode |
+| `detector_mode` | Runtime | Semantic detector mode: canonical or broad response sampling |
+| `descriptor_mode` | Runtime | Descriptor/orientation sampling: follow detector, canonical, or broad |
 | `nms_radius` | Runtime | Non-maximum suppression radius |
-| `refiner` | Runtime | Which subpixel refiner to use |
-| `num_levels` | Runtime | Number of pyramid levels |
+| `refiner.kind` | Runtime | Which subpixel refiner is active |
+| `pyramid_levels` | Runtime | Number of pyramid levels |
 
 All feature combinations produce numerically identical results (outputs sorted by stable keys when using rayon).
 
@@ -81,8 +84,9 @@ pub trait CornerRefiner {
 
 ## Python Bindings
 
-- PyO3 v0.27 with `abi3-py310` for Python 3.10+ compatibility
-- Each Rust config struct mirrored as a `#[pyclass]` with matching getters/setters
+- Mixed Rust/Python package built with `maturin`
+- Public package: pure-Python `chess_corners`
+- Private extension module: `chess_corners._native`
 - Input: 2D `uint8` NumPy array (must be C-contiguous)
 - Output: `(N, 4)` float32 array `[x, y, response, orientation]`
-- Built with `maturin`, published to PyPI as `chess_corners`
+- Public config is Python-native and uses the same flat schema as Rust and the CLI

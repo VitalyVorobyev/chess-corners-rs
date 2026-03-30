@@ -1,5 +1,7 @@
 use anyhow::Result;
+use chess_corners::{DescriptorMode, DetectorMode, RefinementMethod, ThresholdMode};
 use clap::{Parser, Subcommand};
+use serde::de::DeserializeOwned;
 use std::path::PathBuf;
 
 mod commands;
@@ -11,7 +13,7 @@ use log::LevelFilter;
 #[cfg(not(feature = "tracing"))]
 use std::str::FromStr;
 
-use commands::{load_config, run_detection};
+use commands::{apply_overrides, load_config, run_detection, DetectionOverrides};
 
 #[cfg(feature = "tracing")]
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -35,10 +37,10 @@ enum Commands {
         config: PathBuf,
         /// Override pyramid levels (1 => single scale, >=2 => multiscale).
         #[arg(long)]
-        levels: Option<u8>,
+        pyramid_levels: Option<u8>,
         /// Override pyramid min size.
         #[arg(long)]
-        min_size: Option<u32>,
+        pyramid_min_size: Option<u32>,
         /// Override refinement radius (coarse pixels).
         #[arg(long)]
         refinement_radius: Option<u32>,
@@ -51,24 +53,27 @@ enum Commands {
         /// Output overlay PNG path override.
         #[arg(long)]
         output_png: Option<PathBuf>,
-        /// Relative threshold override.
+        /// Override threshold mode (`relative` or `absolute`).
         #[arg(long)]
-        threshold_rel: Option<f32>,
-        /// Absolute threshold override.
+        threshold_mode: Option<String>,
+        /// Override threshold value.
         #[arg(long)]
-        threshold_abs: Option<f32>,
-        /// Use large (r=10) ring instead of default r=5.
+        threshold_value: Option<f32>,
+        /// Override detector mode (`canonical` or `broad`).
         #[arg(long)]
-        radius10: bool,
-        /// Use large (r=10) ring for descriptors instead of default.
+        detector_mode: Option<String>,
+        /// Override descriptor mode (`follow_detector`, `canonical`, `broad`).
         #[arg(long)]
-        descriptor_radius10: bool,
+        descriptor_mode: Option<String>,
         /// NMS radius override.
         #[arg(long)]
         nms_radius: Option<u32>,
         /// Min cluster size override.
         #[arg(long)]
         min_cluster_size: Option<u32>,
+        /// Override the active refiner kind (`center_of_mass`, `forstner`, `saddle_point`).
+        #[arg(long)]
+        refiner_kind: Option<String>,
         /// Emit tracing in JSON format.
         #[cfg(feature = "tracing")]
         #[arg(long)]
@@ -82,60 +87,41 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Run {
             config,
-            levels,
-            min_size,
+            pyramid_levels,
+            pyramid_min_size,
             refinement_radius,
             merge_radius,
             output_json,
             output_png,
-            threshold_rel,
-            threshold_abs,
-            radius10,
-            descriptor_radius10,
+            threshold_mode,
+            threshold_value,
+            detector_mode,
+            descriptor_mode,
             nms_radius,
             min_cluster_size,
+            refiner_kind,
             #[cfg(feature = "tracing")]
             json_trace,
         } => {
             #[cfg(feature = "tracing")]
             init_tracing(json_trace);
             let mut cfg = load_config(&config)?;
-            if let Some(v) = levels {
-                cfg.pyramid_levels = Some(v);
-            }
-            if let Some(v) = min_size {
-                cfg.min_size = Some(v);
-            }
-            if let Some(v) = refinement_radius {
-                cfg.refinement_radius = Some(v);
-            }
-            if let Some(v) = merge_radius {
-                cfg.merge_radius = Some(v);
-            }
-            if let Some(v) = output_json {
-                cfg.output_json = Some(v);
-            }
-            if let Some(v) = output_png {
-                cfg.output_png = Some(v);
-            }
-            if let Some(v) = threshold_rel {
-                cfg.threshold_rel = Some(v);
-            }
-            if let Some(v) = threshold_abs {
-                cfg.threshold_abs = Some(v);
-            }
-            if radius10 {
-                cfg.radius10 = Some(true);
-            }
-            if descriptor_radius10 {
-                cfg.descriptor_radius10 = Some(true);
-            }
-            if let Some(v) = nms_radius {
-                cfg.nms_radius = Some(v);
-            }
-            if let Some(v) = min_cluster_size {
-                cfg.min_cluster_size = Some(v);
-            }
+            let overrides = DetectionOverrides {
+                pyramid_levels,
+                pyramid_min_size,
+                refinement_radius,
+                merge_radius,
+                output_json,
+                output_png,
+                threshold_mode: parse_flag_enum::<ThresholdMode>(threshold_mode.as_deref())?,
+                threshold_value,
+                detector_mode: parse_flag_enum::<DetectorMode>(detector_mode.as_deref())?,
+                descriptor_mode: parse_flag_enum::<DescriptorMode>(descriptor_mode.as_deref())?,
+                nms_radius,
+                min_cluster_size,
+                refiner_kind: parse_flag_enum::<RefinementMethod>(refiner_kind.as_deref())?,
+            };
+            apply_overrides(&mut cfg, overrides);
 
             #[cfg(not(feature = "tracing"))]
             {
@@ -149,6 +135,20 @@ fn main() -> Result<()> {
             }
             run_detection(cfg)
         }
+    }
+}
+
+fn parse_flag_enum<T>(value: Option<&str>) -> Result<Option<T>>
+where
+    T: DeserializeOwned,
+{
+    match value {
+        Some(raw) => {
+            let json = format!("\"{raw}\"");
+            let parsed = serde_json::from_str(&json)?;
+            Ok(Some(parsed))
+        }
+        None => Ok(None),
     }
 }
 

@@ -52,6 +52,7 @@ pub mod response;
 pub mod ring;
 
 use crate::ring::RingOffsets;
+use serde::{Deserialize, Serialize};
 
 pub use crate::descriptor::CornerDescriptor;
 pub use crate::refine::{
@@ -61,7 +62,8 @@ pub use crate::refine::{
 };
 pub use imageview::ImageView;
 /// Tunable parameters for the ChESS response computation and corner detection.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 #[non_exhaustive]
 pub struct ChessParams {
     /// Use the larger r=10 ring instead of the canonical r=5.

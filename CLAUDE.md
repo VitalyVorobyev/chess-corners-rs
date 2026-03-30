@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**chess-corners-rs** is a high-performance Rust implementation of the ChESS (Chess-board Extraction by Subtraction and Summation) corner detector. It detects chessboard corners in images with subpixel accuracy. Includes Python bindings via PyO3/maturin.
+**chess-corners-rs** is a high-performance Rust implementation of the ChESS (Chess-board Extraction by Subtraction and Summation) corner detector. It detects chessboard corners in images with subpixel accuracy. Includes Python bindings via PyO3/maturin and WebAssembly bindings via wasm-bindgen/wasm-pack.
 
 ## Build & Test Commands
 
@@ -34,6 +34,9 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 # Python bindings (dev build)
 maturin develop -m crates/chess-corners-py/pyproject.toml
 
+# WASM bindings (build npm package)
+wasm-pack build crates/chess-corners-wasm --target web
+
 # Run examples
 cargo run -p chess-corners --example single_scale_image -- testimages/mid.png
 cargo run -p chess-corners --example multiscale_image -- testimages/large.png
@@ -46,10 +49,11 @@ cargo run -p chess-corners --release --bin chess-corners -- run config/chess_cli
 
 ## Workspace Architecture
 
-Five crates with strict layering (see AGENTS.md for full rules):
+Six crates with strict layering (see AGENTS.md for full rules):
 
 ```
 chess-corners-py    (PyO3 bindings, module name: chess_corners)
+chess-corners-wasm  (wasm-bindgen bindings, npm package: chess-corners-wasm)
        ↓
 chess-corners       (High-level facade, multiscale pipeline, CLI)
        ↓
@@ -85,6 +89,7 @@ Coarse-to-fine pyramid detection with reusable `PyramidBuffers` for successive f
 | `ml-refiner` | facade, py | ML-backed refinement via ONNX |
 | `tracing` | core, facade | Structured logging spans |
 | `par_pyramid` | facade, box-image-pyramid | SIMD/rayon in pyramid downsampling |
+| `cli` | facade | CLI-only deps (clap, anyhow, serde, tracing-subscriber) |
 
 ## Key Design Constraints (from AGENTS.md)
 
@@ -101,3 +106,5 @@ Coarse-to-fine pyramid detection with reusable `PyramidBuffers` for successive f
 - `fmt` and `clippy` run on stable only
 - SIMD tests run on nightly only
 - Python wheel smoke test on Linux (manylinux 2014, Python 3.10+)
+- WASM build smoke test on Linux (wasm-pack, `--target web`)
+- npm publish triggered by `wasm-v*` tags

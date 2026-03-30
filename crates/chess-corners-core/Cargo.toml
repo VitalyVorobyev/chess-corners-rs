@@ -25,6 +25,7 @@ tracing = ["dep:tracing"]
 rayon = { version = "1", optional=true }
 tracing = { version = "0.1", optional=true }
 log = "0.4"
+serde = { version = "1", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
 image = "0.25"
