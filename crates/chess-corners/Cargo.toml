@@ -1,6 +1,6 @@
 [package]
 name = "chess-corners"
-version = "0.4.2"
+version.workspace = true
 description = "High-level chessboard / ChESS corner detection API"
 edition.workspace = true
 license.workspace = true
@@ -31,18 +31,18 @@ path = "bin/main.rs"
 required-features = ["image", "cli"]
 
 [dependencies]
-box-image-pyramid = { path = "../box-image-pyramid", version = "0.4.2" }
-chess-corners-core = { path = "../chess-corners-core", version = "0.4.2" }
-chess-corners-ml = { path = "../chess-corners-ml", version = "0.4.2", optional = true }
-image = { version = "0.25", optional = true }
-log = "0.4"
-anyhow = { version = "1", optional = true }
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", optional = true }
-tracing = { version = "0.1", optional = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"], optional = true }
-rayon = { version = "1", optional = true }
-clap = { version = "4.6", features = ["derive"], optional = true }
+box-image-pyramid.workspace = true
+chess-corners-core.workspace = true
+chess-corners-ml = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+log.workspace = true
+anyhow = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 

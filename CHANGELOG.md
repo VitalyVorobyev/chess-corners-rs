@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Version bump across all workspace crates, the Python package, and the WASM
+  package to `0.5.0` for the upcoming release.
 - `chess-corners` facade: CLI-only dependencies (`clap`, `anyhow`, `serde_json`,
   `tracing-subscriber`) are now feature-gated behind the `cli` feature,
   reducing the dependency tree for library consumers and WASM builds.
@@ -45,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python example and docs now use Pillow plus the shared canonical config schema.
 - Repository docs and guidance now use the `uv` + `.venv` workflow for local
   Python verification.
+- The npm release workflow now uses GitHub OIDC trusted publishing instead of
+  `secrets.NPM_TOKEN`, and builds with Node 24 to satisfy npm's current trusted
+  publishing requirements.
 
 ## [0.4.2]
 
