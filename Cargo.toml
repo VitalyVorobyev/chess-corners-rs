@@ -6,6 +6,7 @@ members = [
   "crates/chess-corners",
   "crates/chess-corners-ml",
   "crates/chess-corners-py",
+  "crates/chess-corners-wasm",
 ]
 
 [workspace.package]
