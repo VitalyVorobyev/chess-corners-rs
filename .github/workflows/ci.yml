@@ -16,7 +16,7 @@ jobs:
         toolchain: [stable, nightly]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Setup Python 3.10 (PyO3)
         uses: actions/setup-python@v5
@@ -84,7 +84,7 @@ jobs:
     name: Build wheel smoke test (linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       # Builds a manylinux wheel into ./dist
       - uses: PyO3/maturin-action@v1
@@ -111,7 +111,7 @@ jobs:
     name: Build WASM smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
