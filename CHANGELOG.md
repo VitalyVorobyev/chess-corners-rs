@@ -7,6 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### Breaking
+
+- **Default threshold now matches the ChESS paper's contract.**
+  `ChessConfig::default()` now sets
+  `threshold_mode = Absolute, threshold_value = 0.0`, and
+  `ChessParams::default()` sets `threshold_abs = Some(0.0)`. The
+  threshold comparison in `detect_corners_from_response` is now
+  strict (`v > thr`), so the default detector accepts exactly the
+  paper's "strictly positive `R`" criterion. The `threshold_rel`
+  machinery remains available as an opt-in adaptive policy. Callers
+  that relied on the previous 20%-of-max default should set
+  `threshold_mode = Relative, threshold_value = 0.2` explicitly.
+
+- **`CornerDescriptor` shape.** The single-axis `orientation: f32` field
+  is replaced with a two-axis descriptor:
+
+  ```rust
+  pub struct CornerDescriptor {
+      pub x: f32,
+      pub y: f32,
+      pub response: f32,
+      pub contrast: f32,       // NEW: bright/dark amplitude from the fit
+      pub fit_rms: f32,        // NEW: residual RMS of the two-axis fit
+      pub axes: [AxisEstimate; 2],
+  }
+
+  pub struct AxisEstimate {
+      pub angle: f32,          // radians, see convention below
+      pub sigma: f32,          // 1σ angular uncertainty (radians)
+  }
+  ```
+
+  `axes[0].angle ∈ [0, π)` and `axes[1].angle ∈ (axes[0].angle,
+  axes[0].angle + π)` — rotating CCW from `axes[0]` to `axes[1]`
+  traverses a **dark** sector of the corner. The two axes are **not**
+  assumed orthogonal, which correctly captures projective warp and lens
+  distortion.
+
+- **Python `find_chess_corners` return shape:** `(N, 4)` →
+  `(N, 9)` with columns
+  `[x, y, response, contrast, fit_rms, axis0_angle, axis0_sigma,
+  axis1_angle, axis1_sigma]`. See
+  `crates/chess-corners-py/README.md` for documentation.
+
+- **WASM `ChessDetector::detect` `Float32Array` stride:** 4 → 9 with
+  the same column layout as the Python binding.
+
+- **CLI JSON output per-corner schema:** `{x, y, response, orientation}`
+  → `{x, y, response, contrast, fit_rms, axes: [{angle, sigma},
+  {angle, sigma}]}`. Tools that consume `*.corners.json` need to be
+  updated — `tools/detection/chesscorner.py` expects the new schema
+  with a backwards-compatible `orientation` property that maps to
+  `axes[0].angle`.
+
+### Added
+
+- **Parametric two-axis corner fit.** `fit_two_axes` replaces the 2nd-
+  harmonic orientation kernel in `chess-corners-core/src/descriptor.rs`.
+  A Gauss-Newton fit of `I(φ) = μ + A · tanh(β·sin(φ−θ₁)) ·
+  tanh(β·sin(φ−θ₂))` over the 16-point ring yields both grid-axis
+  directions independently plus per-axis 1σ uncertainty from the
+  residual-scaled Hessian inverse. Typical runtime: ~1.5 µs per corner
+  on Apple Silicon (M-series).
+
+- **Optional pre-pipeline image upscaling.** New `ChessConfig.upscale`
+  field enables an integer-factor bilinear upscaling stage ahead of
+  the pyramid. Disabled by default; supports factors 2, 3, 4. Corner
+  coordinates are always returned in the original input pixel frame
+  (divided back by the factor), so callers do not need to be aware the
+  stage ran. Motivating use case: low-resolution ChArUco crops where
+  target corners fall inside the ChESS ring margin.
+
+  Public surface: `UpscaleMode`, `UpscaleConfig::{disabled, fixed,
+  effective_factor, validate}`, `UpscaleBuffers`, and
+  `upscale::upscale_bilinear_u8` (reusable-buffer API suitable for
+  frame-to-frame use).
+
+  WASM: `ChessDetector::set_upscale_factor(u32)` accepts 0/1 (off) or
+  2/3/4.
+
+- **Benchmarks.**
+  - `chess-corners-core/benches/descriptor_fit.rs` — Criterion
+    microbenchmark of `corners_to_descriptors` at 64 / 256 / 1024
+    corners.
+  - `chess-corners/benches/upscale.rs` — throughput of
+    `upscale_bilinear_u8` at 320×240, 640×480, 1280×720 for factors 2
+    and 3 (~720 MiB/s on M-series).
+
+- **Integration tests** for the upscaling pipeline at
+  `crates/chess-corners/tests/upscale_pipeline.rs`.
+
+### Changed
+
+- Version bump across all workspace crates, the Python package, and the
+  WASM package to `0.6.0`.
+- `tools/plot_output.py` and `tools/plotting/chess_plot.py` now draw
+  both grid axes per corner (two arrows, one per axis). The legacy
+  `--no-orientation` flag still disables overlay arrows. Book overlay
+  images regenerated with the new renderer.
+- `tools/detection/chesscorner.py` schema updated to load the new JSON
+  fields; exposes a backwards-compatible `orientation` property for
+  callers that only need one axis.
+
 ## [0.5.0]
 
 ### Added

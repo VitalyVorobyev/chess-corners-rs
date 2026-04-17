@@ -25,12 +25,23 @@ print(cfg)
 ```
 
 `find_chess_corners(image, cfg=None)` returns a NumPy `float32` array of shape
-`(N, 4)` with columns:
+`(N, 9)` with columns:
 
-1. `x`
-2. `y`
-3. `response`
-4. `orientation`
+1. `x` — subpixel corner x in input pixels
+2. `y` — subpixel corner y in input pixels
+3. `response` — raw ChESS response at the detected peak
+4. `contrast` — amplitude of the fitted bright/dark structure
+5. `fit_rms` — RMS residual of the two-axis intensity fit (gray levels)
+6. `axis0_angle` — angle of the first local grid axis, radians in `[0, π)`
+7. `axis0_sigma` — 1σ uncertainty of `axis0_angle`, radians
+8. `axis1_angle` — angle of the second local grid axis, radians in
+   `(axis0_angle, axis0_angle + π)`
+9. `axis1_sigma` — 1σ uncertainty of `axis1_angle`, radians
+
+Rotating CCW from `axis0_angle` toward `axis1_angle` (by less than π)
+traverses a **dark** sector of the corner; the two grid axes are **not**
+assumed to be orthogonal, so this output correctly captures projective
+warp and lens distortion.
 
 Input requirements:
 

@@ -7,8 +7,8 @@ use anyhow::{Context, Result};
 #[cfg(feature = "ml-refiner")]
 use chess_corners::find_chess_corners_image_with_ml;
 use chess_corners::{
-    find_chess_corners_image, ChessConfig, CornerDescriptor, DescriptorMode, DetectorMode,
-    RefinementMethod, ThresholdMode,
+    find_chess_corners_image, AxisEstimate, ChessConfig, CornerDescriptor, DescriptorMode,
+    DetectorMode, RefinementMethod, ThresholdMode,
 };
 use image::{ImageBuffer, ImageReader, Luma};
 use log::info;
@@ -45,11 +45,28 @@ pub struct DetectionOverrides {
 }
 
 #[derive(Serialize)]
+pub struct AxisOut {
+    pub angle: f32,
+    pub sigma: f32,
+}
+
+#[derive(Serialize)]
 pub struct CornerOut {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub orientation: f32,
+    pub contrast: f32,
+    pub fit_rms: f32,
+    pub axes: [AxisOut; 2],
+}
+
+impl From<&AxisEstimate> for AxisOut {
+    fn from(a: &AxisEstimate) -> Self {
+        Self {
+            angle: a.angle,
+            sigma: a.sigma,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -118,7 +135,9 @@ impl From<&CornerDescriptor> for CornerOut {
             x: c.x,
             y: c.y,
             response: c.response,
-            orientation: c.orientation,
+            contrast: c.contrast,
+            fit_rms: c.fit_rms,
+            axes: [AxisOut::from(&c.axes[0]), AxisOut::from(&c.axes[1])],
         }
     }
 }
@@ -136,9 +155,12 @@ pub fn validate_algorithm_config(cfg: &ChessConfig) -> Result<()> {
     if cfg.merge_radius <= 0.0 {
         anyhow::bail!("merge_radius must be > 0");
     }
-    if cfg.threshold_value <= 0.0 {
-        anyhow::bail!("threshold_value must be > 0");
+    if cfg.threshold_value < 0.0 {
+        anyhow::bail!("threshold_value must be >= 0");
     }
+    cfg.upscale
+        .validate()
+        .map_err(|err| anyhow::anyhow!("invalid upscale config: {err}"))?;
     Ok(())
 }
 

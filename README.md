@@ -159,8 +159,10 @@ detector.set_pyramid_levels(3);
 const imageData = ctx.getImageData(0, 0, width, height);
 const corners = detector.detect_rgba(imageData.data, width, height);
 
-// corners is a Float32Array: [x, y, response, orientation, ...]
-for (let i = 0; i < corners.length; i += 4) {
+// corners is a Float32Array with stride 9 per corner:
+//   [x, y, response, contrast, fit_rms,
+//    axis0_angle, axis0_sigma, axis1_angle, axis1_sigma, ...]
+for (let i = 0; i < corners.length; i += 9) {
     console.log(`(${corners[i].toFixed(2)}, ${corners[i+1].toFixed(2)})`);
 }
 
@@ -191,6 +193,31 @@ uv run --python .venv/bin/python python crates/chess-corners-py/examples/run_wit
   testimages/mid.png \
   config/chess_algorithm_config_example.json
 ```
+
+## Corner descriptor
+
+Every detection is a `CornerDescriptor` carrying:
+
+- `x`, `y` — subpixel position in input pixels.
+- `response` — raw, unnormalized ChESS score `R = SR − DR − 16·MR`.
+  The default detector accepts any `R > 0`, matching the paper.
+  `R` is linear in 8-bit pixel values, roughly bounded by
+  `[−24·255, 8·255]`; it is data-dependent and not comparable across
+  scenes.
+- `contrast` — bright/dark amplitude recovered by a parametric
+  two-axis tanh fit, in gray levels. Independent from `response`.
+- `fit_rms` — RMS residual of that fit, in gray levels.
+- `axes[0]`, `axes[1]` — the two local grid axes with per-axis 1σ
+  angular uncertainty. Axes are **not** assumed orthogonal, so the
+  descriptor captures projective warp faithfully. The axis-0 angle
+  lives in `[0, π)`; axis 1 lies in `(axis0, axis0 + π)`, with the
+  CCW arc between them spanning a dark sector.
+
+The two-axis fit is a 4-parameter Gauss–Newton solve; the per-axis
+`sigma` is the standard Cramér–Rao angle uncertainty from the
+residual-scaled inverse of the final `JᵀJ`. See
+[Part III of the book](book/src/part-03-core-chess-internals.md) for
+the full derivation and algorithm.
 
 ## Notes on layering
 

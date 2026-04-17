@@ -19,7 +19,7 @@ def test_find_chess_corners_basic():
     corners = chess_corners.find_chess_corners(img, cfg)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
-    assert corners.shape[1] == 4
+    assert corners.shape[1] == 9
     assert corners.shape[0] > 0
 
 
@@ -74,4 +74,4 @@ def test_ml_refiner_api():
     corners = chess_corners.find_chess_corners_with_ml(img, cfg)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
-    assert corners.shape[1] == 4
+    assert corners.shape[1] == 9

@@ -5,6 +5,7 @@ use chess_corners_core::{
 use serde::{Deserialize, Serialize};
 
 use crate::multiscale::CoarseToFineParams;
+use crate::upscale::UpscaleConfig;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -95,6 +96,8 @@ pub struct ChessConfig {
     pub pyramid_min_size: usize,
     pub refinement_radius: u32,
     pub merge_radius: f32,
+    /// Optional pre-pipeline integer upscaling. Disabled by default.
+    pub upscale: UpscaleConfig,
 }
 
 impl Default for ChessConfig {
@@ -102,8 +105,12 @@ impl Default for ChessConfig {
         Self {
             detector_mode: DetectorMode::default(),
             descriptor_mode: DescriptorMode::default(),
-            threshold_mode: ThresholdMode::default(),
-            threshold_value: 0.2,
+            // Paper's contract: any strictly positive ChESS response is
+            // a corner candidate. Callers that want an adaptive
+            // fraction-of-max threshold can opt into
+            // `ThresholdMode::Relative` explicitly.
+            threshold_mode: ThresholdMode::Absolute,
+            threshold_value: 0.0,
             nms_radius: 2,
             min_cluster_size: 2,
             refiner: RefinerConfig::default(),
@@ -111,6 +118,7 @@ impl Default for ChessConfig {
             pyramid_min_size: 128,
             refinement_radius: 3,
             merge_radius: 3.0,
+            upscale: UpscaleConfig::default(),
         }
     }
 }
@@ -168,15 +176,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_config_matches_legacy_behavior() {
+    fn default_config_accepts_any_positive_response() {
         let cfg = ChessConfig::default();
         let params = cfg.to_chess_params();
         let cf = cfg.to_coarse_to_fine_params();
 
         assert!(!params.use_radius10);
         assert_eq!(params.descriptor_use_radius10, None);
-        assert_eq!(params.threshold_rel, 0.2);
-        assert_eq!(params.threshold_abs, None);
+        // Paper's contract: accept strictly positive R.
+        assert_eq!(cfg.threshold_mode, ThresholdMode::Absolute);
+        assert_eq!(cfg.threshold_value, 0.0);
+        assert_eq!(params.threshold_abs, Some(0.0));
         assert_eq!(params.nms_radius, 2);
         assert_eq!(params.min_cluster_size, 2);
         assert_eq!(

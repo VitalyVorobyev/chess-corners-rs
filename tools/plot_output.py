@@ -32,6 +32,28 @@ def _load_image(path: Path):
     return img
 
 
+def _auto_arrow_length(corners, img_shape) -> float:
+    """Pick a reasonable arrow length from median corner spacing."""
+    import numpy as np
+
+    if len(corners) < 2:
+        h, w = img_shape[:2]
+        return float(max(12, min(w, h) * 0.03))
+
+    xy = np.array([(c.x, c.y) for c in corners], dtype=float)
+    # For each corner, distance to its nearest neighbor.
+    n = xy.shape[0]
+    nearest = np.empty(n)
+    for i in range(n):
+        d = np.hypot(xy[:, 0] - xy[i, 0], xy[:, 1] - xy[i, 1])
+        d[i] = np.inf
+        nearest[i] = d.min()
+    median = float(np.median(nearest))
+    # Arrows half the typical spacing keep neighbouring arrows clearly
+    # separated while staying visible.
+    return max(6.0, 0.45 * median)
+
+
 def _resolve_image_path(output_json: Path, override: Path | None) -> Path:
     if override is not None:
         return override
@@ -67,7 +89,22 @@ def main() -> None:
     parser.add_argument(
         "--no-orientation",
         action="store_true",
-        help="Disable orientation arrows.",
+        help="Disable grid-axis orientation arrows.",
+    )
+    parser.add_argument(
+        "--arrow-length",
+        type=float,
+        default=None,
+        help=(
+            "Arrow length for grid-axis overlays, in image pixels. "
+            "Auto-picked from median nearest-neighbor spacing if omitted."
+        ),
+    )
+    parser.add_argument(
+        "--dpi",
+        type=int,
+        default=180,
+        help="Output figure DPI (default 180).",
     )
     parser.add_argument(
         "--no-show",
@@ -87,19 +124,26 @@ def main() -> None:
     corners = load_corners(output_json)
     img = _load_image(img_path)
 
+    arrow_length = args.arrow_length
+    if arrow_length is None:
+        arrow_length = _auto_arrow_length(corners, img.shape[:2])
+
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.imshow(img, cmap="gray")
     plot_chess_corners(
         ax,
         corners,
         show_orientation=not args.no_orientation,
+        arrow_length=arrow_length,
     )
     ax.set_axis_off()
+    if not args.no_orientation and corners:
+        ax.legend(loc="lower right", framealpha=0.8, fontsize=8)
     fig.tight_layout()
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(args.out, dpi=150)
+        fig.savefig(args.out, dpi=args.dpi, bbox_inches="tight", pad_inches=0.05)
         print(f"Saved overlay to {args.out}")
 
     if not args.no_show:

@@ -59,12 +59,16 @@ const imageData = ctx.getImageData(0, 0, img.width, img.height);
 // detect_rgba accepts RGBA pixels from canvas and converts to grayscale internally.
 const corners = detector.detect_rgba(imageData.data, img.width, img.height);
 
-// corners is a Float32Array with stride 4: [x, y, response, orientation, ...]
-for (let i = 0; i < corners.length; i += 4) {
+// corners is a Float32Array with stride 9 per corner:
+//   [x, y, response, contrast, fit_rms,
+//    axis0_angle, axis0_sigma, axis1_angle, axis1_sigma, ...]
+for (let i = 0; i < corners.length; i += 9) {
     const x = corners[i];
     const y = corners[i + 1];
     const response = corners[i + 2];
-    const orientation = corners[i + 3]; // radians, in [0, PI)
+    const contrast = corners[i + 3];
+    const axis0_angle = corners[i + 5]; // radians, in [0, PI)
+    const axis1_angle = corners[i + 7]; // radians, in (axis0, axis0 + PI)
     console.log(`Corner at (${x.toFixed(2)}, ${y.toFixed(2)}), strength=${response.toFixed(1)}`);
 }
 ```
@@ -172,14 +176,21 @@ detector.set_refiner("forstner");
 
 ### Output format
 
-**Corners** (`detect` / `detect_rgba`): `Float32Array` with stride 4:
+**Corners** (`detect` / `detect_rgba`): `Float32Array` with stride 9 per corner:
 
 | Offset | Field | Description |
 |--------|-------|-------------|
 | `i + 0` | `x` | Subpixel x coordinate |
 | `i + 1` | `y` | Subpixel y coordinate |
 | `i + 2` | `response` | ChESS response strength |
-| `i + 3` | `orientation` | Grid axis angle in radians [0, PI) |
+| `i + 3` | `contrast` | Fitted bright/dark amplitude |
+| `i + 4` | `fit_rms` | RMS residual of the two-axis fit |
+| `i + 5` | `axis0_angle` | First grid axis, radians in `[0, π)` |
+| `i + 6` | `axis0_sigma` | 1σ uncertainty of `axis0_angle` |
+| `i + 7` | `axis1_angle` | Second grid axis, radians in `(axis0, axis0 + π)` |
+| `i + 8` | `axis1_sigma` | 1σ uncertainty of `axis1_angle` |
+
+Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector of the corner. The two grid axes are not assumed orthogonal, so the layout correctly captures projective warp.
 
 **Response map** (`response` / `response_rgba`): `Float32Array` in row-major order, dimensions available via `response_width()` / `response_height()`.
 
