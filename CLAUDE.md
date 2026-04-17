@@ -73,11 +73,13 @@ chess-corners-ml    (ONNX inference, optional via ml-refiner feature)
 1. **Response** (`core/response.rs`) — Dense ChESS response using 16-sample rings
 2. **Detection** (`core/detect.rs`) — Thresholding + NMS + cluster filtering
 3. **Refinement** (`core/refine.rs`) — Pluggable trait with 3 built-in refiners: CenterOfMass, Förstner, SaddlePoint
-4. **Descriptors** (`core/descriptor.rs`) — Corner descriptors with orientation
+4. **Descriptors** (`core/descriptor.rs`) — Corner descriptors with two-axis orientation (see `fit_two_axes`), per-axis 1σ uncertainty, contrast, and fit residual
 
 ### Multiscale Pipeline (`chess-corners`)
 
 Coarse-to-fine pyramid detection with reusable `PyramidBuffers` for successive frames. Configured via `ChessConfig` → `CoarseToFineParams` → `PyramidParams`.
+
+Optional pre-pipeline **integer bilinear upscaling** (`chess_corners::upscale`, configured via `ChessConfig.upscale`) runs ahead of the pyramid for low-resolution inputs where target corners lack the 5 px ring support. Output descriptor coordinates are always rescaled back to the original input pixel frame.
 
 ### Feature Flags
 

@@ -28,4 +28,9 @@ log.workspace = true
 serde = { workspace = true, default-features = false, features = ["derive"] }
 
 [dev-dependencies]
+criterion.workspace = true
 image.workspace = true
+
+[[bench]]
+name = "descriptor_fit"
+harness = false

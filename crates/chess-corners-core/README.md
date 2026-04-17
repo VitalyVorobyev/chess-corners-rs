@@ -5,9 +5,20 @@ Core primitives for computing ChESS responses and extracting subpixel chessboard
 This crate implements:
 
 - 16-sample ChESS rings (`ring` module) at radii 5 and 10.
-- Dense response computation on 8-bit grayscale images (`response` module).
-- Thresholding, non-maximum suppression, and pluggable subpixel refinement (`detect` + `refine` modules).
-- Conversion from raw peaks to rich corner descriptors (`descriptor` module).
+- Dense response computation on 8-bit grayscale images
+  (`response` module). The score is the raw, unnormalized
+  `R = SR − DR − 16·MR` from the paper — `R > 0` is the default
+  corner-acceptance criterion; `threshold_rel` / `threshold_abs` are
+  opt-in adaptive policies layered on top.
+- Thresholding, non-maximum suppression, and pluggable subpixel
+  refinement (`detect` + `refine` modules).
+- Rich corner descriptors (`descriptor` module) built from a
+  4-parameter Gauss–Newton fit of the two-axis tanh model
+  `μ + A · tanh(β·sin(φ − θ₁)) · tanh(β·sin(φ − θ₂))` to the 16 ring
+  samples. Each descriptor carries both local grid axes with
+  per-axis 1σ angular uncertainty (from the Gauss–Newton covariance
+  `σ̂² · (JᵀJ)⁻¹` with `σ̂² = SSR / 12`), the fitted bright/dark
+  amplitude, and the RMS fit residual.
 
 Feature flags:
 

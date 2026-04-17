@@ -6,6 +6,10 @@ import numpy as np
 
 from detection.chesscorner import ChESSCorner
 
+AXIS0_COLOR = "#17a2b8"  # teal
+AXIS1_COLOR = "#ff8c42"  # orange
+
+
 def plot_chess_corners(
     ax,
     corner: list[ChESSCorner],
@@ -13,15 +17,19 @@ def plot_chess_corners(
     arrow_length: float = 20.0,
     show_labels: bool = True,
 ):
-    """ Plot chess corners on image
+    """Plot chess corners on image with both grid-axis directions.
 
     Args:
-        img (np.ndarray): Image to plot on
-        corner (list[ChESSCorner]): List of ChESS corners
-        ax (matplotlib.axes.Axes, optional): Axes to plot on. Defaults to None.
+        ax: matplotlib Axes to draw on.
+        corner: list of `ChESSCorner` loaded from a detector output JSON.
+        show_orientation: if True, overlay the two grid-axis arrows per corner.
+        arrow_length: arrow length in image pixels.
+        show_labels: toggle the axes title.
 
-    Returns:
-        matplotlib.axes.Axes: Axes with plot
+    Convention for axes: `axes[0].angle ∈ [0, π)`, and
+    `axes[1].angle ∈ (axes[0], axes[0] + π)` with the sector in between
+    being a **dark** sector of the corner (bright-to-dark polarity
+    encoded in the ordering).
     """
     xs = [c.x for c in corner]
     ys = [c.y for c in corner]
@@ -35,39 +43,55 @@ def plot_chess_corners(
             t = np.zeros_like(responses)
         else:
             t = (responses - r_min) / denom
-        colors = plt.get_cmap("viridis")(t)
+        point_colors = plt.get_cmap("viridis")(t)
     else:
-        colors = "#1d3557"
+        point_colors = "#1d3557"
 
-    if show_orientation:
-        arrow_us = [np.cos(c.orientation) * arrow_length for c in corner]
-        arrow_vs = [np.sin(c.orientation) * arrow_length for c in corner]
+    def _quiver(angles: np.ndarray, color: str, label: str | None) -> None:
+        if angles.size == 0:
+            return
+        us = np.cos(angles) * arrow_length
+        vs = np.sin(angles) * arrow_length
         ax.quiver(
             xs,
             ys,
-            arrow_us,
-            arrow_vs,
+            us,
+            vs,
             angles="xy",
             scale_units="xy",
             scale=1,
-            color=colors,
+            color=color,
             width=0.002,
+            label=label,
         )
-    
+
+    if show_orientation and corner:
+        axis0 = np.array(
+            [c.axes[0].angle if len(c.axes) >= 1 else c.orientation for c in corner],
+            dtype=float,
+        )
+        axis1 = np.array(
+            [c.axes[1].angle if len(c.axes) >= 2 else np.nan for c in corner],
+            dtype=float,
+        )
+        _quiver(axis0, AXIS0_COLOR, label="axis 0 (line ∈ [0,π))")
+        if np.any(np.isfinite(axis1)):
+            _quiver(axis1, AXIS1_COLOR, label="axis 1 (dark-CCW)")
+
     ax.scatter(
         xs,
         ys,
         s=18,
         facecolors="none",
-        edgecolors=colors,
+        edgecolors=point_colors,
         linewidths=0.7,
         label="chess-corners",
     )
 
     if show_labels:
-        ax.set_title(f'ChESS Corners: {len(corner)} detected')
-    ax.axis('off')
-    
+        ax.set_title(f"ChESS corners: {len(corner)} detected (two-axis)")
+    ax.axis("off")
+
     return ax
 
 def plot_harris_corners(ax, harris_pts: np.ndarray, show_labels: bool = True) -> None:

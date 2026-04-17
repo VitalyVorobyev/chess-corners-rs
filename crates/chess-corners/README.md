@@ -59,8 +59,25 @@ Use `ChessConfig::single_scale()` for the default one-level detector and
 `ChessConfig::multiscale()` for the recommended 3-level preset.
 
 `DetectorMode::Broad` enables the wider, blur-tolerant detector response mode.
-`DescriptorMode` can either follow the detector or override descriptor and
-orientation sampling explicitly.
+`DescriptorMode` can either follow the detector or override the descriptor
+ring radius explicitly (each descriptor is built by fitting a two-axis tanh
+model to the ring samples — see the book's Part III, §3.4).
+
+## Descriptor output
+
+Each detection is a `CornerDescriptor` with:
+
+- `x`, `y` — subpixel position.
+- `response` — raw unnormalized ChESS response `R` (paper's score;
+  `R > 0` is the default acceptance criterion).
+- `contrast` — fitted bright/dark amplitude `|A|` in gray levels.
+- `fit_rms` — RMS residual of the two-axis fit in gray levels.
+- `axes[0]`, `axes[1]` — the two local grid axes with per-axis 1σ
+  angular uncertainty from the Gauss–Newton covariance
+  (`σθᵢ = √((SSR / 12) · (JᵀJ)⁻¹[i,i])`). Axes are not assumed
+  orthogonal; `axes[0].angle ∈ [0, π)` and `axes[1].angle ∈
+  (axes[0].angle, axes[0].angle + π)`, with the CCW arc between them
+  spanning a dark sector.
 
 ## Refiner configuration
 

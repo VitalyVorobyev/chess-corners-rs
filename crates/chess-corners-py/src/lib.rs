@@ -20,6 +20,12 @@ fn extract_image<'py>(
     Ok((array, height, width))
 }
 
+/// Number of float32 columns in the returned corner array.
+///
+/// Columns: `x, y, response, contrast, fit_rms,
+///           axis0_angle, axis0_sigma, axis1_angle, axis1_sigma`.
+const CORNER_COLUMNS: usize = 9;
+
 fn corners_to_array(
     py: Python<'_>,
     mut corners: Vec<chess_corners_rs::CornerDescriptor>,
@@ -31,15 +37,21 @@ fn corners_to_array(
             .then_with(|| a.y.total_cmp(&b.y))
     });
 
-    let mut data = Vec::with_capacity(corners.len() * 4);
+    let mut data = Vec::with_capacity(corners.len() * CORNER_COLUMNS);
     for corner in corners {
         data.push(corner.x);
         data.push(corner.y);
         data.push(corner.response);
-        data.push(corner.orientation);
+        data.push(corner.contrast);
+        data.push(corner.fit_rms);
+        data.push(corner.axes[0].angle);
+        data.push(corner.axes[0].sigma);
+        data.push(corner.axes[1].angle);
+        data.push(corner.axes[1].sigma);
     }
 
-    let out = Array2::from_shape_vec((data.len() / 4, 4), data)
+    let rows = data.len() / CORNER_COLUMNS;
+    let out = Array2::from_shape_vec((rows, CORNER_COLUMNS), data)
         .map_err(|_| PyValueError::new_err("failed to build output array"))?;
     Ok(out.into_pyarray(py).into_any().unbind())
 }

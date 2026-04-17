@@ -54,7 +54,7 @@ pub mod ring;
 use crate::ring::RingOffsets;
 use serde::{Deserialize, Serialize};
 
-pub use crate::descriptor::CornerDescriptor;
+pub use crate::descriptor::{AxisEstimate, CornerDescriptor};
 pub use crate::refine::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
     RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind, SaddlePointConfig,
@@ -90,8 +90,14 @@ impl Default for ChessParams {
         Self {
             use_radius10: false,
             descriptor_use_radius10: None,
+            // Paper's contract: accept every strictly-positive ChESS
+            // response. `threshold_abs = Some(0.0)` combined with the
+            // strict comparison in `detect_corners_from_response` gives
+            // "R > 0 ⇒ corner". `threshold_rel = 0.2` is kept as a
+            // default-sized opt-in value for callers that explicitly
+            // switch to `threshold_abs = None`.
             threshold_rel: 0.2,
-            threshold_abs: None,
+            threshold_abs: Some(0.0),
             nms_radius: 2,
             min_cluster_size: 2,
             refiner: RefinerKind::default(),

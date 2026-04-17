@@ -102,6 +102,25 @@ fn ring_from_params(params: &ChessParams) -> (RingOffsets, &'static [(i32, i32);
 ///
 /// where high positive values correspond to chessboard‑like corners.
 ///
+/// # Score contract
+///
+/// `R` is the **unnormalized** ChESS response defined by Bennett and
+/// Lasenby (2014). The units are 8-bit pixel sums — not normalized
+/// to `[0, 1]`, not divided by a local scale, not divided by the
+/// scene max. Every term is linear in the pixel values, so with 8-bit
+/// input `R` is bounded by `SR − DR − 16·MR ∈ [−24·255, 8·255]`
+/// (≈ `[−6120, 2040]`); in practice chessboard corners produce scores
+/// well below that upper bound.
+///
+/// The paper's acceptance criterion is simply `R > 0`. That is what
+/// [`ChessParams`]`::default()` encodes via `threshold_abs = Some(0.0)`
+/// combined with a strict comparison in
+/// [`crate::detect::detect_corners_from_response`]. The optional
+/// `threshold_rel` / `threshold_abs` fields are **adaptive policies
+/// layered on top** of the paper's score — they are a convenience for
+/// trading off sensitivity vs false positives, not part of the score
+/// definition.
+///
 /// # Implementation strategy
 ///
 /// Internally the image is processed row‑by‑row, but only pixels whose

@@ -192,10 +192,17 @@ candidates.
 The main stages are:
 
 1. **Thresholding** – we reject responses that are too small to be
-   meaningful:
-   - either via a relative threshold (`threshold_rel`) expressed as a
-     fraction of the maximum response in the image,
-   - or via an absolute threshold (`threshold_abs`), when provided.
+   meaningful. The paper's contract is "any strictly positive `R` is
+   a corner candidate", which is what the default settings encode:
+   - The default is an absolute threshold at `0.0` combined with a
+     strict `R > thr` comparison, i.e. accept iff `R > 0`.
+   - Callers can opt into a relative threshold (`threshold_rel`,
+     expressed as a fraction of the maximum response in the image)
+     by setting `threshold_mode = "relative"` — useful as an
+     adaptive policy on high‑contrast scenes where the raw positive
+     response floor contains sensor noise.
+   - Or tune the absolute threshold upward directly to suppress
+     flat‑region noise without committing to a scene‑max policy.
 2. **Non‑maximum suppression (NMS)** – in a window of radius
    `nms_radius` around each pixel, we keep only local maxima and
    suppress weaker neighbors.
@@ -241,8 +248,11 @@ like calibration.
 ## 3.4 Corner descriptors
 
 Raw corners (position + strength) are enough for many applications,
-but the core crate also offers a richer `CornerDescriptor` type that
-includes an estimated corner orientation.
+but the core crate also offers a richer `CornerDescriptor` that fits a
+parametric intensity model to the ring samples around each corner. The
+fit yields both local grid axes **independently**, their per‑axis 1σ
+angular uncertainty, a bright/dark contrast amplitude, and the RMS fit
+residual — all in one pass.
 
 ### 3.4.1 `CornerDescriptor`
 
@@ -253,17 +263,114 @@ pub struct CornerDescriptor {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub orientation: f32,
+    pub contrast: f32,
+    pub fit_rms: f32,
+    pub axes: [AxisEstimate; 2],
+}
+
+pub struct AxisEstimate {
+    pub angle: f32,
+    pub sigma: f32,
 }
 ```
 
 Fields:
 
 - `x`, `y` – subpixel coordinates in full‑resolution image pixels.
-- `response` – ChESS response at the corner, copied from `Corner`.
-- `orientation` – orientation of the corner — defined as the direction along the bisector of the light square — in radians, constrained to `[0, π)`.
+- `response` – raw, unnormalized ChESS response
+  `R = SR − DR − 16·MR` at the detected peak. Units are 8‑bit pixel
+  sums; the paper's contract is `R > 0`.
+- `contrast` – fitted bright/dark amplitude `|A|` in gray levels.
+  Independent from `response` and not comparable to it.
+- `fit_rms` – root‑mean‑squared residual of the two‑axis intensity
+  fit (gray levels). Smaller means the ring sampled cleanly through
+  a chessboard‑like corner.
+- `axes[0]`, `axes[1]` – the two local grid axis directions and
+  their 1σ uncertainties.
 
-### 3.4.2 From corners to descriptors
+The axis convention:
+
+- `axes[0].angle ∈ [0, π)` — the "line direction" of axis 1.
+- `axes[1].angle ∈ (axes[0].angle, axes[0].angle + π)`.
+- Rotating CCW from `axes[0].angle` toward `axes[1].angle` traverses
+  a **dark** sector; the second half‑turn crosses the other dark
+  sector, and the remaining two sectors are bright.
+- The two axes are **not** assumed orthogonal — a projective warp
+  (or strong lens distortion) tilts the two sectors independently.
+
+### 3.4.2 Two‑axis intensity model
+
+The ring samples `s₀, …, s₁₅` at angles `φ₀, …, φ₁₅ = atan2(dy, dx)`
+are fitted to
+
+```text
+I(φ) = μ + A · tanh(β·sin(φ − θ₁)) · tanh(β·sin(φ − θ₂))
+```
+
+with fixed `β = 4.0`. The four free parameters are:
+
+- `μ` – ring‑level mean intensity,
+- `A` – bright/dark amplitude (signed during optimization,
+  canonicalized to non‑negative on exit),
+- `θ₁`, `θ₂` – the two grid axis directions.
+
+Intuition: each `tanh(β · sin(φ − θᵢ))` is a smooth approximation of
+`sign(sin(φ − θᵢ))`, i.e. +1 on one side of the axis line and −1 on
+the other. Their product is +1 in two antipodal "bright" sectors and
+−1 in the two "dark" sectors, matching a chessboard X‑junction. The
+fixed `β` reflects the effective ring‑integration blur at the sampled
+radius and is not a fit parameter.
+
+### 3.4.3 Gauss–Newton solver
+
+`fit_two_axes` runs a small Gauss–Newton iteration (up to 6 steps):
+
+1. Seed `θ₁`, `θ₂` from the 2nd‑harmonic of the centred ring samples
+   (the legacy single‑axis estimator), placed at the sector midpoint
+   ± π/4. Seed `A` from the harmonic magnitude.
+2. At each step, evaluate the residuals and the 16×4 Jacobian of
+   `I(φᵢ)` with respect to `[μ, A, θ₁, θ₂]` and solve the normal
+   equations `JᵀJ · Δ = Jᵀ r` with partial pivoting.
+3. Clamp angular updates to ±0.5 rad per step to prevent runaway.
+4. Stop once the update falls below `‖Δθ‖ < 10⁻⁴` or the iteration
+   cap is reached.
+5. Canonicalize `(θ₁, θ₂, A)` so that `A ≥ 0`, `θ₁ ∈ [0, π)` and the
+   CCW arc from `θ₁` to `θ₂` spans a dark sector.
+
+Flat or near‑flat rings (ring variance below `10⁻⁶`, or 2nd‑harmonic
+magnitude below `10⁻⁴`) short‑circuit to a degenerate fit:
+`A = 0`, `θ₁ = 0`, `θ₂ = π/2`, and `σ = π` on both axes so downstream
+consumers can detect the "no signal" case via the uncertainty field.
+
+### 3.4.4 Per‑axis 1σ uncertainty
+
+The `sigma` field on each `AxisEstimate` is the standard 1σ angular
+uncertainty from the linearised Gauss–Newton covariance at the
+optimum:
+
+1. The sum of squared residuals is `SSR = Σᵢ (sᵢ − I(φᵢ))²`.
+2. The unbiased residual variance is
+   `σ̂² = SSR / (N − p) = SSR / (16 − 4) = SSR / 12`.
+3. The parameter covariance is `Σ = σ̂² · (JᵀJ)⁻¹`, where `JᵀJ` is
+   the final Gauss–Newton normal matrix.
+4. The angle sigmas are the relevant diagonal entries:
+   `σθ₁ = √Σ[2,2]`, `σθ₂ = √Σ[3,3]` (clamped to ≥ 0, capped at π).
+
+This is the textbook Cramér–Rao‑style uncertainty for nonlinear
+least squares — it assumes residuals are approximately iid Gaussian
+and the linearisation around the optimum is adequate. It does **not**
+account for model mismatch (e.g. a corner that is not well described
+by a separable two‑axis tanh product), but it scales correctly with
+SNR: noisier rings produce proportionally larger `sigma`.
+
+Practically, `sigma` is useful for:
+
+- Weighting corners in downstream grid fitting (inverse‑variance
+  weights, or rejecting corners whose axes are too uncertain).
+- Flagging degenerate fits: `sigma ≈ π` means the fit did not lock
+  onto a well‑defined grid.
+
+### 3.4.5 From corners to descriptors
 
 The function:
 
@@ -279,30 +386,31 @@ pub fn corners_to_descriptors(
 
 turns raw `Corner` values into full descriptors by:
 
-1. Sampling the ring around each corner using bilinear interpolation
-   (`sample_ring`).
-2. Estimating orientation from the ring samples
-   (`estimate_orientation_from_ring`). This essentially measures a
-   second‑harmonic over the ring’s angular positions to find the
-   dominant grid axis.
+1. Sampling the 16‑point ring around each corner with bilinear
+   interpolation (`sample_ring`).
+2. Running `fit_two_axes` to obtain `(μ, A, θ₁, θ₂)`, the
+   Gauss–Newton covariance, and the residual RMS.
+3. Canonicalising the axes and packaging everything into a
+   `CornerDescriptor`.
 
-All these steps are deterministic, local computations on the original
-grayscale image and its immediate neighborhood.
+The pass is deterministic and purely local — there is no global
+optimisation or topology reasoning at this stage.
 
-### 3.4.3 When to use descriptors
+### 3.4.6 When to use descriptors
 
 You get `CornerDescriptor` values when you use the high‑level APIs:
 
-- `chess-corners-core` users can run the response and detector stages
-  manually and then call `corners_to_descriptors`.
+- `chess-corners-core` users can run the response and detector
+  stages manually and then call `corners_to_descriptors`.
 - `chess-corners` users get `Vec<CornerDescriptor>` directly from
   helpers such as `find_chess_corners_image`,
   `find_chess_corners_u8`, or the multiscale APIs.
 
-For many tasks, you might only use `x`, `y`, and `response`. When you
-need more insight into local structure (for example, fitting a grid or
-doing downstream topology checks), the `orientation` estimate can be
-useful.
+For many tasks, `x`, `y`, and `response` are enough. When you need
+more insight into local structure — grid fitting, lens‑distortion
+modelling, calibration with per‑corner weights, or outlier rejection
+before bundle adjustment — `axes`, `sigma`, `contrast`, and `fit_rms`
+are the extra handles you get "for free" with each detection.
 
 ---
 

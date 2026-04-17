@@ -1,4 +1,6 @@
-use chess_corners::{ChessConfig, DetectorMode, PyramidBuffers, RefinementMethod, ThresholdMode};
+use chess_corners::{
+    ChessConfig, DetectorMode, PyramidBuffers, RefinementMethod, ThresholdMode, UpscaleConfig,
+};
 use chess_corners_core::response::chess_response_u8;
 use chess_corners_core::ResponseMap;
 use wasm_bindgen::prelude::*;
@@ -101,6 +103,24 @@ impl ChessDetector {
         self.config.pyramid_min_size = v as usize;
     }
 
+    /// Set the optional pre-pipeline upscale factor.
+    ///
+    /// `factor == 0` or `factor == 1` disables upscaling. Accepts
+    /// integer factors 2, 3, 4. Corner coordinates are always returned
+    /// in input-image pixel space; callers do not need to rescale.
+    pub fn set_upscale_factor(&mut self, factor: u32) -> Result<(), JsValue> {
+        self.config.upscale = match factor {
+            0 | 1 => UpscaleConfig::disabled(),
+            2..=4 => UpscaleConfig::fixed(factor),
+            other => {
+                return Err(JsValue::from_str(&format!(
+                    "unsupported upscale factor {other} (expected 0, 1, 2, 3, or 4)",
+                )));
+            }
+        };
+        Ok(())
+    }
+
     /// Set the subpixel refiner: "center_of_mass", "forstner", or "saddle_point".
     pub fn set_refiner(&mut self, name: &str) -> Result<(), JsValue> {
         self.config.refiner.kind = match name {
@@ -120,7 +140,9 @@ impl ChessDetector {
 
     /// Detect corners from grayscale u8 pixels.
     ///
-    /// Returns a `Float32Array` with stride 4: `[x, y, response, orientation, ...]`.
+    /// Returns a `Float32Array` with stride 9 per corner:
+    /// `[x, y, response, contrast, fit_rms,
+    ///   axis0_angle, axis0_sigma, axis1_angle, axis1_sigma, ...]`.
     pub fn detect(&mut self, pixels: &[u8], width: u32, height: u32) -> js_sys::Float32Array {
         let corners = chess_corners::find_chess_corners_u8(pixels, width, height, &self.config);
         corners_to_f32_array(&corners)
@@ -170,13 +192,22 @@ impl ChessDetector {
     }
 }
 
+/// Flat array stride per corner: `[x, y, response, contrast, fit_rms,
+/// axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`.
+const CORNER_STRIDE: usize = 9;
+
 fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::Float32Array {
-    let mut flat = Vec::with_capacity(corners.len() * 4);
+    let mut flat = Vec::with_capacity(corners.len() * CORNER_STRIDE);
     for c in corners {
         flat.push(c.x);
         flat.push(c.y);
         flat.push(c.response);
-        flat.push(c.orientation);
+        flat.push(c.contrast);
+        flat.push(c.fit_rms);
+        flat.push(c.axes[0].angle);
+        flat.push(c.axes[0].sigma);
+        flat.push(c.axes[1].angle);
+        flat.push(c.axes[1].sigma);
     }
     let arr = js_sys::Float32Array::new_with_length(flat.len() as u32);
     arr.copy_from(&flat);

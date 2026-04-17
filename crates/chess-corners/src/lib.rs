@@ -46,8 +46,8 @@
 //!
 //! for c in &corners {
 //!     println!(
-//!         "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad",
-//!         c.x, c.y, c.response, c.orientation,
+//!         "corner at ({:.2}, {:.2}), response {:.1}, axes [{:.2}, {:.2}] rad",
+//!         c.x, c.y, c.response, c.axes[0].angle, c.axes[1].angle,
 //!     );
 //! }
 //! # Ok(()) }
@@ -99,8 +99,9 @@
 //!
 //! The workspace includes a PyO3-based Python extension crate at
 //! `crates/chess-corners-py`. It exposes `chess_corners.find_chess_corners`,
-//! which accepts a 2D `uint8` NumPy array and returns a float32 `(N, 4)` array
-//! with columns `[x, y, response, orientation]`. See
+//! which accepts a 2D `uint8` NumPy array and returns a float32 `(N, 9)` array
+//! with columns `[x, y, response, contrast, fit_rms, axis0_angle,
+//! axis0_sigma, axis1_angle, axis1_sigma]`. See
 //! `crates/chess-corners-py/README.md` for usage and configuration details.
 //!
 //! For tight processing loops you can also reuse pyramid storage
@@ -154,6 +155,7 @@ mod config;
 #[cfg(feature = "ml-refiner")]
 mod ml_refiner;
 mod multiscale;
+pub mod upscale;
 
 // Re-export a focused subset of core types for convenience. Consumers that
 // need lower-level primitives (rings, raw response functions, etc.) are
@@ -161,9 +163,10 @@ mod multiscale;
 pub use crate::config::{
     ChessConfig, DescriptorMode, DetectorMode, RefinementMethod, RefinerConfig, ThresholdMode,
 };
+pub use crate::upscale::{UpscaleBuffers, UpscaleConfig, UpscaleError, UpscaleMode};
 pub use chess_corners_core::{
-    CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner, ForstnerConfig, ImageView,
-    RefineResult, RefineStatus, Refiner, RefinerKind, ResponseMap, SaddlePointConfig,
+    AxisEstimate, CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner, ForstnerConfig,
+    ImageView, RefineResult, RefineStatus, Refiner, RefinerKind, ResponseMap, SaddlePointConfig,
 };
 
 // High-level helpers on `image::GrayImage`.
@@ -186,10 +189,14 @@ pub use box_image_pyramid::{ImageBuffer, PyramidBuffers, PyramidParams};
 /// Detect chessboard corners from a raw grayscale image buffer.
 ///
 /// The `img` slice must be `width * height` bytes in row-major order.
+/// If `cfg.upscale` is enabled, the image is upscaled internally and
+/// output corner coordinates are rescaled back to the original input
+/// pixel frame.
 ///
 /// # Panics
 ///
-/// Panics if `img.len() != width * height`.
+/// Panics if `img.len() != width * height` or if the upscale
+/// configuration fails validation.
 #[must_use]
 pub fn find_chess_corners_u8(
     img: &[u8],
@@ -197,9 +204,9 @@ pub fn find_chess_corners_u8(
     height: u32,
     cfg: &ChessConfig,
 ) -> Vec<CornerDescriptor> {
-    let view = ImageView::from_u8_slice(width as usize, height as usize, img)
-        .expect("image dimensions must match buffer length");
-    multiscale::find_chess_corners(view, cfg)
+    run_with_upscale(img, width, height, cfg, |view, cfg| {
+        multiscale::find_chess_corners(view, cfg)
+    })
 }
 
 /// Detect corners from a raw grayscale buffer with an explicit refiner choice.
@@ -211,9 +218,9 @@ pub fn find_chess_corners_u8_with_refiner(
     cfg: &ChessConfig,
     refiner: &RefinerKind,
 ) -> Vec<CornerDescriptor> {
-    let view = ImageView::from_u8_slice(width as usize, height as usize, img)
-        .expect("image dimensions must match buffer length");
-    multiscale::find_chess_corners_with_refiner(view, cfg, refiner)
+    run_with_upscale(img, width, height, cfg, |view, cfg| {
+        multiscale::find_chess_corners_with_refiner(view, cfg, refiner)
+    })
 }
 
 /// Detect corners from a raw grayscale buffer using the ML refiner pipeline.
@@ -225,7 +232,35 @@ pub fn find_chess_corners_u8_with_ml(
     height: u32,
     cfg: &ChessConfig,
 ) -> Vec<CornerDescriptor> {
-    let view = ImageView::from_u8_slice(width as usize, height as usize, img)
+    run_with_upscale(img, width, height, cfg, |view, cfg| {
+        multiscale::find_chess_corners_with_ml(view, cfg)
+    })
+}
+
+/// Thread the optional upscaling stage around the detection closure.
+/// Allocates a single-use `UpscaleBuffers`; callers with their own
+/// buffer reuse pattern should drive the pipeline directly via the
+/// `multiscale` module plus `upscale::upscale_bilinear_u8`.
+fn run_with_upscale(
+    img: &[u8],
+    width: u32,
+    height: u32,
+    cfg: &ChessConfig,
+    detect: impl FnOnce(ImageView<'_>, &ChessConfig) -> Vec<CornerDescriptor>,
+) -> Vec<CornerDescriptor> {
+    let src_w = width as usize;
+    let src_h = height as usize;
+    let view = ImageView::from_u8_slice(src_w, src_h, img)
         .expect("image dimensions must match buffer length");
-    multiscale::find_chess_corners_with_ml(view, cfg)
+    let factor = cfg.upscale.effective_factor();
+    if factor <= 1 {
+        return detect(view, cfg);
+    }
+
+    let mut buffers = UpscaleBuffers::new();
+    let upscaled = upscale::upscale_bilinear_u8(img, src_w, src_h, factor, &mut buffers)
+        .expect("invalid upscale configuration");
+    let mut corners = detect(upscaled, cfg);
+    upscale::rescale_descriptors_to_input(&mut corners, factor);
+    corners
 }

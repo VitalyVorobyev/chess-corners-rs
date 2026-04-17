@@ -11,7 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 chess-corners.workspace = true
-chess-corners-core = { path = "../chess-corners-core", version = "0.5.0", default-features = false, features = ["std"] }
+chess-corners-core = { path = "../chess-corners-core", version = "0.6.0", default-features = false, features = ["std"] }
 wasm-bindgen.workspace = true
 js-sys.workspace = true
 

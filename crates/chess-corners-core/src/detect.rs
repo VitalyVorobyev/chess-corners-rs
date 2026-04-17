@@ -95,6 +95,11 @@ fn detect_corners_from_response_impl(
         thr = 0.0;
     }
 
+    // The paper's acceptance criterion is "R > 0", so we use a strict
+    // comparison below. With `threshold_abs = Some(0.0)` (the default)
+    // this reduces to "accept any strictly positive response", which is
+    // the paper's contract.
+
     let nms_r = params.nms_radius as i32;
     let refine_r = refiner.radius();
     let ring_r = params.ring_radius() as i32;
@@ -119,7 +124,7 @@ fn detect_corners_from_response_impl(
     for y in border..(h - border) {
         for x in border..(w - border) {
             let v = resp.at(x, y);
-            if v < thr {
+            if v <= thr {
                 continue;
             }
 
@@ -252,7 +257,9 @@ mod tests {
     }
 
     #[test]
-    fn descriptors_report_orientation_is_stable() {
+    fn descriptors_report_two_axes_stable() {
+        use core::f32::consts::{FRAC_PI_2, PI};
+
         let size = 32u32;
         let params = ChessParams {
             threshold_rel: 0.01,
@@ -268,12 +275,35 @@ mod tests {
             .max_by(|a, b| a.response.partial_cmp(&b.response).unwrap())
             .expect("non-empty");
 
-        // Expect orientation roughly aligned with a 45° grid (multiples of PI/4).
-        let k = (best.orientation / core::f32::consts::FRAC_PI_4).round();
-        let nearest = k * core::f32::consts::FRAC_PI_4;
-        let near_axis = (best.orientation - nearest).abs() < 0.35;
-        assert!(near_axis, "unexpected orientation {}", best.orientation);
+        // axes[0] in [0, π), axes[1] in (axes[0], axes[0] + π)
+        assert!(best.axes[0].angle >= 0.0 && best.axes[0].angle < PI);
+        assert!(
+            best.axes[1].angle > best.axes[0].angle && best.axes[1].angle < best.axes[0].angle + PI
+        );
 
+        // The quadrant corner has one axis horizontal (line angle 0)
+        // and one vertical (line angle π/2). Accept a generous tolerance
+        // because the 32×32 synthetic image is aliased.
+        let near_line = |x: f32, target: f32| -> f32 {
+            let xr = x.rem_euclid(PI);
+            let tr = target.rem_euclid(PI);
+            let d = (xr - tr).abs();
+            d.min(PI - d)
+        };
+        // One of the two axes matches horizontal (line 0), the other vertical (line π/2).
+        let horiz = near_line(best.axes[0].angle, 0.0).min(near_line(best.axes[1].angle, 0.0));
+        let vert =
+            near_line(best.axes[0].angle, FRAC_PI_2).min(near_line(best.axes[1].angle, FRAC_PI_2));
+        assert!(
+            horiz < 0.35,
+            "horiz line miss: {horiz}, axes {:?}",
+            best.axes
+        );
+        assert!(vert < 0.35, "vert line miss: {vert}, axes {:?}", best.axes);
+        assert!(best.contrast > 0.0);
+
+        // Brightness shift stability: both axes survive a global
+        // intensity offset.
         let mut brighter = img.clone();
         for p in brighter.pixels_mut() {
             p[0] = p[0].saturating_add(5);
@@ -289,12 +319,10 @@ mod tests {
 
         assert!((best.x - best_brighter.x).abs() < 0.5 && (best.y - best_brighter.y).abs() < 0.5);
 
-        let dtheta = (best.orientation - best_brighter.orientation).abs();
-        let dtheta = dtheta.min(core::f32::consts::PI - dtheta);
-        assert!(
-            dtheta < 0.35,
-            "unexpected orientation delta after brightness shift: {dtheta}"
-        );
+        let da0 = near_line(best.axes[0].angle, best_brighter.axes[0].angle);
+        let da1 = near_line(best.axes[1].angle, best_brighter.axes[1].angle);
+        assert!(da0 < 0.35, "axis0 delta after brightness shift: {da0}");
+        assert!(da1 < 0.35, "axis1 delta after brightness shift: {da1}");
     }
 
     #[test]

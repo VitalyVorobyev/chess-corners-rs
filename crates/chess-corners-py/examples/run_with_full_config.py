@@ -76,7 +76,10 @@ def main() -> int:
         print(
             "strongest corner: "
             f"x={strongest[0]:.3f}, y={strongest[1]:.3f}, "
-            f"response={strongest[2]:.3f}, orientation={strongest[3]:.6f}"
+            f"response={strongest[2]:.3f}, contrast={strongest[3]:.3f}, "
+            f"fit_rms={strongest[4]:.3f}, "
+            f"axis0=({strongest[5]:.4f}±{strongest[6]:.4f}), "
+            f"axis1=({strongest[7]:.4f}±{strongest[8]:.4f})"
         )
 
     return 0

@@ -1,23 +1,17 @@
 //! Optional `image::GrayImage` helpers for the unified corner detector.
 
-#[cfg(feature = "ml-refiner")]
-use crate::multiscale::find_chess_corners_with_ml;
-use crate::multiscale::{find_chess_corners, find_chess_corners_with_refiner};
+use crate::{find_chess_corners_u8, find_chess_corners_u8_with_refiner};
 use crate::{ChessConfig, CornerDescriptor, RefinerKind};
-use chess_corners_core::ImageView;
 use image::GrayImage;
 
 /// Detect chessboard corners from a `GrayImage`.
 ///
-/// This is a thin wrapper over the multiscale detector that builds an
-/// [`ImageView`] from `img` and dispatches to single- or multiscale
-/// mode based on `cfg.pyramid_levels`, returning
-/// [`CornerDescriptor`] values in full-resolution pixel coordinates.
+/// This is a thin wrapper over the multiscale detector. It honours
+/// `cfg.upscale` and returns [`CornerDescriptor`] values in the
+/// original input-image pixel coordinates.
 #[must_use]
 pub fn find_chess_corners_image(img: &GrayImage, cfg: &ChessConfig) -> Vec<CornerDescriptor> {
-    let view = ImageView::from_u8_slice(img.width() as usize, img.height() as usize, img.as_raw())
-        .expect("valid view");
-    find_chess_corners(view, cfg)
+    find_chess_corners_u8(img.as_raw(), img.width(), img.height(), cfg)
 }
 
 /// Detect chessboard corners from a `GrayImage` with an explicit refiner choice.
@@ -27,9 +21,7 @@ pub fn find_chess_corners_image_with_refiner(
     cfg: &ChessConfig,
     refiner: &RefinerKind,
 ) -> Vec<CornerDescriptor> {
-    let view = ImageView::from_u8_slice(img.width() as usize, img.height() as usize, img.as_raw())
-        .expect("valid view");
-    find_chess_corners_with_refiner(view, cfg, refiner)
+    find_chess_corners_u8_with_refiner(img.as_raw(), img.width(), img.height(), cfg, refiner)
 }
 
 /// Detect chessboard corners from a `GrayImage` using the ML refiner pipeline.
@@ -39,7 +31,5 @@ pub fn find_chess_corners_image_with_ml(
     img: &GrayImage,
     cfg: &ChessConfig,
 ) -> Vec<CornerDescriptor> {
-    let view = ImageView::from_u8_slice(img.width() as usize, img.height() as usize, img.as_raw())
-        .expect("valid view");
-    find_chess_corners_with_ml(view, cfg)
+    crate::find_chess_corners_u8_with_ml(img.as_raw(), img.width(), img.height(), cfg)
 }

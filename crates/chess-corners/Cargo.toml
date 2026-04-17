@@ -45,6 +45,12 @@ rayon = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "upscale"
+harness = false
+required-features = []
 
 [[example]]
 name = "single_scale_image"
