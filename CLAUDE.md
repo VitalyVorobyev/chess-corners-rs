@@ -93,6 +93,31 @@ Optional pre-pipeline **integer bilinear upscaling** (`chess_corners::upscale`, 
 | `par_pyramid` | facade, box-image-pyramid | SIMD/rayon in pyramid downsampling |
 | `cli` | facade | CLI-only deps (clap, anyhow, serde, tracing-subscriber) |
 
+## Pre-PR quality gates (mandatory)
+
+**Always run the full gate sequence below and fix every warning/error
+before opening or updating a pull request.** CI runs the same checks;
+local is faster and avoids noisy review cycles.
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+cargo doc --workspace --no-deps --all-features
+mdbook build book
+```
+
+Notes:
+
+- `cargo doc` warnings (broken intra-doc links, missing docs on public
+  items, links to private items) are blocking — do not push with them.
+- Book rewrites should also be visually inspected: `mdbook serve book`.
+- Python bindings: `maturin develop -m crates/chess-corners-py/pyproject.toml`
+  plus `pytest crates/chess-corners-py/python_tests` when the Python
+  surface changes.
+- WASM: `wasm-pack build crates/chess-corners-wasm --target web` when
+  the JS-facing API changes.
+
 ## Key Design Constraints (from AGENTS.md)
 
 - **Determinism:** Same inputs → same outputs. Parallel results must be sorted by stable keys.

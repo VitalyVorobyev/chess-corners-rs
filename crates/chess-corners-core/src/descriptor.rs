@@ -87,8 +87,9 @@ pub struct CornerDescriptor {
     pub response: f32,
 
     /// Bright/dark amplitude (`|A|`, ≥ 0) recovered by the two-axis
-    /// tanh fit in [`fit_two_axes`]. Units are gray levels. Larger
-    /// means a stronger bright/dark separation at the ring radius.
+    /// tanh fit (see the `fit_two_axes` internal helper). Units are
+    /// gray levels. Larger means a stronger bright/dark separation at
+    /// the ring radius.
     /// This is an independent quantity from [`Self::response`] — they
     /// are computed by different estimators and must not be compared
     /// against each other or against the same threshold.
