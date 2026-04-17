@@ -105,12 +105,41 @@ fn upscale_returns_input_frame_coordinates() {
         .iter()
         .max_by(|a, b| a.response.partial_cmp(&b.response).unwrap())
         .unwrap();
+    // Tight tolerance: the inverse half-pixel-center mapping in
+    // `rescale_descriptors_to_input` must put the upscaled corner in
+    // the same input-pixel frame as the disabled run. A naive `x /= k`
+    // biases by (k − 1) / (2k) ≈ 0.25 px at k = 2, which this
+    // assertion will reject.
     assert!(
-        (best_off.x - best_on.x).abs() < 0.6 && (best_off.y - best_on.y).abs() < 0.6,
+        (best_off.x - best_on.x).abs() < 0.1 && (best_off.y - best_on.y).abs() < 0.1,
         "upscaled corner ({}, {}) differs from disabled ({}, {})",
         best_on.x,
         best_on.y,
         best_off.x,
         best_off.y
     );
+}
+
+#[test]
+#[should_panic(expected = "invalid upscale configuration")]
+fn upscale_fixed_factor_one_panics() {
+    // `UpscaleMode::Fixed` with factor 1 is an invariant violation:
+    // `UpscaleConfig::validate()` rejects it, and the detection
+    // entrypoint must fail loudly instead of silently treating it as
+    // disabled.
+    let size = 32u32;
+    let img = quadrant_corner(size, 20, 220);
+    let mut cfg = low_res_cfg();
+    cfg.upscale = UpscaleConfig::fixed(1);
+    let _ = find_chess_corners_u8(&img, size, size, &cfg);
+}
+
+#[test]
+#[should_panic(expected = "invalid upscale configuration")]
+fn upscale_fixed_factor_zero_panics() {
+    let size = 32u32;
+    let img = quadrant_corner(size, 20, 220);
+    let mut cfg = low_res_cfg();
+    cfg.upscale = UpscaleConfig::fixed(0);
+    let _ = find_chess_corners_u8(&img, size, size, &cfg);
 }

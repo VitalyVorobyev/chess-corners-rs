@@ -252,6 +252,14 @@ fn run_with_upscale(
     let src_h = height as usize;
     let view = ImageView::from_u8_slice(src_w, src_h, img)
         .expect("image dimensions must match buffer length");
+
+    // Enforce the upscale invariants up-front so a misconfigured
+    // `UpscaleMode::Fixed` with factor 0 or 1 fails loudly instead of
+    // silently behaving like `Disabled`.
+    cfg.upscale
+        .validate()
+        .expect("invalid upscale configuration");
+
     let factor = cfg.upscale.effective_factor();
     if factor <= 1 {
         return detect(view, cfg);

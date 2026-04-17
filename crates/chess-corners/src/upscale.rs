@@ -230,17 +230,29 @@ pub fn upscale_bilinear_u8<'a>(
 }
 
 /// Rescale corner positions from an upscaled image back to the
-/// original input-image pixel frame. Axis angles and sigmas are
-/// scale-invariant and are left untouched; positional fields are
-/// divided by `factor`.
+/// original input-image pixel frame.
+///
+/// Uses the inverse of the forward half-pixel-center mapping from
+/// [`upscale_bilinear_u8`]:
+///
+/// ```text
+/// forward : x_out = (x_src + 0.5) · k − 0.5
+/// inverse : x_src = (x_out + 0.5) / k − 0.5
+///         = x_out / k − (k − 1) / (2k)
+/// ```
+///
+/// A naive `x /= k` biases returned coordinates by `(k − 1) / (2k)`
+/// pixels (+0.25 px at k = 2). Axis angles and sigmas are
+/// scale-invariant and are left untouched.
 pub fn rescale_descriptors_to_input(descriptors: &mut [CornerDescriptor], factor: u32) {
     if factor <= 1 {
         return;
     }
     let inv = 1.0f32 / factor as f32;
+    let shift = 0.5 * (1.0 - inv);
     for d in descriptors.iter_mut() {
-        d.x *= inv;
-        d.y *= inv;
+        d.x = d.x * inv - shift;
+        d.y = d.y * inv - shift;
     }
 }
 
@@ -341,5 +353,84 @@ mod tests {
         let mut buffers = UpscaleBuffers::new();
         let err = upscale_bilinear_u8(&src, 2, 2, 5, &mut buffers).unwrap_err();
         assert_eq!(err, UpscaleError::InvalidFactor(5));
+    }
+
+    #[test]
+    fn rescale_inverts_half_pixel_upscale() {
+        use chess_corners_core::{AxisEstimate, CornerDescriptor};
+
+        // Forward mapping in `upscale_bilinear_u8`:
+        //   x_out = (x_src + 0.5) * k - 0.5
+        // For a corner at source position (7.25, 3.0) and factor k = 2,
+        // the upscaled detection should land at (14.5, 6.5). Running
+        // that through `rescale_descriptors_to_input` must return
+        // exactly the original source position, not x_out / k.
+        fn desc(x: f32, y: f32) -> CornerDescriptor {
+            CornerDescriptor {
+                x,
+                y,
+                response: 1.0,
+                contrast: 0.0,
+                fit_rms: 0.0,
+                axes: [
+                    AxisEstimate {
+                        angle: 0.0,
+                        sigma: 0.0,
+                    },
+                    AxisEstimate {
+                        angle: 0.0,
+                        sigma: 0.0,
+                    },
+                ],
+            }
+        }
+
+        for &(k, x_src, y_src) in &[
+            (2u32, 7.25f32, 3.0f32),
+            (3u32, 4.0f32, 8.5f32),
+            (4u32, 0.5f32, 12.25f32),
+        ] {
+            let kf = k as f32;
+            let x_out = (x_src + 0.5) * kf - 0.5;
+            let y_out = (y_src + 0.5) * kf - 0.5;
+
+            let mut d = [desc(x_out, y_out)];
+            rescale_descriptors_to_input(&mut d, k);
+            assert!(
+                (d[0].x - x_src).abs() < 1e-5,
+                "k={k}: x {} != expected {x_src}",
+                d[0].x
+            );
+            assert!(
+                (d[0].y - y_src).abs() < 1e-5,
+                "k={k}: y {} != expected {y_src}",
+                d[0].y
+            );
+        }
+    }
+
+    #[test]
+    fn rescale_is_noop_for_factor_1() {
+        use chess_corners_core::{AxisEstimate, CornerDescriptor};
+        let mut d = [CornerDescriptor {
+            x: 2.5,
+            y: 3.75,
+            response: 1.0,
+            contrast: 0.0,
+            fit_rms: 0.0,
+            axes: [
+                AxisEstimate {
+                    angle: 0.0,
+                    sigma: 0.0,
+                },
+                AxisEstimate {
+                    angle: 0.0,
+                    sigma: 0.0,
+                },
+            ],
+        }];
+        rescale_descriptors_to_input(&mut d, 1);
+        assert_eq!(d[0].x, 2.5);
+        assert_eq!(d[0].y, 3.75);
     }
 }
