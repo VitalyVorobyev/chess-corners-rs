@@ -74,26 +74,28 @@ its mean up.
 
 ![Accuracy vs blur](img/bench/accuracy_vs_blur.png)
 
-`Förstner` is a gradient-based method: Gaussian smoothing collapses
-the gradient magnitudes its structure tensor depends on, so its
-error grows roughly linearly with blur σ. Every other refiner stays
-under or near the 0.1 px bar up to σ = 2.5 px — heavier blur than
-most real cameras produce. `RadonPeak` and `cv2.cornerSubPix` are
-the most blur-robust: their Radon / gradient-flow formulations
-integrate over neighbourhoods that remain informative even when the
-step edge is smoothed.
+**Note:** log y-axis. The shaded 0.05–0.10 px strip marks the
+shipping band — where a refiner needs to land to be usable without
+ad-hoc per-scene tuning. `Förstner` is a gradient-based method:
+Gaussian smoothing collapses the gradient magnitudes its structure
+tensor depends on, so its error grows roughly linearly with blur σ.
+Every other refiner stays inside the shipping band up to σ = 2.5 px
+— heavier blur than most real cameras produce. `RadonPeak` and
+`cv2.cornerSubPix` are the most blur-robust: their Radon /
+gradient-flow formulations integrate over neighbourhoods that remain
+informative even when the step edge is smoothed.
 
 ### Varying additive noise σ
 
 ![Accuracy vs noise](img/bench/accuracy_vs_noise.png)
 
-Noise is where ML shines. At σ ≥ 8 gray levels (not uncommon under
-low light) the ONNX v4 model is the *most* accurate refiner —
-ahead of every hand-rolled classical method. The mechanism: the
-CNN was trained with noise σ ∈ [0, 10] and learned a denoising-like
-feature extractor in its first few layers. Classical refiners that
-fit local quadratic / Radon structure take the noise in at face
-value.
+**Note:** log y-axis, same shipping band. Noise is where ML shines.
+At σ ≥ 8 gray levels (not uncommon under low light) the ONNX v4
+model is the *most* accurate refiner — ahead of every hand-rolled
+classical method. The mechanism: the CNN was trained with
+noise σ ∈ [0, 10] and learned a denoising-like feature extractor in
+its first few layers. Classical refiners that fit local quadratic /
+Radon structure take the noise in at face value.
 
 ### Varying cell size
 
@@ -140,9 +142,13 @@ fast-and-loose to slow-and-tight:
   you're noise-dominated. The ONNX path batches in production, so
   amortised cost is typically 2–5× lower than the batch-1 number
   above.
-- **`cv2.cornerSubPix`** — ~300 µs at our default settings. About
-  as accurate as `Förstner` on clean data but slower; the value of
-  bringing it is pre-existing pipeline integration, not throughput.
+- **`cv2.cornerSubPix`** — 2.7 µs at our default settings (measured
+  refinement-only; earlier revisions of this chapter reported ~300 µs
+  because the timing loop also included fixture construction, see
+  `tools/book/opencv_subpix_sweep.py`). As accurate as `RadonPeak` on
+  clean data and similarly blur-robust, at a fraction of the cost;
+  the footgun is the `winSize=(5, 5)` default, which fails at cell≤6
+  (see §5.3).
 
 Benchmark reproduction:
 

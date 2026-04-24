@@ -106,7 +106,9 @@ def plot_line_sweep(
     for name in series:
         series[name].sort(key=lambda t: t[0])
 
-    fig, ax = plt.subplots(figsize=(6.5, 4.2))
+    fig, ax = plt.subplots(figsize=(7.2, 4.4))
+    # Track each refiner's rightmost (x, mean) for endpoint annotation.
+    endpoints: List[Tuple[str, float, float, str]] = []
     for name, pts in series.items():
         xs = [p[0] for p in pts]
         means = [p[1] for p in pts]
@@ -123,14 +125,42 @@ def plot_line_sweep(
             markersize=5.5,
         )
         ax.fill_between(xs, means, p95s, color=colour, alpha=0.10)
+        if xs:
+            endpoints.append((name, xs[-1], means[-1], colour))
 
     ax.set_title(title)
     _setup_axes(ax, xlabel)
     if log_y:
         ax.set_yscale("log")
-    ax.axhline(0.1, linestyle="--", linewidth=0.8, color="#888")
-    ax.text(0.01, 0.105, "0.1 px shipping bar", transform=ax.get_yaxis_transform(),
-            fontsize=8, color="#666", ha="left", va="bottom")
+    # Shaded 0.05–0.10 px "shipping band" — the target accuracy envelope
+    # from the v3 ML proposal. Combined with the log y-axis this
+    # anchors the eye on where the good refiners sit regardless of the
+    # failure cases' scale.
+    ax.axhspan(0.05, 0.10, color="#bbbbbb", alpha=0.18, zorder=0)
+    ax.axhline(0.1, linestyle="--", linewidth=0.8, color="#666", zorder=1)
+    ax.text(
+        0.01,
+        0.105,
+        "shipping band 0.05–0.10 px",
+        transform=ax.get_yaxis_transform(),
+        fontsize=8,
+        color="#555",
+        ha="left",
+        va="bottom",
+    )
+    # Per-refiner endpoint labels to disambiguate overlapping lines at
+    # the right edge of the plot (the crowded part).
+    for name, x_end, y_end, colour in endpoints:
+        ax.annotate(
+            LABELS.get(name, name),
+            xy=(x_end, y_end),
+            xytext=(4, 0),
+            textcoords="offset points",
+            fontsize=7.5,
+            color=colour,
+            ha="left",
+            va="center",
+        )
     ax.legend(loc="best", fontsize=9, frameon=False)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -253,6 +283,7 @@ def main() -> None:
         title="Accuracy vs Gaussian blur σ (cell=8 px, no noise)",
         xlabel="Blur σ (image pixels)",
         out_path=args.out_dir / "accuracy_vs_blur.svg",
+        log_y=True,
     )
     plot_line_sweep(
         rows,
@@ -261,6 +292,7 @@ def main() -> None:
         title="Accuracy vs additive noise σ (cell=8 px, blur σ=0.7)",
         xlabel="Noise σ (gray levels, on 0–255)",
         out_path=args.out_dir / "accuracy_vs_noise.svg",
+        log_y=True,
     )
     plot_line_sweep(
         rows,
