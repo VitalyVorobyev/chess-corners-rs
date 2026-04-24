@@ -87,9 +87,19 @@ def run_corner_subpix(img: np.ndarray, seed_xy: tuple[float, float], win: int = 
     return float(refined[0, 0, 0]), float(refined[0, 0, 1])
 
 
+def rust_round(x: float) -> int:
+    """Round half-away-from-zero, matching Rust's ``f32::round``.
+
+    Python's built-in ``round`` uses banker's rounding (``round(0.5) == 0``),
+    which differs from Rust at every ``.5`` offset and would change the
+    seed pixel for cornerSubPix — see PR #42 review.
+    """
+    return int(math.copysign(math.floor(abs(x) + 0.5), x))
+
+
 def condition_stats(cell: int, blur: float, noise: float, win: int, seed_xor: int) -> dict:
     errs: List[float] = []
-    t0 = time.perf_counter()
+    refine_elapsed = 0.0
     iters_total = 0
     for kx in range(N_GRID):
         for ky in range(N_GRID):
@@ -98,24 +108,26 @@ def condition_stats(cell: int, blur: float, noise: float, win: int, seed_xor: in
             img = render_aa_chessboard(cell, (ox, oy), 30, 230)
             img = gaussian_blur(img, blur)
             img = add_noise_boxmuller(img, noise, seed_xor ^ (kx * N_GRID + ky))
-            seed = (round(ox), round(oy))
+            seed = (rust_round(ox), rust_round(oy))
             # Time the refinement itself with multiple iters to get a
-            # stable per-call number.
+            # stable per-call number. Fixture construction stays outside
+            # the timed block so ``time_us_per_call`` reflects
+            # ``cornerSubPix`` only.
             reps = 50
             t_start = time.perf_counter()
             for _ in range(reps):
                 rx, ry = run_corner_subpix(img, seed, win=win)
+            refine_elapsed += time.perf_counter() - t_start
             iters_total += reps
             dx = rx - ox
             dy = ry - oy
             errs.append(math.hypot(dx, dy))
-    elapsed = time.perf_counter() - t0
     errs.sort()
     n = len(errs)
     mean = sum(errs) / n
     p95 = errs[min(int(0.95 * n), n - 1)]
     worst = errs[-1]
-    time_us = (elapsed * 1e6) / iters_total
+    time_us = (refine_elapsed * 1e6) / iters_total if iters_total else 0.0
     return {
         "refiner": "OpenCV_subpix",
         "cell": cell,

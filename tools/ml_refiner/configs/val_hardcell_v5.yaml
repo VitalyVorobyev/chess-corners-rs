@@ -1,7 +1,7 @@
 # Held-out validation set for v5 model selection.
 #
-# Uses the same hard-cell renderer as synth_v5 but pins the cell size
-# to {5, 8} px — the two cell sizes the Rust refiner benchmark runs.
+# Uses the same hard-cell renderer as synth_v5 and covers the 5–8 px
+# cell-size envelope the Rust refiner benchmark runs on.
 # This val split is what `train.py` uses for `save_best`, so the
 # model is selected on the distribution it needs to ship on.
 # Negatives disabled — the val metric is per-pixel regression only.
@@ -13,8 +13,10 @@ shard_size: 5000
 
 render_mode: hard_cells
 
-# Only the two benchmark cell sizes. Seeding with a narrow uniform
-# range lets the dataset class still emit float32 without branching.
+# Cell size is sampled uniformly in [5.0, 8.0] by
+# `generate_dataset.py::_sample_params` (via `rng.uniform(*cell_range)`),
+# not as the discrete set {5, 8}. Any promotion gate keyed on the exact
+# benchmark cell sizes must filter on cell ∈ {5, 8} at eval time.
 cell_size_px: [5.0, 8.0]
 
 dx_range: [-0.6, 0.6]

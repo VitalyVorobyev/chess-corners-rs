@@ -7,6 +7,8 @@ num_samples: 10000
 shard_size: 5000
 
 render_mode: hard_cells
+# Cell size is sampled uniformly in [5.0, 8.0] by
+# `generate_dataset.py::_sample_params` — not the discrete set {5, 8}.
 cell_size_px: [5.0, 8.0]
 
 dx_range: [-0.6, 0.6]
