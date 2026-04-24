@@ -166,7 +166,8 @@ pub use crate::config::{
 pub use crate::upscale::{UpscaleBuffers, UpscaleConfig, UpscaleError, UpscaleMode};
 pub use chess_corners_core::{
     AxisEstimate, CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner, ForstnerConfig,
-    ImageView, RefineResult, RefineStatus, Refiner, RefinerKind, ResponseMap, SaddlePointConfig,
+    ImageView, PeakFitMode, RadonPeakConfig, RefineResult, RefineStatus, Refiner, RefinerKind,
+    ResponseMap, SaddlePointConfig,
 };
 
 // High-level helpers on `image::GrayImage`.

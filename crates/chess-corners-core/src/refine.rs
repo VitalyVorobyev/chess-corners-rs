@@ -5,6 +5,7 @@
 //! original image intensity patch and provide more discriminative scores and
 //! acceptance logic.
 use crate::imageview::ImageView;
+use crate::refine_radon::{RadonPeakConfig, RadonPeakRefiner};
 use crate::ResponseMap;
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +63,7 @@ pub enum RefinerKind {
     CenterOfMass(CenterOfMassConfig),
     Forstner(ForstnerConfig),
     SaddlePoint(SaddlePointConfig),
+    RadonPeak(RadonPeakConfig),
 }
 
 impl Default for RefinerKind {
@@ -76,6 +78,7 @@ pub enum Refiner {
     CenterOfMass(CenterOfMassRefiner),
     Forstner(ForstnerRefiner),
     SaddlePoint(SaddlePointRefiner),
+    RadonPeak(RadonPeakRefiner),
 }
 
 impl Refiner {
@@ -84,6 +87,7 @@ impl Refiner {
             RefinerKind::CenterOfMass(cfg) => Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg)),
             RefinerKind::Forstner(cfg) => Refiner::Forstner(ForstnerRefiner::new(cfg)),
             RefinerKind::SaddlePoint(cfg) => Refiner::SaddlePoint(SaddlePointRefiner::new(cfg)),
+            RefinerKind::RadonPeak(cfg) => Refiner::RadonPeak(RadonPeakRefiner::new(cfg)),
         }
     }
 }
@@ -95,6 +99,7 @@ impl CornerRefiner for Refiner {
             Refiner::CenterOfMass(r) => r.radius(),
             Refiner::Forstner(r) => r.radius(),
             Refiner::SaddlePoint(r) => r.radius(),
+            Refiner::RadonPeak(r) => r.radius(),
         }
     }
 
@@ -104,6 +109,7 @@ impl CornerRefiner for Refiner {
             Refiner::CenterOfMass(r) => r.refine(seed_xy, ctx),
             Refiner::Forstner(r) => r.refine(seed_xy, ctx),
             Refiner::SaddlePoint(r) => r.refine(seed_xy, ctx),
+            Refiner::RadonPeak(r) => r.refine(seed_xy, ctx),
         }
     }
 }

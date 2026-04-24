@@ -48,6 +48,7 @@ pub mod descriptor;
 pub mod detect;
 pub mod imageview;
 pub mod refine;
+pub mod refine_radon;
 pub mod response;
 pub mod ring;
 
@@ -60,6 +61,7 @@ pub use crate::refine::{
     RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind, SaddlePointConfig,
     SaddlePointRefiner,
 };
+pub use crate::refine_radon::{PeakFitMode, RadonPeakConfig, RadonPeakRefiner};
 pub use imageview::ImageView;
 /// Tunable parameters for the ChESS response computation and corner detection.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

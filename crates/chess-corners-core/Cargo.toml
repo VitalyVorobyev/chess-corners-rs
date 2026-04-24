@@ -30,6 +30,7 @@ serde = { workspace = true, default-features = false, features = ["derive"] }
 [dev-dependencies]
 criterion.workspace = true
 image.workspace = true
+serde_json.workspace = true
 
 [[bench]]
 name = "descriptor_fit"

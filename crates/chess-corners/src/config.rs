@@ -1,6 +1,7 @@
 use box_image_pyramid::PyramidParams;
 use chess_corners_core::{
-    CenterOfMassConfig, ChessParams, ForstnerConfig, RefinerKind, SaddlePointConfig,
+    CenterOfMassConfig, ChessParams, ForstnerConfig, RadonPeakConfig, RefinerKind,
+    SaddlePointConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +40,7 @@ pub enum RefinementMethod {
     CenterOfMass,
     Forstner,
     SaddlePoint,
+    RadonPeak,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -48,6 +50,7 @@ pub struct RefinerConfig {
     pub center_of_mass: CenterOfMassConfig,
     pub forstner: ForstnerConfig,
     pub saddle_point: SaddlePointConfig,
+    pub radon_peak: RadonPeakConfig,
 }
 
 impl RefinerConfig {
@@ -72,11 +75,19 @@ impl RefinerConfig {
         }
     }
 
+    pub fn radon_peak() -> Self {
+        Self {
+            kind: RefinementMethod::RadonPeak,
+            ..Self::default()
+        }
+    }
+
     pub fn to_refiner_kind(&self) -> RefinerKind {
         match self.kind {
             RefinementMethod::CenterOfMass => RefinerKind::CenterOfMass(self.center_of_mass),
             RefinementMethod::Forstner => RefinerKind::Forstner(self.forstner),
             RefinementMethod::SaddlePoint => RefinerKind::SaddlePoint(self.saddle_point),
+            RefinementMethod::RadonPeak => RefinerKind::RadonPeak(self.radon_peak),
         }
     }
 }
