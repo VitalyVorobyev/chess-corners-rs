@@ -1,235 +1,187 @@
 # Part I: Orientation
 
-## 1.1 What is ChESS?
+## 1.1 What the library does
 
-ChESS (Chess-board Extraction by Subtraction and Summation) is a classical, ID‑free detector for chessboard **X‑junction** corners. It is designed specifically for grid‑like calibration targets: black–white checkerboards, Charuco‑style boards, and other high‑contrast grids where four alternating quadrants meet at each corner.
+`chess-corners-rs` detects the corners of a chessboard pattern — the
+X-junctions where four alternating dark/bright cells meet — to
+sub-pixel precision. It is the kind of detector that sits at the
+front of a camera calibration, pose estimation, or AR alignment
+pipeline.
 
-Unlike generic corner detectors (Harris, Shi–Tomasi, FAST, etc.), ChESS is tuned to answer the question:
+Two independent detectors and five subpixel refiners live behind a
+single configuration type:
 
-> “Is this pixel the intersection of a checkerboard grid?”
+- **ChESS response detector** — a ring-based kernel from Bennett &
+  Lasenby (2013). Fast on typical printed targets. Covered in
+  [Part III](part-03-chess-detector.md).
+- **Radon response detector** — a ray-based kernel from Duda &
+  Frese (2018). Selective on small cells and heavy blur, where the
+  ChESS ring loses support. Covered in [Part IV](part-04-radon-detector.md).
 
-It does this by sampling a **16‑point ring** around each candidate pixel and combining two kinds of evidence:
+Both produce the same `CornerDescriptor` output, and both feed the
+same [multiscale pipeline](part-06-multiscale-and-pyramids.md).
 
-- A “square” term that compares opposite quadrants on the ring, rewarding alternating dark/bright quadrants.
-- A “difference” term that penalizes edge‑like structures where intensity flips but doesn’t form an X‑junction.
-- A consistency term that compares the ring mean to a 5‑pixel cross at the center, discouraging isolated blobs.
+Once a detector has produced integer-pixel seeds, one of five
+subpixel refiners brings the coordinates under a pixel:
+`CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, or an
+ONNX-backed `ML` refiner. Each is a one-line swap via
+`ChessConfig.refiner.kind`. The refiners are described in
+[Part V](part-05-refiners.md) and benchmarked in
+[Part VII](part-07-benchmarks.md).
 
-These ingredients are combined into a single **ChESS response** value per pixel. Strong positive responses correspond to chessboard‑like corners; everything else is suppressed by thresholding, non-maximum suppression, and a small cluster filter. A 5×5 refinement step is then used to estimate a **subpixel** corner position.
+The same `ChessConfig` drives a Rust API, a Python package, a
+browser WebAssembly package, and a CLI. Results are bit-identical
+across binding targets.
 
-Typical use cases:
+## 1.2 Typical use cases
 
-- Camera calibration (mono or stereo), where you want robust chessboard corners across a variety of lighting conditions and slight blur.
+- Camera calibration (mono, stereo, or multi-camera) — detect
+  chessboard corners across lighting conditions, cell sizes, and
+  mild motion or defocus blur.
 - Pose estimation of calibration rigs and fixtures.
-- Robotics and AR setups where chessboards are used as temporary alignment targets.
+- Robotics and AR setups where a chessboard is a temporary alignment
+  target.
+- Offline evaluation of external calibration pipelines: the
+  detectors here are deterministic and independent of OpenCV.
 
-Compared to other approaches:
+Compared with other corner pipelines:
 
-- **Versus generic corner detectors**: ChESS is more selective and produces fewer false corners on edges, blobs, or texture; it is specialized but more reliable when you know you’re looking at a chessboard.
-- **Versus ID‑based markers (AprilTags, ArUco)**: ChESS detects unlabeled grid corners; there is no embedded ID and no global pattern decoding. That can be an advantage when you already know the pattern layout (e.g., an 8×6 checkerboard) and just need accurate corners.
+- **Versus generic corner detectors** (Harris, Shi–Tomasi, FAST):
+  both detectors here are specialized for chessboard X-junctions
+  and reject edges, blobs, and texture that generic detectors
+  accept.
+- **Versus ID-based markers** (AprilTag, ArUco): this library
+  detects unlabeled grid corners. It does not decode an ID, so you
+  need to know the board layout separately — but you gain robustness
+  to lighting and a much smaller-area target.
 
-The `chess-corners-rs` workspace implements ChESS in Rust with an emphasis on clarity, testability, and high performance (scalar, `rayon`, and portable SIMD paths), plus ergonomic wrappers for common Rust image workflows.
+## 1.3 Workspace layout
 
-If you are reading this book online via GitHub Pages, the generated
-Rust API docs for the crates are also available:
+The library is split across six crates; three are user-facing and
+three are implementation detail you only need if you want to go
+below the facade.
 
-- `box-image-pyramid` API reference: see `/box_image_pyramid/`
-- `chess-corners-core` API reference: see `/chess_corners_core/`
-- `chess-corners` API reference: see `/chess_corners/`
+```
+┌─ chess-corners-py      (PyO3 bindings, pip package: chess-corners)
+├─ chess-corners-wasm    (wasm-bindgen, npm package: chess-corners-wasm)
+│                        ▲
+│                        │
+├─ chess-corners         (high-level Rust API, CLI, multiscale pipeline)
+│                        ▲
+│                        │
+├─ chess-corners-core    (low-level algorithms: ChESS + Radon detectors,
+│                         refiners, descriptors)
+│
+├─ box-image-pyramid     (standalone u8 pyramid builder, fully
+│                         independent — no chess-specific coupling)
+│
+└─ chess-corners-ml      (optional ONNX refiner; gated behind
+                          `ml-refiner` feature)
+```
 
----
+Layering rules enforced by CI:
 
-## 1.2 Project layout
+- `chess-corners-core` does not depend on `chess-corners`.
+- `box-image-pyramid` has no chess-specific code — it is a reusable
+  grayscale pyramid builder that happens to be used here.
+- Algorithms go in `chess-corners-core`; the facade crate adds the
+  public `ChessConfig` type, CLI, multiscale wiring, and feature
+  gates.
 
-This repository is a small Rust workspace with three main library crates and a CLI:
+Support directories:
 
-- `chess-corners-core` – **low-level core**
-  - Path: `crates/chess-corners-core`
-  - Responsibilities:
-    - Compute dense ChESS response maps on 8‑bit grayscale images (`response` module).
-    - Run the detector pipeline on a response map (`detect` module): thresholding, NMS, cluster filtering, subpixel refinement.
-    - Define the core types:
-      - `ChessParams` – tunable parameters for the response and detector (ring radius, thresholds, NMS radius, minimum cluster size).
-      - `ResponseMap` – a simple `w × h` `Vec<f32>` wrapper for the response.
-      - `CornerDescriptor` – a rich corner description with subpixel position, response, and orientation.
-    - Stay lean and portable: `no_std` is supported when the `std` feature is disabled.
-  - Intended audience:
-    - Users who need maximum control, want to integrate with custom image types, or want to experiment with the ChESS math and detector pipeline directly.
+- `config/` — example CLI JSON configs.
+- `testdata/` — sample images used by tests, examples, and book plots.
+- `tools/` — Python scripts for plotting, benchmarking, and the
+  ML refiner training pipeline.
+- `docs/` — design notes, proposals, and backlog.
+- `book/` — this book (mdBook source under `book/src/`).
 
-- `chess-corners` – **ergonomic facade**
-  - Path: `crates/chess-corners`
-  - Responsibilities:
-    - Re-export core types (`ChessParams`, `CornerDescriptor`, `ResponseMap`) so you can usually depend on this crate alone.
-    - Re-export `PyramidParams`, `PyramidBuffers`, and `ImageBuffer` from `box-image-pyramid` for multiscale tuning and buffer reuse.
-    - Provide a high-level detector configuration:
-      - `ChessConfig` – a flat public config with explicit ring, threshold, refiner, and multiscale fields.
-    - Implement single-scale and multiscale detection:
-      - `find_chess_corners_image` – detect corners from an `image::GrayImage` (when the `image` feature is enabled).
-      - `find_chess_corners_u8` – detect corners directly from `&[u8]` buffers.
-      - Multiscale internals (`multiscale` module):
-        - `CoarseToFineParams` – pyramid + ROI + merge tuning.
-        - `find_chess_corners_buff` / `find_chess_corners` – coarse‑to‑fine detector using image pyramids.
-    - Optionally ship a CLI binary for batch runs and visualization.
-  - Intended audience:
-    - Users who want “just detect chessboard corners” in a Rust image pipeline with minimal boilerplate.
-    - Users who want multiscale detection and performance tuning without touching the lowest-level core types.
+## 1.4 The `CornerDescriptor` output
 
-- `box-image-pyramid` – **standalone pyramid utility**
-  - Path: `crates/box-image-pyramid`
-  - Responsibilities:
-    - Provide minimal `u8` grayscale image storage types (`ImageView`, `ImageBuffer`).
-    - Build fixed 2x box-filter pyramids with `build_pyramid`.
-    - Reuse per-level allocations across frames via `PyramidBuffers`.
-    - Optionally accelerate downsampling with `rayon` and portable SIMD behind `par_pyramid`.
-  - Intended audience:
-    - The `chess-corners` multiscale pipeline.
-    - Users who only need fast fixed-2x grayscale pyramids without a full image-processing library.
+Every detector in the workspace returns `Vec<CornerDescriptor>`.
+The type lives in `chess-corners-core` and is re-exported by the
+facade. Fields:
 
-- `chess-corners` CLI – **command-line tool**
-  - Path: `crates/chess-corners/bin`
-  - Entrypoints:
-    - `bin/main.rs`, `bin/commands.rs`, `bin/logger.rs`
-  - Responsibilities:
-    - Load images and optional config JSON (`config/chess_cli_config_example.json`).
-    - Run single-scale or multiscale detection using the library API.
-    - Emit JSON summaries of detected corners and visualization PNG overlays.
-    - Optionally emit JSON tracing spans for profiling.
-  - Intended audience:
-    - Quick experiments and debugging.
-    - Pipeline testing without writing Rust code (e.g., from scripts).
+| Field           | Type               | Meaning                                                                 |
+|-----------------|--------------------|-------------------------------------------------------------------------|
+| `x`, `y`        | `f32`              | Subpixel position in input image pixels.                                |
+| `response`      | `f32`              | Raw detector response at the peak. Scale is detector-specific.          |
+| `contrast`      | `f32` (≥ 0)        | Bright/dark amplitude from the ring intensity fit (gray levels).        |
+| `fit_rms`       | `f32` (≥ 0)        | RMS residual of that fit (gray levels).                                 |
+| `axes[0, 1]`    | `[AxisEstimate; 2]`| The two local grid axis directions, each with a 1σ angular uncertainty. |
 
-There are also supporting directories:
+The two axes are **not** assumed orthogonal — projective warp or
+lens distortion tilts the sectors independently, and the fit
+recovers both directions. Polarity convention:
+`axes[0].angle ∈ [0, π)`, `axes[1].angle ∈ (axes[0].angle, axes[0].angle + π)`,
+with the CCW arc from axis 0 to axis 1 crossing a dark sector. Full
+details and the fit math are in
+[Part III §3.4](part-03-chess-detector.md#34-corner-descriptors).
 
-- `config/` – example configs for the CLI.
-- `testdata/` – sample images used in tests / experiments.
-- `tools/` – helper scripts such as `plot_corners.py` for overlay visualization.
+## 1.5 Where to go next
 
----
+- To run the detector on an image: [Part II](part-02-using-the-detector.md).
+- To understand the ChESS response: [Part III](part-03-chess-detector.md).
+- To understand the Radon response: [Part IV](part-04-radon-detector.md).
+- To pick a refiner: [Part V](part-05-refiners.md) for algorithms,
+  [Part VII](part-07-benchmarks.md) for measurements.
+- Multiscale pipeline and pyramid tuning: [Part VI](part-06-multiscale-and-pyramids.md).
+- To contribute: [Part VIII](part-08-contributing.md).
 
-## 1.3 Installing and enabling features
+Rust API documentation builds alongside this book and is published
+at the same site:
 
-### 1.3.1 As a library dependency
+- [`chess-corners` API reference](api/chess_corners/index.html)
+- [`chess-corners-core` API reference](api/chess_corners_core/index.html)
+- [`box-image-pyramid` API reference](api/box_image_pyramid/index.html)
+- [`chess-corners-ml` API reference](api/chess_corners_ml/index.html)
 
-The easiest way to use ChESS from your own project is to depend on the `chess-corners` facade crate. In your `Cargo.toml`:
+## 1.6 Installation and features
+
+### Rust
 
 ```toml
 [dependencies]
 chess-corners = "0.5"
-image = "0.25" # if you want GrayImage integration
+image = "0.25"      # if you want GrayImage integration
 ```
 
-This gives you:
+Feature flags on the `chess-corners` facade:
 
-- High-level `ChessConfig`.
-- `find_chess_corners_image` for `image::GrayImage`.
-- `find_chess_corners_u8` for raw `&[u8]` buffers.
-- Access to `CornerDescriptor` and `ResponseMap`.
+| Feature       | Effect                                                                 |
+|---------------|------------------------------------------------------------------------|
+| `image`       | Default. `image::GrayImage` convenience entry points.                  |
+| `rayon`       | Parallelize response computation and multiscale refinement over cores. |
+| `simd`        | Portable SIMD for the ChESS kernel. Nightly only.                      |
+| `par_pyramid` | SIMD / Rayon acceleration inside the pyramid downsampler.              |
+| `tracing`     | Structured `tracing` spans for the detector pipeline.                  |
+| `ml-refiner`  | Enable the ONNX-backed refiner (`chess-corners-ml` dependency).        |
+| `cli`         | Build the `chess-corners` binary.                                      |
 
-If you only need the standalone fixed-2x grayscale pyramid builder used by the
-multiscale pipeline:
+All feature combinations produce the same numerical results;
+features only affect performance and observability.
 
-```toml
-[dependencies]
-box-image-pyramid = "0.5"
+### Python
+
+```bash
+python -m pip install chess-corners
 ```
 
-A minimal single‑scale example with `image`:
+### JavaScript / WebAssembly
 
-```rust
-use chess_corners::{ChessConfig, RefinementMethod, find_chess_corners_image};
-use image::io::Reader as ImageReader;
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let img = ImageReader::open("board.png")?
-        .decode()?
-        .to_luma8();
-
-    let mut cfg = ChessConfig::single_scale();
-    cfg.threshold_value = 0.15;
-    cfg.refiner.kind = RefinementMethod::Forstner;
-
-    let corners = find_chess_corners_image(&img, &cfg);
-    println!("found {} corners", corners.len());
-    Ok(())
-}
+```bash
+wasm-pack build crates/chess-corners-wasm --target web
+# installs an npm package: chess-corners-wasm
 ```
 
-If you don’t use `image`, you can work directly with raw buffers:
-
-```rust
-use chess_corners::{ChessConfig, ThresholdMode, find_chess_corners_u8};
-
-fn detect(img: &[u8], width: u32, height: u32) {
-    let mut cfg = ChessConfig::single_scale();
-    cfg.threshold_mode = ThresholdMode::Relative;
-    cfg.threshold_value = 0.2;
-
-    let corners = find_chess_corners_u8(img, width, height, &cfg);
-    println!("found {} corners", corners.len());
-}
-```
-
-For very advanced use cases (custom image layout, special ROI handling, or integrating your own detector stages), you can depend on `chess-corners-core` directly instead and work with `response` / `detect` modules.
-
-### 1.3.2 Feature flags and performance
-
-Both crates use Cargo features to control performance and diagnostics:
-
-- On `chess-corners-core`:
-  - `std` (default) – enable standard library usage. Disable for `no_std` + `alloc`.
-  - `rayon` – parallelize response computation over rows.
-  - `simd` – enable portable SIMD for the response kernel (requires nightly).
-  - `tracing` – add `tracing` spans to response / descriptor paths.
-
-- On `chess-corners`:
-  - `image` (default) – enable `image::GrayImage` integration and the image-based helpers.
-  - `rayon` – forward `rayon` to the core and parallelize multiscale refinement. Combine with `par_pyramid` to parallelize pyramid downsampling.
-  - `simd` – forward `simd` to the core and enable SIMD on the response path (nightly). Combine with `par_pyramid` for SIMD downsampling.
-  - `par_pyramid` – opt-in gate for SIMD/`rayon` acceleration inside the pyramid builder.
-  - `tracing` – enable tracing in the core and multiscale layers.
-  - `ml-refiner` – enable the ONNX-backed ML subpixel refiner entry points.
-  - `cli` – build the `chess-corners` binary.
-
-In your own `Cargo.toml`, you can opt into specific combinations:
-
-```toml
-[dependencies]
-chess-corners = { version = "0.5", features = ["image", "rayon"] }
-```
-
-For example:
-
-- **Default, single-threaded** (simplest): no extra features beyond `image`.
-- **Multi-core scalar**: add `"rayon"` to accelerate response/refinement on multi-core machines; add `"par_pyramid"` as well to parallelize downsampling.
-- **SIMD-accelerated**: enable `"simd"` (and use a nightly compiler) to vectorize the inner loops; add `"par_pyramid"` to apply SIMD to pyramid downsampling too.
-- **Tracing-enabled**: enable `"tracing"` and run with `RUST_LOG` / `tracing-subscriber` to capture spans.
-
-All combinations are designed to produce the **same numerical results**; features only affect performance and observability.
-
-### 1.3.3 Building and using the CLI
-
-If you’re working inside this workspace, you can build and run the CLI directly:
+### CLI
 
 ```bash
 cargo run -p chess-corners --release --bin chess-corners -- \
-  run config/chess_cli_config_example.json
+    run config/chess_cli_config_example.json
 ```
 
-This will:
-
-- Load the image specified in the config.
-- Run single-scale or multiscale detection depending on the `pyramid_levels` and `pyramid_min_size` settings (with `pyramid_levels <= 1` behaving as single-scale).
-- Save JSON output with detected corners and optional PNG overlays.
-
-You can treat the CLI as:
-
-- A quick way to sanity‑check your installation.
-- A reference implementation of how to wire up the library APIs.
-- A convenient debugging/profiling harness when you tweak configuration or features.
-
-The CLI uses the same flat algorithm config schema as the Rust and Python
-public APIs. See `config/chess_algorithm_config_example.json` for the shared
-algorithm-only example.
-
----
-
-This orientation part should give you enough context to know what ChESS is, how this workspace is structured, and how to bring the detector into your own project. In the next parts, we can dive deeper into the core ChESS math, the multiscale implementation, and practical tuning strategies.
+Every surface consumes the same `ChessConfig` JSON schema. Examples
+live under `config/`. The next part walks through the public API in
+all four surfaces.

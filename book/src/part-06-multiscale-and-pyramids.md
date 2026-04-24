@@ -1,18 +1,23 @@
-# Part IV: Multiscale and Pyramids
+# Part VI: Multiscale pipeline
 
-In Parts II and III we treated the detector mostly as a single‑scale
-operation: run ChESS on an image and get back corners. In practice,
-however, real‑world images often vary in scale and blur. A chessboard
-might occupy just a small region of a large frame, or it might be far
-from the camera so the corner pattern is heavily blurred.
+Parts II–V treated detection mostly as a single-scale operation: one
+call, one image, one response map. In practice, frames vary in scale
+and blur — a chessboard can occupy a small fraction of a large sensor,
+or sit far enough from the camera that the corner pattern is heavily
+blurred. For those cases the `chess-corners` crate offers a
+coarse-to-fine multiscale detector built on top of fixed 2× image
+pyramids.
 
-To handle these cases efficiently and robustly, the `chess-corners`
-crate offers a **coarse‑to‑fine multiscale detector** built on top of
-simple image pyramids. This part describes:
+This part describes:
 
 - how the pyramid utilities work,
-- how the coarse‑to‑fine detector uses them,
-- how to choose multiscale configurations in practice.
+- how the coarse-to-fine detector uses them,
+- how to pick a multiscale configuration.
+
+The multiscale path is currently wired to the ChESS detector. The
+Radon detector handles scale internally via its `image_upsample`
+parameter (see [Part IV §4.3](part-04-radon-detector.md#43-working-resolution-and-image-upsampling))
+and does not route through this pyramid.
 
 ---
 
@@ -427,8 +432,6 @@ JSON for batch experiments.
 
 ---
 
-In this part we explored the multiscale machinery in `chess-corners`:
-the minimal pyramid builder, the coarse‑to‑fine detector, and how to
-choose multiscale parameters. In the next part we will look at
-performance considerations, tracing, and how to integrate the detector
-into larger systems while measuring and tuning its behavior.
+Next: [Part VII](part-07-benchmarks.md) — measured accuracy and
+throughput for both detectors, every refiner, and the full multiscale
+pipeline.

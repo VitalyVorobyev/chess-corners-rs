@@ -1,17 +1,22 @@
-# Part III: Core ChESS Internals
+# Part III: The ChESS response detector
 
-In this part we leave the ergonomic `chess-corners` facade and look at
-the lower‑level `chess-corners-core` crate. This crate is responsible
-for:
+ChESS (Chess-board Extraction by Subtraction and Summation,
+Bennett & Lasenby, 2013) is a ring-based corner detector specialized
+for chessboard X-junctions. Given an 8-bit grayscale image, it produces
+a dense response map; positive values mark chessboard-like corners,
+other structure (edges, blobs, flat regions) is suppressed. The
+detector runs at typical camera resolutions in single-digit milliseconds
+with the `simd` or `rayon` features enabled.
 
-- defining the ChESS rings and sampling geometry,
-- computing dense response maps on 8‑bit grayscale images,
-- turning responses into corner candidates with NMS and refinement,
-- converting raw candidates into rich corner descriptors.
+This part covers the ChESS pipeline end-to-end: the ring geometry,
+the response formula, the dense response computation over the image,
+the detection pipeline (threshold + NMS + cluster filter + subpixel
+refinement), and the corner descriptor that both detectors (ChESS here
+and [Radon in Part IV](part-04-radon-detector.md)) feed into.
 
-The public API is intentionally small and stable; feature flags (`std`,
-`rayon`, `simd`, `tracing`) only affect performance and observability,
-not the numerical results.
+The code lives in `crates/chess-corners-core/src/{ring,response,detect,descriptor}.rs`.
+Feature flags (`std`, `rayon`, `simd`, `tracing`) only affect
+performance and observability, not the numerical output.
 
 ---
 
@@ -219,40 +224,44 @@ carrying:
 
 ### 3.3.2 Subpixel refinement
 
-To reach subpixel accuracy, the detector runs a 5×5 refinement step
-around each candidate:
+Each candidate is refined from its integer peak to a subpixel
+position by one of the refiners in
+[Part V](part-05-refiners.md). The ChESS detector is selected via
+`ChessConfig.refiner.kind`; the default is `CenterOfMass`, which
+operates directly on the response map, but any of the five refiners
+can be used. Refinement is a per-candidate call and adds at most a
+few tens of nanoseconds for the fastest options.
 
-- a small window is extracted around the integer peak,
-- local gradients / intensities are analyzed to estimate a more
-  precise corner position,
-- the refined position is stored as `(x, y)` in floating‑point form.
-
-The internal type representing these refined candidates is
+The internal type representing a refined candidate is
 `descriptor::Corner`:
 
 ```rust
 pub struct Corner {
     /// Subpixel location in image coordinates (x, y).
     pub xy: [f32; 2],
-    /// Raw ChESS response at the integer peak (before COM refinement).
+    /// Raw ChESS response at the integer peak (before refinement).
     pub strength: f32,
 }
 ```
 
-The refinement logic is designed to preserve the detector’s noise
-robustness while giving more precise coordinates for downstream tasks
-like calibration.
+The refinement step preserves the detector's noise robustness and
+adds subpixel precision. Measured accuracy and throughput for each
+refiner are in [Part VII](part-07-benchmarks.md).
 
 ---
 
 ## 3.4 Corner descriptors
 
 Raw corners (position + strength) are enough for many applications,
-but the core crate also offers a richer `CornerDescriptor` that fits a
-parametric intensity model to the ring samples around each corner. The
-fit yields both local grid axes **independently**, their per‑axis 1σ
-angular uncertainty, a bright/dark contrast amplitude, and the RMS fit
-residual — all in one pass.
+but the core crate also offers a richer `CornerDescriptor` that fits
+a parametric intensity model to the 16-sample ring around each corner.
+The fit yields both local grid axes **independently**, their per-axis
+1σ angular uncertainty, a bright/dark contrast amplitude, and the RMS
+fit residual — all in one pass.
+
+Both the ChESS detector and the Radon detector produce
+`CornerDescriptor` values via the same `corners_to_descriptors`
+function, so everything in this section applies to both pipelines.
 
 ### 3.4.1 `CornerDescriptor`
 
@@ -325,9 +334,11 @@ radius and is not a fit parameter.
 
 `fit_two_axes` runs a small Gauss–Newton iteration (up to 6 steps):
 
-1. Seed `θ₁`, `θ₂` from the 2nd‑harmonic of the centred ring samples
-   (the legacy single‑axis estimator), placed at the sector midpoint
-   ± π/4. Seed `A` from the harmonic magnitude.
+1. Seed `θ₁`, `θ₂` from the 2nd-harmonic Fourier coefficient of the
+   centred ring samples, placed at the sector midpoint ± π/4. Seed
+   `A` from the harmonic magnitude. The initial 90° spacing is only
+   a seed — the two angles are independent free parameters during
+   optimisation.
 2. At each step, evaluate the residuals and the 16×4 Jacobian of
    `I(φᵢ)` with respect to `[μ, A, θ₁, θ₂]` and solve the normal
    equations `JᵀJ · Δ = Jᵀ r` with partial pivoting.
@@ -414,9 +425,6 @@ are the extra handles you get "for free" with each detection.
 
 ---
 
-In this part we dissected the `chess-corners-core` crate: how rings
-and sampling geometry are defined, how the dense ChESS response is
-computed, how the detector turns responses into subpixel candidates,
-and how those candidates are enriched into descriptors. In the next
-part we will build on this by examining the multiscale pyramids and
-coarse‑to‑fine refinement pipeline in more detail.
+Next: [Part IV](part-04-radon-detector.md) covers the alternative
+Radon response detector, which shares the descriptor pipeline above
+but uses a ray-based kernel instead of a ring.
