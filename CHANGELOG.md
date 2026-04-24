@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `RadonPeakRefiner` now implements the full Duda-Frese (2018) pipeline:
+  image supersampling, response-map box blur, and Gaussian (log-space)
+  peak fit. Default accuracy is ~0.04 px mean on clean anti-aliased
+  chessboards, competitive with and often beating `SaddlePoint`. The
+  module doc no longer calls this a "first cut" implementation.
+
+- `RadonPeakConfig` field renames and additions: the previous
+  `upsample` (response-grid density only) is replaced by
+  `image_upsample` (controls both ray-sample spacing and
+  response-grid density); new `response_blur_radius` and `peak_fit`
+  fields gate the post-blur and Gaussian-fit stages. Defaults
+  (`ray_radius = 2`, `patch_radius = 3`, `image_upsample = 2`,
+  `response_blur_radius = 1`, `peak_fit = Gaussian`) match the paper.
+
+- New cross-refiner accuracy integration test
+  (`crates/chess-corners-core/tests/refiner_accuracy.rs`) prints a
+  summary table for `RadonPeak` / `SaddlePoint` / `Forstner` across
+  subpixel offset, blur, and noise sweeps.
+
+- New unified accuracy+throughput benchmark
+  (`crates/chess-corners/tests/refiner_benchmark.rs`) covering all
+  five refiners — `CenterOfMass`, `Forstner`, `SaddlePoint`,
+  `RadonPeak`, and (under the `ml-refiner` feature) the embedded
+  ONNX `ML` refiner — over clean, blurred, and noisy sweeps with
+  per-refiner timing. Run via
+  `cargo test --release -p chess-corners --test refiner_benchmark \
+   --features ml-refiner -- --nocapture --test-threads=1`.
+
 ## [0.6.0]
 
 ### Breaking
