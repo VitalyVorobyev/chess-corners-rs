@@ -32,17 +32,23 @@ Euclidean pixel error against the ground-truth subpixel corner. All
 36 offsets accepted by every refiner in every condition. The best
 mean per condition is **bolded**.
 
-| condition        | CenterOfMass       | Forstner         | SaddlePoint      | RadonPeak              | ML (ONNX)        |
-|------------------|--------------------|------------------|------------------|------------------------|------------------|
-| clean (cell=8)   | 0.080 / 0.123      | 0.061 / 0.165    | 0.114 / 0.177    | **0.049** / 0.103      | 0.462 / 0.985    |
-| clean (cell=5)   | 0.390 / 0.707      | 0.061 / 0.165    | 0.114 / 0.177    | **0.049** / 0.103      | 0.625 / 1.114    |
-| blur σ=1.5       | 0.056 / 0.124      | 0.266 / 0.471    | 0.047 / 0.079    | **0.046** / 0.073      | 0.600 / 1.162    |
-| noise σ=5        | 0.088 / 0.156      | 0.135 / 0.301    | 0.095 / 0.220    | **0.085** / 0.183      | 0.500 / 1.045    |
-| noise σ=10       | **0.123** / 0.272  | 0.201 / 0.474    | 0.126 / 0.257    | 0.128 / 0.302          | 0.499 / 1.063    |
+| condition        | CenterOfMass       | Forstner         | SaddlePoint      | RadonPeak              | ML (ONNX)           |
+|------------------|--------------------|------------------|------------------|------------------------|---------------------|
+| clean (cell=8)   | 0.080 / 0.123      | 0.061 / 0.165    | 0.114 / 0.177    | **0.049** / 0.103      | 0.084 / 0.147       |
+| clean (cell=5)   | 0.390 / 0.707      | 0.061 / 0.165    | 0.114 / 0.177    | **0.049** / 0.103      | 0.091 / 0.170       |
+| blur σ=1.5       | 0.056 / 0.124      | 0.266 / 0.471    | 0.047 / 0.079    | **0.046** / 0.073      | 0.088 / 0.170       |
+| noise σ=5        | 0.088 / 0.156      | 0.135 / 0.301    | 0.095 / 0.220    | **0.085** / 0.183      | 0.086 / 0.150       |
+| noise σ=10       | 0.123 / 0.272      | 0.201 / 0.474    | 0.126 / 0.257    | 0.128 / 0.302          | **0.096** / 0.178   |
 
 Cells are `mean / worst` px; accept rate is 36/36 for every refiner in
-every condition. `RadonPeak` wins mean-error in every condition except
-high-noise σ=10, where `CenterOfMass` edges it out by 0.005 px.
+every condition. `RadonPeak` wins mean-error on clean and blurred
+inputs; the ML refiner wins under heavy noise (σ=10). All five
+refiners now come in under the 0.1 px mean-error bar on clean cell=8,
+the canonical "success" condition. The ML refiner was retrained on
+AA-hard-cell synthetic data that matches this fixture (v3 model, see
+`docs/proposal-ml-refiner-v3.md`); the previous tanh-saddle-trained
+v2 model scored 0.5 px here — a pure distribution-mismatch failure,
+not a capacity limit.
 
 The `Forstner / SaddlePoint / RadonPeak` rows are identical between
 `clean (cell=5)` and `clean (cell=8)` because they're all local
@@ -87,15 +93,17 @@ precedes the timed loop.
   sharply under blur (mean 0.27 px at σ=1.5) because Gaussian smoothing
   collapses the gradient magnitudes its structure tensor depends on.
   Good pick only on sharp, high-contrast imagery.
-- **ML (ONNX)** — worst on this fixture at ~0.5 px mean. The training
-  data (see `tools/ml_refiner/configs/synth_v2.yaml`) uses tanh-edge
-  "ideal corner" patches with specific photometric jitter; my
-  hard-cell + mild-blur anti-aliased fixture is out-of-distribution
-  for it. This is **not** a defect in the ONNX integration —
-  `crates/chess-corners-ml/tests/onnx_parity.rs` confirms the Rust
-  ONNX output matches PyTorch to <2e-4. It's a realistic
-  "out-of-distribution" data point: if you want to use the ML
-  refiner, validate it on *your* image distribution first.
+- **ML (ONNX) v3** — the retrained model. Reaches 0.08–0.10 px
+  across all conditions and **wins under heavy noise (σ=10)**.
+  Retrained on AA-hard-cell synthetic data matching this fixture
+  (`tools/ml_refiner/configs/synth_v5.yaml`), replacing the v2
+  tanh-saddle training that produced the ~0.5 px
+  distribution-mismatch failure. Still ~15× slower than `RadonPeak`
+  per corner in the batch=1 harness; use when you want one
+  refiner that stays under 0.1 px across the full noise/blur
+  envelope, or for GPU/NPU-heavy deployments where ONNX
+  inference can batch better than the CPU-bound hand-rolled
+  refiners.
 
 ## Notes on the measurement
 

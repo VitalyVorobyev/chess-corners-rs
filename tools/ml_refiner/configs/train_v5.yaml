@@ -1,0 +1,41 @@
+# Training config for v5 (hard-cell synthetic data).
+#
+# Uses the v5 dataset at data/synth_v5 (hard-cell chessboard patches).
+# Model selection is done on synth_v5's own val split — that slice is
+# drawn from the same hard-cell distribution the model needs to ship
+# on, so `model_best.pt` selected by val p95 reflects real
+# generalisation. Post-training, `eval_hardcell.py` re-validates on
+# val_hardcell_v5 for the tighter cell∈{5,8} check.
+seed: 123
+data_dir: "tools/ml_refiner/data/synth_v5"
+patch_size: 21
+batch_size: 1024
+num_workers: 0     # single-process avoids shard-thrashing given max_cache<10
+max_cache: 10      # hold all 10 shards in RAM (~88 MB) — no disk I/O per batch
+epochs: 15
+lr: 1.5e-3
+weight_decay: 1.0e-4
+device: "auto"
+val_split: 0.1
+log_interval: 20
+log_interval_val: 0
+
+loss:
+  # Lighter confidence weighting (0.2 → 0.1) — the regression head is
+  # what matters for the <0.1 px gate.
+  lambda_conf: 0.1
+  # Flatter reg weighting so high-blur samples contribute gradients.
+  reg_weight_bias: 0.4
+  reg_weight_scale: 0.6
+
+scheduler:
+  kind: "cosine"
+  warmup_epochs: 2
+
+augment:
+  enabled: false
+
+save:
+  run_dir: "tools/ml_refiner/runs"
+  save_best: true
+  save_last: true
