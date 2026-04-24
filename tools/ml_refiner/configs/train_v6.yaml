@@ -1,0 +1,37 @@
+# Training config for v6 (mixed tanh + hard-cells).
+#
+# Same architecture and LR schedule as v5 — the only difference is
+# the training dataset (data/synth_v6). Keeping every other knob
+# fixed lets us attribute any accuracy change directly to the
+# mixed-mode training.
+
+seed: 123
+data_dir: "tools/ml_refiner/data/synth_v6"
+patch_size: 21
+batch_size: 1024
+num_workers: 0
+max_cache: 10
+epochs: 20
+lr: 1.5e-3
+weight_decay: 1.0e-4
+device: "auto"
+val_split: 0.1
+log_interval: 40
+log_interval_val: 0
+
+loss:
+  lambda_conf: 0.1
+  reg_weight_bias: 0.4
+  reg_weight_scale: 0.6
+
+scheduler:
+  kind: "cosine"
+  warmup_epochs: 2
+
+augment:
+  enabled: false
+
+save:
+  run_dir: "tools/ml_refiner/runs"
+  save_best: true
+  save_last: true
