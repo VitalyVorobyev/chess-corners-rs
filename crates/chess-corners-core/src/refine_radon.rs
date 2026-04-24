@@ -42,39 +42,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::imageview::ImageView;
+use crate::radon::{box_blur_inplace, fit_peak_frac, ANGLES, DIR_COS, DIR_SIN};
 use crate::refine::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
 
-/// Number of discrete ray angles. The paper samples {0, π/4, π/2, 3π/4}.
-const ANGLES: usize = 4;
-
-/// `cos α` for the four ray angles, in order.
-const DIR_COS: [f32; ANGLES] = [
-    1.0,
-    core::f32::consts::FRAC_1_SQRT_2,
-    0.0,
-    -core::f32::consts::FRAC_1_SQRT_2,
-];
-
-/// `sin α` for the four ray angles, in order.
-const DIR_SIN: [f32; ANGLES] = [
-    0.0,
-    core::f32::consts::FRAC_1_SQRT_2,
-    1.0,
-    core::f32::consts::FRAC_1_SQRT_2,
-];
-
-/// Subpixel peak-fitting mode.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum PeakFitMode {
-    /// Classic parabolic fit on the raw response values.
-    Parabolic,
-    /// Parabolic fit on `log(response)` — equivalent to fitting a
-    /// Gaussian through three samples. Paper default; recommended.
-    #[default]
-    Gaussian,
-}
+pub use crate::radon::PeakFitMode;
 
 /// Configuration for [`RadonPeakRefiner`].
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -207,44 +178,6 @@ impl RadonPeakRefiner {
         let d = max_r - min_r;
         d * d
     }
-
-    /// Separable box blur with half-width `r` applied to `resp` in
-    /// place, using `blur_scratch` as temporary storage.
-    fn box_blur_inplace(&mut self, r: usize) {
-        if r == 0 {
-            return;
-        }
-        let side = self.side;
-        // Horizontal pass: resp -> blur_scratch.
-        for y in 0..side {
-            let row_start = y * side;
-            for x in 0..side {
-                let x0 = x.saturating_sub(r);
-                let x1 = (x + r + 1).min(side);
-                let mut acc = 0.0f32;
-                let mut n = 0.0f32;
-                for xx in x0..x1 {
-                    acc += self.resp[row_start + xx];
-                    n += 1.0;
-                }
-                self.blur_scratch[row_start + x] = acc / n;
-            }
-        }
-        // Vertical pass: blur_scratch -> resp.
-        for x in 0..side {
-            for y in 0..side {
-                let y0 = y.saturating_sub(r);
-                let y1 = (y + r + 1).min(side);
-                let mut acc = 0.0f32;
-                let mut n = 0.0f32;
-                for yy in y0..y1 {
-                    acc += self.blur_scratch[yy * side + x];
-                    n += 1.0;
-                }
-                self.resp[y * side + x] = acc / n;
-            }
-        }
-    }
 }
 
 impl CornerRefiner for RadonPeakRefiner {
@@ -298,7 +231,12 @@ impl CornerRefiner for RadonPeakRefiner {
             }
         }
 
-        self.box_blur_inplace(self.cfg.response_blur_radius as usize);
+        box_blur_inplace(
+            &mut self.resp,
+            &mut self.blur_scratch,
+            self.side,
+            self.cfg.response_blur_radius as usize,
+        );
 
         let mut best = f32::NEG_INFINITY;
         let mut best_ix = 0i32;
@@ -361,33 +299,6 @@ impl CornerRefiner for RadonPeakRefiner {
         let score = best.sqrt();
         RefineResult::accepted([cx as f32 + dx, cy as f32 + dy], score)
     }
-}
-
-/// Fit the peak of three samples along one axis. Returns a fractional
-/// offset in `[-0.5, 0.5]` grid-steps from the middle sample.
-///
-/// The parabolic mode is `y = a + b·x + c·x²`; the Gaussian mode is the
-/// same fit applied to `log(y)`, provided all three samples are
-/// strictly positive. Negative or zero samples trigger a parabolic
-/// fallback. A denominator near zero (flat or rising slope at the
-/// "peak") returns 0.0 rather than diverging.
-#[inline]
-fn fit_peak_frac(y_minus: f32, y_c: f32, y_plus: f32, mode: PeakFitMode) -> f32 {
-    let (ym, y0, yp) = match mode {
-        PeakFitMode::Gaussian if y_minus > 0.0 && y_c > 0.0 && y_plus > 0.0 => {
-            (y_minus.ln(), y_c.ln(), y_plus.ln())
-        }
-        _ => (y_minus, y_c, y_plus),
-    };
-    let denom = ym - 2.0 * y0 + yp;
-    // A true maximum has denom < 0. If denom ≥ 0 the neighbours aren't
-    // strictly below the centre; fall back to "no subpixel shift"
-    // rather than producing a divergent extrapolation.
-    if denom > -1e-12 {
-        return 0.0;
-    }
-    let frac = 0.5 * (ym - yp) / denom;
-    frac.clamp(-0.5, 0.5)
 }
 
 #[cfg(test)]
@@ -784,38 +695,5 @@ mod tests {
             assert_eq!(refiner.resp.len(), expected_side * expected_side);
             assert_eq!(refiner.blur_scratch.len(), expected_side * expected_side);
         }
-    }
-
-    #[test]
-    fn box_blur_zero_radius_is_identity() {
-        let cfg = RadonPeakConfig {
-            response_blur_radius: 0,
-            ..RadonPeakConfig::default()
-        };
-        let side = cfg.side();
-        let mut refiner = RadonPeakRefiner::new(cfg);
-        let before: Vec<f32> = (0..(side * side)).map(|i| i as f32).collect();
-        refiner.resp.copy_from_slice(&before);
-        refiner.box_blur_inplace(0);
-        assert_eq!(refiner.resp, before);
-    }
-
-    #[test]
-    fn box_blur_smooths_impulse() {
-        let cfg = RadonPeakConfig {
-            patch_radius: 3,
-            image_upsample: 1,
-            response_blur_radius: 1,
-            ..RadonPeakConfig::default()
-        };
-        let side = cfg.side();
-        let mut refiner = RadonPeakRefiner::new(cfg);
-        refiner.resp.fill(0.0);
-        let mid = side / 2;
-        refiner.resp[mid * side + mid] = 9.0;
-        refiner.box_blur_inplace(1);
-        // Centre after 3×3 blur over zero surroundings = 9/9.
-        let c = refiner.resp[mid * side + mid];
-        assert!((c - 1.0).abs() < 1e-6, "center = {c}");
     }
 }

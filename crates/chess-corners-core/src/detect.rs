@@ -156,7 +156,7 @@ fn detect_corners_from_response_impl(
     corners
 }
 
-fn is_local_max(resp: &ResponseMap, x: usize, y: usize, r: i32, v: f32) -> bool {
+pub(crate) fn is_local_max(resp: &ResponseMap, x: usize, y: usize, r: i32, v: f32) -> bool {
     let w = resp.w as i32;
     let h = resp.h as i32;
     let cx = x as i32;
@@ -181,7 +181,7 @@ fn is_local_max(resp: &ResponseMap, x: usize, y: usize, r: i32, v: f32) -> bool 
     true
 }
 
-fn count_positive_neighbors(resp: &ResponseMap, x: usize, y: usize, r: i32) -> u32 {
+pub(crate) fn count_positive_neighbors(resp: &ResponseMap, x: usize, y: usize, r: i32) -> u32 {
     let w = resp.w as i32;
     let h = resp.h as i32;
     let cx = x as i32;

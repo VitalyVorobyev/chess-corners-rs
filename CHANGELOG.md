@@ -37,6 +37,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cargo test --release -p chess-corners --test refiner_benchmark \
    --features ml-refiner -- --nocapture --test-threads=1`.
 
+### Added
+
+- Whole-image Duda-Frese Radon detector in
+  `chess-corners-core` as an alternative to the ChESS ring kernel
+  for hard frames (heavy blur, low contrast, cells smaller than
+  `~2·ring_radius`). Exposes
+  [`RadonDetectorParams`](crates/chess-corners-core/src/radon_detector.rs),
+  [`RadonBuffers`](crates/chess-corners-core/src/radon_detector.rs),
+  [`radon_response_u8`](crates/chess-corners-core/src/radon_detector.rs),
+  and `detect_corners_from_radon`. Pipeline: optional 2× bilinear
+  upsample → 4 summed-area tables (row/col/±diag) → `(max−min)²`
+  response → box blur → threshold+NMS → 3-point Gaussian peak fit.
+  Facade integration (`DetectorMode::Radon` on `ChessConfig`) is
+  planned for M2; this milestone ships core primitives only.
+
+- New shared `chess_corners_core::radon` module holds primitives
+  that both the refiner and the detector depend on: `DIR_COS/SIN`,
+  `ANGLES`, `PeakFitMode`, `fit_peak_frac`, and `box_blur_inplace`.
+  `refine_radon.rs` now imports these instead of defining them
+  locally, so there is exactly one source of truth for the angular
+  basis and peak-fit math.
+
+- Feature `radon-sat-u32` (opt-in) switches the detector's
+  summed-area-table element type from `i64` to `u32`. Halves SAT
+  memory and widens SIMD lanes at the cost of a ~16 MP image-size
+  cap (`255·W·H ≤ u32::MAX`).
+
+- New tests:
+  `crates/chess-corners-core/tests/radon_parity.rs` pins the shared
+  primitive extraction by asserting that axial ray sums match
+  between the detector SAT path and the refiner bilinear path, and
+  that detector and refiner subpixel peaks coincide to under 0.1 px
+  on clean corners.
+  `crates/chess-corners-core/tests/radon_vs_chess.rs` compares the
+  new detector against ChESS on a deliberately hostile fixture
+  (blurred, low-contrast board) to prove the Radon path recovers
+  corners that ChESS misses.
+
+- Design proposals at `docs/proposal-radon-detector.md` (this work)
+  and `docs/proposal-ml-refiner-v3.md` (future ML retraining).
+
 ## [0.6.0]
 
 ### Breaking

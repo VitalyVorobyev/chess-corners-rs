@@ -20,6 +20,12 @@ std = []
 rayon = ["dep:rayon"]
 simd = []
 tracing = ["dep:tracing"]
+# Opt-in: use `u32` for the whole-image Radon summed-area-table
+# elements instead of the default `i64`. `u32` halves SAT memory and
+# widens SIMD lanes but caps total summed intensity at `u32::MAX`,
+# which in practice limits the detector to images of roughly 16 MP
+# (255 · W · H ≤ u32::MAX). Without this feature, i64 is used.
+radon-sat-u32 = []
 
 [dependencies]
 rayon = { workspace = true, optional = true }

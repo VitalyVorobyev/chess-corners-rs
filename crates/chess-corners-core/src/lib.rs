@@ -47,6 +47,8 @@
 pub mod descriptor;
 pub mod detect;
 pub mod imageview;
+pub mod radon;
+pub mod radon_detector;
 pub mod refine;
 pub mod refine_radon;
 pub mod response;
@@ -56,12 +58,17 @@ use crate::ring::RingOffsets;
 use serde::{Deserialize, Serialize};
 
 pub use crate::descriptor::{AxisEstimate, CornerDescriptor};
+pub use crate::radon::{fit_peak_frac, PeakFitMode};
+pub use crate::radon_detector::{
+    detect_corners_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
+    RadonResponseView, SatElem,
+};
 pub use crate::refine::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
     RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind, SaddlePointConfig,
     SaddlePointRefiner,
 };
-pub use crate::refine_radon::{PeakFitMode, RadonPeakConfig, RadonPeakRefiner};
+pub use crate::refine_radon::{RadonPeakConfig, RadonPeakRefiner};
 pub use imageview::ImageView;
 /// Tunable parameters for the ChESS response computation and corner detection.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
