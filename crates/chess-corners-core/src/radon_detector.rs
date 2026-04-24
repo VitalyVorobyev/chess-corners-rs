@@ -67,7 +67,8 @@ pub struct RadonDetectorParams {
     pub ray_radius: u32,
     /// Image-level supersampling factor. `1` operates on the input
     /// pixel grid; `2` bilinearly upsamples first (paper default).
-    /// Higher values cost 4× memory each step.
+    /// M1 supports the set `{1, 2}`; values `>= 3` are clamped to `2`
+    /// (see [`MAX_IMAGE_UPSAMPLE`]). Higher factors are future work.
     pub image_upsample: u32,
     /// Half-size of the box blur applied to the response map. `0`
     /// disables blurring; `1` yields a 3×3 box.
@@ -110,10 +111,19 @@ impl Default for RadonDetectorParams {
     }
 }
 
+/// Supported image-upsample factors in M1: `{1, 2}`. Anything higher
+/// would need a different upsampler; values `>= 3` are clamped to `2`
+/// at the entry points rather than silently producing mismatched
+/// buffer sizes downstream.
+pub const MAX_IMAGE_UPSAMPLE: u32 = 2;
+
 impl RadonDetectorParams {
+    /// Clamp `image_upsample` into the supported set `{1, 2}`.
+    /// Values outside that range are silently clamped — callers can
+    /// detect truncation by comparing against [`MAX_IMAGE_UPSAMPLE`].
     #[inline]
     fn image_upsample_clamped(&self) -> u32 {
-        self.image_upsample.max(1)
+        self.image_upsample.clamp(1, MAX_IMAGE_UPSAMPLE)
     }
 
     #[inline]
@@ -386,6 +396,26 @@ pub fn radon_response_u8<'a>(
     let ww = buffers.working_w;
     let wh = buffers.working_h;
 
+    // Under `radon-sat-u32` the SAT accumulator is `u32`, and the
+    // largest prefix-sum value is bounded by `255 * ww * wh`. Beyond
+    // that the `build_cumsums` additions wrap silently in release, so
+    // we reject the input up-front rather than corrupting the response.
+    // The default `i64` accumulator has no practical ceiling on any
+    // image that fits in host memory; this check is a no-op there.
+    #[cfg(feature = "radon-sat-u32")]
+    {
+        let pixels = (ww as u64) * (wh as u64);
+        let max_sum = 255u64.checked_mul(pixels);
+        assert!(
+            matches!(max_sum, Some(v) if v <= u32::MAX as u64),
+            "radon-sat-u32: 255*W*H ({}*{}) exceeds u32::MAX; \
+             either rebuild without the radon-sat-u32 feature or \
+             downsample the input",
+            ww,
+            wh,
+        );
+    }
+
     // Produce the working-resolution u8 image.
     let working_img: &[u8] = if up > 1 {
         upsample_bilinear_2x_if_needed(img, w, h, up, &mut buffers.upsampled);
@@ -477,9 +507,10 @@ impl<'a> RadonResponseView<'a> {
 
 #[inline]
 fn upsample_bilinear_2x_if_needed(img: &[u8], w: usize, h: usize, up: u32, out: &mut Vec<u8>) {
-    // M1 supports only `image_upsample ∈ {1, 2}`. Higher factors would
-    // need a different upsampler; for now clamp to 2.
-    debug_assert!(up == 2, "image_upsample must be 1 or 2 in M1");
+    // Callers must pre-clamp via `RadonDetectorParams::image_upsample_clamped()`,
+    // so `up` is always in `{1, 2}` here. Assert in debug for sanity.
+    debug_assert_eq!(up, 2, "image_upsample must be 1 or 2 in M1");
+    let _ = up;
     out.resize(4 * w * h, 0);
     upsample_bilinear_2x(img, w, h, out);
 }
@@ -524,34 +555,40 @@ pub fn detect_corners_from_radon(
         return Vec::new();
     }
 
-    // Wrap in a ResponseMap-compatible view for the shared NMS
-    // helpers. ResponseMap owns its Vec; we re-borrow data here via
-    // a temporary that references the same storage.
-    let owned = ResponseMap::new(w, h, resp.data.to_vec());
-
+    // Borrow the working-resolution response slice directly. The
+    // shared NMS helpers are slice-based (see `detect::is_local_max`)
+    // so we no longer allocate a full-frame `ResponseMap` clone in
+    // the hot path — a noticeable win at `image_upsample=2` on HD
+    // frames.
+    let data = resp.data;
     let mut out = Vec::new();
     let inv_up = 1.0 / (params.image_upsample_clamped() as f32);
 
+    #[inline(always)]
+    fn at(data: &[f32], w: usize, x: usize, y: usize) -> f32 {
+        data[y * w + x]
+    }
+
     for y in border..(h - border) {
         for x in border..(w - border) {
-            let v = owned.at(x, y);
+            let v = at(data, w, x, y);
             if v <= thr {
                 continue;
             }
-            if !is_local_max(&owned, x, y, nms_r, v) {
+            if !is_local_max(data, w, h, x, y, nms_r, v) {
                 continue;
             }
-            if count_positive_neighbors(&owned, x, y, nms_r) < params.min_cluster_size {
+            if count_positive_neighbors(data, w, h, x, y, nms_r) < params.min_cluster_size {
                 continue;
             }
 
             // 3-point peak fit. Neighbours are guaranteed in-bounds by
             // the border clamp.
-            let r_c = owned.at(x, y);
-            let r_xm = owned.at(x - 1, y);
-            let r_xp = owned.at(x + 1, y);
-            let r_ym = owned.at(x, y - 1);
-            let r_yp = owned.at(x, y + 1);
+            let r_c = v;
+            let r_xm = at(data, w, x - 1, y);
+            let r_xp = at(data, w, x + 1, y);
+            let r_ym = at(data, w, x, y - 1);
+            let r_yp = at(data, w, x, y + 1);
             let fx = fit_peak_frac(r_xm, r_c, r_xp, params.peak_fit);
             let fy = fit_peak_frac(r_ym, r_c, r_yp, params.peak_fit);
 
@@ -859,5 +896,46 @@ mod tests {
         for &v in resp.data() {
             assert!(v >= 0.0, "negative response value: {v}");
         }
+    }
+
+    #[test]
+    fn image_upsample_above_cap_is_clamped_not_panicked() {
+        // `image_upsample >= 3` is unsupported in M1; the entry points
+        // must clamp to the cap instead of panicking in
+        // `upsample_bilinear_2x_if_needed` or mis-sizing downstream
+        // buffers (Codex P1 on PR #40).
+        const SIZE: usize = 29;
+        const CELL: usize = 6;
+        let img = synthetic_chessboard_aa(SIZE, CELL, (14.2, 14.6), 30, 230);
+        let params = RadonDetectorParams {
+            image_upsample: 5,
+            ..RadonDetectorParams::default()
+        };
+        assert_eq!(params.image_upsample_clamped(), MAX_IMAGE_UPSAMPLE);
+
+        let mut buffers = RadonBuffers::new();
+        let resp = radon_response_u8(&img, SIZE, SIZE, &params, &mut buffers);
+        assert_eq!(resp.width(), SIZE * MAX_IMAGE_UPSAMPLE as usize);
+        assert_eq!(resp.height(), SIZE * MAX_IMAGE_UPSAMPLE as usize);
+    }
+
+    #[test]
+    fn image_upsample_zero_is_clamped_to_one() {
+        // `image_upsample = 0` is valid `u32` but nonsensical. Clamp to
+        // the min supported value so downstream code doesn't divide by
+        // zero or size buffers to zero.
+        const SIZE: usize = 21;
+        const CELL: usize = 5;
+        let img = synthetic_chessboard_aa(SIZE, CELL, (10.1, 10.4), 30, 230);
+        let params = RadonDetectorParams {
+            image_upsample: 0,
+            ..RadonDetectorParams::default()
+        };
+        assert_eq!(params.image_upsample_clamped(), 1);
+
+        let mut buffers = RadonBuffers::new();
+        let resp = radon_response_u8(&img, SIZE, SIZE, &params, &mut buffers);
+        assert_eq!(resp.width(), SIZE);
+        assert_eq!(resp.height(), SIZE);
     }
 }

@@ -129,13 +129,13 @@ fn detect_corners_from_response_impl(
             }
 
             // Local maximum in NMS window
-            if !is_local_max(resp, x, y, nms_r, v) {
+            if !is_local_max(resp.data(), resp.w, resp.h, x, y, nms_r, v) {
                 continue;
             }
 
             // Reject isolated pixels: require a minimum number of positive
             // neighbors in the same NMS window.
-            let cluster_size = count_positive_neighbors(resp, x, y, nms_r);
+            let cluster_size = count_positive_neighbors(resp.data(), resp.w, resp.h, x, y, nms_r);
             if cluster_size < params.min_cluster_size {
                 continue;
             }
@@ -156,9 +156,21 @@ fn detect_corners_from_response_impl(
     corners
 }
 
-pub(crate) fn is_local_max(resp: &ResponseMap, x: usize, y: usize, r: i32, v: f32) -> bool {
-    let w = resp.w as i32;
-    let h = resp.h as i32;
+/// Local-max NMS check over a `(2r+1)²` window on a row-major
+/// response slice. Slice-based so borrowed views (e.g. the Radon
+/// detector's working-resolution buffer) can call it without cloning
+/// into a [`ResponseMap`].
+pub(crate) fn is_local_max(
+    data: &[f32],
+    w: usize,
+    h: usize,
+    x: usize,
+    y: usize,
+    r: i32,
+    v: f32,
+) -> bool {
+    let wi = w as i32;
+    let hi = h as i32;
     let cx = x as i32;
     let cy = y as i32;
 
@@ -169,10 +181,10 @@ pub(crate) fn is_local_max(resp: &ResponseMap, x: usize, y: usize, r: i32, v: f3
             }
             let xx = cx + dx;
             let yy = cy + dy;
-            if xx < 0 || yy < 0 || xx >= w || yy >= h {
+            if xx < 0 || yy < 0 || xx >= wi || yy >= hi {
                 continue;
             }
-            let vv = resp.at(xx as usize, yy as usize);
+            let vv = data[(yy as usize) * w + (xx as usize)];
             if vv > v {
                 return false;
             }
@@ -181,9 +193,18 @@ pub(crate) fn is_local_max(resp: &ResponseMap, x: usize, y: usize, r: i32, v: f3
     true
 }
 
-pub(crate) fn count_positive_neighbors(resp: &ResponseMap, x: usize, y: usize, r: i32) -> u32 {
-    let w = resp.w as i32;
-    let h = resp.h as i32;
+/// Count strictly-positive neighbors in the same window as
+/// [`is_local_max`]. See that function for the slice contract.
+pub(crate) fn count_positive_neighbors(
+    data: &[f32],
+    w: usize,
+    h: usize,
+    x: usize,
+    y: usize,
+    r: i32,
+) -> u32 {
+    let wi = w as i32;
+    let hi = h as i32;
     let cx = x as i32;
     let cy = y as i32;
     let mut count = 0;
@@ -195,10 +216,10 @@ pub(crate) fn count_positive_neighbors(resp: &ResponseMap, x: usize, y: usize, r
             }
             let xx = cx + dx;
             let yy = cy + dy;
-            if xx < 0 || yy < 0 || xx >= w || yy >= h {
+            if xx < 0 || yy < 0 || xx >= wi || yy >= hi {
                 continue;
             }
-            let vv = resp.at(xx as usize, yy as usize);
+            let vv = data[(yy as usize) * w + (xx as usize)];
             if vv > 0.0 {
                 count += 1;
             }
