@@ -146,6 +146,11 @@ def _sample_params(
     if include_theta:
         rot_range = _as_range(cfg, "rotation")
         params["theta"] = rng.uniform(*rot_range, size=count).astype(np.float32)
+    if "cell_size_px" in cfg:
+        cell_range = _as_range(cfg, "cell_size_px")
+        params["cell_size_px"] = rng.uniform(
+            *cell_range, size=count
+        ).astype(np.float32)
     return params
 
 
@@ -183,6 +188,9 @@ def generate_samples(
 ) -> Dict[str, np.ndarray]:
     patch_size = int(cfg["patch_size"])
     edge_softness = float(cfg.get("edge_softness", 0.15))
+    render_mode = str(cfg.get("render_mode", "tanh"))
+    # Hard-cells mode needs a cell size. tanh ignores it.
+    default_cell_size = float(cfg.get("default_cell_size_px", 6.0))
 
     contrast_range = _as_range(cfg, "contrast")
     brightness_range = _as_range(cfg, "brightness")
@@ -207,16 +215,25 @@ def generate_samples(
     Hs = np.empty((count, 3, 3), dtype=np.float32) if homography_enabled else None
     severity = np.zeros(count, dtype=np.float32) if homography_enabled else None
     identity = np.eye(3, dtype=np.float32) if homography_enabled else None
+    cell_sizes_out = np.full(count, default_cell_size, dtype=np.float32)
 
     for idx in range(count):
         if is_pos[idx]:
             theta = 0.0 if homography_enabled else float(params["theta"][idx])
-            ideal = render_corner.render_ideal_corner_from_grid(
+            cell_size = (
+                float(params["cell_size_px"][idx])
+                if "cell_size_px" in params
+                else default_cell_size
+            )
+            cell_sizes_out[idx] = cell_size
+            ideal = render_corner.render_corner_pattern_from_grid(
                 render_x,
                 render_y,
                 theta,
                 float(params["scale"][idx]),
                 edge_softness,
+                cell_size,
+                render_mode,
             )
 
             dx = params["dx"][idx]
@@ -302,6 +319,7 @@ def generate_samples(
         "is_pos": is_pos.astype(np.uint8),
         "noise_sigma": params["noise_sigma"],
         "blur_sigma": params["blur_sigma"],
+        "cell_size_px": cell_sizes_out,
         **({"H": Hs} if Hs is not None else {}),
     }
 
@@ -520,6 +538,7 @@ def main() -> None:
             "noise_sigma": data["noise_sigma"],
             "blur_sigma": data["blur_sigma"],
             "is_pos": data["is_pos"],
+            "cell_size_px": data["cell_size_px"],
         }
         if "H" in data:
             extra["H"] = data["H"]

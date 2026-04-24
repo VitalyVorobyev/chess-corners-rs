@@ -41,6 +41,60 @@ def render_ideal_corner(
     return render_ideal_corner_from_grid(x_grid, y_grid, theta, scale, edge_softness)
 
 
+def render_hard_cells_from_grid(
+    x_grid: np.ndarray,
+    y_grid: np.ndarray,
+    theta: float,
+    cell_size_px: float,
+) -> np.ndarray:
+    """Render a periodic chessboard with hard cell boundaries.
+
+    Cells are ``cell_size_px`` wide in patch-pixel units. The corner of
+    interest sits at the grid origin; cell parity alternates so the
+    pattern has a proper chessboard intersection at (0, 0). Rotation
+    ``theta`` (radians) orients the cell grid.
+
+    The output is normalised to ``{0.0, 1.0}``. Anti-aliasing at the
+    cell edges is produced downstream when the caller bilinearly
+    samples this high-resolution image at the 21×21 patch grid — the
+    same mechanism the tanh renderer relies on.
+    """
+    cos_t = np.float32(np.cos(theta))
+    sin_t = np.float32(np.sin(theta))
+    x_r = cos_t * x_grid - sin_t * y_grid
+    y_r = sin_t * x_grid + cos_t * y_grid
+    cell = np.float32(max(cell_size_px, 1e-6))
+    cx = np.floor(x_r / cell).astype(np.int32)
+    cy = np.floor(y_r / cell).astype(np.int32)
+    parity = (cx + cy) & 1
+    return parity.astype(np.float32)
+
+
+def render_corner_pattern_from_grid(
+    x_grid: np.ndarray,
+    y_grid: np.ndarray,
+    theta: float,
+    scale: float,
+    edge_softness: float,
+    cell_size_px: float,
+    render_mode: str,
+) -> np.ndarray:
+    """Dispatch rendering by mode.
+
+    - ``tanh`` (legacy, v1-v4): smooth infinite saddle.
+      Depends on ``scale`` and ``edge_softness``. Ignores ``cell_size_px``.
+    - ``hard_cells`` (v5+): periodic chessboard with hard cell
+      boundaries and anti-aliasing via the downstream bilinear
+      sampler. Depends on ``cell_size_px``. Ignores ``scale`` and
+      ``edge_softness``.
+    """
+    if render_mode == "tanh":
+        return render_ideal_corner_from_grid(x_grid, y_grid, theta, scale, edge_softness)
+    if render_mode == "hard_cells":
+        return render_hard_cells_from_grid(x_grid, y_grid, theta, cell_size_px)
+    raise ValueError(f"unknown render_mode {render_mode!r}")
+
+
 def make_patch_grid(patch_size: int) -> tuple[np.ndarray, np.ndarray]:
     center = (patch_size - 1) / 2.0
     coords = np.arange(patch_size, dtype=np.float32) - center

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Retrained ML refiner** (`chess_refiner_v3.onnx`) using
+  AA-rasterised hard-cell chessboard patches that match the
+  benchmark's inference distribution (see
+  `tools/ml_refiner/configs/synth_v5.yaml`). Replaces the v2 model
+  trained on tanh-saddle synthesis. Accuracy improves from v2's
+  ~0.5 px mean across all benchmark conditions to v3's 0.08–0.10 px
+  — roughly 5–7× better — and now under the 0.1 px mean-error bar
+  on clean cell=8. The v3 model is the strongest refiner under
+  heavy noise (σ=10, mean=0.096 px).
+
+- `render_mode: hard_cells` option in the ML-refiner training
+  pipeline (`tools/ml_refiner/synth/render_corner.py`). Renders
+  periodic chessboards at 8× supersampling with rotation, per-sample
+  `cell_size_px` axis, and post-rasterisation Gaussian PSF —
+  mirrors `crates/chess-corners/tests/refiner_benchmark.rs` so the
+  training and inference distributions match.
+
+- `tools/ml_refiner/eval_hardcell.py` — post-training evaluation on
+  held-out hard-cell patches with per-cell / per-blur / per-noise
+  error breakdowns and a `--gate` flag enforcing the <0.1 px
+  shipping threshold on the clean subset.
+
+- New training configs: `synth_v5.yaml` (200K hard-cell training
+  samples), `val_hardcell_v5.yaml` (20K held-out val pinned to
+  cell ∈ {5, 8}), `train_v5.yaml`.
+
 ### Changed
 
 - `RadonPeakRefiner` now implements the full Duda-Frese (2018) pipeline:
