@@ -452,10 +452,9 @@ pub fn radon_response_u8<'a>(
         &mut buffers.response,
         &mut buffers.blur_scratch,
         ww,
+        wh,
         params.response_blur_radius as usize,
     );
-    // Response row-stride: width. Treat the row-major response as a
-    // square-ish ResponseMap borrowed view.
     RadonResponseView {
         data: &buffers.response,
         w: ww,

@@ -70,20 +70,25 @@ pub fn fit_peak_frac(y_minus: f32, y_c: f32, y_plus: f32, mode: PeakFitMode) -> 
 }
 
 /// Separable `(2·radius+1)²` box blur applied in place to a flat
-/// row-major `side × side` response grid. `scratch` must match `resp`
-/// in length and is used as temporary storage. `radius = 0` is a no-op.
-pub fn box_blur_inplace(resp: &mut [f32], scratch: &mut [f32], side: usize, radius: usize) {
-    debug_assert_eq!(resp.len(), side * side);
-    debug_assert_eq!(scratch.len(), side * side);
+/// row-major `w × h` grid. `scratch` must match `resp` in length and
+/// is used as temporary storage. `radius = 0` is a no-op.
+///
+/// The grid does not need to be square: `w` and `h` are taken
+/// independently so whole-image response maps (typically rectangular
+/// at camera resolution) and the refiner's square local response
+/// patch share the same implementation.
+pub fn box_blur_inplace(resp: &mut [f32], scratch: &mut [f32], w: usize, h: usize, radius: usize) {
+    debug_assert_eq!(resp.len(), w * h);
+    debug_assert_eq!(scratch.len(), w * h);
     if radius == 0 {
         return;
     }
     // Horizontal pass: resp -> scratch.
-    for y in 0..side {
-        let row_start = y * side;
-        for x in 0..side {
+    for y in 0..h {
+        let row_start = y * w;
+        for x in 0..w {
             let x0 = x.saturating_sub(radius);
-            let x1 = (x + radius + 1).min(side);
+            let x1 = (x + radius + 1).min(w);
             let mut acc = 0.0f32;
             let mut n = 0.0f32;
             for xx in x0..x1 {
@@ -94,17 +99,17 @@ pub fn box_blur_inplace(resp: &mut [f32], scratch: &mut [f32], side: usize, radi
         }
     }
     // Vertical pass: scratch -> resp.
-    for x in 0..side {
-        for y in 0..side {
+    for x in 0..w {
+        for y in 0..h {
             let y0 = y.saturating_sub(radius);
-            let y1 = (y + radius + 1).min(side);
+            let y1 = (y + radius + 1).min(h);
             let mut acc = 0.0f32;
             let mut n = 0.0f32;
             for yy in y0..y1 {
-                acc += scratch[yy * side + x];
+                acc += scratch[yy * w + x];
                 n += 1.0;
             }
-            resp[y * side + x] = acc / n;
+            resp[y * w + x] = acc / n;
         }
     }
 }
@@ -157,7 +162,7 @@ mod tests {
         let mut resp: Vec<f32> = (0..(side * side)).map(|i| i as f32).collect();
         let before = resp.clone();
         let mut scratch = vec![0.0; side * side];
-        box_blur_inplace(&mut resp, &mut scratch, side, 0);
+        box_blur_inplace(&mut resp, &mut scratch, side, side, 0);
         assert_eq!(resp, before);
     }
 
@@ -168,7 +173,7 @@ mod tests {
         let mut scratch = vec![0.0f32; side * side];
         let mid = side / 2;
         resp[mid * side + mid] = 9.0;
-        box_blur_inplace(&mut resp, &mut scratch, side, 1);
+        box_blur_inplace(&mut resp, &mut scratch, side, side, 1);
         // 3×3 blur of an impulse = 9/9 = 1 at the center.
         assert!(
             (resp[mid * side + mid] - 1.0).abs() < 1e-6,
@@ -182,9 +187,24 @@ mod tests {
         let side = 7usize;
         let mut resp = vec![3.5f32; side * side];
         let mut scratch = vec![0.0f32; side * side];
-        box_blur_inplace(&mut resp, &mut scratch, side, 1);
+        box_blur_inplace(&mut resp, &mut scratch, side, side, 1);
         for v in &resp {
             assert!((v - 3.5).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn box_blur_handles_rectangular_grid() {
+        // Regression: the detector calls the blur on a w×h response
+        // map where w != h. Previous signature took a single `side`
+        // parameter and panicked out-of-bounds on non-square inputs.
+        let w = 8usize;
+        let h = 5usize;
+        let mut resp = vec![2.0f32; w * h];
+        let mut scratch = vec![0.0f32; w * h];
+        box_blur_inplace(&mut resp, &mut scratch, w, h, 1);
+        for v in &resp {
+            assert!((v - 2.0).abs() < 1e-6);
         }
     }
 }

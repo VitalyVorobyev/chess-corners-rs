@@ -1,19 +1,27 @@
 use box_image_pyramid::PyramidParams;
 use chess_corners_core::{
-    CenterOfMassConfig, ChessParams, ForstnerConfig, RadonPeakConfig, RefinerKind,
-    SaddlePointConfig,
+    CenterOfMassConfig, ChessParams, ForstnerConfig, RadonDetectorParams, RadonPeakConfig,
+    RefinerKind, SaddlePointConfig,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::multiscale::CoarseToFineParams;
 use crate::upscale::UpscaleConfig;
 
+/// Detector kernel selection. `Canonical` and `Broad` are the two
+/// ChESS variants (radius-5 and radius-10 rings); `Radon` picks the
+/// whole-image Duda-Frese detector via
+/// [`chess_corners_core::radon_response_u8`] /
+/// [`chess_corners_core::detect_corners_from_radon`]. The Radon
+/// detector is useful under heavy blur, low contrast, or cells
+/// smaller than the ChESS ring support.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DetectorMode {
     #[default]
     Canonical,
     Broad,
+    Radon,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,6 +117,10 @@ pub struct ChessConfig {
     pub merge_radius: f32,
     /// Optional pre-pipeline integer upscaling. Disabled by default.
     pub upscale: UpscaleConfig,
+    /// Parameters for the whole-image Radon detector. Only consulted
+    /// when [`detector_mode`](Self::detector_mode) is
+    /// [`DetectorMode::Radon`]; otherwise left at its default.
+    pub radon_detector: RadonDetectorParams,
 }
 
 impl Default for ChessConfig {
@@ -130,6 +142,7 @@ impl Default for ChessConfig {
             refinement_radius: 3,
             merge_radius: 3.0,
             upscale: UpscaleConfig::default(),
+            radon_detector: RadonDetectorParams::default(),
         }
     }
 }
@@ -143,6 +156,21 @@ impl ChessConfig {
         Self {
             pyramid_levels: 3,
             pyramid_min_size: 128,
+            ..Self::default()
+        }
+    }
+
+    /// Preset for the whole-image Radon detector. Single-scale by
+    /// construction (pyramidal Radon is deferred — the SAT-based
+    /// detector is already fast enough at base resolution for typical
+    /// calibration frames). Uses the Gaussian peak-fit inherited from
+    /// `RadonDetectorParams`; corners are subpixel-refined by the
+    /// detector's own peak-fit, so `refiner` is effectively a
+    /// pass-through.
+    pub fn radon() -> Self {
+        Self {
+            detector_mode: DetectorMode::Radon,
+            pyramid_levels: 1,
             ..Self::default()
         }
     }

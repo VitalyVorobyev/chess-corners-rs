@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping, TextIO
+from typing import Any, Mapping, Optional, TextIO
 
 from . import _native
 
@@ -103,10 +103,11 @@ class _PrettyMixin:
 
 
 class DetectorMode(str, Enum):
-    """High-level detector mode for narrow vs broad corner responses."""
+    """High-level detector mode: ChESS variants or whole-image Radon."""
 
     CANONICAL = "canonical"
     BROAD = "broad"
+    RADON = "radon"
 
 
 class DescriptorMode(str, Enum):
@@ -130,6 +131,7 @@ class RefinementMethod(str, Enum):
     CENTER_OF_MASS = "center_of_mass"
     FORSTNER = "forstner"
     SADDLE_POINT = "saddle_point"
+    RADON_PEAK = "radon_peak"
 
 
 @dataclass
@@ -238,6 +240,149 @@ class SaddlePointConfig(_PrettyMixin):
         }
 
 
+class PeakFitMode(str, Enum):
+    """Subpixel peak-fit mode used by the Radon refiner and detector."""
+
+    PARABOLIC = "parabolic"
+    GAUSSIAN = "gaussian"
+
+
+@dataclass
+class RadonPeakConfig(_PrettyMixin):
+    """Local Duda-Frese Radon refiner parameters."""
+
+    ray_radius: int = 2
+    patch_radius: int = 3
+    image_upsample: int = 2
+    response_blur_radius: int = 1
+    peak_fit: PeakFitMode = PeakFitMode.GAUSSIAN
+    min_response: float = 0.0
+    max_offset: float = 1.5
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> RadonPeakConfig:
+        mapping = _expect_mapping(data, "radon_peak")
+        _reject_unknown_keys(
+            mapping,
+            {
+                "ray_radius",
+                "patch_radius",
+                "image_upsample",
+                "response_blur_radius",
+                "peak_fit",
+                "min_response",
+                "max_offset",
+            },
+            "radon_peak",
+        )
+        cfg = cls()
+        if "ray_radius" in mapping:
+            cfg.ray_radius = _expect_int(mapping["ray_radius"], "radon_peak.ray_radius")
+        if "patch_radius" in mapping:
+            cfg.patch_radius = _expect_int(mapping["patch_radius"], "radon_peak.patch_radius")
+        if "image_upsample" in mapping:
+            cfg.image_upsample = _expect_int(
+                mapping["image_upsample"], "radon_peak.image_upsample"
+            )
+        if "response_blur_radius" in mapping:
+            cfg.response_blur_radius = _expect_int(
+                mapping["response_blur_radius"], "radon_peak.response_blur_radius"
+            )
+        if "peak_fit" in mapping:
+            cfg.peak_fit = _enum_value(PeakFitMode, mapping["peak_fit"], "radon_peak.peak_fit")
+        if "min_response" in mapping:
+            cfg.min_response = _expect_float(mapping["min_response"], "radon_peak.min_response")
+        if "max_offset" in mapping:
+            cfg.max_offset = _expect_float(mapping["max_offset"], "radon_peak.max_offset")
+        return cfg
+
+    def to_dict(self) -> JsonDict:
+        return {
+            "ray_radius": self.ray_radius,
+            "patch_radius": self.patch_radius,
+            "image_upsample": self.image_upsample,
+            "response_blur_radius": self.response_blur_radius,
+            "peak_fit": self.peak_fit.value,
+            "min_response": self.min_response,
+            "max_offset": self.max_offset,
+        }
+
+
+@dataclass
+class RadonDetectorParams(_PrettyMixin):
+    """Whole-image Duda-Frese Radon detector parameters."""
+
+    ray_radius: int = 4
+    image_upsample: int = 2
+    response_blur_radius: int = 1
+    peak_fit: PeakFitMode = PeakFitMode.GAUSSIAN
+    threshold_rel: float = 0.01
+    threshold_abs: Optional[float] = None
+    nms_radius: int = 4
+    min_cluster_size: int = 2
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> RadonDetectorParams:
+        mapping = _expect_mapping(data, "radon_detector")
+        _reject_unknown_keys(
+            mapping,
+            {
+                "ray_radius",
+                "image_upsample",
+                "response_blur_radius",
+                "peak_fit",
+                "threshold_rel",
+                "threshold_abs",
+                "nms_radius",
+                "min_cluster_size",
+            },
+            "radon_detector",
+        )
+        cfg = cls()
+        if "ray_radius" in mapping:
+            cfg.ray_radius = _expect_int(mapping["ray_radius"], "radon_detector.ray_radius")
+        if "image_upsample" in mapping:
+            cfg.image_upsample = _expect_int(
+                mapping["image_upsample"], "radon_detector.image_upsample"
+            )
+        if "response_blur_radius" in mapping:
+            cfg.response_blur_radius = _expect_int(
+                mapping["response_blur_radius"], "radon_detector.response_blur_radius"
+            )
+        if "peak_fit" in mapping:
+            cfg.peak_fit = _enum_value(
+                PeakFitMode, mapping["peak_fit"], "radon_detector.peak_fit"
+            )
+        if "threshold_rel" in mapping:
+            cfg.threshold_rel = _expect_float(
+                mapping["threshold_rel"], "radon_detector.threshold_rel"
+            )
+        if "threshold_abs" in mapping:
+            value = mapping["threshold_abs"]
+            cfg.threshold_abs = (
+                None if value is None else _expect_float(value, "radon_detector.threshold_abs")
+            )
+        if "nms_radius" in mapping:
+            cfg.nms_radius = _expect_int(mapping["nms_radius"], "radon_detector.nms_radius")
+        if "min_cluster_size" in mapping:
+            cfg.min_cluster_size = _expect_int(
+                mapping["min_cluster_size"], "radon_detector.min_cluster_size"
+            )
+        return cfg
+
+    def to_dict(self) -> JsonDict:
+        return {
+            "ray_radius": self.ray_radius,
+            "image_upsample": self.image_upsample,
+            "response_blur_radius": self.response_blur_radius,
+            "peak_fit": self.peak_fit.value,
+            "threshold_rel": self.threshold_rel,
+            "threshold_abs": self.threshold_abs,
+            "nms_radius": self.nms_radius,
+            "min_cluster_size": self.min_cluster_size,
+        }
+
+
 @dataclass
 class RefinerConfig(_PrettyMixin):
     """Flat public refiner configuration with default-initialized leaves."""
@@ -246,6 +391,7 @@ class RefinerConfig(_PrettyMixin):
     center_of_mass: CenterOfMassConfig = field(default_factory=CenterOfMassConfig)
     forstner: ForstnerConfig = field(default_factory=ForstnerConfig)
     saddle_point: SaddlePointConfig = field(default_factory=SaddlePointConfig)
+    radon_peak: RadonPeakConfig = field(default_factory=RadonPeakConfig)
 
     @classmethod
     def center_of_mass_config(cls) -> RefinerConfig:
@@ -260,11 +406,15 @@ class RefinerConfig(_PrettyMixin):
         return cls(kind=RefinementMethod.SADDLE_POINT)
 
     @classmethod
+    def radon_peak_config(cls) -> RefinerConfig:
+        return cls(kind=RefinementMethod.RADON_PEAK)
+
+    @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> RefinerConfig:
         mapping = _expect_mapping(data, "refiner")
         _reject_unknown_keys(
             mapping,
-            {"kind", "center_of_mass", "forstner", "saddle_point"},
+            {"kind", "center_of_mass", "forstner", "saddle_point", "radon_peak"},
             "refiner",
         )
         cfg = cls()
@@ -282,6 +432,10 @@ class RefinerConfig(_PrettyMixin):
             cfg.saddle_point = SaddlePointConfig.from_dict(
                 _expect_mapping(mapping["saddle_point"], "refiner.saddle_point")
             )
+        if "radon_peak" in mapping:
+            cfg.radon_peak = RadonPeakConfig.from_dict(
+                _expect_mapping(mapping["radon_peak"], "refiner.radon_peak")
+            )
         return cfg
 
     def to_dict(self) -> JsonDict:
@@ -290,6 +444,7 @@ class RefinerConfig(_PrettyMixin):
             "center_of_mass": self.center_of_mass.to_dict(),
             "forstner": self.forstner.to_dict(),
             "saddle_point": self.saddle_point.to_dict(),
+            "radon_peak": self.radon_peak.to_dict(),
         }
 
 
@@ -308,6 +463,7 @@ class ChessConfig(_PrettyMixin):
     pyramid_min_size: int = 128
     refinement_radius: int = 3
     merge_radius: float = 3.0
+    radon_detector: RadonDetectorParams = field(default_factory=RadonDetectorParams)
 
     @classmethod
     def single_scale(cls) -> ChessConfig:
@@ -316,6 +472,12 @@ class ChessConfig(_PrettyMixin):
     @classmethod
     def multiscale(cls) -> ChessConfig:
         return cls(pyramid_levels=3, pyramid_min_size=128)
+
+    @classmethod
+    def radon(cls) -> ChessConfig:
+        """Preset that selects the whole-image Radon detector."""
+
+        return cls(detector_mode=DetectorMode.RADON, pyramid_levels=1)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> ChessConfig:
@@ -334,6 +496,7 @@ class ChessConfig(_PrettyMixin):
                 "pyramid_min_size",
                 "refinement_radius",
                 "merge_radius",
+                "radon_detector",
             },
             "config",
         )
@@ -384,6 +547,10 @@ class ChessConfig(_PrettyMixin):
             )
         if "merge_radius" in mapping:
             cfg.merge_radius = _expect_float(mapping["merge_radius"], "config.merge_radius")
+        if "radon_detector" in mapping:
+            cfg.radon_detector = RadonDetectorParams.from_dict(
+                _expect_mapping(mapping["radon_detector"], "config.radon_detector")
+            )
         return cfg
 
     @classmethod
@@ -416,6 +583,7 @@ class ChessConfig(_PrettyMixin):
             "pyramid_min_size": self.pyramid_min_size,
             "refinement_radius": self.refinement_radius,
             "merge_radius": self.merge_radius,
+            "radon_detector": self.radon_detector.to_dict(),
         }
 
 
@@ -442,6 +610,9 @@ __all__ = [
     "DescriptorMode",
     "DetectorMode",
     "ForstnerConfig",
+    "PeakFitMode",
+    "RadonDetectorParams",
+    "RadonPeakConfig",
     "RefinerConfig",
     "RefinementMethod",
     "SaddlePointConfig",

@@ -81,6 +81,24 @@ impl ChessDetector {
         };
     }
 
+    /// Select the detector kernel: `"canonical"`, `"broad"`, or
+    /// `"radon"`. `canonical` / `broad` are the two ChESS variants;
+    /// `radon` picks the whole-image Duda-Frese detector, useful
+    /// under heavy blur or low contrast.
+    pub fn set_detector_mode(&mut self, name: &str) -> Result<(), JsValue> {
+        self.config.detector_mode = match name {
+            "canonical" => DetectorMode::Canonical,
+            "broad" => DetectorMode::Broad,
+            "radon" => DetectorMode::Radon,
+            _ => {
+                return Err(JsValue::from_str(
+                    "unknown detector_mode: use canonical, broad, or radon",
+                ))
+            }
+        };
+        Ok(())
+    }
+
     /// Set the minimum cluster size for accepting a corner (default 2).
     pub fn set_min_cluster_size(&mut self, v: u32) {
         self.config.min_cluster_size = v;
@@ -121,18 +139,19 @@ impl ChessDetector {
         Ok(())
     }
 
-    /// Set the subpixel refiner: "center_of_mass", "forstner", or "saddle_point".
+    /// Set the subpixel refiner: `"center_of_mass"`, `"forstner"`,
+    /// `"saddle_point"`, or `"radon_peak"`.
     pub fn set_refiner(&mut self, name: &str) -> Result<(), JsValue> {
-        self.config.refiner.kind = match name {
-            "center_of_mass" => RefinementMethod::CenterOfMass,
-            "forstner" => RefinementMethod::Forstner,
-            "saddle_point" => RefinementMethod::SaddlePoint,
-            _ => {
-                return Err(JsValue::from_str(
-                    "unknown refiner: use center_of_mass, forstner, or saddle_point",
-                ))
-            }
-        };
+        self.config.refiner.kind =
+            match name {
+                "center_of_mass" => RefinementMethod::CenterOfMass,
+                "forstner" => RefinementMethod::Forstner,
+                "saddle_point" => RefinementMethod::SaddlePoint,
+                "radon_peak" => RefinementMethod::RadonPeak,
+                _ => return Err(JsValue::from_str(
+                    "unknown refiner: use center_of_mass, forstner, saddle_point, or radon_peak",
+                )),
+            };
         Ok(())
     }
 
