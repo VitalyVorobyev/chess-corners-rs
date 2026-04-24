@@ -235,6 +235,7 @@ impl CornerRefiner for RadonPeakRefiner {
             &mut self.resp,
             &mut self.blur_scratch,
             self.side,
+            self.side,
             self.cfg.response_blur_radius as usize,
         );
 

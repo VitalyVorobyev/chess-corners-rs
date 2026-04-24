@@ -41,3 +41,7 @@ serde_json.workspace = true
 [[bench]]
 name = "descriptor_fit"
 harness = false
+
+[[bench]]
+name = "radon_response"
+harness = false

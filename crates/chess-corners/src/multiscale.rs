@@ -21,12 +21,14 @@
 
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
-use crate::{ChessConfig, ChessParams};
+use crate::{ChessConfig, ChessParams, DetectorMode};
 use box_image_pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
 use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
 use chess_corners_core::detect::{detect_corners_from_response_with_refiner, merge_corners_simple};
 use chess_corners_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
-use chess_corners_core::{CornerDescriptor, CornerRefiner};
+use chess_corners_core::{
+    detect_corners_from_radon, radon_response_u8, CornerDescriptor, CornerRefiner, RadonBuffers,
+};
 use chess_corners_core::{ImageView, Refiner, RefinerKind, ResponseMap};
 
 /// Bridge from `chess_corners_core::ImageView` to `box_image_pyramid::ImageView`.
@@ -290,6 +292,13 @@ pub fn find_chess_corners_buff_with_refiner(
     buffers: &mut PyramidBuffers,
     refiner: &RefinerKind,
 ) -> Vec<CornerDescriptor> {
+    // Radon detector has its own response + NMS + peak-fit pipeline
+    // and does not use the ChESS response map or `refiner`. Dispatch
+    // early so the ChESS path below can assume Canonical/Broad mode.
+    if matches!(cfg.detector_mode, DetectorMode::Radon) {
+        return detect_with_radon(base, cfg);
+    }
+
     let params = cfg.to_chess_params();
     let cf = cfg.to_coarse_to_fine_params();
 
@@ -374,6 +383,65 @@ pub fn find_chess_corners_buff_with_refiner(
 }
 
 // ---------------------------------------------------------------------------
+// Radon detector path
+// ---------------------------------------------------------------------------
+
+/// Run the whole-image Duda-Frese Radon detector on `base` and
+/// produce [`CornerDescriptor`] values in base-image coordinates.
+///
+/// Single-scale only — the Radon pipeline is already fast enough at
+/// base resolution (SAT-based O(1) ray sums) that building a pyramid
+/// for coarse-to-fine is not net faster on calibration frames. If
+/// `cfg.pyramid_levels > 1` that field is ignored and the detector
+/// runs on `base`.
+///
+/// The Radon detector applies its own threshold / NMS / 3-point
+/// Gaussian peak-fit internally, so `cfg.refiner` is not consulted.
+/// Descriptor sampling still honours
+/// [`ChessConfig::descriptor_mode`](crate::ChessConfig::descriptor_mode).
+fn detect_with_radon(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescriptor> {
+    #[cfg(feature = "tracing")]
+    let span = info_span!(
+        "radon_detect",
+        w = base.width,
+        h = base.height,
+        upsample = cfg.radon_detector.image_upsample,
+    )
+    .entered();
+
+    // Allocate RadonBuffers on the stack of this call. The detector
+    // buffers reuse pattern (mirroring PyramidBuffers) is deferred —
+    // callers who need zero-alloc framing can call the core-level
+    // `radon_response_u8` / `detect_corners_from_radon` directly.
+    let mut rb = RadonBuffers::new();
+    let resp = radon_response_u8(base.data, base.width, base.height, &cfg.radon_detector, &mut rb);
+    let corners = detect_corners_from_radon(&resp, &cfg.radon_detector);
+
+    if corners.is_empty() {
+        #[cfg(feature = "tracing")]
+        drop(span);
+        return Vec::new();
+    }
+
+    // Descriptor sampling uses the ChESS ring at the resolution
+    // configured by `descriptor_mode`. Corners are already in
+    // base-image coordinates.
+    let params = cfg.to_chess_params();
+    let mut merged = corners;
+    let merged = merge_corners_simple(&mut merged, cfg.merge_radius);
+    let out = corners_to_descriptors(
+        base.data,
+        base.width,
+        base.height,
+        params.descriptor_ring_radius(),
+        merged,
+    );
+    #[cfg(feature = "tracing")]
+    drop(span);
+    out
+}
+
+// ---------------------------------------------------------------------------
 // ML refiner path
 // ---------------------------------------------------------------------------
 
@@ -398,6 +466,16 @@ fn find_chess_corners_buff_with_ml_state(
     ml: &ml_refiner::MlRefinerParams,
     ml_state: &mut ml_refiner::MlRefinerState,
 ) -> Vec<CornerDescriptor> {
+    // The Radon detector produces corners through its own internal
+    // peak-fit and does not emit ChESS-response seeds, so pairing it
+    // with the ML refiner is a category error. Fall back to the
+    // Radon detector's native output in that case — the user can
+    // still pick the ML refiner by switching `detector_mode` back to
+    // `Canonical` or `Broad`.
+    if matches!(cfg.detector_mode, DetectorMode::Radon) {
+        return detect_with_radon(base, cfg);
+    }
+
     let params = cfg.to_chess_params();
     let cf = cfg.to_coarse_to_fine_params();
 
