@@ -181,7 +181,11 @@ impl RadonPeakRefiner {
     /// coordinate. Returns `(max_ray − min_ray)²`.
     #[inline]
     fn response_at(&self, img: &ImageView<'_>, x: f32, y: f32, step: f32) -> f32 {
-        let samples_per_side = (self.cfg.ray_radius as i32) * (self.cfg.image_upsample as i32);
+        // Mirror `image_upsample_clamped()` so ray length stays consistent
+        // with the response-map grid when a config with `image_upsample == 0`
+        // slips through serde (valid `u32`, clamped everywhere else).
+        let samples_per_side =
+            (self.cfg.ray_radius as i32) * (self.cfg.image_upsample_clamped() as i32);
         let samples_per_side = samples_per_side.max(1);
         let mut max_r = f32::NEG_INFINITY;
         let mut min_r = f32::INFINITY;
