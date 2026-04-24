@@ -9,31 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Retrained ML refiner** (`chess_refiner_v3.onnx`) using
-  AA-rasterised hard-cell chessboard patches that match the
-  benchmark's inference distribution (see
-  `tools/ml_refiner/configs/synth_v5.yaml`). Replaces the v2 model
-  trained on tanh-saddle synthesis. Accuracy improves from v2's
-  ~0.5 px mean across all benchmark conditions to v3's 0.08–0.10 px
-  — roughly 5–7× better — and now under the 0.1 px mean-error bar
-  on clean cell=8. The v3 model is the strongest refiner under
-  heavy noise (σ=10, mean=0.096 px).
+- **Retrained ML refiner** (`chess_refiner_v4.onnx`) on a mixed
+  training distribution — 50% AA-rasterised hard-cell chessboards
+  that match the benchmark fixture, 50% legacy tanh-saddle patches
+  — so the shipped model handles both regimes. Replaces the v2
+  tanh-only model that collapsed to ~0.5 px on hard-cells, and
+  supersedes an interim v3 hard-cells-only checkpoint that
+  collapsed to ~0.6 px on tanh in the mirror failure. On the Rust
+  benchmark, v4 lands at 0.09–0.10 px mean across clean / blurred /
+  noise σ=5 / noise σ=10 and **wins under heavy noise** (mean=0.10
+  vs `RadonPeak` 0.13 at σ=10). Training tooling:
+  `tools/ml_refiner/configs/synth_v6.yaml`,
+  `val_hardcell_v6.yaml`, `val_tanh_v6.yaml`, `train_v6.yaml`.
 
-- `render_mode: hard_cells` option in the ML-refiner training
-  pipeline (`tools/ml_refiner/synth/render_corner.py`). Renders
-  periodic chessboards at 8× supersampling with rotation, per-sample
-  `cell_size_px` axis, and post-rasterisation Gaussian PSF —
-  mirrors `crates/chess-corners/tests/refiner_benchmark.rs` so the
-  training and inference distributions match.
+  **Honest scope.** v4 does not beat `RadonPeak` on clean data
+  (v4 ≈ 0.09 px vs `RadonPeak` ≈ 0.05 px). We audited three
+  architectures of increasing capacity (180K-param small FC,
+  730K-param large FC, 50K-param soft-argmax with full-res
+  heatmap) on the same data and all hit the same ~0.14 px plateau
+  on held-out hard-cell patches. The gap to `RadonPeak` is a
+  learning/optimisation gap — a CNN is mathematically capable of
+  reaching the same accuracy but hasn't discovered the
+  4-angle-Radon-plus-peak-fit structure from generic regression
+  loss on 200K patches. We explicitly decided not to pursue
+  distillation or multi-stage supervision in this release; see
+  `docs/refiner-comparison.md` for the current honest trade-off
+  and `docs/proposal-ml-refiner-v3.md` for the experiment log.
 
-- `tools/ml_refiner/eval_hardcell.py` — post-training evaluation on
-  held-out hard-cell patches with per-cell / per-blur / per-noise
-  error breakdowns and a `--gate` flag enforcing the <0.1 px
-  shipping threshold on the clean subset.
+- `render_mode` now accepts either a single string or a
+  `{mode: weight}` mapping in
+  `tools/ml_refiner/synth/generate_dataset.py`. The mapping draws
+  a render mode per sample, which is how v4's mixed-mode dataset
+  is produced. Each shard persists the per-sample `render_mode`
+  code alongside `blur_sigma` / `noise_sigma` / `cell_size_px` so
+  `tools/ml_refiner/eval_hardcell.py` can break results down by
+  mode.
 
-- New training configs: `synth_v5.yaml` (200K hard-cell training
-  samples), `val_hardcell_v5.yaml` (20K held-out val pinned to
-  cell ∈ {5, 8}), `train_v5.yaml`.
+- Two architectures in `tools/ml_refiner/model.py` — the original
+  `CornerRefinerNet` (FC head, 180K params, default and shipped)
+  plus `CornerRefinerNetLarge` (wider, GroupNorm, 730K params) and
+  `CornerRefinerNetSoftArgmax` (spatial-expectation head,
+  full-resolution heatmap, 50K params). Selected via a `model:`
+  field in the training config and a `--model` flag on
+  `eval_hardcell.py` / `export_onnx.py`.
+
+- `tools/ml_refiner/eval_hardcell.py` — held-out evaluation with
+  per-cell / per-blur / per-noise / per-render-mode error
+  breakdowns and a `--gate` flag enforcing the <0.1 px threshold
+  on the clean subset.
+
+### Removed
+
+- Obsolete `chess_refiner_v2.onnx` and the interim
+  `chess_refiner_v3.onnx` — neither shipped in a released version,
+  and keeping them in the embedded-assets directory only bloated
+  the crate and confused the parity tests. `v4.onnx` is now the
+  only embedded artifact.
 
 ### Changed
 

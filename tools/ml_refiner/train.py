@@ -30,7 +30,7 @@ if str(ML_ROOT) not in sys.path:
     sys.path.insert(0, str(ML_ROOT))
 
 from dataset import ShardDataset  # noqa: E402
-from model import CornerRefinerNet  # noqa: E402
+from model import build_model  # noqa: E402
 
 
 def load_config(path: Path) -> Dict[str, Any]:
@@ -115,9 +115,18 @@ def compute_loss(
     reg_weight_bias = float(loss_cfg.get("reg_weight_bias", 0.2))
     reg_weight_scale = float(loss_cfg.get("reg_weight_scale", 0.8))
     lambda_conf = float(loss_cfg.get("lambda_conf", 0.2))
+    # `smooth_l1` (default, historical) | `mse` | `l1`.
+    # MSE keeps linear gradient at small residuals — better for the
+    # sub-0.1 px regime where smooth_l1 goes flat.
+    reg_kind = str(loss_cfg.get("regression", "smooth_l1")).lower()
 
-    reg_err = nn.functional.smooth_l1_loss(dx_hat, dx, reduction="none")
-    reg_err = reg_err + nn.functional.smooth_l1_loss(dy_hat, dy, reduction="none")
+    if reg_kind == "mse":
+        reg_err = (dx_hat - dx) ** 2 + (dy_hat - dy) ** 2
+    elif reg_kind == "l1":
+        reg_err = (dx_hat - dx).abs() + (dy_hat - dy).abs()
+    else:
+        reg_err = nn.functional.smooth_l1_loss(dx_hat, dx, reduction="none")
+        reg_err = reg_err + nn.functional.smooth_l1_loss(dy_hat, dy, reduction="none")
     mask = (is_pos > 0.5).float()
     weights = (reg_weight_bias + reg_weight_scale * conf.detach()) * mask
     denom = torch.clamp(weights.sum(), min=1.0)
@@ -408,7 +417,7 @@ def main() -> None:
 
     device = select_device(str(cfg.get("device", "auto")))
 
-    model = CornerRefinerNet()
+    model = build_model(str(cfg.get("model", "small")))
     model.to(device)
 
     train_loader = build_loader(cfg, "train", seed, device)

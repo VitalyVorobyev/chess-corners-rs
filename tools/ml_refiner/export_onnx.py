@@ -22,7 +22,7 @@ ML_ROOT = Path(__file__).resolve().parent
 if str(ML_ROOT) not in sys.path:
     sys.path.insert(0, str(ML_ROOT))
 
-from model import CornerRefinerNet  # noqa: E402
+from model import build_model  # noqa: E402
 from synth import render_corner  # noqa: E402
 from synth import generate_dataset as synth_gen  # noqa: E402
 
@@ -208,6 +208,11 @@ def main() -> None:
     parser.add_argument("--fixtures-out", required=True, help="Fixtures output dir")
     parser.add_argument("--dataset-dir", help="Optional dataset dir")
     parser.add_argument("--seed", type=int, default=1234)
+    parser.add_argument(
+        "--model",
+        default="small",
+        help="Architecture name ('small' or 'large', default: small)",
+    )
     args = parser.parse_args()
 
     checkpoint = Path(args.checkpoint)
@@ -215,8 +220,13 @@ def main() -> None:
     fixtures_out = Path(args.fixtures_out)
     dataset_dir = Path(args.dataset_dir) if args.dataset_dir else None
 
-    model = CornerRefinerNet()
+    model = build_model(args.model)
     state = load_checkpoint(checkpoint)
+    # Some shape-dependent layers (LazyLinear) require a dummy forward
+    # before the shape can be resolved and the state loaded.
+    dummy = torch.zeros(1, 1, args.patch_size, args.patch_size)
+    with torch.no_grad():
+        model(dummy)
     model.load_state_dict(state)
     model.eval()
     model.cpu()

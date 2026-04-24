@@ -8,7 +8,7 @@ import math
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 try:
     import numpy as np  # type: ignore
@@ -175,6 +175,41 @@ def _neg_cfg(cfg: Dict[str, Any]) -> Dict[str, Any]:
     return dict(raw)
 
 
+def _resolve_render_modes(
+    cfg: Dict[str, Any],
+    rng: np.random.Generator,
+    count: int,
+) -> List[str]:
+    """Return a per-sample render-mode sequence.
+
+    ``render_mode`` in the config may be either a string (all samples
+    use that mode) or a mapping of ``{mode: weight}`` (each sample
+    independently draws a mode proportional to the weights). Weights
+    need not sum to 1.
+    """
+    raw = cfg.get("render_mode", "tanh")
+    if isinstance(raw, str):
+        return [raw] * count
+    if isinstance(raw, dict):
+        modes: List[str] = []
+        weights: List[float] = []
+        for key, value in raw.items():
+            modes.append(str(key))
+            weights.append(float(value))
+        if not modes:
+            raise ValueError("render_mode mapping is empty")
+        w = np.asarray(weights, dtype=np.float64)
+        if np.any(w < 0):
+            raise ValueError("render_mode weights must be non-negative")
+        total = float(w.sum())
+        if total <= 0.0:
+            raise ValueError("render_mode weights sum to zero")
+        probs = w / total
+        idx = rng.choice(len(modes), size=count, p=probs)
+        return [modes[i] for i in idx]
+    raise ValueError("render_mode must be a string or a mapping")
+
+
 def generate_samples(
     cfg: Dict[str, Any],
     rng: np.random.Generator,
@@ -188,7 +223,9 @@ def generate_samples(
 ) -> Dict[str, np.ndarray]:
     patch_size = int(cfg["patch_size"])
     edge_softness = float(cfg.get("edge_softness", 0.15))
-    render_mode = str(cfg.get("render_mode", "tanh"))
+    # Per-sample render mode. Accepts a single string or a
+    # {mode: weight} mapping — see `_resolve_render_modes` for details.
+    per_sample_render_mode = _resolve_render_modes(cfg, rng, count)
     # Hard-cells mode needs a cell size. tanh ignores it.
     default_cell_size = float(cfg.get("default_cell_size_px", 6.0))
 
@@ -233,7 +270,7 @@ def generate_samples(
                 float(params["scale"][idx]),
                 edge_softness,
                 cell_size,
-                render_mode,
+                per_sample_render_mode[idx],
             )
 
             dx = params["dx"][idx]
@@ -311,6 +348,15 @@ def generate_samples(
         params["dx"][~is_pos] = 0.0
         params["dy"][~is_pos] = 0.0
 
+    # Encode render-mode as a small uint8 per sample for shard storage.
+    # 0 = tanh, 1 = hard_cells, 255 = unknown/negative. Kept compact so
+    # shards don't bloat.
+    mode_codes = np.full(count, 255, dtype=np.uint8)
+    for i, name in enumerate(per_sample_render_mode):
+        if not is_pos[i]:
+            continue
+        mode_codes[i] = {"tanh": 0, "hard_cells": 1}.get(name, 255)
+
     return {
         "patches": patches,
         "dx": params["dx"],
@@ -320,6 +366,7 @@ def generate_samples(
         "noise_sigma": params["noise_sigma"],
         "blur_sigma": params["blur_sigma"],
         "cell_size_px": cell_sizes_out,
+        "render_mode": mode_codes,
         **({"H": Hs} if Hs is not None else {}),
     }
 
@@ -539,6 +586,7 @@ def main() -> None:
             "blur_sigma": data["blur_sigma"],
             "is_pos": data["is_pos"],
             "cell_size_px": data["cell_size_px"],
+            "render_mode": data["render_mode"],
         }
         if "H" in data:
             extra["H"] = data["H"]

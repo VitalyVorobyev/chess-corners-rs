@@ -1,0 +1,39 @@
+# Training config for v6 LARGE (mixed tanh + hard-cells, ~4× the
+# parameters of the small model).
+#
+# Uses the same synth_v6 dataset as train_v6.yaml — the only axis
+# that changes is model capacity. This isolates the effect of
+# architecture size on the final accuracy ceiling that the small
+# model plateaued against at val_p95 ≈ 0.27.
+
+seed: 123
+data_dir: "tools/ml_refiner/data/synth_v6"
+patch_size: 21
+model: large
+batch_size: 512   # halved vs small so MPS memory is comfortable
+num_workers: 0
+max_cache: 10
+epochs: 20
+lr: 1.0e-3       # slightly lower for the bigger net
+weight_decay: 1.0e-4
+device: "auto"
+val_split: 0.1
+log_interval: 40
+log_interval_val: 0
+
+loss:
+  lambda_conf: 0.1
+  reg_weight_bias: 0.4
+  reg_weight_scale: 0.6
+
+scheduler:
+  kind: "cosine"
+  warmup_epochs: 2
+
+augment:
+  enabled: false
+
+save:
+  run_dir: "tools/ml_refiner/runs"
+  save_best: true
+  save_last: true

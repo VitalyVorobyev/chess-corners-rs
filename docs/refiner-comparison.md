@@ -32,23 +32,43 @@ Euclidean pixel error against the ground-truth subpixel corner. All
 36 offsets accepted by every refiner in every condition. The best
 mean per condition is **bolded**.
 
-| condition        | CenterOfMass       | Forstner         | SaddlePoint      | RadonPeak              | ML (ONNX)           |
+| condition        | CenterOfMass       | Forstner         | SaddlePoint      | RadonPeak              | ML (ONNX v4)        |
 |------------------|--------------------|------------------|------------------|------------------------|---------------------|
-| clean (cell=8)   | 0.080 / 0.123      | 0.061 / 0.165    | 0.114 / 0.177    | **0.049** / 0.103      | 0.084 / 0.147       |
-| clean (cell=5)   | 0.390 / 0.707      | 0.061 / 0.165    | 0.114 / 0.177    | **0.049** / 0.103      | 0.091 / 0.170       |
-| blur σ=1.5       | 0.056 / 0.124      | 0.266 / 0.471    | 0.047 / 0.079    | **0.046** / 0.073      | 0.088 / 0.170       |
-| noise σ=5        | 0.088 / 0.156      | 0.135 / 0.301    | 0.095 / 0.220    | **0.085** / 0.183      | 0.086 / 0.150       |
-| noise σ=10       | 0.123 / 0.272      | 0.201 / 0.474    | 0.126 / 0.257    | 0.128 / 0.302          | **0.096** / 0.178   |
+| clean (cell=8)   | 0.080 / 0.123      | 0.061 / 0.165    | 0.114 / 0.177    | **0.049** / 0.103      | 0.094 / 0.181       |
+| clean (cell=5)   | 0.390 / 0.707      | 0.061 / 0.165    | 0.114 / 0.177    | **0.049** / 0.103      | 0.091 / 0.150       |
+| blur σ=1.5       | 0.056 / 0.124      | 0.266 / 0.471    | 0.047 / 0.079    | **0.046** / 0.073      | 0.092 / 0.173       |
+| noise σ=5        | 0.088 / 0.156      | 0.135 / 0.301    | 0.095 / 0.220    | **0.085** / 0.183      | 0.093 / 0.168       |
+| noise σ=10       | 0.123 / 0.272      | 0.201 / 0.474    | 0.126 / 0.257    | 0.128 / 0.302          | **0.101** / 0.200   |
 
 Cells are `mean / worst` px; accept rate is 36/36 for every refiner in
 every condition. `RadonPeak` wins mean-error on clean and blurred
 inputs; the ML refiner wins under heavy noise (σ=10). All five
-refiners now come in under the 0.1 px mean-error bar on clean cell=8,
-the canonical "success" condition. The ML refiner was retrained on
-AA-hard-cell synthetic data that matches this fixture (v3 model, see
-`docs/proposal-ml-refiner-v3.md`); the previous tanh-saddle-trained
-v2 model scored 0.5 px here — a pure distribution-mismatch failure,
-not a capacity limit.
+refiners come in under the ~0.13 px mean-error bar on clean cell=8.
+The ML model (v4 ONNX) is trained on a mixed tanh + AA-hard-cell
+distribution so it handles both regimes without the 0.5 px
+distribution-mismatch failure that bit v2 on this fixture.
+
+**Why ML loses to RadonPeak on clean data.** We tried three
+architectures (~180K → 730K → 50K-param soft-argmax) on the same
+synthetic data; all converged to the same ~0.14 px plateau on the
+held-out hard-cell val set, ~0.09 px on the Rust benchmark. The gap
+to RadonPeak is a **learning gap, not an information gap** — a CNN
+is mathematically capable of computing any deterministic function
+of the 21 × 21 patch, including RadonPeak's own algorithm, but
+discovering that structure from generic smooth-L1 / MSE regression
+on 200K patches has not been enough to match a hand-designed
+algorithm built specifically for the task. RadonPeak encodes a
+strong geometric prior (4-angle Radon response, Gaussian log peak
+fit) as closed-form operations; the ML refiner has to learn the
+equivalent structure through gradient descent, and current
+training regime does not get there.
+
+The ML refiner remains useful where classical refiners struggle
+(heavy noise, see σ=10 row) and as a single deployable ONNX
+artifact for callers who prefer a learned component over a
+hand-tuned pipeline. See `docs/proposal-ml-refiner-v3.md` for the
+architecture exploration and the honest accounting of what we
+tried.
 
 The `Forstner / SaddlePoint / RadonPeak` rows are identical between
 `clean (cell=5)` and `clean (cell=8)` because they're all local

@@ -30,10 +30,12 @@ ML_ROOT = Path(__file__).resolve().parent
 if str(ML_ROOT) not in sys.path:
     sys.path.insert(0, str(ML_ROOT))
 
-from model import CornerRefinerNet  # noqa: E402
+from model import build_model  # noqa: E402
 
 
-def load_shards(data_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_shards(
+    data_dir: Path,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Load all shards in `data_dir` and concatenate.
 
     Returns
@@ -41,6 +43,7 @@ def load_shards(data_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.
     patches: uint8 (N, P, P)
     dx, dy: float32 (N,)
     blur, noise, cell: float32 (N,)
+    mode: uint8 (N,)   # 0 = tanh, 1 = hard_cells, 255 = unknown
     """
     shards = sorted(data_dir.glob("shard_*.npz"))
     if not shards:
@@ -51,6 +54,7 @@ def load_shards(data_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.
     blur_all = []
     noise_all = []
     cell_all = []
+    mode_all = []
     for path in shards:
         with np.load(path) as data:
             patches.append(data["patches"])
@@ -66,6 +70,12 @@ def load_shards(data_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.
             else:
                 cell = np.asarray(cell, dtype=np.float32)
             cell_all.append(cell)
+            mode = data.get("render_mode")
+            if mode is None:
+                mode = np.full(dx_all[-1].shape, 255, dtype=np.uint8)
+            else:
+                mode = np.asarray(mode, dtype=np.uint8)
+            mode_all.append(mode)
     return (
         np.concatenate(patches, axis=0),
         np.concatenate(dx_all, axis=0),
@@ -73,6 +83,7 @@ def load_shards(data_dir: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.
         np.concatenate(blur_all, axis=0),
         np.concatenate(noise_all, axis=0),
         np.concatenate(cell_all, axis=0),
+        np.concatenate(mode_all, axis=0),
     )
 
 
@@ -166,19 +177,29 @@ def main() -> None:
         action="store_true",
         help="Enforce the v5 promotion gate (<0.1 px clean mean).",
     )
+    parser.add_argument(
+        "--model",
+        default="small",
+        help="Architecture name (small | large). Default: small.",
+    )
     parser.add_argument("--json", help="Optional path to dump metrics as JSON")
     args = parser.parse_args()
 
     data_dir = Path(args.data_dir)
     ckpt_path = Path(args.checkpoint)
 
-    patches, dx_true, dy_true, blur, noise, cell = load_shards(data_dir)
+    patches, dx_true, dy_true, blur, noise, cell, mode = load_shards(data_dir)
     print(f"loaded {patches.shape[0]} patches from {data_dir}")
 
     device = select_device(args.device)
     print(f"device={device}")
 
-    model = CornerRefinerNet()
+    model = build_model(args.model)
+    # LazyLinear needs a dummy forward before state_dict load to
+    # materialise shape-dependent layers.
+    dummy = torch.zeros(1, 1, 21, 21)
+    with torch.no_grad():
+        model(dummy)
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     state = ckpt.get("model", ckpt) if isinstance(ckpt, dict) else ckpt
     model.load_state_dict(state)
@@ -222,6 +243,20 @@ def main() -> None:
     print("\n=== By noise_sigma ===")
     print(format_table(noise_rows, "noise_sigma"))
     metrics["by_noise"] = {label: s for label, s in noise_rows}
+
+    # Per-render-mode breakdown (only meaningful when the probe mixes
+    # modes). Skips the section entirely when all samples share one mode.
+    uniq_modes = np.unique(mode)
+    if uniq_modes.size > 1 and not (uniq_modes.size == 1 and uniq_modes[0] == 255):
+        print("\n=== By render_mode ===")
+        mode_rows = []
+        for code, label in ((0, "tanh"), (1, "hard_cells"), (255, "unknown")):
+            mask = mode == code
+            if not mask.any():
+                continue
+            mode_rows.append((label, radial_stats(err[mask])))
+        print(format_table(mode_rows, "render_mode"))
+        metrics["by_render_mode"] = {label: s for label, s in mode_rows}
 
     if args.json:
         Path(args.json).write_text(json.dumps(metrics, indent=2))

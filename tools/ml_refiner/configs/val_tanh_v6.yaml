@@ -1,0 +1,46 @@
+# Held-out tanh validation set for v6. Matches the offset range and
+# photometric envelope used for hard-cell val so both are
+# apples-to-apples when we report per-mode generalization.
+seed: 0xC0FFEE13
+patch_size: 21
+num_samples: 10000
+shard_size: 5000
+
+render_mode: tanh
+
+dx_range: [-0.6, 0.6]
+dy_range: [-0.6, 0.6]
+rotation: [0.0, 6.2831853]
+
+scale: [0.7, 1.3]
+edge_softness: 0.15
+
+noise_sigma: [0.0, 10.0]
+blur_sigma: [0.3, 2.0]
+contrast: [0.6, 1.4]
+brightness: [-15.0, 15.0]
+gamma: [0.8, 1.3]
+
+super_res: 8
+render_margin: 2.0
+
+conf_params:
+  a: 0.3
+  b: 0.01
+
+homography:
+  enabled: true
+  p_range: [-0.0015, 0.0015]
+  shear_range: [-0.1, 0.1]
+  scale_x: [0.9, 1.1]
+  scale_y: [0.9, 1.1]
+  tx_range: [-0.5, 0.5]
+  ty_range: [-0.5, 0.5]
+  max_local_scale: 1.6
+  min_local_scale: 0.625
+  max_skew: 0.4
+  max_outside_frac: 0.05
+  max_attempts: 50
+
+neg:
+  enabled: false
