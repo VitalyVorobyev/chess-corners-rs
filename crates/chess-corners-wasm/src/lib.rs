@@ -60,16 +60,41 @@ impl ChessDetector {
     }
 
     // ---- Config setters ----
+    //
+    // Threshold, NMS radius, and min-cluster-size setters mirror into
+    // both the ChESS-side `ChessConfig` fields and the Radon-side
+    // `ChessConfig::radon_detector` fields. The detector pipeline
+    // reads only the fields that correspond to the active
+    // `detector_mode`, but mirroring means JS callers that toggle
+    // between modes at runtime get their tuning applied on both paths
+    // without having to re-invoke each setter after every mode switch.
 
     /// Set the relative threshold (fraction of max response, default 0.2).
+    ///
+    /// Applied to both detectors. For ChESS this switches
+    /// `threshold_mode` to `Relative`; for Radon this sets
+    /// `radon_detector.threshold_rel` and clears any absolute override
+    /// on `threshold_abs` so the relative value wins.
     pub fn set_threshold(&mut self, rel: f32) {
         self.config.threshold_mode = ThresholdMode::Relative;
         self.config.threshold_value = rel;
+        self.config.radon_detector.threshold_rel = rel;
+        self.config.radon_detector.threshold_abs = None;
     }
 
     /// Set the non-maximum suppression radius (default 2).
+    ///
+    /// Mirrored into both detectors. **Convention note:** the ChESS
+    /// `nms_radius` is measured in input-image pixels, while the Radon
+    /// `nms_radius` is measured in **working-resolution** pixels
+    /// (post-`image_upsample`). At the default `image_upsample = 2`
+    /// the same numeric value therefore selects a 2× smaller physical
+    /// neighbourhood on the Radon path. Most calibration fixtures
+    /// don't notice this, but callers tuning both modes side-by-side
+    /// should be aware.
     pub fn set_nms_radius(&mut self, r: u32) {
         self.config.nms_radius = r;
+        self.config.radon_detector.nms_radius = r;
     }
 
     /// Toggle the large r=10 ring (default: r=5).
@@ -84,7 +109,9 @@ impl ChessDetector {
     /// Select the detector kernel: `"canonical"`, `"broad"`, or
     /// `"radon"`. `canonical` / `broad` are the two ChESS variants;
     /// `radon` picks the whole-image Duda-Frese detector, useful
-    /// under heavy blur or low contrast.
+    /// under heavy blur or low contrast. Threshold / NMS / cluster
+    /// tuning from the other setters is preserved across mode
+    /// switches because those setters mirror into both detectors.
     pub fn set_detector_mode(&mut self, name: &str) -> Result<(), JsValue> {
         self.config.detector_mode = match name {
             "canonical" => DetectorMode::Canonical,
@@ -100,8 +127,11 @@ impl ChessDetector {
     }
 
     /// Set the minimum cluster size for accepting a corner (default 2).
+    /// Mirrored into both detectors so runtime detector_mode switches
+    /// preserve the tuning.
     pub fn set_min_cluster_size(&mut self, v: u32) {
         self.config.min_cluster_size = v;
+        self.config.radon_detector.min_cluster_size = v;
     }
 
     /// Set the number of pyramid levels (1 = single-scale, >=2 = multiscale).
