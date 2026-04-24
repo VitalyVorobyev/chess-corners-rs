@@ -142,17 +142,16 @@ impl ChessDetector {
     /// Set the subpixel refiner: `"center_of_mass"`, `"forstner"`,
     /// `"saddle_point"`, or `"radon_peak"`.
     pub fn set_refiner(&mut self, name: &str) -> Result<(), JsValue> {
-        self.config.refiner.kind = match name {
-            "center_of_mass" => RefinementMethod::CenterOfMass,
-            "forstner" => RefinementMethod::Forstner,
-            "saddle_point" => RefinementMethod::SaddlePoint,
-            "radon_peak" => RefinementMethod::RadonPeak,
-            _ => {
-                return Err(JsValue::from_str(
+        self.config.refiner.kind =
+            match name {
+                "center_of_mass" => RefinementMethod::CenterOfMass,
+                "forstner" => RefinementMethod::Forstner,
+                "saddle_point" => RefinementMethod::SaddlePoint,
+                "radon_peak" => RefinementMethod::RadonPeak,
+                _ => return Err(JsValue::from_str(
                     "unknown refiner: use center_of_mass, forstner, saddle_point, or radon_peak",
-                ))
-            }
-        };
+                )),
+            };
         Ok(())
     }
 

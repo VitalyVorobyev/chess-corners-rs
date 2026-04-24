@@ -77,13 +77,7 @@ pub fn fit_peak_frac(y_minus: f32, y_c: f32, y_plus: f32, mode: PeakFitMode) -> 
 /// independently so whole-image response maps (typically rectangular
 /// at camera resolution) and the refiner's square local response
 /// patch share the same implementation.
-pub fn box_blur_inplace(
-    resp: &mut [f32],
-    scratch: &mut [f32],
-    w: usize,
-    h: usize,
-    radius: usize,
-) {
+pub fn box_blur_inplace(resp: &mut [f32], scratch: &mut [f32], w: usize, h: usize, radius: usize) {
     debug_assert_eq!(resp.len(), w * h);
     debug_assert_eq!(scratch.len(), w * h);
     if radius == 0 {

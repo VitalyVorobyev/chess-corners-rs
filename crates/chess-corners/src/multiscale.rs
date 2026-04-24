@@ -414,7 +414,13 @@ fn detect_with_radon(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescri
     // callers who need zero-alloc framing can call the core-level
     // `radon_response_u8` / `detect_corners_from_radon` directly.
     let mut rb = RadonBuffers::new();
-    let resp = radon_response_u8(base.data, base.width, base.height, &cfg.radon_detector, &mut rb);
+    let resp = radon_response_u8(
+        base.data,
+        base.width,
+        base.height,
+        &cfg.radon_detector,
+        &mut rb,
+    );
     let corners = detect_corners_from_radon(&resp, &cfg.radon_detector);
 
     if corners.is_empty() {

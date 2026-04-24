@@ -163,9 +163,9 @@ impl ChessConfig {
     /// Preset for the whole-image Radon detector. Single-scale by
     /// construction (pyramidal Radon is deferred — the SAT-based
     /// detector is already fast enough at base resolution for typical
-    /// calibration frames). Uses [`PeakFitMode::Gaussian`] inherited
-    /// from [`RadonDetectorParams`]; corners are subpixel-refined by
-    /// the detector's own peak-fit, so `refiner` is effectively a
+    /// calibration frames). Uses the Gaussian peak-fit inherited from
+    /// `RadonDetectorParams`; corners are subpixel-refined by the
+    /// detector's own peak-fit, so `refiner` is effectively a
     /// pass-through.
     pub fn radon() -> Self {
         Self {
