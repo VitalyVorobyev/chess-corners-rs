@@ -24,6 +24,6 @@
     ]
   },
   "seed": 1234,
-  "source": "data/synth_v3",
-  "git_commit": "eba74c2dca23271a3b45589a716937ee1acd2405"
+  "source": "tools/ml_refiner/data/val_hardcell_v6",
+  "git_commit": "690916e55fafe32907b8683ffec139b4d2f1d69a"
 }

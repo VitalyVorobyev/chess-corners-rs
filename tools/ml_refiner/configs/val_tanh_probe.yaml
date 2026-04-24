@@ -1,0 +1,50 @@
+# Held-out tanh validation set — used to probe whether the v3 model
+# (trained only on hard-cells) still handles the legacy tanh-saddle
+# distribution it was never shown during training.
+seed: 0xDEADBEEF
+patch_size: 21
+num_samples: 10000
+shard_size: 5000
+
+render_mode: tanh
+
+# Ignored in tanh mode — kept so the schema validates.
+cell_size_px: [6.0, 6.0]
+
+# Legacy ranges from synth_v2.yaml so this probe measures v3 on the
+# same data pool the v2 model was trained on.
+dx_range: [-0.6, 0.6]
+dy_range: [-0.6, 0.6]
+rotation: [0.0, 6.2831853]
+scale: [0.7, 1.3]
+edge_softness: 0.15
+
+noise_sigma: [0.0, 10.0]
+blur_sigma: [0.0, 4.0]
+contrast: [0.8, 1.2]
+brightness: [-10.0, 10.0]
+gamma: [0.8, 1.2]
+
+super_res: 4
+render_margin: 2.0
+
+conf_params:
+  a: 0.6
+  b: 0.02
+
+homography:
+  enabled: true
+  p_range: [-0.0025, 0.0025]
+  shear_range: [-0.25, 0.25]
+  scale_x: [0.7, 1.3]
+  scale_y: [0.7, 1.3]
+  tx_range: [-2.0, 2.0]
+  ty_range: [-2.0, 2.0]
+  max_local_scale: 2.5
+  min_local_scale: 0.4
+  max_skew: 1.2
+  max_outside_frac: 0.05
+  max_attempts: 50
+
+neg:
+  enabled: false

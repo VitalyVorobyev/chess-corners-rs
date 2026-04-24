@@ -94,8 +94,13 @@ homography,negatives}.py` plus `configs/{synth_v2,train_v2}.yaml`.
 - `conf_params: {a: 0.3, b: 0.01}` (F8).
 - `neg: {enabled: true, fraction: 0.2}`.
 
-Companion `configs/val_hardcell_v4.yaml` with `cell_size_px ∈ {5, 8}`
-only, negatives disabled, used by `eval.py` for model selection.
+Companion `configs/val_hardcell_v4.yaml` (shipped as `val_hardcell_v5.yaml`)
+covers the 5–8 px cell envelope used by the benchmark, negatives disabled,
+used by `eval.py` for model selection. Implementation note:
+`generate_dataset.py::_sample_params` treats `cell_size_px: [5.0, 8.0]`
+as a continuous uniform range, not the discrete set `{5, 8}` — any
+promotion gate keyed on the benchmark's exact cell sizes must filter
+at eval time.
 
 ## 4. Evaluation protocol
 

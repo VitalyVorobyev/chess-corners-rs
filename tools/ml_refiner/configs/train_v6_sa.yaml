@@ -1,0 +1,43 @@
+# Training config for v6 SOFT-ARGMAX (mixed tanh + hard-cells).
+#
+# Architectural departure from v5/v6-small/v6-large:
+#   - No spatial downsampling — full 21×21 features all the way.
+#   - Pixel-shuffle upsample to 84×84 heatmap.
+#   - Softmax-weighted spatial expectation for sub-pixel (dx, dy).
+#   - MSE regression loss (smooth-L1 flat-lines at sub-0.1 px).
+#
+# Keeps everything else — data, LR schedule, number of epochs —
+# matched to train_v6_large.yaml so the only variable is the head.
+
+seed: 123
+data_dir: "tools/ml_refiner/data/synth_v6"
+patch_size: 21
+model: soft_argmax
+batch_size: 512
+num_workers: 0
+max_cache: 10
+epochs: 20
+lr: 1.0e-3
+weight_decay: 1.0e-4
+device: "auto"
+val_split: 0.1
+log_interval: 40
+log_interval_val: 0
+
+loss:
+  regression: mse
+  lambda_conf: 0.1
+  reg_weight_bias: 0.4
+  reg_weight_scale: 0.6
+
+scheduler:
+  kind: "cosine"
+  warmup_epochs: 2
+
+augment:
+  enabled: false
+
+save:
+  run_dir: "tools/ml_refiner/runs"
+  save_best: true
+  save_last: true
