@@ -46,6 +46,7 @@ clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion.workspace = true
+serde_json.workspace = true
 
 [[bench]]
 name = "upscale"
@@ -61,3 +62,8 @@ required-features = ["image"]
 name = "multiscale_image"
 path = "examples/multiscale_image.rs"
 required-features = ["image"]
+
+[[example]]
+name = "bench_sweep"
+path = "examples/bench_sweep.rs"
+required-features = []

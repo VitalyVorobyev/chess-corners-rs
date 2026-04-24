@@ -1,192 +1,374 @@
-# Part V: Performance, Accuracy, and Integration
-This part summarizes where the ChESS detector stands today on accuracy and speed (measured on a MacBook Pro M4), how well it matches classic OpenCV detectors on a stereo calibration dataset, how to interpret the traces we emit, and how to integrate the detector into larger pipelines.
+# Part V: Performance, accuracy, integration
 
-We took three test images as use cases:
+This part is a decision guide. It does not claim to be a research
+paper. The goal is that, after reading it, you can answer three
+practical questions for your own use case:
 
-1. A clear 1200x900 image of a chessboard calibration target:
+1. Which refiner to pick for *your* imagery.
+2. What accuracy and latency to expect.
+3. Where the library's limits are, so you know when to look
+   elsewhere.
 
-![](img/mid_chess.png)
+All numbers on this page are measured on a MacBook Pro M4 with the
+release-mode `chess-corners` built at the current tip. Hardware moves
+the absolutes, not the relative ordering between refiners.
 
-2. A 720x540 image of a ChArUco target with not perfect focus:
+## 5.1 Picking a refiner in 30 seconds
 
-![](img/small_chess.png)
+| Your scene                                                  | Use                                  |
+|-------------------------------------------------------------|--------------------------------------|
+| High-contrast calibration board, cell ≥ 7 px, low noise     | **RadonPeak**                        |
+| Same but latency-critical (≫ 100 k corners/s)               | **SaddlePoint**                      |
+| Small cells (4–6 px) — ChArUco, dense targets               | **Förstner** or **RadonPeak**        |
+| Heavy additive noise (σ ≥ 10 gray levels)                   | **ML (ONNX v4)** or **CenterOfMass** |
+| Blurred image (σ ≥ 1 px camera PSF)                         | **RadonPeak** or **SaddlePoint**     |
+| You already use OpenCV and want a one-line refiner          | **`cv2.cornerSubPix`** (cell ≥ 7)    |
+| You need a learned component for sim-to-real downstream ML  | **ML (ONNX v4)**                     |
 
-3. A 2048x1536 image of another ChArUco calibration target:
+The rest of the chapter explains these choices with plots.
 
-![](img/large_chess.png)
+## 5.2 The benchmark fixture
 
-We traced the ChESS detector for each of these images, and the results are discussed in this part. The first image was also used to compare with OpenCV Harris features and the `findChessboardCornersSB` function. For accuracy, we additionally evaluated the detector on a 2×20‑frame stereo dataset (77 corners per frame).
+Every comparison on this page uses the same synthetic fixture, run
+by `crates/chess-corners/examples/bench_sweep.rs` (Rust refiners)
+and `tools/book/opencv_subpix_sweep.py` (OpenCV). The fixture is an
+8× supersampled, AA-rasterised periodic chessboard at 45 × 45
+pixels, with a corner placed on a 6 × 6 grid of sub-pixel offsets
+(36 offsets) inside a single cell. Each condition layers on a
+Gaussian blur, additive Gaussian noise, or contrast compression:
 
-## 5.1 Performance
+![Benchmark fixture examples](img/bench/synth_grid.png)
 
-The tests below were run on a MacBook Pro M4 (release build). Absolute numbers will vary on your hardware, but the **relative** behavior between configurations is quite stable.
+The red cross marks the true sub-pixel corner position. Every
+refiner is seeded at `round(true_corner)`, so it has at most a
+±0.5 px starting error. We measure how close its refinement lands
+to the ground truth across 36 offsets per condition.
 
-Per‑image timings (ms, averaged over 10 runs; see `book/src/perf.txt` and `testdata/out/perf_report.json` for the full breakdown):
+**Why AA hard cells?** That is what a real camera produces when it
+images a printed chessboard: hard intensity transitions between ink
+and paper, softened at edges by the optical PSF, then sampled
+discretely by the sensor. The "tanh-saddle" that the v2 ML model
+was trained on is a convenient mathematical idealisation but does
+not look like this; see
+[§5.7](#57-the-ml-refiner-what-we-can-and-cannot-do) for what that
+distribution-mismatch cost us.
 
-| Config           | Features      | small |  mid | large |
+![Hard-cells vs tanh](img/bench/synth_modes.png)
+
+## 5.3 Accuracy, the full picture
+
+### Clean data, cell size 8 px
+
+![Error CDF on clean cell=8](img/bench/error_cdf_clean.png)
+
+The CDFs speak for themselves: `RadonPeak` (red) has the lowest
+errors across the whole distribution — its 95th percentile is under
+0.12 px. `Förstner` and `cv2.cornerSubPix` cluster in the next band
+(mean ≈ 0.06 px, p95 ≈ 0.1 px). `CenterOfMass` and ML are around
+0.09 mean / 0.15 p95. `SaddlePoint` has a fat right tail on this
+particular AA-rendered fixture — one of its parabolic-fit
+ill-conditioned cases hits the same offsets repeatedly, dragging
+its mean up.
+
+### Varying Gaussian blur σ
+
+![Accuracy vs blur](img/bench/accuracy_vs_blur.png)
+
+`Förstner` is a gradient-based method: Gaussian smoothing collapses
+the gradient magnitudes its structure tensor depends on, so its
+error grows roughly linearly with blur σ. Every other refiner stays
+under or near the 0.1 px bar up to σ = 2.5 px — heavier blur than
+most real cameras produce. `RadonPeak` and `cv2.cornerSubPix` are
+the most blur-robust: their Radon / gradient-flow formulations
+integrate over neighbourhoods that remain informative even when the
+step edge is smoothed.
+
+### Varying additive noise σ
+
+![Accuracy vs noise](img/bench/accuracy_vs_noise.png)
+
+Noise is where ML shines. At σ ≥ 8 gray levels (not uncommon under
+low light) the ONNX v4 model is the *most* accurate refiner —
+ahead of every hand-rolled classical method. The mechanism: the
+CNN was trained with noise σ ∈ [0, 10] and learned a denoising-like
+feature extractor in its first few layers. Classical refiners that
+fit local quadratic / Radon structure take the noise in at face
+value.
+
+### Varying cell size
+
+![Accuracy vs cell size](img/bench/accuracy_vs_cell.png)
+
+This is the plot with the most operational content. Two refiners
+break at small cell sizes:
+
+- **`cv2.cornerSubPix`** — the default `winSize=(5, 5)` gives an
+  11 × 11 search window. When the cell is 5–6 px wide, the window
+  crosses into the two neighbouring corners and `cornerSubPix`
+  collapses into a ~3 px mean error. The fix is to pass a smaller
+  `winSize` (e.g. `(2, 2)` for cell = 5), but callers often forget.
+- **`CenterOfMass`** — uses the radius-5 ChESS response ring. At
+  cell = 5 the ring crosses cell boundaries and the response's
+  centroid is biased by the neighbour, giving 0.4 px mean error.
+  At cell = 6 the cross-over is minimal and it recovers.
+
+`RadonPeak`, `Förstner`, `SaddlePoint`, and ML all look at a 2–3 px
+local neighbourhood and are cell-size-agnostic. If you know your
+targets use small cells (ChArUco markers, dense patterns), pick one
+of those four.
+
+## 5.4 Throughput and the Pareto frontier
+
+![Throughput-accuracy trade-off](img/bench/throughput_vs_accuracy.png)
+
+Note the log-log axes. Two orders of magnitude separate the fastest
+classical refiner (0.02 µs / corner for `CenterOfMass`) from the ML
+inference (~250 µs / corner at batch = 1). The Pareto frontier, from
+fast-and-loose to slow-and-tight:
+
+- **`CenterOfMass`** — 0.02 µs, 0.08 px. Unbeatable throughput; use
+  only where cells match the ChESS ring (see §5.3 cell plot).
+- **`Förstner`** — 0.06 µs, 0.06 px. Better accuracy than CoM in
+  exchange for 3× the cost. Breaks under blur.
+- **`SaddlePoint`** — 0.12 µs, 0.11 px. Stable across conditions.
+  The sensible default when you're not sure which refiner fits.
+- **`RadonPeak`** — 17 µs, 0.049 px. Most accurate on clean /
+  blurred data. 140× the cost of `SaddlePoint`, but still fits
+  comfortable calibration-rate budgets (thousands of corners per
+  frame, < 100 ms).
+- **`ML (ONNX v4)`** — 250 µs, 0.09 px. Only worth its cost when
+  you're noise-dominated. The ONNX path batches in production, so
+  amortised cost is typically 2–5× lower than the batch-1 number
+  above.
+- **`cv2.cornerSubPix`** — ~300 µs at our default settings. About
+  as accurate as `Förstner` on clean data but slower; the value of
+  bringing it is pre-existing pipeline integration, not throughput.
+
+Benchmark reproduction:
+
+```sh
+# Rust refiners — produces bench_sweep.json
+cargo run --release -p chess-corners --example bench_sweep \
+    --features ml-refiner > book/src/img/bench/bench_sweep.json
+
+# OpenCV cornerSubPix (same fixture) — produces opencv_subpix_sweep.json
+python tools/book/opencv_subpix_sweep.py \
+    --out book/src/img/bench/opencv_subpix_sweep.json
+
+# Plot everything
+python tools/book/plot_benchmark.py
+```
+
+## 5.5 Pipeline throughput (whole detector)
+
+The per-refiner numbers above measure only the refinement step. For
+a full detect-and-refine call on a real image, the dominant cost is
+elsewhere. Below, timings on three test images at release build
+averaged over 10 runs:
+
+| Config           | Features     | small (720×540) | mid (1200×900) | large (2048×1536) |
 |------------------|--------------|------:|-----:|------:|
-| Single‑scale     | none         | 3.01  | 4.46 | 26.02 |
-| Single‑scale     | simd         | 1.29  | 1.74 | 10.00 |
-| Single‑scale     | rayon        | 1.14  | 1.41 |  6.63 |
-| Single‑scale     | simd+rayon   | 0.92  | 1.15 |  5.34 |
+| Single-scale     | none         | 3.01  | 4.46 | 26.02 |
+| Single-scale     | simd         | 1.29  | 1.74 | 10.00 |
+| Single-scale     | rayon        | 1.14  | 1.41 |  6.63 |
+| Single-scale     | simd+rayon   | 0.92  | 1.15 |  5.34 |
 | Multiscale (3 l) | none         | 0.63  | 0.70 |  4.87 |
 | Multiscale (3 l) | simd         | 0.40  | 0.42 |  2.77 |
 | Multiscale (3 l) | rayon        | 0.48  | 0.52 |  1.94 |
 | Multiscale (3 l) | simd+rayon   | 0.49  | 0.54 |  1.59 |
 
-Highlights from the timing profiles on small/mid/large images:
+Numbers in milliseconds. The breakdown — refine dominates, coarse
+detect sits around 0.08–0.75 ms, merge is negligible — means that
+picking the slower `RadonPeak` refiner adds 5–15 ms on a 1000-corner
+calibration image, which is usually fine. Picking the ML refiner
+adds ~30 ms per 100 corners at batch = 1.
 
-- **Multiscale** is the clear winner for speed and robustness.
-  - Large image: best total ≈ **1.6 ms** with `simd+rayon` (vs ≈4.9 ms with no features, ≈1.9 ms with `rayon` only).
-  - Mid: best total ≈ **0.42 ms** with `simd` alone (rayon adds a bit of overhead at this size).
-  - Small: best total ≈ **0.40 ms** with `simd`.
-  - Breakdown: refine dominates (0.1–3 ms depending on seeds); coarse_detect sits around 0.08–0.75 ms; merge is negligible.
-- **Single-scale** is slower across the board:
-  - Large: ≈26 ms, mid: ≈4.5 ms, small: ≈3.0 ms. Use when you need maximal stability and can tollerate some performance drawback.
-- **Feature guidance**:
-  - Enable **simd** by default; it’s the dominant win on all sizes (although, it requires nightly RUST).
-  - Add **rayon** for large inputs (wins on the largest image, minor cost on small/mid).
+**Feature guidance:**
 
-## 5.2 Accuracy vs OpenCV
+- Enable **`simd`** on any target that has it. It's the dominant
+  win regardless of image size.
+- Add **`rayon`** for large inputs (≥ 1080p); it hurts slightly on
+  small images due to thread-startup overhead.
+- **Multiscale** is the right default. Single-scale is only
+  worthwhile when you need maximal seed stability at the cost of
+  3–5× wallclock.
 
-The OpenCV `cornerHarris` gives the following result:
+## 5.6 Comparison with OpenCV's chessboard detectors
 
-![](img/mid_harris.png)
+OpenCV ships two classical corner refinement paths that are
+standard in calibration pipelines:
 
-Here is the result of the OpenCV `findChessboardCornersSB` function:
+- **`cv2.cornerSubPix`** — iterative gradient-based refiner. Works
+  on any candidate seed, not just chessboard corners. Covered on
+  the accuracy plots above.
+- **`cv2.findChessboardCornersSB`** — a full chessboard detector.
+  Not a direct refiner comparison, but a useful reference for
+  whole-pipeline accuracy on real calibration images.
 
-![](img/mid_chessboard.png)
+On the public
+[Stereocamera Chessboard](https://www.kaggle.com/datasets/danielwe14/stereocamera-chessboard-pictures)
+dataset (2 × 20 frames, 77 corners each):
 
-Harris pixel-level feature detection took 3.9 ms. The final result is obtained by using the `cornerSubPix` and manual merge of duplicates. Chessboard detection took about 115 ms. The ChESS detector is much faster as is evident from the previous section. Also, it provides corner orientation that can be handy for a grid reconstruction.
+- Pairwise distance, **`findChessboardCornersSB`** vs our ChESS +
+  default refiner: mean 0.21 px.
+- Pairwise distance, `cv2.cornerHarris + cornerSubPix` vs ChESS:
+  mean 0.24 px.
 
-Below we compare the ChESS corners location with the two classical references. We took all images from the [Chessboard Pictures for Stereocamera Calibration](https://www.kaggle.com/datasets/danielwe14/stereocamera-chessboard-pictures) public repository as input. Below are distributions of pairwise distances between corresponding features:
+Neither "truth" is perfect; both pipelines have their own
+sub-pixel biases on real imagery. The take-away is that on real
+calibration frames the three methods agree to within ~0.25 px,
+which is consistent with the distributions we see on synthetic
+fixtures. Our detector is also ~30× faster than
+`findChessboardCornersSB` on the same frames (≈ 4 ms vs ≈ 115 ms).
 
-![](img/harris_dist.png)
+## 5.7 The ML refiner: what we can and cannot do
 
-![](img/chessboard_dist.png)
+The embedded ONNX model is trained on a 50/50 mix of AA hard-cell
+chessboard patches (the benchmark fixture's distribution) and
+legacy tanh saddles (a smoother idealisation used by earlier
+models). Training code and configs live under `tools/ml_refiner/`;
+see `docs/proposal-ml-refiner-v3.md` for the retrain history and
+`docs/refiner-comparison.md` for the head-to-head table.
 
-![](img/harris_vs_chessboard_dist.png)
+**What v4 achieves:**
 
-- Harris vs ChESS: 0.24 pix
-- Chessboard vs ChESS: 0.21 pix
-- Harris vs Chessboard: 0.12 pix
+- Robust across distribution shifts: hard-cells and tanh both
+  work. Versions ≤ 3 failed catastrophically on one or the
+  other (`v2` was tanh-only → 0.5 px on hard-cells; `v3` was
+  hard-cells-only → 0.6 px on tanh).
+- Best-in-class on noise: wins at σ ≥ 8 (see §5.3 noise plot).
 
-It is important that the offsets are not biased:
-![](img/chessboard_dx.png)
-![](img/chessboard_dy.png)
+**What v4 does not achieve:**
 
-Mean values are much smaller than standard deviation.
+- It does not beat `RadonPeak` on clean / blurred data
+  (0.09 px vs 0.05 px mean). We tried three architectures at
+  increasing capacity (180 K → 730 K params → 50 K-param
+  spatial-softargmax head); all converged to the same ~0.14 px
+  plateau on the held-out val set. This is a **learning-gap**
+  (generic regression on 200 K synthetic patches has not
+  discovered RadonPeak's 4-angle Radon + Gaussian-log peak-fit
+  structure), not a capacity gap. Closing it likely requires
+  distillation from `RadonPeak` or orders of magnitude more data;
+  both are explicitly out of scope for the current release.
 
-## 5.3 Refiner comparison
+**When to use ML:**
 
-All five shipped refiners (`CenterOfMass`, `Forstner`, `SaddlePoint`,
-`RadonPeak`, and the embedded ONNX `ML`) are benchmarked together in
-[`crates/chess-corners/tests/refiner_benchmark.rs`](https://github.com/VitalyVorobyev/chess-corners-rs/blob/main/crates/chess-corners/tests/refiner_benchmark.rs).
-The fixture is an 8×-supersampled, AA-rasterised chessboard (36
-subpixel offsets on an 8×8 grid inside a cell), with optional
-Gaussian PSF and additive noise. Run it with:
+- Noise-dominated scenes (σ ≥ 8 on 8-bit).
+- You want a single learned component you can retrain for
+  a specific target distribution (e.g. particular lens, lighting).
+- Downstream pipeline already runs ONNX and batching is free.
 
-```sh
-cargo test --release -p chess-corners --test refiner_benchmark \
-    --features ml-refiner -- --nocapture --test-threads=1
+**When not to:**
+
+- Clean calibration work — classical is faster and more accurate.
+- Mixed CPU/GPU budgets where 250 µs per corner is a problem.
+
+## 5.8 Tracing and diagnostics
+
+Build with the `tracing` feature to emit JSON spans for every step
+of the pipeline. The named spans are:
+
+- `find_chess_corners` — total detect-and-refine wall time.
+- `single_scale` — single-scale path body.
+- `coarse_detect` — response computation + candidate extraction.
+- `refine` — per-seed refinement (carries `seeds` count as an
+  attribute).
+- `merge` — duplicate suppression across pyramid levels.
+- `build_pyramid` — pyramid construction.
+- `ml_refiner` — emitted only on the ML path; includes a timing
+  event with batch size.
+
+Capture traces via the CLI's `--json-trace` flag or
+`tools/perf_bench.py`. `tools/trace/parser.py` extracts them into
+CSV / JSON for aggregation and `tools/perf_bench.py` produces the
+table in §5.5.
+
+A typical diagnostic workflow when a frame produces fewer corners
+than expected:
+
+1. Rerun with `tracing` + `--json-trace` and inspect the
+   `coarse_detect` span's `candidates` count — if it's zero or
+   very low, ChESS failed to seed and the refiner never runs.
+2. If seeds are present but the `refine` span rejects most of
+   them, the refiner's acceptance thresholds are tripping. Swap
+   refiner via `ChessConfig::refiner` or relax the specific
+   rejection (e.g. `SaddlePointConfig::max_offset`).
+3. If accuracy is fine but wall time is bad, the `refine` span
+   usually dominates — switch from `RadonPeak` / ML to
+   `SaddlePoint` for 100–1000× the throughput with a modest
+   accuracy cost.
+
+## 5.9 Integration recipes
+
+### Real-time loop (camera at ≥ 30 fps)
+
+```rust
+use chess_corners::{ChessConfig, DetectorMode, RefinementMethod,
+                    find_chess_corners_buff_with_refiner,
+                    ImageBuffer, PyramidBuffers};
+
+let mut buffers = PyramidBuffers::default();
+let mut cfg = ChessConfig::multiscale();
+cfg.refiner.kind = RefinementMethod::SaddlePoint;  // stable + fast
+
+loop {
+    let frame = next_frame();  // your camera source
+    let corners = find_chess_corners_buff_with_refiner(
+        frame, &cfg, &mut buffers, &cfg.refiner.to_refiner_kind());
+    // use corners…
+}
 ```
 
-### Accuracy (mean / worst Euclidean-px error, 36 offsets per row)
+Reusing `PyramidBuffers` avoids per-frame allocations. Combined
+with `simd` + `rayon` this keeps the detector under 2 ms on 1080p.
 
-| condition        | CenterOfMass    | Forstner        | SaddlePoint     | RadonPeak          | ML (ONNX)         |
-|------------------|-----------------|-----------------|-----------------|--------------------|-------------------|
-| clean (cell=8)   | 0.080 / 0.123   | 0.061 / 0.165   | 0.114 / 0.177   | **0.049** / 0.103  | 0.084 / 0.147     |
-| clean (cell=5)   | 0.390 / 0.707   | 0.061 / 0.165   | 0.114 / 0.177   | **0.049** / 0.103  | 0.091 / 0.170     |
-| blur σ=1.5       | 0.056 / 0.124   | 0.266 / 0.471   | 0.047 / 0.079   | **0.046** / 0.073  | 0.088 / 0.170     |
-| noise σ=5        | 0.088 / 0.156   | 0.135 / 0.301   | 0.095 / 0.220   | **0.085** / 0.183  | 0.086 / 0.150     |
-| noise σ=10       | 0.123 / 0.272   | 0.201 / 0.474   | 0.126 / 0.257   | 0.128 / 0.302      | **0.096** / 0.178 |
+### Calibration (offline, maximum accuracy)
 
-Accept rate is 36/36 for every refiner in every condition. The
-`Forstner / SaddlePoint / RadonPeak` rows are identical between
-cell=5 and cell=8 because these refiners only examine a 2–3 px
-neighbourhood — the anti-aliased corner looks the same locally at
-both cell sizes.
+```rust
+use chess_corners::{ChessConfig, RefinementMethod,
+                    find_chess_corners_image};
 
-### Throughput (release build, per refinement)
+let mut cfg = ChessConfig::multiscale();
+cfg.refiner.kind = RefinementMethod::RadonPeak;
+cfg.merge_radius = 2.0;  // tight merge for calibration
 
-| refiner        | time/call | throughput      | what it costs                                                                 |
-|----------------|-----------|-----------------|-------------------------------------------------------------------------------|
-| CenterOfMass   | 0.02 µs   | ~50 M corners/s | 5×5 weighted moment over the ChESS response map                               |
-| Forstner       | 0.06 µs   | ~17 M corners/s | 5×5 gradient structure tensor solve                                           |
-| SaddlePoint    | 0.12 µs   | ~8 M corners/s  | 6-param quadratic LS via Gauss-Jordan                                         |
-| **RadonPeak**  | 17.0 µs   | ~59 K corners/s | 13×13 dense Radon (169 samples × 4 rays × 9 bilinear taps) + box blur + fit   |
-| ML (ONNX)      | 250 µs    | ~4 K corners/s  | 21×21 patch extract + ONNX inference, batch=1                                 |
+let corners = find_chess_corners_image(&image, &cfg);
+```
 
-The ML path batches better in production (the facade groups
-candidates into batches of up to 64), so the per-corner amortised
-cost is typically 2–5× lower than the batch=1 figure above.
+RadonPeak's extra 5–15 ms / frame is invisible in an offline
+calibration run.
 
-### Per-refiner notes
+### Noisy low-light imagery
 
-- **RadonPeak** — most accurate on clean / blurred data, implements
-  the full Duda-Frese (2018) subpixel pipeline (image supersampling,
-  4-angle Radon response, box blur, log-space Gaussian peak fit).
-  ~300× slower than SaddlePoint but still sub-20 µs.
-- **SaddlePoint** — the accuracy/speed sweet spot for most uses.
-  Stable across conditions, 0.12 µs per corner.
-- **CenterOfMass** — fastest option, but only when the ChESS
-  response ring matches the cell size. Cell=5 with the default
-  radius-5 ring causes the ring to cross into neighbouring cells
-  and the centroid is dragged off the true corner (0.39 px mean
-  vs 0.08 px at cell=8).
-- **Forstner** — middle-of-the-pack on clean inputs, degrades
-  sharply under blur because Gaussian smoothing collapses the
-  gradient magnitudes its structure tensor depends on.
-- **ML (ONNX)** — v3 model trained on AA hard-cell chessboards
-  matching this benchmark's distribution (see
-  `tools/ml_refiner/configs/synth_v5.yaml`). Robust across all
-  conditions, strongest refiner at σ=10 noise. The previous v2
-  model trained on a smooth tanh-saddle distribution scored
-  ~0.5 px mean everywhere — a pure distribution-mismatch problem
-  fixed by generating training data that matches the AA-rasterised
-  chessboards the refiner actually sees in production.
+```rust
+use chess_corners::{ChessConfig, find_chess_corners_image_with_ml};
 
-### The ML refiner's training pipeline
+let cfg = ChessConfig::multiscale();
+let corners = find_chess_corners_image_with_ml(&image, &cfg);
+```
 
-The training code lives under `tools/ml_refiner/`:
+Requires the `ml-refiner` feature. The ML path batches candidates
+internally; on a 100-corner frame the effective cost is ~30 ms.
 
-- `synth/generate_dataset.py` — hard-cell chessboard patches with
-  sub-pixel corner offsets, Gaussian PSF, additive noise, and
-  photometric jitter (contrast/brightness/gamma). Supports both
-  the legacy tanh-saddle renderer (`render_mode: tanh`) and the
-  current AA hard-cell renderer (`render_mode: hard_cells`).
-- `train.py` — 5-layer CoordConv CNN, smooth-L1 regression on
-  `(dx, dy)` plus BCE-with-logits on the `conf` head. MPS + CUDA
-  supported.
-- `eval_hardcell.py` — post-training evaluation on a held-out
-  hard-cell dataset with per-cell / per-blur / per-noise error
-  breakdowns and an optional `--gate` flag enforcing the <0.1 px
-  shipping threshold on the clean subset.
-- `export_onnx.py` — exports a PyTorch checkpoint to ONNX plus
-  parity fixtures (`patches.npy`, `torch_out.npy`) that
-  `crates/chess-corners-ml/tests/onnx_parity.rs` uses to verify
-  the Rust inference path matches PyTorch to <2e-4.
+## 5.10 Reproducing everything on this page
 
-See [`docs/proposal-ml-refiner-v3.md`](https://github.com/VitalyVorobyev/chess-corners-rs/blob/main/docs/proposal-ml-refiner-v3.md)
-for the detailed training-distribution diagnosis that led to v3.
+```sh
+# Rust quality gates + cross-refiner benchmark
+cargo test --release -p chess-corners --test refiner_benchmark \
+    --features ml-refiner -- --nocapture --test-threads=1
 
-## 5.4 Tracing and diagnostics
+# Dense sweep JSON (feeds Part V plots)
+cargo run --release -p chess-corners --example bench_sweep \
+    --features ml-refiner > book/src/img/bench/bench_sweep.json
 
-- Build with the `tracing` feature (the perf script does this) to emit INFO-level JSON spans.
-- Key spans now covered in both paths:
-  - `find_chess_corners` (total)
-  - `single_scale` (single-path body)
-  - `coarse_detect` (coarse response + detection)
-  - `refine` (per-seed refinement, includes `seeds` count)
-  - `merge` (duplicate suppression)
-  - `build_pyramid` (pyramid construction)
-  - `ml_refiner` (ML refinement span + timing event when enabled)
-- Parsing: `tools/trace/parser.py` extracts the spans above; `perf_report.json` is produced by `tools/perf_bench.py`, and accuracy overlays/timings come from `tools/accuracy_bench.py`.
-- Use `--json-trace` on the CLI (or run via `perf_bench.py`) to capture traces; visualize or aggregate with your preferred JSON tools.
+# OpenCV cornerSubPix on the same fixture
+python tools/book/opencv_subpix_sweep.py \
+    --out book/src/img/bench/opencv_subpix_sweep.json
 
-## 5.5 Integration patterns
+# Synthetic fixture examples + all Part V plots
+python tools/book/synth_examples.py
+python tools/book/plot_benchmark.py
 
-- **Real-time loops**: reuse `PyramidBuffers` via `find_chess_corners_buff`; prefer multiscale + simd, add rayon for larger frames. Keep `merge_radius` modest (2–3 px) to avoid duplicate corners without throwing away tight clusters.
-- **Calibration/pose**: the accuracy report shows sub-pixel consistency; feed detected corners directly into calibration routines. Use the accuracy histograms to validate new camera data.
-- **Diagnostics in the field**: capture a short trace with `--json-trace` and inspect `refine_seeds` and span timings; spikes usually indicate harder scenes (more seeds) or contention (misconfigured features).
-- **Reproducibility**: keep generated reports under `testdata/out/`; rerun `accuracy_bench.py --batch` and `perf_bench.py` after algorithm or config changes, and drop updated plots into docs for before/after comparisons.
+# Whole-pipeline timings on the three test images
+python tools/perf_bench.py
+```
