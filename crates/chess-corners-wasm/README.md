@@ -1,8 +1,19 @@
-# chess-corners-wasm
+# @vitavision/chess-corners
 
 WebAssembly bindings for the [ChESS corner detector](https://github.com/VitalyVorobyev/chess-corners-rs). Detect chessboard corners with subpixel accuracy directly in the browser.
 
-## Building
+> Previously published as **`chess-corners-wasm`** on npm (≤ 0.6.x). The
+> package was renamed to `@vitavision/chess-corners` in 0.7.0; the
+> legacy name is deprecated. Migrate by replacing your dependency name —
+> the API is unchanged.
+
+## Installation
+
+```bash
+npm install @vitavision/chess-corners
+```
+
+## Building from source
 
 Requires [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/):
 
@@ -10,7 +21,10 @@ Requires [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/):
 wasm-pack build crates/chess-corners-wasm --target web
 ```
 
-The npm-ready package is generated in `crates/chess-corners-wasm/pkg/`.
+The npm-ready package is generated in `crates/chess-corners-wasm/pkg/`
+under the `@vitavision/chess-corners` name (the published name is set
+by the release workflow; locally `wasm-pack` derives it from the Rust
+crate name `chess-corners-wasm`).
 
 To target a bundler (Webpack, Vite, etc.) instead:
 
@@ -18,22 +32,12 @@ To target a bundler (Webpack, Vite, etc.) instead:
 wasm-pack build crates/chess-corners-wasm --target bundler
 ```
 
-## Installation
-
-After building, install the package from the local `pkg/` directory:
-
-```bash
-npm install ./crates/chess-corners-wasm/pkg
-```
-
-Or copy `pkg/` into your project and reference it directly.
-
 ## Usage
 
 ### Initialization
 
 ```js
-import init, { ChessDetector } from 'chess-corners-wasm';
+import init, { ChessDetector } from '@vitavision/chess-corners';
 
 // Initialize the WASM module (required once before any API calls).
 await init();

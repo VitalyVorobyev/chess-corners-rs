@@ -1,5 +1,6 @@
 use chess_corners::{
-    ChessConfig, DetectorMode, PyramidBuffers, RefinementMethod, ThresholdMode, UpscaleConfig,
+    radon_heatmap_u8, ChessConfig, DetectorMode, PyramidBuffers, RefinementMethod, ThresholdMode,
+    UpscaleConfig,
 };
 use chess_corners_core::response::chess_response_u8;
 use chess_corners_core::ResponseMap;
@@ -28,6 +29,15 @@ pub struct ChessDetector {
     config: ChessConfig,
     buffers: PyramidBuffers,
     last_response: Option<ResponseMap>,
+    last_radon_response: Option<ResponseMap>,
+    /// Working-to-input scale factor cached at the moment
+    /// `radon_heatmap` produced `last_radon_response`. Returning a
+    /// cached value (instead of recomputing from the live config)
+    /// keeps `radon_heatmap_width` / `_height` / `_scale` mutually
+    /// consistent if the caller mutates the detector's upscale or
+    /// `radon_detector.image_upsample` between the heatmap call and
+    /// the accessor calls. `0` until the first heatmap is computed.
+    last_radon_scale: u32,
 }
 
 impl Default for ChessDetector {
@@ -45,6 +55,8 @@ impl ChessDetector {
             config: ChessConfig::single_scale(),
             buffers: PyramidBuffers::with_capacity(1),
             last_response: None,
+            last_radon_response: None,
+            last_radon_scale: 0,
         }
     }
 
@@ -56,6 +68,8 @@ impl ChessDetector {
             config,
             buffers: PyramidBuffers::with_capacity(levels),
             last_response: None,
+            last_radon_response: None,
+            last_radon_scale: 0,
         }
     }
 
@@ -238,6 +252,84 @@ impl ChessDetector {
     /// Height of the last computed response map.
     pub fn response_height(&self) -> u32 {
         self.last_response.as_ref().map_or(0, |r| r.height() as u32)
+    }
+
+    // ---- Radon heatmap ----
+
+    /// Compute the whole-image Radon detector heatmap from grayscale
+    /// pixels.
+    ///
+    /// Returns the dense `(max_α S_α − min_α S_α)²` Radon response as a
+    /// row-major `Float32Array` at *working resolution* — that is,
+    /// `width * upscale * radon_image_upsample` by the same in `y`.
+    /// Use [`Self::radon_heatmap_width`] / [`Self::radon_heatmap_height`]
+    /// to get the actual dimensions, and [`Self::radon_heatmap_scale`]
+    /// for the working-to-input scale factor.
+    ///
+    /// Honours `set_upscale_factor`, `set_threshold` (via
+    /// `radon_detector.threshold_*`), and other Radon tuning state on
+    /// the detector. The detector mode does not need to be set to
+    /// `"radon"` to call this — the heatmap is always computable.
+    pub fn radon_heatmap(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> js_sys::Float32Array {
+        let resp = radon_heatmap_u8(pixels, width, height, &self.config);
+        let arr = js_sys::Float32Array::new_with_length(resp.data().len() as u32);
+        arr.copy_from(resp.data());
+        // Cache the scale alongside the response so the three
+        // accessors (width / height / scale) stay mutually consistent
+        // even if the caller mutates `set_upscale_factor` /
+        // `radon_detector.image_upsample` after this call.
+        let upscale = self.config.upscale.effective_factor().max(1);
+        let radon_up = self.config.radon_detector.image_upsample.clamp(1, 2);
+        self.last_radon_scale = upscale * radon_up;
+        self.last_radon_response = Some(resp);
+        arr
+    }
+
+    /// Compute the Radon heatmap from RGBA pixels (e.g. from canvas
+    /// `getImageData`). Converts to grayscale internally.
+    pub fn radon_heatmap_rgba(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> js_sys::Float32Array {
+        let gray = rgba_to_gray(pixels, width, height);
+        self.radon_heatmap(&gray, width, height)
+    }
+
+    /// Width of the last computed Radon heatmap (working resolution).
+    pub fn radon_heatmap_width(&self) -> u32 {
+        self.last_radon_response
+            .as_ref()
+            .map_or(0, |r| r.width() as u32)
+    }
+
+    /// Height of the last computed Radon heatmap (working resolution).
+    pub fn radon_heatmap_height(&self) -> u32 {
+        self.last_radon_response
+            .as_ref()
+            .map_or(0, |r| r.height() as u32)
+    }
+
+    /// Working-to-input scale factor for the last computed Radon heatmap.
+    ///
+    /// Multiply input-pixel coordinates by this factor to land on the
+    /// corresponding heatmap pixel; divide heatmap-pixel coordinates by
+    /// it to recover input pixels. Equals
+    /// `upscale_factor * radon_detector.image_upsample` (clamped to
+    /// the supported range) **as it was at the time of the last
+    /// `radon_heatmap` call** — mutating the detector's upscale or
+    /// `radon_detector.image_upsample` afterwards does not change
+    /// this value, so the trio of width / height / scale stays
+    /// consistent for overlay alignment. Returns `0` if no heatmap
+    /// has been computed yet.
+    pub fn radon_heatmap_scale(&self) -> u32 {
+        self.last_radon_scale
     }
 }
 

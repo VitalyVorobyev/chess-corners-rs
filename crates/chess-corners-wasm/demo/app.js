@@ -36,7 +36,7 @@ const nmsRadius = $('nmsRadius');
 const nmsRadiusVal = $('nmsRadiusVal');
 const minCluster = $('minCluster');
 const minClusterVal = $('minClusterVal');
-const broadMode = $('broadMode');
+const detectorMode = $('detectorMode');
 const pyrLevels = $('pyrLevels');
 const pyrLevelsVal = $('pyrLevelsVal');
 const pyrMinSize = $('pyrMinSize');
@@ -44,6 +44,7 @@ const pyrMinSizeVal = $('pyrMinSizeVal');
 const upscaleFactor = $('upscaleFactor');
 const refiner = $('refiner');
 const autoRun = $('autoRun');
+const showHeatmap = $('showHeatmap');
 const showAxes = $('showAxes');
 const arrowLen = $('arrowLen');
 const arrowLenVal = $('arrowLenVal');
@@ -83,11 +84,48 @@ function configureDetector(det) {
   det.set_threshold(parseFloat(threshold.value));
   det.set_nms_radius(parseInt(nmsRadius.value, 10));
   det.set_min_cluster_size(parseInt(minCluster.value, 10));
-  det.set_broad_mode(broadMode.checked);
+  det.set_detector_mode(detectorMode.value);
   det.set_pyramid_levels(parseInt(pyrLevels.value, 10));
   det.set_pyramid_min_size(parseInt(pyrMinSize.value, 10));
   det.set_upscale_factor(parseInt(upscaleFactor.value, 10));
   det.set_refiner(refiner.value);
+}
+
+// Render a working-resolution Radon heatmap into the main canvas at
+// input-image dimensions. The detector exposes the heatmap at
+// (width * upscale * radon_image_upsample) — we downsample by
+// `radon_heatmap_scale()` so the overlay aligns with corner overlays in
+// input pixel space.
+function drawHeatmap(heatmap, hmW, hmH, scale) {
+  // Find max for normalization.
+  let maxV = 0;
+  for (let i = 0; i < heatmap.length; i++) {
+    if (heatmap[i] > maxV) maxV = heatmap[i];
+  }
+  if (maxV <= 0) maxV = 1;
+
+  // Render the heatmap directly at its working resolution onto an
+  // offscreen canvas, then drawImage with downscaling so the result
+  // matches input dimensions.
+  const off = document.createElement('canvas');
+  off.width = hmW;
+  off.height = hmH;
+  const offCtx = off.getContext('2d');
+  const img = offCtx.createImageData(hmW, hmH);
+  const inv = 255 / maxV;
+  for (let i = 0, j = 0; i < heatmap.length; i++, j += 4) {
+    const v = Math.min(255, Math.max(0, heatmap[i] * inv));
+    img.data[j] = v;
+    img.data[j + 1] = v;
+    img.data[j + 2] = v;
+    img.data[j + 3] = 255;
+  }
+  offCtx.putImageData(img, 0, 0);
+
+  // The heatmap is at input * scale; draw it scaled to currentW × currentH.
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0, 0, hmW, hmH, 0, 0, currentW, currentH);
+  ctx.imageSmoothingEnabled = true;
 }
 
 function drawImage(bitmap) {
@@ -175,15 +213,34 @@ function run() {
   lastCorners = result;
   const n = result.length / STRIDE;
 
-  // Redraw image + overlay.
-  ctx.putImageData(new ImageData(currentRGBA, currentW, currentH), 0, 0);
+  // Background: original image, unless heatmap overlay is requested.
+  let heatmapMs = 0;
+  if (showHeatmap.checked) {
+    const h0 = performance.now();
+    const heatmap = detector.radon_heatmap_rgba(currentRGBA, currentW, currentH);
+    const hmW = detector.radon_heatmap_width();
+    const hmH = detector.radon_heatmap_height();
+    const scale = detector.radon_heatmap_scale();
+    heatmapMs = performance.now() - h0;
+    // Black backdrop in case the heatmap dims fail to fully cover the canvas.
+    canvas.width = currentW;
+    canvas.height = currentH;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, currentW, currentH);
+    drawHeatmap(heatmap, hmW, hmH, scale);
+  } else {
+    ctx.putImageData(new ImageData(currentRGBA, currentW, currentH), 0, 0);
+  }
   drawCorners(result);
 
-  statsEl.textContent =
+  const baseStats =
     `corners: ${n}\n` +
     `detect:  ${(t1 - t0).toFixed(1)} ms\n` +
     `size:    ${currentW}×${currentH}\n` +
     `upscale: ${upscaleFactor.value === '0' ? 'off' : upscaleFactor.value + '×'}`;
+  statsEl.textContent = showHeatmap.checked
+    ? `${baseStats}\nheatmap: ${heatmapMs.toFixed(1)} ms`
+    : baseStats;
   setStatus(cameraStream ? 'webcam live' : 'ok');
 }
 
@@ -195,9 +252,9 @@ function scheduleRun() {
 
 function setupAutoRerun() {
   const triggers = [
-    threshold, nmsRadius, minCluster, broadMode,
+    threshold, nmsRadius, minCluster, detectorMode,
     pyrLevels, pyrMinSize, upscaleFactor, refiner,
-    showAxes, arrowLen, dotRadius,
+    showHeatmap, showAxes, arrowLen, dotRadius,
   ];
   for (const el of triggers) {
     el.addEventListener('change', scheduleRun);

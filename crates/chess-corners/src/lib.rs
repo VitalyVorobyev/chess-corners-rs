@@ -155,6 +155,7 @@ mod config;
 #[cfg(feature = "ml-refiner")]
 mod ml_refiner;
 mod multiscale;
+pub mod radon;
 pub mod upscale;
 
 // Re-export a focused subset of core types for convenience. Consumers that
@@ -186,6 +187,11 @@ pub use crate::multiscale::{
 #[cfg(feature = "ml-refiner")]
 pub use crate::multiscale::{find_chess_corners_buff_with_ml, find_chess_corners_with_ml};
 pub use box_image_pyramid::{ImageBuffer, PyramidBuffers, PyramidParams};
+
+// Radon-detector convenience entry points.
+#[cfg(feature = "image")]
+pub use crate::radon::radon_heatmap_image;
+pub use crate::radon::radon_heatmap_u8;
 
 /// Detect chessboard corners from a raw grayscale image buffer.
 ///
