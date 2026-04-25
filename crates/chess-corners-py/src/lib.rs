@@ -1,8 +1,26 @@
+//! Native Python bindings for the chess-corners detector.
+//!
+//! Exposes a typed [`config::ChessConfig`] (with nested
+//! [`config::RefinerConfig`], [`config::RadonDetectorParams`], and
+//! per-variant refiner configs) plus thin wrappers over the facade's
+//! detection entry points. The FFI accepts the typed config directly
+//! — no JSON serialization across the boundary — while preserving a
+//! string-only fallback so callers built against the older Python
+//! `to_json()`-then-pass-string path keep working for one release.
+
+mod config;
+
 use ::chess_corners as chess_corners_rs;
 use numpy::{ndarray::Array2, IntoPyArray, PyReadonlyArray2};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
+
+use crate::config::{
+    CenterOfMassConfig, ChessConfig, ConfigError, DescriptorMode, DetectorMode, ForstnerConfig,
+    PeakFitMode, RadonDetectorParams, RadonPeakConfig, RefinementMethod, RefinerConfig,
+    SaddlePointConfig, ThresholdMode,
+};
 
 fn extract_image<'py>(
     image: &Bound<'py, PyAny>,
@@ -56,19 +74,37 @@ fn corners_to_array(
     Ok(out.into_pyarray(py).into_any().unbind())
 }
 
-fn resolve_cfg_json(cfg_json: Option<&str>) -> PyResult<chess_corners_rs::ChessConfig> {
-    match cfg_json {
-        Some(raw) => serde_json::from_str(raw)
-            .map_err(|err| PyValueError::new_err(format!("invalid config JSON: {err}"))),
-        None => Ok(chess_corners_rs::ChessConfig::default()),
+/// Resolve the optional `cfg` argument into a Rust facade
+/// `ChessConfig`. Accepts either a typed [`ChessConfig`] (preferred,
+/// no JSON across the boundary), or a JSON string (legacy path
+/// retained for one release). Anything else raises `TypeError`.
+fn resolve_config(
+    py: Python<'_>,
+    cfg: Option<&Bound<'_, PyAny>>,
+) -> PyResult<chess_corners_rs::ChessConfig> {
+    let Some(cfg) = cfg else {
+        return Ok(chess_corners_rs::ChessConfig::default());
+    };
+    if cfg.is_none() {
+        return Ok(chess_corners_rs::ChessConfig::default());
     }
+    if let Ok(typed) = cfg.cast::<ChessConfig>() {
+        return Ok(typed.borrow().to_inner(py));
+    }
+    if let Ok(json) = cfg.extract::<&str>() {
+        return serde_json::from_str(json)
+            .map_err(|err| PyValueError::new_err(format!("invalid config JSON: {err}")));
+    }
+    Err(PyTypeError::new_err(
+        "cfg must be a ChessConfig or a JSON string",
+    ))
 }
 
-#[pyfunction(signature = (image, cfg_json=None))]
+#[pyfunction(signature = (image, cfg=None))]
 fn find_chess_corners<'py>(
     py: Python<'py>,
     image: &Bound<'py, PyAny>,
-    cfg_json: Option<&str>,
+    cfg: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<Py<PyAny>> {
     let (array, height, width) = extract_image(image)?;
     let view = array.as_array();
@@ -81,17 +117,17 @@ fn find_chess_corners<'py>(
     let height_u32 = u32::try_from(height)
         .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
 
-    let cfg = resolve_cfg_json(cfg_json)?;
+    let cfg = resolve_config(py, cfg)?;
     let corners = chess_corners_rs::find_chess_corners_u8(slice, width_u32, height_u32, &cfg);
     corners_to_array(py, corners)
 }
 
 #[cfg(feature = "ml-refiner")]
-#[pyfunction(signature = (image, cfg_json=None))]
+#[pyfunction(signature = (image, cfg=None))]
 fn find_chess_corners_with_ml<'py>(
     py: Python<'py>,
     image: &Bound<'py, PyAny>,
-    cfg_json: Option<&str>,
+    cfg: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<Py<PyAny>> {
     let (array, height, width) = extract_image(image)?;
     let view = array.as_array();
@@ -104,17 +140,17 @@ fn find_chess_corners_with_ml<'py>(
     let height_u32 = u32::try_from(height)
         .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
 
-    let cfg = resolve_cfg_json(cfg_json)?;
+    let cfg = resolve_config(py, cfg)?;
     let corners =
         chess_corners_rs::find_chess_corners_u8_with_ml(slice, width_u32, height_u32, &cfg);
     corners_to_array(py, corners)
 }
 
-#[pyfunction(signature = (image, cfg_json=None))]
+#[pyfunction(signature = (image, cfg=None))]
 fn radon_heatmap<'py>(
     py: Python<'py>,
     image: &Bound<'py, PyAny>,
-    cfg_json: Option<&str>,
+    cfg: Option<&Bound<'py, PyAny>>,
 ) -> PyResult<Py<PyAny>> {
     let (array, height, width) = extract_image(image)?;
     let view = array.as_array();
@@ -127,7 +163,7 @@ fn radon_heatmap<'py>(
     let height_u32 = u32::try_from(height)
         .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
 
-    let cfg = resolve_cfg_json(cfg_json)?;
+    let cfg = resolve_config(py, cfg)?;
     let map = chess_corners_rs::radon_heatmap_u8(slice, width_u32, height_u32, &cfg);
 
     let arr = Array2::from_shape_vec((map.height(), map.width()), map.data().to_vec())
@@ -136,7 +172,23 @@ fn radon_heatmap<'py>(
 }
 
 #[pymodule(name = "_native")]
-fn native_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("ConfigError", py.get_type::<ConfigError>())?;
+
+    m.add_class::<DetectorMode>()?;
+    m.add_class::<DescriptorMode>()?;
+    m.add_class::<ThresholdMode>()?;
+    m.add_class::<RefinementMethod>()?;
+    m.add_class::<PeakFitMode>()?;
+
+    m.add_class::<CenterOfMassConfig>()?;
+    m.add_class::<ForstnerConfig>()?;
+    m.add_class::<SaddlePointConfig>()?;
+    m.add_class::<RadonPeakConfig>()?;
+    m.add_class::<RadonDetectorParams>()?;
+    m.add_class::<RefinerConfig>()?;
+    m.add_class::<ChessConfig>()?;
+
     m.add_function(wrap_pyfunction!(find_chess_corners, m)?)?;
     m.add_function(wrap_pyfunction!(radon_heatmap, m)?)?;
     #[cfg(feature = "ml-refiner")]

@@ -99,3 +99,35 @@ def test_radon_heatmap_default_config():
     assert heatmap.ndim == 2
     assert heatmap.shape[0] >= img.shape[0]
     assert heatmap.shape[1] >= img.shape[1]
+
+
+def test_typed_config_passes_through_ffi_directly():
+    """Native typed `ChessConfig` should reach the detector without
+    JSON serialization (string fallback retained for legacy callers)."""
+
+    img = _checkerboard(square_size=16, squares=8)
+    cfg = chess_corners.ChessConfig()
+    cfg.threshold_value = 0.1
+    cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
+    cfg.refiner.forstner.max_offset = 1.75
+
+    typed_corners = chess_corners.find_chess_corners(img, cfg)
+    json_corners = chess_corners.find_chess_corners(img, cfg.to_json())
+
+    # Both paths must produce bit-identical output (same backing
+    # algorithm, same configuration).
+    assert typed_corners.shape == json_corners.shape
+    assert np.array_equal(typed_corners, json_corners)
+
+
+def test_invalid_cfg_type_raises_type_error():
+    img = _checkerboard(square_size=16, squares=8)
+    with pytest.raises(TypeError):
+        # Plain dicts aren't accepted at the FFI boundary; they must
+        # be converted to a ChessConfig first via ChessConfig.from_dict().
+        chess_corners.find_chess_corners(img, {"threshold_value": 0.1})
+
+
+def test_unknown_top_level_keys_rejected():
+    with pytest.raises(chess_corners.ConfigError, match="unknown keys"):
+        chess_corners.ChessConfig.from_dict({"unexpected": 1})
