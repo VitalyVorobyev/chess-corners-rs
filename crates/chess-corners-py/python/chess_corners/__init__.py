@@ -593,6 +593,28 @@ def find_chess_corners(image: Any, cfg: ChessConfig | None = None) -> Any:
     return _native.find_chess_corners(image, None if cfg is None else cfg.to_json())
 
 
+def radon_heatmap(image: Any, cfg: ChessConfig | None = None) -> Any:
+    """Compute the whole-image Radon detector heatmap.
+
+    Returns a 2D ``float32`` NumPy array at *working resolution* — that
+    is, ``height * upscale * radon_image_upsample`` rows by the same in
+    columns. The working-to-input scale factor is
+    ``cfg.upscale.factor * cfg.radon_detector.image_upsample`` (each
+    clamped to its supported range).
+
+    Parameters
+    ----------
+    image:
+        2D C-contiguous ``uint8`` NumPy array of shape ``(H, W)``.
+    cfg:
+        Optional :class:`ChessConfig`. The ``upscale`` and
+        ``radon_detector`` fields are honoured; other fields are
+        ignored because no corner detection is performed.
+    """
+
+    return _native.radon_heatmap(image, None if cfg is None else cfg.to_json())
+
+
 if hasattr(_native, "find_chess_corners_with_ml"):
     def find_chess_corners_with_ml(image: Any, cfg: ChessConfig | None = None) -> Any:
         """Detect chessboard corners using the ML-backed refiner pipeline."""
@@ -618,6 +640,7 @@ __all__ = [
     "SaddlePointConfig",
     "ThresholdMode",
     "find_chess_corners",
+    "radon_heatmap",
 ]
 
 if hasattr(_native, "find_chess_corners_with_ml"):
