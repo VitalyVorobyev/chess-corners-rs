@@ -156,6 +156,46 @@ detector.set_pyramid_min_size(128);
 detector.set_refiner("forstner");
 ```
 
+### Typed configuration (full surface)
+
+For deeper tuning — refiner subconfig, Radon detector parameters,
+descriptor mode, coarse-to-fine radii — construct a typed
+`ChessConfig` and seed the detector with `ChessDetector.withConfig`.
+Every public Rust facade field is reachable through the typed
+classes and exposed with TypeScript types in the generated
+`.d.ts`.
+
+```ts
+import init, {
+  ChessConfig,
+  ChessDetector,
+  DetectorMode,
+  PeakFitMode,
+  RefinementMethod,
+} from '@vitavision/chess-corners';
+
+await init();
+
+const cfg = ChessConfig.multiscale();
+cfg.detectorMode = DetectorMode.Radon;
+cfg.thresholdValue = 0.15;
+cfg.refiner.kind = RefinementMethod.RadonPeak;
+cfg.radonDetector.rayRadius = 5;
+cfg.radonDetector.imageUpsample = 2;
+cfg.radonDetector.peakFit = PeakFitMode.Gaussian;
+
+const detector = ChessDetector.withConfig(cfg);
+
+// Snapshot / commit changes via the typed config later if needed:
+const snapshot = detector.getConfig();
+snapshot.nmsRadius = 4;
+detector.applyConfig(snapshot);
+```
+
+The legacy `set_*` shortcut methods continue to work and edit the
+same underlying configuration, so the two styles can be mixed at
+will.
+
 ## API Reference
 
 ### `ChessDetector`
