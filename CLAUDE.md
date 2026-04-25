@@ -53,7 +53,7 @@ Six crates with strict layering (see AGENTS.md for full rules):
 
 ```
 chess-corners-py    (PyO3 bindings, module name: chess_corners)
-chess-corners-wasm  (wasm-bindgen bindings, npm package: chess-corners-wasm)
+chess-corners-wasm  (wasm-bindgen bindings, npm package: @vitavision/chess-corners)
        ↓
 chess-corners       (High-level facade, multiscale pipeline, CLI)
        ↓

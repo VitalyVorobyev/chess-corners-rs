@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **npm package renamed to `@vitavision/chess-corners`.** The
+  WebAssembly bindings (Rust crate `chess-corners-wasm`, npm artifact
+  formerly published as `chess-corners-wasm`) now publish under the
+  scoped name `@vitavision/chess-corners`. The Rust crate name is
+  unchanged; only the npm package name moves. The legacy
+  `chess-corners-wasm` package is being deprecated on npm via a
+  one-shot tombstone release that points users at the new name. The
+  exported JS API is identical — migrate by replacing the dependency
+  name in `package.json` / your `import` statements.
+
 ### Added
 
 - **`DetectorMode::Radon`** — the whole-image Duda-Frese Radon

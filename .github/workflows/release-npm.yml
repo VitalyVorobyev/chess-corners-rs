@@ -40,6 +40,21 @@ jobs:
       - name: Build WASM package
         run: wasm-pack build crates/chess-corners-wasm --target web --release
 
+      - name: Rename npm package to @vitavision/chess-corners
+        # `wasm-pack` derives the npm package name from the Rust crate
+        # name (`chess-corners-wasm`). We publish under the scoped name
+        # `@vitavision/chess-corners` instead — see CHANGELOG 0.7.0 for
+        # the rebrand note. The crate-derived JS file basename
+        # (`chess_corners_wasm.js`) stays intact, so consumers always
+        # `import` from the package name; the inner module path is
+        # an implementation detail.
+        shell: bash
+        run: |
+          PKG=crates/chess-corners-wasm/pkg/package.json
+          jq '.name = "@vitavision/chess-corners"' "$PKG" > "$PKG.tmp"
+          mv "$PKG.tmp" "$PKG"
+          test "$(jq -r .name "$PKG")" = "@vitavision/chess-corners"
+
       - name: Copy README into pkg
         run: cp crates/chess-corners-wasm/README.md crates/chess-corners-wasm/pkg/README.md
 
