@@ -323,6 +323,68 @@ precision on synthetic data.
 
 ---
 
+## 2.5 Radon heatmap (visualization)
+
+The whole-image Radon detector (`detector_mode = "radon"`) computes a
+dense `(max_α S_α − min_α S_α)²` response heatmap as an intermediate
+step. The heatmap is exposed across all wrappers for visualization,
+debugging, and downstream tooling — useful when tuning
+`ray_radius`, `image_upsample`, or the threshold floor.
+
+The heatmap is returned at *working resolution*: the input is
+optionally upscaled (`ChessConfig.upscale`) and then internally
+supersampled by the Radon detector (`radon_detector.image_upsample`,
+default 2). The working-to-input scale factor is therefore
+`upscale_factor * image_upsample`. Multiply input-pixel coordinates by
+this factor to land on heatmap pixels.
+
+Rust:
+
+```rust,no_run
+use chess_corners::{radon_heatmap_u8, ChessConfig};
+
+# fn run(img: &[u8], width: u32, height: u32) {
+let cfg = ChessConfig::radon();
+let map = radon_heatmap_u8(img, width, height, &cfg);
+println!("heatmap {}×{}, max = {:.1}",
+    map.width(), map.height(),
+    map.data().iter().copied().fold(f32::NEG_INFINITY, f32::max));
+# }
+```
+
+Python:
+
+```python
+import chess_corners
+import numpy as np
+
+cfg = chess_corners.ChessConfig.radon()
+heatmap = chess_corners.radon_heatmap(img, cfg)  # (H', W') float32
+print(heatmap.shape, heatmap.dtype, float(heatmap.max()))
+```
+
+WebAssembly (JS):
+
+```js
+import init, { ChessDetector } from 'chess-corners-wasm';
+
+await init();
+const det = new ChessDetector();
+det.set_detector_mode('radon');
+
+const heatmap = det.radon_heatmap(grayPixels, width, height);
+const w = det.radon_heatmap_width();
+const h = det.radon_heatmap_height();
+const scale = det.radon_heatmap_scale();  // working-to-input factor
+console.log('heatmap', w, 'x', h, 'scale', scale);
+```
+
+The heatmap is independent from corner detection: calling it does not
+require the detector mode to actually be `"radon"`, and it does not
+return corners.
+
+---
+
 In this part we focused on the public faces of the detector: the
 `image` helper, the raw buffer API, the CLI, and the Python bindings.
 In the next parts we will look under the hood at how the ChESS

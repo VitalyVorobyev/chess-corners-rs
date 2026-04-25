@@ -75,3 +75,27 @@ def test_ml_refiner_api():
     assert corners.dtype == np.float32
     assert corners.ndim == 2
     assert corners.shape[1] == 9
+
+
+def test_radon_heatmap_shape_and_dtype():
+    img = _checkerboard(square_size=16, squares=8)
+    cfg = chess_corners.ChessConfig.radon()
+
+    heatmap = chess_corners.radon_heatmap(img, cfg)
+
+    upsample = max(1, min(2, cfg.radon_detector.image_upsample))
+    assert heatmap.dtype == np.float32
+    assert heatmap.shape == (img.shape[0] * upsample, img.shape[1] * upsample)
+    assert float(heatmap.max()) > 0.0
+    assert float(heatmap.min()) >= 0.0
+
+
+def test_radon_heatmap_default_config():
+    img = _checkerboard(square_size=16, squares=8)
+
+    heatmap = chess_corners.radon_heatmap(img)
+
+    assert heatmap.dtype == np.float32
+    assert heatmap.ndim == 2
+    assert heatmap.shape[0] >= img.shape[0]
+    assert heatmap.shape[1] >= img.shape[1]

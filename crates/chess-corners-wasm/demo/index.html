@@ -281,6 +281,14 @@
       <div class="panel">
         <h2>Detector</h2>
         <label>
+          <span class="lbl">Mode</span>
+          <select id="detectorMode">
+            <option value="canonical" selected>canonical (ChESS r=5)</option>
+            <option value="broad">broad (ChESS r=10)</option>
+            <option value="radon">radon (whole-image)</option>
+          </select>
+        </label>
+        <label>
           <span class="lbl">Threshold</span>
           <input type="range" id="threshold" min="0" max="0.8" step="0.01" value="0.20">
           <span class="val" id="thresholdVal">0.20</span>
@@ -294,10 +302,6 @@
           <span class="lbl">Min cluster</span>
           <input type="range" id="minCluster" min="1" max="8" step="1" value="2">
           <span class="val" id="minClusterVal">2</span>
-        </label>
-        <label>
-          <span class="lbl">Broad ring (r=10)</span>
-          <input type="checkbox" id="broadMode">
         </label>
       </div>
 
@@ -347,6 +351,10 @@
 
       <div class="panel">
         <h2>Overlay</h2>
+        <label>
+          <span class="lbl">Radon heatmap</span>
+          <input type="checkbox" id="showHeatmap">
+        </label>
         <label>
           <span class="lbl">Show axes</span>
           <input type="checkbox" id="showAxes" checked>

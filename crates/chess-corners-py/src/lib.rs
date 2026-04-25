@@ -110,9 +110,35 @@ fn find_chess_corners_with_ml<'py>(
     corners_to_array(py, corners)
 }
 
+#[pyfunction(signature = (image, cfg_json=None))]
+fn radon_heatmap<'py>(
+    py: Python<'py>,
+    image: &Bound<'py, PyAny>,
+    cfg_json: Option<&str>,
+) -> PyResult<Py<PyAny>> {
+    let (array, height, width) = extract_image(image)?;
+    let view = array.as_array();
+    let slice = view.as_slice().ok_or_else(|| {
+        PyValueError::new_err("image must be a C-contiguous uint8 array of shape (H, W)")
+    })?;
+
+    let width_u32 =
+        u32::try_from(width).map_err(|_| PyValueError::new_err("image width exceeds u32::MAX"))?;
+    let height_u32 = u32::try_from(height)
+        .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
+
+    let cfg = resolve_cfg_json(cfg_json)?;
+    let map = chess_corners_rs::radon_heatmap_u8(slice, width_u32, height_u32, &cfg);
+
+    let arr = Array2::from_shape_vec((map.height(), map.width()), map.data().to_vec())
+        .map_err(|_| PyValueError::new_err("failed to build heatmap array"))?;
+    Ok(arr.into_pyarray(py).into_any().unbind())
+}
+
 #[pymodule(name = "_native")]
 fn native_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(find_chess_corners, m)?)?;
+    m.add_function(wrap_pyfunction!(radon_heatmap, m)?)?;
     #[cfg(feature = "ml-refiner")]
     {
         m.add_function(wrap_pyfunction!(find_chess_corners_with_ml, m)?)?;
