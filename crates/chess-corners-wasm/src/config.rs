@@ -504,6 +504,12 @@ impl RadonPeakConfig {
 // ---------------------------------------------------------------------------
 
 /// Subpixel refiner selection plus per-variant parameters.
+///
+/// **Round-trip idiom for nested edits.** Per-variant getters
+/// (`centerOfMass`, `forstner`, `saddlePoint`, `radonPeak`) return a
+/// fresh clone of the inner config. Editing the returned object does
+/// not flow back; assign through the parent setter instead. See the
+/// crate-level docs for the full pattern.
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
 pub struct RefinerConfig {
@@ -528,6 +534,9 @@ impl RefinerConfig {
         self.inner.kind = v.into();
     }
 
+    /// Returns a *clone* of the per-variant config. Mutate it and
+    /// assign it back via [`Self::set_center_of_mass`] to persist
+    /// the edit (see crate-level docs for the round-trip idiom).
     #[wasm_bindgen(getter, js_name = centerOfMass)]
     pub fn center_of_mass(&self) -> CenterOfMassConfig {
         CenterOfMassConfig::from_inner(self.inner.center_of_mass)
@@ -537,6 +546,9 @@ impl RefinerConfig {
         self.inner.center_of_mass = v.inner();
     }
 
+    /// Returns a *clone* of the Förstner refiner config. Mutate it
+    /// and assign it back via [`Self::set_forstner`] to persist the
+    /// edit (see crate-level docs for the round-trip idiom).
     #[wasm_bindgen(getter)]
     pub fn forstner(&self) -> ForstnerConfig {
         ForstnerConfig::from_inner(self.inner.forstner)
@@ -546,6 +558,10 @@ impl RefinerConfig {
         self.inner.forstner = v.inner();
     }
 
+    /// Returns a *clone* of the saddle-point refiner config. Mutate
+    /// it and assign it back via [`Self::set_saddle_point`] to
+    /// persist the edit (see crate-level docs for the round-trip
+    /// idiom).
     #[wasm_bindgen(getter, js_name = saddlePoint)]
     pub fn saddle_point(&self) -> SaddlePointConfig {
         SaddlePointConfig::from_inner(self.inner.saddle_point)
@@ -555,6 +571,9 @@ impl RefinerConfig {
         self.inner.saddle_point = v.inner();
     }
 
+    /// Returns a *clone* of the Radon-peak refiner config. Mutate it
+    /// and assign it back via [`Self::set_radon_peak`] to persist
+    /// the edit (see crate-level docs for the round-trip idiom).
     #[wasm_bindgen(getter, js_name = radonPeak)]
     pub fn radon_peak(&self) -> RadonPeakConfig {
         RadonPeakConfig::from_inner(self.inner.radon_peak)
@@ -859,6 +878,9 @@ impl ChessConfig {
         self.inner.min_cluster_size = v;
     }
 
+    /// Returns a *clone* of the refiner config. Mutate it and
+    /// assign it back via [`Self::set_refiner`] to persist the edit
+    /// (see crate-level docs for the round-trip idiom).
     #[wasm_bindgen(getter)]
     pub fn refiner(&self) -> RefinerConfig {
         RefinerConfig::from_inner(self.inner.refiner.clone())
@@ -904,6 +926,9 @@ impl ChessConfig {
         self.inner.merge_radius = v;
     }
 
+    /// Returns a *clone* of the upscale config. Mutate it and
+    /// assign it back via [`Self::set_upscale`] to persist the edit
+    /// (see crate-level docs for the round-trip idiom).
     #[wasm_bindgen(getter)]
     pub fn upscale(&self) -> UpscaleConfig {
         UpscaleConfig::from_inner(self.inner.upscale)
@@ -913,6 +938,9 @@ impl ChessConfig {
         self.inner.upscale = v.inner();
     }
 
+    /// Returns a *clone* of the Radon detector params. Mutate them
+    /// and assign back via [`Self::set_radon_detector`] to persist
+    /// the edit (see crate-level docs for the round-trip idiom).
     #[wasm_bindgen(getter, js_name = radonDetector)]
     pub fn radon_detector(&self) -> RadonDetectorParams {
         RadonDetectorParams::from_inner(self.inner.radon_detector)

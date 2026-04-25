@@ -165,6 +165,14 @@ Every public Rust facade field is reachable through the typed
 classes and exposed with TypeScript types in the generated
 `.d.ts`.
 
+**Round-trip idiom for nested edits.** `wasm-bindgen` getters that
+return a struct (e.g. `cfg.refiner`, `cfg.radonDetector`,
+`cfg.upscale`, and the per-variant `cfg.refiner.forstner` etc.) hand
+back a *clone*, not a live view. To persist a nested edit, capture
+the getter result, mutate it, and assign it back through the parent
+setter. Top-level scalar setters (`cfg.thresholdValue = ...`) work
+in place because they mutate the parent directly.
+
 ```ts
 import init, {
   ChessConfig,
@@ -177,18 +185,27 @@ import init, {
 await init();
 
 const cfg = ChessConfig.multiscale();
+
+// Top-level scalar fields mutate `cfg` directly.
 cfg.detectorMode = DetectorMode.Radon;
 cfg.thresholdValue = 0.15;
-cfg.refiner.kind = RefinementMethod.RadonPeak;
-cfg.radonDetector.rayRadius = 5;
-cfg.radonDetector.imageUpsample = 2;
-cfg.radonDetector.peakFit = PeakFitMode.Gaussian;
+
+// Nested edits use the round-trip pattern: read, mutate, write back.
+const refiner = cfg.refiner;
+refiner.kind = RefinementMethod.RadonPeak;
+cfg.refiner = refiner;
+
+const radon = cfg.radonDetector;
+radon.rayRadius = 5;
+radon.imageUpsample = 2;
+radon.peakFit = PeakFitMode.Gaussian;
+cfg.radonDetector = radon;
 
 const detector = ChessDetector.withConfig(cfg);
 
 // Snapshot / commit changes via the typed config later if needed:
 const snapshot = detector.getConfig();
-snapshot.nmsRadius = 4;
+snapshot.nmsRadius = 4;             // top-level: in-place
 detector.applyConfig(snapshot);
 ```
 

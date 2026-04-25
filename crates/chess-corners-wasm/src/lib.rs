@@ -14,6 +14,34 @@
 //!
 //! Both paths edit the same underlying Rust struct, so they can be
 //! mixed at will.
+//!
+//! # Editing nested typed configs (round-trip idiom)
+//!
+//! `wasm-bindgen` getters that return a struct hand JS an opaque
+//! handle to a *fresh clone* of the nested value, not a live view.
+//! That means writing the chained form
+//!
+//! ```ignore
+//! cfg.refiner.kind = RefinementMethod.RadonPeak;   // edits a temporary,
+//!                                                   // does NOT update cfg
+//! ```
+//!
+//! mutates the temporary clone and is silently lost when `cfg` is
+//! later passed to [`ChessDetector::with_config`] /
+//! [`ChessDetector::apply_config`]. To persist a nested edit, capture
+//! the getter result, mutate it, and assign it back through the
+//! parent setter:
+//!
+//! ```ignore
+//! const r = cfg.refiner;                  // pull a clone out
+//! r.kind = RefinementMethod.RadonPeak;    // edit the clone
+//! cfg.refiner = r;                        // write it back
+//! ```
+//!
+//! Same pattern applies to `cfg.radonDetector`, `cfg.upscale`, and
+//! `cfg.refiner.{centerOfMass, forstner, saddlePoint, radonPeak}`.
+//! Top-level scalar fields (e.g. `cfg.thresholdValue = 0.15`) work
+//! directly because the setter mutates the parent in place.
 
 pub mod config;
 
@@ -114,6 +142,7 @@ impl ChessDetector {
             buffers: PyramidBuffers::with_capacity(levels),
             last_response: None,
             last_radon_response: None,
+            last_radon_scale: 0,
         }
     }
 
