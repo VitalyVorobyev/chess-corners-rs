@@ -1,141 +1,75 @@
-# Part II: Using the Detector
+# Part II: Using the library
 
-In Part I we oriented ourselves in the project and saw the high‑level
-building blocks: the ChESS response, the detector pipeline, and the
-`chess-corners` facade crate. In this part we focus entirely on
-*using* the detector in practice.
+This chapter is a walk through the public API on every binding
+target. Code-first; algorithms are covered in
+[Part III (ChESS)](part-03-chess-detector.md),
+[Part IV (Radon)](part-04-radon-detector.md), and
+[Part V (refiners)](part-05-refiners.md).
 
-We start with the simplest way to get corners out of an image using
-the `image` crate, then show how to work directly with raw grayscale
-buffers, and finally look at the bundled CLI for quick experiments and
-batch processing.
+## 2.1 Rust
 
----
-
-## 2.1 Single-scale detection with `image`
-
-The easiest way to use ChESS is through the `chess-corners` facade
-crate, together with the `image` crate’s `GrayImage` type.
-
-Make sure your `Cargo.toml` has:
+Add the facade crate:
 
 ```toml
 [dependencies]
 chess-corners = "0.5"
-image = "0.25"
+image = "0.25"          # optional, for GrayImage integration
 ```
 
-The `image` feature on `chess-corners` is enabled by default, so you
-get convenient helpers on `image::GrayImage` without any extra work.
-
-### 2.1.1 Minimal example
-
-Here is a complete single‑scale example:
+### 2.1.1 Single-scale ChESS detection from an image file
 
 ```rust
-use chess_corners::{ChessConfig, find_chess_corners_image};
+use chess_corners::{find_chess_corners_image, ChessConfig};
 use image::io::Reader as ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Load a grayscale image.
-    let img = ImageReader::open("board.png")?
-        .decode()?
-        .to_luma8();
+    let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
-    // 2. Start from a single-scale configuration.
-    let cfg = ChessConfig::single_scale();
-
-    // 3. Run the detector.
+    let cfg = ChessConfig::single_scale();  // ChESS detector, defaults
     let corners = find_chess_corners_image(&img, &cfg);
-    println!("found {} corners", corners.len());
 
+    println!("found {} corners", corners.len());
     Ok(())
 }
 ```
 
-The key pieces are:
+`corners` is a `Vec<CornerDescriptor>` with subpixel positions and
+per-corner intensity-fit metadata (Part I §1.4).
 
-- `ChessConfig::single_scale()` – configures a single‑scale detector
-  with `pyramid_levels = 1`.
-- `find_chess_corners_image` – runs the detector on a `GrayImage` and
-  returns a `Vec<CornerDescriptor>`.
-
-### 2.1.2 Inspecting detected corners
-
-Each corner is described by a `CornerDescriptor` re‑exported from the
-core crate. You can inspect the fields like this:
+### 2.1.2 Radon detector instead of ChESS
 
 ```rust
-for c in &corners {
-    println!(
-        "corner at ({:.2}, {:.2}), response {:.1}, theta {:.2} rad",
-        c.x, c.y, c.response, c.orientation,
-    );
-}
+use chess_corners::{find_chess_corners_image, ChessConfig};
+
+let cfg = ChessConfig::radon();           // Radon detector, paper defaults
+let corners = find_chess_corners_image(&img, &cfg);
 ```
 
-Important details:
+`ChessConfig::radon()` sets `detector_mode = Radon` and populates
+`radon_detector: RadonDetectorParams` with the paper's published
+defaults. The output type is the same `Vec<CornerDescriptor>`.
 
-- `x`, `y` – subpixel coordinates in full‑resolution *image pixels*,
-  using the usual `(0,0)` top‑left origin and `x` to the right,
-  `y` down.
-- `response` – the ChESS response at this location. Larger positive
-  values mean the local structure looks more like an ideal chessboard
-  corner.
-- `orientation` – orientation of one of the grid axes in radians,
-  in `[0, π)`. The other axis is at `orientation + π/2`.
-
-For basic camera calibration workflows you can often treat `response`
-as a confidence score and use `orientation` mainly for grid fitting
-or downstream topology checks.
-
-### 2.1.3 Tweaking `ChessConfig`
-
-The public config is intentionally flat. The most important fields are:
-
-- `detector_mode` – choose `Canonical` (default) or `Broad` for the response pattern. `Broad` uses the wider, blur-tolerant detector mode.
-- `descriptor_mode` – usually leave `FollowDetector`, but you can override descriptor/orientation sampling with `Canonical` or `Broad`.
-- `threshold_mode` + `threshold_value` – control candidate thresholding. Relative thresholding is the default and is usually the right starting point.
-- `nms_radius` – radius of the non‑maximum suppression window.
-- `min_cluster_size` – reject isolated positives in the NMS neighborhood.
-- `pyramid_levels`, `pyramid_min_size`, `refinement_radius`, `merge_radius` – multiscale tuning.
-- `refiner.kind` – choose `CenterOfMass`, `Forstner`, or `SaddlePoint`.
-
-Small thresholds and NMS radii tend to produce more corners; larger values
-produce fewer and stronger corners.
-
----
-
-## 2.2 Raw buffer API
-
-The `image` integration is convenient, but you may already have image
-data in another form (camera SDK, FFI, GPU pipeline). In those cases
-you can bypass `image` entirely and work directly with `&[u8]`
-buffers.
-
-### 2.2.1 `find_chess_corners_u8`
-
-The `chess-corners` crate exposes:
+### 2.1.3 Swapping the subpixel refiner
 
 ```rust
-pub fn find_chess_corners_u8(
-    img: &[u8],
-    width: u32,
-    height: u32,
-    cfg: &ChessConfig,
-) -> Vec<CornerDescriptor>;
+use chess_corners::{ChessConfig, RefinementMethod};
+
+let mut cfg = ChessConfig::multiscale();
+cfg.refiner.kind = RefinementMethod::RadonPeak;  // or CenterOfMass / Forstner / SaddlePoint
 ```
 
-Requirements:
+The refiner is a one-line change. Per-refiner configuration lives
+under `cfg.refiner.center_of_mass`, `cfg.refiner.forstner`,
+`cfg.refiner.saddle_point`, `cfg.refiner.radon_peak`. Defaults match
+[Part V](part-05-refiners.md).
 
-- `img` must be a **contiguous** `width * height` slice in row‑major
-  order.
-- Pixels are 8‑bit grayscale (`0` = black, `255` = white).
+### 2.1.4 Raw buffer API
 
-Usage is nearly identical to the `image`‑based helper:
+If your pixels come from a camera SDK, FFI, or GPU pipeline, skip
+the `image` crate and feed a packed `&[u8]`:
 
 ```rust
-use chess_corners::{ChessConfig, ThresholdMode, find_chess_corners_u8};
+use chess_corners::{find_chess_corners_u8, ChessConfig, ThresholdMode};
 
 fn detect(img: &[u8], width: u32, height: u32) {
     let mut cfg = ChessConfig::single_scale();
@@ -147,136 +81,159 @@ fn detect(img: &[u8], width: u32, height: u32) {
 }
 ```
 
-Internally, this constructs an `ImageView` over the buffer and calls
-the same multiscale machinery as the `image` helper, so results are
-identical for the same configuration.
+Requirements:
 
-### 2.2.2 Custom buffers and strides
+- `img` is `width * height` bytes, row-major.
+- `0` is black, `255` is white.
 
-If your buffers are not tightly packed (e.g., you have a stride or
-interleaved RGB data), you will need to adapt them before calling the
-detector:
+If your buffer has a stride or is interleaved RGB, copy the
+luminance channel to a packed buffer first. The facade does not
+resample stride; the only supported layout is tightly packed.
 
-- For RGB/RGBA images, convert to grayscale first (e.g., using your
-  own kernel or via `image` when convenient), then call
-  `find_chess_corners_u8` on the luminance buffer.
-- For images with a stride, either:
-  - copy each row into a temporary tightly‑packed buffer and reuse it
-    per frame, or
-  - construct your own `ResponseMap` using `chess-corners-core` and a
-    custom sampling function that respects the stride (covered in
-    later parts of the book).
-
-The simplest path is usually:
-
-1. Convert to a packed grayscale buffer once.
-2. Reuse it across calls to `find_chess_corners_u8`.
-
-### 2.2.3 ML refiner (feature `ml-refiner`)
-
-The ML refiner is an optional ONNX-backed subpixel refinement stage.
-Enable it by turning on the `ml-refiner` feature and calling the ML
-entry points:
+### 2.1.5 Inspecting corners
 
 ```rust
-use chess_corners::{ChessConfig, find_chess_corners_image_with_ml};
-use image::GrayImage;
-
-let img = GrayImage::new(1, 1);
-let cfg = ChessConfig::default();
-let corners = find_chess_corners_image_with_ml(&img, &cfg);
+for c in &corners {
+    println!(
+        "({:.2}, {:.2})  response={:.1}  axes=({:.2}, {:.2}) rad",
+        c.x, c.y, c.response,
+        c.axes[0].angle, c.axes[1].angle,
+    );
+}
 ```
 
-The ML refiner runs an ONNX model on normalized patches (uint8 / 255.0) and
-predicts `[dx, dy, conf_logit]`. The current version ignores the confidence
-output and applies the offsets directly, using the embedded model defaults.
+The `axes` field gives **two** directions, both in radians; they are
+not assumed orthogonal. `c.axes[0].sigma` and `c.axes[1].sigma` are
+1σ angular uncertainties. See [Part III §3.4](part-03-chess-detector.md#34-corner-descriptors)
+for the fit and the polarity convention.
 
----
+### 2.1.6 Key `ChessConfig` fields
 
-## 2.3 CLI workflows
+The config is intentionally flat; all scalar knobs live at the top
+level, only the refiner is nested:
 
-The workspace includes a `chess-corners` binary that wraps the library
-APIs with configuration, image I/O, and basic visualization. It lives
-under `crates/chess-corners/bin` and is built when the `cli` feature
-is enabled in this crate.
+| Field                 | Meaning                                                                                          |
+|-----------------------|--------------------------------------------------------------------------------------------------|
+| `detector_mode`       | `Canonical` / `Broad` / `Radon`. `Canonical` and `Broad` pick ChESS ring widths; `Radon` switches detector entirely. |
+| `descriptor_mode`     | `FollowDetector`, `Canonical`, or `Broad`. Lets you run detection at one ring radius and descriptor sampling at another. |
+| `threshold_mode`      | `Absolute` or `Relative`. Applied to the detector response.                                       |
+| `threshold_value`     | Threshold number, interpreted per `threshold_mode`.                                              |
+| `nms_radius`          | Non-maximum-suppression window half-radius.                                                      |
+| `min_cluster_size`    | Minimum number of positive-response neighbors inside the NMS window.                             |
+| `refiner`             | Nested refiner selection + per-refiner configs (see Part V).                                      |
+| `pyramid_levels`      | `1` means single-scale; `> 1` enables the coarse-to-fine multiscale pipeline.                    |
+| `pyramid_min_size`    | Smallest pyramid level dimension allowed during construction.                                    |
+| `refinement_radius`   | ROI size (in coarse-level pixels) used when refining coarse seeds at base resolution.            |
+| `merge_radius`        | Duplicate-suppression distance (in base-level pixels) for the final merge step.                  |
+| `radon_detector`      | Full `RadonDetectorParams` struct, only consulted when `detector_mode = Radon`.                   |
 
-### 2.3.1 Basic usage
+Presets: `ChessConfig::single_scale()`, `ChessConfig::multiscale()`,
+`ChessConfig::radon()`, `ChessConfig::radon_peak()` (multiscale +
+`RefinementMethod::RadonPeak`).
 
-From the workspace root, you can run:
+## 2.2 Python
+
+Install from PyPI:
+
+```bash
+python -m pip install chess-corners
+```
+
+```python
+import numpy as np
+import chess_corners
+
+img = np.zeros((128, 128), dtype=np.uint8)
+
+cfg = chess_corners.ChessConfig.multiscale()
+cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
+
+corners = chess_corners.find_chess_corners(img, cfg)
+print(corners.shape)   # (N, 9)
+```
+
+`find_chess_corners` accepts a 2D `uint8` array shaped `(H, W)` and
+returns a `float32` array with stride 9 per corner:
+
+```
+[x, y, response, contrast, fit_rms,
+ axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]
+```
+
+The Python `ChessConfig` matches the Rust type field-for-field and
+supports `to_dict()`, `from_dict()`, `to_json()`, `from_json()`,
+`pretty()`, and `print()`.
+
+The Radon detector is selected the same way as in Rust:
+
+```python
+cfg = chess_corners.ChessConfig.radon()
+```
+
+If the wheel was built with `ml-refiner`, the ML entry point is
+`chess_corners.find_chess_corners_with_ml(img, cfg)`.
+
+## 2.3 JavaScript / WebAssembly
+
+Build the wasm package from source:
+
+```bash
+wasm-pack build crates/chess-corners-wasm --target web
+```
+
+Or consume the published npm package `chess-corners-wasm`. Usage
+from a web app:
+
+```js
+import init, { ChessDetector } from 'chess-corners-wasm';
+
+await init();
+const detector = new ChessDetector();
+detector.set_pyramid_levels(3);
+
+// From a canvas (webcam frame, loaded image, etc.)
+const imageData = ctx.getImageData(0, 0, width, height);
+const corners = detector.detect_rgba(imageData.data, width, height);
+
+// corners is Float32Array, stride 9 per corner — same layout as Python.
+for (let i = 0; i < corners.length; i += 9) {
+    console.log(`(${corners[i].toFixed(2)}, ${corners[i + 1].toFixed(2)})`);
+}
+
+// Raw response map, for heatmap visualisation.
+const response = detector.response_rgba(imageData.data, width, height);
+```
+
+`ChessDetector` exposes setters for the same fields as `ChessConfig`,
+plus `set_detector_mode('canonical' | 'broad' | 'radon')` and
+tuning setters for each refiner. See
+`crates/chess-corners-wasm/README.md` for the full setter list.
+
+## 2.4 CLI
 
 ```bash
 cargo run -p chess-corners --release --bin chess-corners -- \
-  run config/chess_cli_config_example.json
+    run config/chess_cli_config_example.json
 ```
 
-This will:
+The CLI:
 
-- Load the image specified in the `image` field of the config.
-- Decide between single‑scale and multiscale based on
-  `pyramid_levels` (if `> 1`, multiscale is used).
-- Run the detector with the configured parameters.
-- Write a JSON file with detected corners and, by default, a PNG
-  overlay image with small white squares drawn at corner positions.
+- Loads the image at the config's `image` field.
+- Picks single-scale or multiscale from `pyramid_levels`.
+- Picks ChESS or Radon from `detector_mode`.
+- Picks the refiner from the nested `refiner` block.
+- Writes a JSON summary and a PNG overlay with one mark per corner.
 
-The exact fields are defined by `DetectionConfig` in
-`crates/chess-corners/bin/commands.rs`. The example config under
-`config/` documents common settings:
+Example configs under `config/`:
 
-- `detector_mode`, `descriptor_mode`, `threshold_mode`,
-  `threshold_value`, `nms_radius`, `min_cluster_size` – detector
-  tuning.
-- `refiner` – nested refiner selection plus leaf config objects.
-- `pyramid_levels`, `pyramid_min_size`, `refinement_radius`,
-  `merge_radius` – multiscale controls.
-- `ml` – set `true` to enable the ML refiner pipeline (requires the
-  `ml-refiner` feature).
-- `output_json`, `output_png` – output paths; when omitted, defaults
-  are derived from the image filename.
+- `chess_algorithm_config_example.json` — just the algorithm fields,
+  shared with the Rust and Python APIs.
+- `chess_cli_config_example.json` — algorithm fields plus CLI
+  I/O fields (`image`, `output_json`, `output_png`, `log_level`, `ml`).
+- `chess_cli_config_example_ml.json` — same, with the ML refiner
+  enabled. Requires a binary built with `--features ml-refiner`.
 
-You can override many of these fields with CLI flags; the CLI uses
-`DetectionConfig` as a base and then applies overrides.
-
-### 2.3.2 ML refiner from the CLI
-
-The CLI switches to the ML pipeline when `ml` is `true` in
-the JSON config. You must also build the binary with the
-`ml-refiner` feature:
-
-```bash
-cargo run -p chess-corners --release --features ml-refiner --bin chess-corners -- \
-  run config/chess_cli_config_example_ml.json
-```
-
-The ML configuration is currently a boolean toggle; the refiner uses
-the embedded model defaults and ignores the confidence output.
-
-### 2.3.3 Inspecting results
-
-The CLI produces:
-
-- A JSON file containing:
-  - basic metadata (image path, width, height),
-  - the multiscale configuration actually used (`pyramid_levels`,
-    `pyramid_min_size`, `refinement_radius`, `merge_radius`), and
-  - an array of corners with `x`, `y`, `response`, and `orientation`.
-- A PNG image with the detected corners drawn as small white squares
-  over the original image.
-
-You can:
-
-- Load the JSON in Python, Rust, or any other language and feed the
-  detected corners into your calibration / pose estimation tools.
-- Use the PNG overlay for quick visual validation of parameter
-  choices.
-
-Combined with the configuration file, this makes it easy to iterate on
-detector settings without recompiling your code. Once you are happy
-with a configuration, you can port the settings into your own Rust or
-Python code using the same public `ChessConfig` schema.
-
-### 2.3.4 Example overlays
-
-Running the CLI on the sample images in `testdata/` produces overlays like these:
+Overlay examples on the sample images in `testdata/`:
 
 ![](img/small_chess.png)
 
@@ -284,46 +241,42 @@ Running the CLI on the sample images in `testdata/` produces overlays like these
 
 ![](img/large_chess.png)
 
----
+## 2.5 ML refiner
 
-## 2.4 Python bindings
+The ML refiner is a separate, optional code path. Enable it by
+building with `--features ml-refiner` (Rust) or by installing a
+wheel built with the same feature (Python), then call the ML
+entry points:
 
-The workspace ships a PyO3-based Python extension in
-`crates/chess-corners-py`, published as the `chess_corners` package.
-It exposes the same detector with a NumPy-friendly API.
+```rust
+use chess_corners::{find_chess_corners_image_with_ml, ChessConfig};
 
-Install (from PyPI):
-
-```bash
-python -m pip install chess-corners
+let cfg = ChessConfig::multiscale();
+let corners = find_chess_corners_image_with_ml(&img, &cfg);
 ```
 
-Basic usage:
+The ML path:
 
-```python
-import numpy as np
-import chess_corners
+- Runs the ChESS detector to produce seeds.
+- Feeds each seed's 21×21 neighborhood through the embedded
+  ONNX model (`chess_refiner_v4.onnx`, ~180 K params).
+- Replaces the seed position with the model's predicted
+  `(dx, dy)` offset.
+- Falls back to the configured classical refiner if the ML path
+  rejects or times out.
 
-img = np.zeros((128, 128), dtype=np.uint8)
-corners = chess_corners.find_chess_corners(img)
-print(corners.shape, corners.dtype)  # (N, 4), float32
-```
+The algorithm and its limits are covered in
+[Part V §5.6](part-05-refiners.md#56-ml-onnx-model). The ML refiner
+is not a direct replacement for RadonPeak: on clean and lightly
+blurred data RadonPeak is more accurate; ML wins on noise-heavy
+scenes.
 
-`find_chess_corners` expects a 2D `uint8` array `(H, W)` and returns a
-float32 array with columns `[x, y, response, orientation]`. For
-configuration, create `ChessConfig()` and set fields such as
-`threshold_mode`, `threshold_value`, `nms_radius`, `pyramid_levels`,
-and `merge_radius`. The Python package also provides `to_dict`,
-`from_dict`, `to_json`, `from_json`, `pretty`, and `print()` helpers.
+Pairing the ML refiner with `detector_mode = Radon` is not supported:
+the Radon detector does its own subpixel fit and does not emit the
+integer seeds the ML refiner expects, so the facade falls back to
+the Radon detector's native output in that case.
 
-If the bindings are built with the `ml-refiner` feature, you can call
-`find_chess_corners_with_ml` in Python as well. The ML path uses the
-embedded model defaults and is slower but can improve subpixel
-precision on synthetic data.
-
----
-
-## 2.5 Radon heatmap (visualization)
+## 2.6 Radon heatmap (visualization)
 
 The whole-image Radon detector (`detector_mode = "radon"`) computes a
 dense `(max_α S_α − min_α S_α)²` response heatmap as an intermediate
@@ -390,3 +343,9 @@ In this part we focused on the public faces of the detector: the
 In the next parts we will look under the hood at how the ChESS
 response is computed, how the detector turns responses into subpixel
 corners, and how the multiscale pipeline is structured.
+
+---
+
+Next: [Part III](part-03-chess-detector.md) describes the ChESS
+response kernel, the detection pipeline, and the corner descriptor
+fit. [Part IV](part-04-radon-detector.md) covers the Radon detector.
