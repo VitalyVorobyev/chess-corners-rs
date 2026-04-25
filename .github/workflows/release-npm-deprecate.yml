@@ -1,0 +1,96 @@
+name: Deprecate legacy npm package (chess-corners-wasm)
+
+# One-shot, manually-triggered workflow that publishes a final
+# tombstone version of the legacy `chess-corners-wasm` npm package and
+# marks it deprecated, redirecting users to `@vitavision/chess-corners`.
+#
+# Run this once after the first `@vitavision/chess-corners` release has
+# landed on npm. The workflow is idempotent against the
+# `npm deprecate` step but `npm publish` will refuse to overwrite an
+# already-published version, so bump `tombstone_version` if you re-run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tombstone_version:
+        description: "Final version to publish under the old name (e.g. 0.6.99)."
+        required: true
+        default: "0.6.99"
+
+jobs:
+  deprecate-legacy:
+    name: Publish tombstone & deprecate
+    runs-on: ubuntu-latest
+
+    environment: npm
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM package (artifact reused for tombstone)
+        run: wasm-pack build crates/chess-corners-wasm --target web --release
+
+      - name: Patch package.json (legacy name + tombstone version)
+        shell: bash
+        env:
+          TOMBSTONE: ${{ inputs.tombstone_version }}
+        run: |
+          PKG=crates/chess-corners-wasm/pkg/package.json
+          jq --arg v "$TOMBSTONE" \
+            '.name = "chess-corners-wasm" | .version = $v' \
+            "$PKG" > "$PKG.tmp"
+          mv "$PKG.tmp" "$PKG"
+          jq . "$PKG"
+
+      - name: Write MOVED README
+        shell: bash
+        env:
+          TOMBSTONE: ${{ inputs.tombstone_version }}
+        run: |
+          cat > crates/chess-corners-wasm/pkg/README.md <<EOF
+          # chess-corners-wasm — moved
+
+          This package has been renamed to **\`@vitavision/chess-corners\`**.
+
+          Install:
+
+          \`\`\`bash
+          npm install @vitavision/chess-corners
+          \`\`\`
+
+          The latest \`chess-corners-wasm\` release is the tombstone version
+          \`$TOMBSTONE\`. No further functional updates will be published under
+          this name.
+
+          See [the project README](https://github.com/VitalyVorobyev/chess-corners-rs)
+          for migration details.
+          EOF
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish tombstone version
+        working-directory: crates/chess-corners-wasm/pkg
+        # Trusted publishing via GitHub OIDC; no long-lived npm token required.
+        run: npm publish --access public
+
+      - name: Mark all chess-corners-wasm versions deprecated
+        shell: bash
+        env:
+          TOMBSTONE: ${{ inputs.tombstone_version }}
+        run: |
+          npm deprecate "chess-corners-wasm@<=$TOMBSTONE" \
+            "Renamed to @vitavision/chess-corners. Run: npm install @vitavision/chess-corners"

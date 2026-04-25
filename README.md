@@ -19,7 +19,7 @@ It also ships:
 
 - a CLI binary
 - a Python package (`chess_corners`)
-- a WebAssembly package (`chess-corners-wasm`) for browser usage
+- a WebAssembly package (npm: `@vitavision/chess-corners`) for browser usage
 - an optional ML-backed refinement path
 
 ## Diligence statement
@@ -140,16 +140,24 @@ Every public Python config object supports:
 ## JavaScript / WebAssembly
 
 The `chess-corners-wasm` crate provides browser-ready bindings via `wasm-bindgen`.
-Build with [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/):
+The published npm package is **`@vitavision/chess-corners`** (renamed from
+the unscoped `chess-corners-wasm` in 0.7.0; the legacy package is deprecated
+on npm). Build locally with [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/):
 
 ```bash
 wasm-pack build crates/chess-corners-wasm --target web
 ```
 
+Or install from npm:
+
+```bash
+npm install @vitavision/chess-corners
+```
+
 Use in a web app:
 
 ```js
-import init, { ChessDetector } from 'chess-corners-wasm';
+import init, { ChessDetector } from '@vitavision/chess-corners';
 
 await init();
 const detector = new ChessDetector();
