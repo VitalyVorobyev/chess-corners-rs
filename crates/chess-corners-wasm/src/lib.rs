@@ -30,6 +30,14 @@ pub struct ChessDetector {
     buffers: PyramidBuffers,
     last_response: Option<ResponseMap>,
     last_radon_response: Option<ResponseMap>,
+    /// Working-to-input scale factor cached at the moment
+    /// `radon_heatmap` produced `last_radon_response`. Returning a
+    /// cached value (instead of recomputing from the live config)
+    /// keeps `radon_heatmap_width` / `_height` / `_scale` mutually
+    /// consistent if the caller mutates the detector's upscale or
+    /// `radon_detector.image_upsample` between the heatmap call and
+    /// the accessor calls. `0` until the first heatmap is computed.
+    last_radon_scale: u32,
 }
 
 impl Default for ChessDetector {
@@ -48,6 +56,7 @@ impl ChessDetector {
             buffers: PyramidBuffers::with_capacity(1),
             last_response: None,
             last_radon_response: None,
+            last_radon_scale: 0,
         }
     }
 
@@ -60,6 +69,7 @@ impl ChessDetector {
             buffers: PyramidBuffers::with_capacity(levels),
             last_response: None,
             last_radon_response: None,
+            last_radon_scale: 0,
         }
     }
 
@@ -239,6 +249,13 @@ impl ChessDetector {
         let resp = radon_heatmap_u8(pixels, width, height, &self.config);
         let arr = js_sys::Float32Array::new_with_length(resp.data().len() as u32);
         arr.copy_from(resp.data());
+        // Cache the scale alongside the response so the three
+        // accessors (width / height / scale) stay mutually consistent
+        // even if the caller mutates `set_upscale_factor` /
+        // `radon_detector.image_upsample` after this call.
+        let upscale = self.config.upscale.effective_factor().max(1);
+        let radon_up = self.config.radon_detector.image_upsample.clamp(1, 2);
+        self.last_radon_scale = upscale * radon_up;
         self.last_radon_response = Some(resp);
         arr
     }
@@ -274,12 +291,15 @@ impl ChessDetector {
     /// Multiply input-pixel coordinates by this factor to land on the
     /// corresponding heatmap pixel; divide heatmap-pixel coordinates by
     /// it to recover input pixels. Equals
-    /// `upscale_factor * radon_detector.image_upsample` (clamped to the
-    /// supported range).
+    /// `upscale_factor * radon_detector.image_upsample` (clamped to
+    /// the supported range) **as it was at the time of the last
+    /// `radon_heatmap` call** — mutating the detector's upscale or
+    /// `radon_detector.image_upsample` afterwards does not change
+    /// this value, so the trio of width / height / scale stays
+    /// consistent for overlay alignment. Returns `0` if no heatmap
+    /// has been computed yet.
     pub fn radon_heatmap_scale(&self) -> u32 {
-        let upscale = self.config.upscale.effective_factor().max(1);
-        let radon_up = self.config.radon_detector.image_upsample.clamp(1, 2);
-        upscale * radon_up
+        self.last_radon_scale
     }
 }
 
