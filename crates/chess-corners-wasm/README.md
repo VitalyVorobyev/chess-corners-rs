@@ -165,13 +165,9 @@ Every public Rust facade field is reachable through the typed
 classes and exposed with TypeScript types in the generated
 `.d.ts`.
 
-**Round-trip idiom for nested edits.** `wasm-bindgen` getters that
-return a struct (e.g. `cfg.refiner`, `cfg.radonDetector`,
-`cfg.upscale`, and the per-variant `cfg.refiner.forstner` etc.) hand
-back a *clone*, not a live view. To persist a nested edit, capture
-the getter result, mutate it, and assign it back through the parent
-setter. Top-level scalar setters (`cfg.thresholdValue = ...`) work
-in place because they mutate the parent directly.
+Nested config edits propagate naturally — getters hand back a
+wrapper backed by the same shared cell as the parent, so chained
+mutation works without a round-trip:
 
 ```ts
 import init, {
@@ -185,29 +181,29 @@ import init, {
 await init();
 
 const cfg = ChessConfig.multiscale();
-
-// Top-level scalar fields mutate `cfg` directly.
 cfg.detectorMode = DetectorMode.Radon;
 cfg.thresholdValue = 0.15;
-
-// Nested edits use the round-trip pattern: read, mutate, write back.
-const refiner = cfg.refiner;
-refiner.kind = RefinementMethod.RadonPeak;
-cfg.refiner = refiner;
-
-const radon = cfg.radonDetector;
-radon.rayRadius = 5;
-radon.imageUpsample = 2;
-radon.peakFit = PeakFitMode.Gaussian;
-cfg.radonDetector = radon;
+cfg.refiner.kind = RefinementMethod.RadonPeak;
+cfg.refiner.forstner.maxOffset = 2.0;
+cfg.radonDetector.rayRadius = 5;
+cfg.radonDetector.imageUpsample = 2;
+cfg.radonDetector.peakFit = PeakFitMode.Gaussian;
 
 const detector = ChessDetector.withConfig(cfg);
 
-// Snapshot / commit changes via the typed config later if needed:
+// `getConfig()` returns a *snapshot* — its cells are independent of
+// the detector's live state. Use `applyConfig()` to commit changes
+// made on the snapshot.
 const snapshot = detector.getConfig();
-snapshot.nmsRadius = 4;             // top-level: in-place
+snapshot.nmsRadius = 4;
 detector.applyConfig(snapshot);
 ```
+
+Setters that take a nested wrapper (e.g. `cfg.refiner = newRefiner`)
+reseat `cfg`'s shared cells to point at `newRefiner`'s cells, so
+future `cfg.refiner.*` calls observe `newRefiner`'s state. JS code
+that already held the previous `cfg.refiner` keeps observing the
+previous cells — matching natural JS attribute-replacement semantics.
 
 The legacy `set_*` shortcut methods continue to work and edit the
 same underlying configuration, so the two styles can be mixed at

@@ -15,33 +15,19 @@
 //! Both paths edit the same underlying Rust struct, so they can be
 //! mixed at will.
 //!
-//! # Editing nested typed configs (round-trip idiom)
+//! # Editing nested typed configs
 //!
-//! `wasm-bindgen` getters that return a struct hand JS an opaque
-//! handle to a *fresh clone* of the nested value, not a live view.
-//! That means writing the chained form
-//!
-//! ```ignore
-//! cfg.refiner.kind = RefinementMethod.RadonPeak;   // edits a temporary,
-//!                                                   // does NOT update cfg
-//! ```
-//!
-//! mutates the temporary clone and is silently lost when `cfg` is
-//! later passed to [`ChessDetector::with_config`] /
-//! [`ChessDetector::apply_config`]. To persist a nested edit, capture
-//! the getter result, mutate it, and assign it back through the
-//! parent setter:
+//! Nested edits propagate naturally — getters hand back a wrapper
+//! backed by the same shared cell as the parent, so chained mutation
+//! works without a round-trip:
 //!
 //! ```ignore
-//! const r = cfg.refiner;                  // pull a clone out
-//! r.kind = RefinementMethod.RadonPeak;    // edit the clone
-//! cfg.refiner = r;                        // write it back
+//! cfg.refiner.kind = RefinementMethod.RadonPeak;   // propagates
+//! cfg.refiner.forstner.maxOffset = 2.0;            // propagates
+//! cfg.radonDetector.rayRadius = 5;                 // propagates
 //! ```
 //!
-//! Same pattern applies to `cfg.radonDetector`, `cfg.upscale`, and
-//! `cfg.refiner.{centerOfMass, forstner, saddlePoint, radonPeak}`.
-//! Top-level scalar fields (e.g. `cfg.thresholdValue = 0.15`) work
-//! directly because the setter mutates the parent in place.
+//! See [`config`] for the cell-sharing details.
 
 pub mod config;
 
@@ -135,10 +121,10 @@ impl ChessDetector {
     /// setter-shortcut path).
     #[wasm_bindgen(js_name = withConfig)]
     pub fn with_config(config: &ChessConfig) -> Self {
-        let inner = config.inner().clone();
-        let levels = inner.pyramid_levels;
+        let snapshot = config.snapshot();
+        let levels = snapshot.pyramid_levels;
         Self {
-            config: inner,
+            config: snapshot,
             buffers: PyramidBuffers::with_capacity(levels),
             last_response: None,
             last_radon_response: None,
@@ -147,25 +133,25 @@ impl ChessDetector {
     }
 
     /// Snapshot the current configuration as a typed
-    /// [`ChessConfig`]. Mutations to the
-    /// returned object do not flow back; use [`Self::apply_config`]
-    /// to commit changes.
+    /// [`ChessConfig`]. The returned object is a snapshot — its
+    /// cells are *not* shared with the detector's live state. Use
+    /// [`Self::apply_config`] to commit edits made on the snapshot.
     #[wasm_bindgen(js_name = getConfig)]
     pub fn get_config(&self) -> ChessConfig {
         ChessConfig::from_inner_for_js(self.config.clone())
     }
 
     /// Replace the detector's configuration with the given typed
-    /// [`ChessConfig`]. Resizes pyramid
-    /// scratch buffers if `pyramid_levels` changed.
+    /// [`ChessConfig`]. Resizes pyramid scratch buffers if
+    /// `pyramid_levels` changed.
     #[wasm_bindgen(js_name = applyConfig)]
     pub fn apply_config(&mut self, config: &ChessConfig) {
-        let inner = config.inner().clone();
-        let levels = inner.pyramid_levels;
+        let snapshot = config.snapshot();
+        let levels = snapshot.pyramid_levels;
         if levels != self.config.pyramid_levels {
             self.buffers = PyramidBuffers::with_capacity(levels);
         }
-        self.config = inner;
+        self.config = snapshot;
     }
 
     // ---- Config setters ----
@@ -450,13 +436,12 @@ fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::
     arr
 }
 
-// Helpers used by `lib.rs` to round-trip the inner config through the
-// JS-facing wrapper. Kept private to the crate.
+// Helper used by `lib.rs` to wrap a Rust facade `ChessConfig` value
+// in a fresh JS-facing wrapper. The returned wrapper owns brand-new
+// cells (not shared with the source value) — this is intentional for
+// `getConfig()` snapshot semantics.
 impl ChessConfig {
     pub(crate) fn from_inner_for_js(inner: chess_corners::ChessConfig) -> Self {
-        // Reuse the existing constructor pattern in `config.rs`.
-        let mut cfg = Self::new();
-        *cfg.inner_mut() = inner;
-        cfg
+        Self::from_value_pub(inner)
     }
 }
