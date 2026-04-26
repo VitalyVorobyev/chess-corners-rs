@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-04-26
 
 ### Changed
 
@@ -14,12 +14,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   formerly published as `chess-corners-wasm`) now publish under the
   scoped name `@vitavision/chess-corners`. The Rust crate name is
   unchanged; only the npm package name moves. The legacy
-  `chess-corners-wasm` package is being deprecated on npm via a
-  one-shot tombstone release that points users at the new name. The
-  exported JS API is identical — migrate by replacing the dependency
-  name in `package.json` / your `import` statements.
+  `chess-corners-wasm` package is deprecated on npm via a one-shot
+  tombstone release that points users at the new name. The exported
+  JS API is identical — migrate by replacing the dependency name in
+  `package.json` / your `import` statements.
+
+- **WASM typed config wrappers use shared `Rc<RefCell<T>>` cells.**
+  Chained nested edits (`cfg.refiner.kind = X`,
+  `cfg.refiner.forstner.maxOffset = 2.0`,
+  `cfg.radonDetector.rayRadius = 5`) now propagate through the
+  parent without a round-trip — matching the live-view semantics
+  already provided by the Python typed FFI. Setters that take a
+  nested wrapper (`cfg.refiner = newOne`) reseat the parent's `Rc`s;
+  previously-captured wrappers continue to observe their original
+  cells, matching natural JS attribute-replacement semantics.
+  Single-threaded `Rc<RefCell<T>>` is sound on
+  `wasm32-unknown-unknown` (no worker-thread sharing).
+
+- `RadonPeakRefiner` now implements the full Duda-Frese (2018)
+  pipeline: image supersampling, response-map box blur, and Gaussian
+  (log-space) peak fit. Default accuracy is ~0.04 px mean on clean
+  anti-aliased chessboards, competitive with and often beating
+  `SaddlePoint`. The module doc no longer calls this a "first cut"
+  implementation.
+
+- `RadonPeakConfig` field renames and additions: the previous
+  `upsample` (response-grid density only) is replaced by
+  `image_upsample` (controls both ray-sample spacing and
+  response-grid density); new `response_blur_radius` and `peak_fit`
+  fields gate the post-blur and Gaussian-fit stages. Defaults
+  (`ray_radius = 2`, `patch_radius = 3`, `image_upsample = 2`,
+  `response_blur_radius = 1`, `peak_fit = Gaussian`) match the paper.
 
 ### Added
+
+- **Radon heatmap exposure.** The dense
+  `(max_α S_α − min_α S_α)²` Radon response is now a first-class
+  public API on every layer — Rust facade
+  `chess_corners::radon_heatmap_u8` (plus `radon_heatmap_image`
+  under the `image` feature), Python `chess_corners.radon_heatmap()`,
+  and WASM `ChessDetector::{radon_heatmap, radon_heatmap_rgba,
+  radon_heatmap_width, radon_heatmap_height, radon_heatmap_scale}`.
+  The heatmap is returned at *working resolution*
+  (`width × upscale × radon_image_upsample`); each wrapper surfaces
+  the working-to-input scale factor. The WASM scale getter caches
+  the value at compute time so width/height/scale stay mutually
+  consistent across mid-stream config edits. The interactive demo
+  gains a "Radon heatmap" overlay toggle and a "Detector mode"
+  selector (canonical / broad / radon).
+
+- **Native typed `ChessConfig` in WASM.** New `#[wasm_bindgen]`
+  wrappers (`ChessConfig`, `RefinerConfig`, `CenterOfMassConfig`,
+  `ForstnerConfig`, `SaddlePointConfig`, `RadonPeakConfig`,
+  `RadonDetectorParams`, `UpscaleConfig`, plus enums `DetectorMode`,
+  `DescriptorMode`, `ThresholdMode`, `RefinementMethod`,
+  `PeakFitMode`, `UpscaleMode`) expose every public Rust facade
+  field with TypeScript-typed getters/setters. New
+  `ChessDetector.withConfig(cfg)` / `getConfig()` / `applyConfig(cfg)`
+  close the previous tunability gap: refiner subconfig, Radon params,
+  descriptor mode, and coarse-to-fine radii were previously locked
+  to defaults from JS. The legacy `set_*` shortcut methods continue
+  to work.
+
+- **Native typed PyO3 `ChessConfig` surface.** Replaces the previous
+  Python dataclass + JSON-string FFI with native PyO3 `#[pyclass]`
+  wrappers. The Python user surface is unchanged (attribute access,
+  classmethod factories, `to_dict`/`from_dict`/`to_json`/`from_json`/
+  `pretty`/`print`, identity-comparable enum members) but detection
+  no longer serializes through JSON across the FFI boundary —
+  `find_chess_corners(image, cfg)` hands the typed object directly
+  to Rust. Nested edits (`cfg.refiner.forstner.max_offset = 2.0`)
+  work through PyO3 `Py<X>` reference semantics. The JSON-string FFI
+  fallback is retained for one release.
 
 - **`DetectorMode::Radon`** — the whole-image Duda-Frese Radon
   detector is now selectable from the facade. `ChessConfig` gains a
@@ -31,25 +97,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the facade gap from the M1 release. See
   [`docs/detector-comparison.md`](docs/detector-comparison.md) for
   when to pick each detector.
-- Facade-level integration test
-  (`crates/chess-corners/tests/radon_pipeline.rs`) pins the
-  end-to-end contract: `DetectorMode::Radon` beats ChESS defaults
-  on a hostile (heavy blur + narrow contrast) fixture, both modes
-  recover most corners on a clean board, and Radon's subpixel
-  output snaps to a ground-truth grid with mean error < 0.2 px on
-  the locked-on subset.
-- Criterion bench
-  (`crates/chess-corners-core/benches/radon_response.rs`) comparing
-  `radon_response_u8` (`image_upsample ∈ {1, 2}`) against
-  `chess_response_u8` at 640×480 / 1280×720 / 1920×1080.
-- WASM bindings (`crates/chess-corners-wasm`): new
-  `set_detector_mode("canonical"|"broad"|"radon")`; `set_refiner`
-  now also accepts `"radon_peak"`.
+
+- Whole-image Duda-Frese Radon detector in
+  `chess-corners-core` as an alternative to the ChESS ring kernel
+  for hard frames (heavy blur, low contrast, cells smaller than
+  `~2·ring_radius`). Exposes
+  [`RadonDetectorParams`](crates/chess-corners-core/src/radon_detector.rs),
+  [`RadonBuffers`](crates/chess-corners-core/src/radon_detector.rs),
+  [`radon_response_u8`](crates/chess-corners-core/src/radon_detector.rs),
+  and `detect_corners_from_radon`. Pipeline: optional 2× bilinear
+  upsample → 4 summed-area tables (row/col/±diag) → `(max−min)²`
+  response → box blur → threshold+NMS → 3-point Gaussian peak fit.
+
+- New shared `chess_corners_core::radon` module holds primitives
+  that both the refiner and the detector depend on: `DIR_COS/SIN`,
+  `ANGLES`, `PeakFitMode`, `fit_peak_frac`, and `box_blur_inplace`.
+  `refine_radon.rs` now imports these instead of defining them
+  locally, so there is exactly one source of truth for the angular
+  basis and peak-fit math.
+
+- Feature `radon-sat-u32` (opt-in) switches the detector's
+  summed-area-table element type from `i64` to `u32`. Halves SAT
+  memory and widens SIMD lanes at the cost of a ~16 MP image-size
+  cap (`255·W·H ≤ u32::MAX`).
+
+- WASM bindings (`crates/chess-corners-wasm`): legacy setter
+  shortcuts gain `set_detector_mode("canonical"|"broad"|"radon")`
+  and `set_refiner` accepts `"radon_peak"`. Threshold / NMS /
+  cluster-size setters mirror into both ChESS and Radon paths so
+  detector-mode toggles preserve tuning.
+
 - Python bindings (`crates/chess-corners-py`): `DetectorMode.RADON`
   and `RefinementMethod.RADON_PEAK` enum members, `PeakFitMode`,
-  `RadonPeakConfig`, and `RadonDetectorParams` dataclasses,
-  `ChessConfig.radon_detector` field, and a
-  `ChessConfig.radon()` classmethod.
+  `RadonPeakConfig`, `RadonDetectorParams`, and
+  `ChessConfig.radon_detector` field; `ChessConfig.radon()`
+  classmethod; `find_chess_corners_with_ml` under the `ml-refiner`
+  feature.
+
 - ML refiner v4 (`chess_refiner_v4.onnx`) — retrained on a 50/50
   mix of AA hard-cell chessboards and legacy tanh saddles so the
   shipped model handles both distributions without the
@@ -57,6 +141,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is the first ML refiner to land inside the shipping band on
   `cell=8` clean data (~0.09 px mean) and stays flattest under
   heavy noise (0.10 px at σ=12).
+
 - Part V of the book rewritten with a six-refiner comparison
   (CenterOfMass, Förstner, SaddlePoint, RadonPeak, ML v4,
   `cv2.cornerSubPix`) on the shared synthetic fixture. Plots now
@@ -64,7 +149,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   good refiners remain distinguishable regardless of Förstner's
   blur-driven failures.
 
+- Facade-level integration test
+  (`crates/chess-corners/tests/radon_pipeline.rs`) pins the
+  end-to-end contract: `DetectorMode::Radon` beats ChESS defaults
+  on a hostile (heavy blur + narrow contrast) fixture, both modes
+  recover most corners on a clean board, and Radon's subpixel
+  output snaps to a ground-truth grid with mean error < 0.2 px on
+  the locked-on subset.
+
+- Criterion bench
+  (`crates/chess-corners-core/benches/radon_response.rs`) comparing
+  `radon_response_u8` (`image_upsample ∈ {1, 2}`) against
+  `chess_response_u8` at 640×480 / 1280×720 / 1920×1080.
+
+- New cross-refiner accuracy integration test
+  (`crates/chess-corners-core/tests/refiner_accuracy.rs`) prints a
+  summary table for `RadonPeak` / `SaddlePoint` / `Forstner` across
+  subpixel offset, blur, and noise sweeps.
+
+- New unified accuracy+throughput benchmark
+  (`crates/chess-corners/tests/refiner_benchmark.rs`) covering all
+  five refiners — `CenterOfMass`, `Forstner`, `SaddlePoint`,
+  `RadonPeak`, and (under the `ml-refiner` feature) the embedded
+  ONNX `ML` refiner — over clean, blurred, and noisy sweeps with
+  per-refiner timing. Run via
+  `cargo test --release -p chess-corners --test refiner_benchmark \
+   --features ml-refiner -- --nocapture --test-threads=1`.
+
+- `crates/chess-corners-core/tests/radon_parity.rs` pins the shared
+  primitive extraction by asserting that axial ray sums match
+  between the detector SAT path and the refiner bilinear path, and
+  that detector and refiner subpixel peaks coincide to under 0.1 px
+  on clean corners.
+
+- `crates/chess-corners-core/tests/radon_vs_chess.rs` compares the
+  new detector against ChESS on a deliberately hostile fixture
+  (blurred, low-contrast board) to prove the Radon path recovers
+  corners that ChESS misses.
+
+- Design proposals at `docs/proposal-radon-detector.md` and
+  `docs/proposal-ml-refiner-v3.md`.
+
 ### Fixed
+
+- **Race in embedded ONNX model writes under parallel tests.** The
+  `chess-corners-ml` embedded-model loader used `OnceLock` only as
+  a result-cache; multiple threads in the parallel `sweep_*`
+  benchmark could enter the unconditional `std::fs::write`
+  simultaneously, with one thread's `O_TRUNC` truncating
+  `.onnx.data` to 0 bytes mid-rewrite while another thread's
+  `tract_onnx::onnx().model_for_path` was lazily dereferencing the
+  external-data file — yielding `range start index 768 out of
+  range for slice of length 0` in CI. Fix: serialize the writes
+  via `OnceLock::get_or_init`, switch to atomic
+  write-then-rename, and write `.onnx.data` before `.onnx`.
+
+- **WASM `radon_heatmap_scale()` cached at compute time.**
+  Previously recomputed from the live config every call, so
+  callers that mutated `set_upscale_factor` /
+  `radon_detector.image_upsample` between heatmap call and
+  accessor calls observed inconsistent width / height / scale.
+  Now snapshotted alongside `last_radon_response`.
 
 - `chess_corners_core::radon::box_blur_inplace` now takes
   `(w, h)` instead of a single `side` parameter. The detector
@@ -72,34 +217,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only `ww`, which indexed out of bounds on any non-square input
   (reproduces on every real-world frame). The refiner's square
   patch path is unaffected.
+
 - `chess_corners_core::RadonDetectorParams::image_upsample` is now
   clamped into the supported set `{1, 2}`. Values `≥ 3` used to
   route through `upsample_bilinear_2x_if_needed` (2×-only) while
   downstream cumsum expected `(up·w)·(up·h)` — a release-build
   panic. Values are clamped to `MAX_IMAGE_UPSAMPLE` at the entry
   points instead.
-- `chess_corners_core::detect::{is_local_max, count_positive_neighbors}`
-  refactored to take `(data, w, h, …)` slice arguments so the Radon
-  detector no longer clones its full-frame response into a
-  `ResponseMap` before NMS — a noticeable win at `image_upsample=2`
-  on HD frames.
+
+- `chess_corners_core::detect::{is_local_max,
+  count_positive_neighbors}` refactored to take `(data, w, h, …)`
+  slice arguments so the Radon detector no longer clones its
+  full-frame response into a `ResponseMap` before NMS — a
+  noticeable win at `image_upsample = 2` on HD frames.
+
 - Under the `radon-sat-u32` feature, `radon_response_u8` now
   validates `255·W·H ≤ u32::MAX` up front and panics with an
   explicit message instead of silently wrapping the cumsum
   accumulators in release builds.
+
 - `chess_corners_core::refine_radon::RadonPeakRefiner::response_at`
   now uses `image_upsample_clamped()` so ray sampling stays
   consistent with the response-map grid when a config with
   `image_upsample == 0` slips through serde.
+
 - `chess-corners` re-exports `PeakFitMode` so downstream consumers
   can set `RadonPeakConfig.peak_fit` without adding a direct
   `chess-corners-core` dependency.
+
 - `tools/book/opencv_subpix_sweep.py` matches Rust's
   half-away-from-zero rounding (Python's built-in `round` is
   banker's rounding) and excludes fixture construction from the
   timed block. Throughput numbers for `cv2.cornerSubPix` in Part V
   drop from ~300 µs/call to ~2.7 µs/call because the previous
   figure was timing the fixture render, not the refinement.
+
 - **Retrained ML refiner** (`chess_refiner_v4.onnx`) on a mixed
   training distribution — 50% AA-rasterised hard-cell chessboards
   that match the benchmark fixture, 50% legacy tanh-saddle patches
@@ -157,76 +309,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the crate and confused the parity tests. `v4.onnx` is now the
   only embedded artifact.
 
-### Changed
+### Deferred
 
-- `RadonPeakRefiner` now implements the full Duda-Frese (2018) pipeline:
-  image supersampling, response-map box blur, and Gaussian (log-space)
-  peak fit. Default accuracy is ~0.04 px mean on clean anti-aliased
-  chessboards, competitive with and often beating `SaddlePoint`. The
-  module doc no longer calls this a "first cut" implementation.
-
-- `RadonPeakConfig` field renames and additions: the previous
-  `upsample` (response-grid density only) is replaced by
-  `image_upsample` (controls both ray-sample spacing and
-  response-grid density); new `response_blur_radius` and `peak_fit`
-  fields gate the post-blur and Gaussian-fit stages. Defaults
-  (`ray_radius = 2`, `patch_radius = 3`, `image_upsample = 2`,
-  `response_blur_radius = 1`, `peak_fit = Gaussian`) match the paper.
-
-- New cross-refiner accuracy integration test
-  (`crates/chess-corners-core/tests/refiner_accuracy.rs`) prints a
-  summary table for `RadonPeak` / `SaddlePoint` / `Forstner` across
-  subpixel offset, blur, and noise sweeps.
-
-- New unified accuracy+throughput benchmark
-  (`crates/chess-corners/tests/refiner_benchmark.rs`) covering all
-  five refiners — `CenterOfMass`, `Forstner`, `SaddlePoint`,
-  `RadonPeak`, and (under the `ml-refiner` feature) the embedded
-  ONNX `ML` refiner — over clean, blurred, and noisy sweeps with
-  per-refiner timing. Run via
-  `cargo test --release -p chess-corners --test refiner_benchmark \
-   --features ml-refiner -- --nocapture --test-threads=1`.
-
-### Added
-
-- Whole-image Duda-Frese Radon detector in
-  `chess-corners-core` as an alternative to the ChESS ring kernel
-  for hard frames (heavy blur, low contrast, cells smaller than
-  `~2·ring_radius`). Exposes
-  [`RadonDetectorParams`](crates/chess-corners-core/src/radon_detector.rs),
-  [`RadonBuffers`](crates/chess-corners-core/src/radon_detector.rs),
-  [`radon_response_u8`](crates/chess-corners-core/src/radon_detector.rs),
-  and `detect_corners_from_radon`. Pipeline: optional 2× bilinear
-  upsample → 4 summed-area tables (row/col/±diag) → `(max−min)²`
-  response → box blur → threshold+NMS → 3-point Gaussian peak fit.
-  Facade integration lands in the same release via
-  `DetectorMode::Radon` on `ChessConfig` (see the M2 entry above).
-
-- New shared `chess_corners_core::radon` module holds primitives
-  that both the refiner and the detector depend on: `DIR_COS/SIN`,
-  `ANGLES`, `PeakFitMode`, `fit_peak_frac`, and `box_blur_inplace`.
-  `refine_radon.rs` now imports these instead of defining them
-  locally, so there is exactly one source of truth for the angular
-  basis and peak-fit math.
-
-- Feature `radon-sat-u32` (opt-in) switches the detector's
-  summed-area-table element type from `i64` to `u32`. Halves SAT
-  memory and widens SIMD lanes at the cost of a ~16 MP image-size
-  cap (`255·W·H ≤ u32::MAX`).
-
-- New tests:
-  `crates/chess-corners-core/tests/radon_parity.rs` pins the shared
-  primitive extraction by asserting that axial ray sums match
-  between the detector SAT path and the refiner bilinear path, and
-  that detector and refiner subpixel peaks coincide to under 0.1 px
-  on clean corners.
-  `crates/chess-corners-core/tests/radon_vs_chess.rs` compares the
-  new detector against ChESS on a deliberately hostile fixture
-  (blurred, low-contrast board) to prove the Radon path recovers
-  corners that ChESS misses.
-
-- Design proposals at `docs/proposal-radon-detector.md` (this work)
-  and `docs/proposal-ml-refiner-v3.md` (future ML retraining).
+- **ML refiner cross-compile to `wasm32-unknown-unknown`.** Probed
+  during the typed-config work and documented as a known gap.
+  Blocked by (1) `getrandom` requiring the `js` feature on
+  `wasm32-unknown-unknown`, and more fundamentally
+  (2) the embedded-model loader writing ONNX bytes to `/tmp` and
+  re-reading via `tract_onnx::onnx().model_for_path` — no
+  filesystem in WASM. Refactoring to tract's in-memory
+  `model_for_read` is feasible but is its own R&D + ~1–2 MB
+  binary-size hit before wasm-opt.
 
 ## [0.6.0]
 
