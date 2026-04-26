@@ -156,6 +156,59 @@ detector.set_pyramid_min_size(128);
 detector.set_refiner("forstner");
 ```
 
+### Typed configuration (full surface)
+
+For deeper tuning — refiner subconfig, Radon detector parameters,
+descriptor mode, coarse-to-fine radii — construct a typed
+`ChessConfig` and seed the detector with `ChessDetector.withConfig`.
+Every public Rust facade field is reachable through the typed
+classes and exposed with TypeScript types in the generated
+`.d.ts`.
+
+Nested config edits propagate naturally — getters hand back a
+wrapper backed by the same shared cell as the parent, so chained
+mutation works without a round-trip:
+
+```ts
+import init, {
+  ChessConfig,
+  ChessDetector,
+  DetectorMode,
+  PeakFitMode,
+  RefinementMethod,
+} from '@vitavision/chess-corners';
+
+await init();
+
+const cfg = ChessConfig.multiscale();
+cfg.detectorMode = DetectorMode.Radon;
+cfg.thresholdValue = 0.15;
+cfg.refiner.kind = RefinementMethod.RadonPeak;
+cfg.refiner.forstner.maxOffset = 2.0;
+cfg.radonDetector.rayRadius = 5;
+cfg.radonDetector.imageUpsample = 2;
+cfg.radonDetector.peakFit = PeakFitMode.Gaussian;
+
+const detector = ChessDetector.withConfig(cfg);
+
+// `getConfig()` returns a *snapshot* — its cells are independent of
+// the detector's live state. Use `applyConfig()` to commit changes
+// made on the snapshot.
+const snapshot = detector.getConfig();
+snapshot.nmsRadius = 4;
+detector.applyConfig(snapshot);
+```
+
+Setters that take a nested wrapper (e.g. `cfg.refiner = newRefiner`)
+reseat `cfg`'s shared cells to point at `newRefiner`'s cells, so
+future `cfg.refiner.*` calls observe `newRefiner`'s state. JS code
+that already held the previous `cfg.refiner` keeps observing the
+previous cells — matching natural JS attribute-replacement semantics.
+
+The legacy `set_*` shortcut methods continue to work and edit the
+same underlying configuration, so the two styles can be mixed at
+will.
+
 ## API Reference
 
 ### `ChessDetector`

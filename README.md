@@ -54,7 +54,7 @@ and every optional dependency is feature-gated. See `AGENTS.md` and
 
 ```toml
 [dependencies]
-chess-corners = "0.5"
+chess-corners = "0.7"
 image = "0.25"
 ```
 

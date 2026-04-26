@@ -1,10 +1,50 @@
+//! WebAssembly bindings for the ChESS / Radon corner detector.
+//!
+//! Two ways to drive the detector from JS:
+//!
+//! 1. **Setter shortcuts** — `new ChessDetector()` then
+//!    `det.set_threshold(...)` / `det.set_pyramid_levels(...)` /
+//!    `det.set_detector_mode("radon")` etc. Existing demo code uses
+//!    this path. Backwards-compatible.
+//! 2. **Typed `ChessConfig`** — construct the typed
+//!    [`ChessConfig`] (with nested `RefinerConfig`,
+//!    `RadonDetectorParams`, `UpscaleConfig`, …), then pass it to
+//!    [`ChessDetector::with_config`]. Exposes every public Rust
+//!    facade field with type-safe getters/setters.
+//!
+//! Both paths edit the same underlying Rust struct, so they can be
+//! mixed at will.
+//!
+//! # Editing nested typed configs
+//!
+//! Nested edits propagate naturally — getters hand back a wrapper
+//! backed by the same shared cell as the parent, so chained mutation
+//! works without a round-trip:
+//!
+//! ```ignore
+//! cfg.refiner.kind = RefinementMethod.RadonPeak;   // propagates
+//! cfg.refiner.forstner.maxOffset = 2.0;            // propagates
+//! cfg.radonDetector.rayRadius = 5;                 // propagates
+//! ```
+//!
+//! See [`config`] for the cell-sharing details.
+
+pub mod config;
+
 use chess_corners::{
-    radon_heatmap_u8, ChessConfig, DetectorMode, PyramidBuffers, RefinementMethod, ThresholdMode,
-    UpscaleConfig,
+    radon_heatmap_u8, ChessConfig as RsChessConfig, DetectorMode as RsDetectorMode, PyramidBuffers,
+    RefinementMethod as RsRefinementMethod, ThresholdMode as RsThresholdMode,
+    UpscaleConfig as RsUpscaleConfig,
 };
 use chess_corners_core::response::chess_response_u8;
 use chess_corners_core::ResponseMap;
 use wasm_bindgen::prelude::*;
+
+pub use crate::config::{
+    CenterOfMassConfig, ChessConfig, DescriptorMode, DetectorMode, ForstnerConfig, PeakFitMode,
+    RadonDetectorParams, RadonPeakConfig, RefinementMethod, RefinerConfig, SaddlePointConfig,
+    ThresholdMode, UpscaleConfig, UpscaleMode,
+};
 
 /// Convert RGBA pixels to grayscale using BT.601 luminance weights.
 fn rgba_to_gray(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
@@ -26,7 +66,7 @@ fn rgba_to_gray(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
 /// storage.
 #[wasm_bindgen]
 pub struct ChessDetector {
-    config: ChessConfig,
+    config: RsChessConfig,
     buffers: PyramidBuffers,
     last_response: Option<ResponseMap>,
     last_radon_response: Option<ResponseMap>,
@@ -52,7 +92,7 @@ impl ChessDetector {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
-            config: ChessConfig::single_scale(),
+            config: RsChessConfig::single_scale(),
             buffers: PyramidBuffers::with_capacity(1),
             last_response: None,
             last_radon_response: None,
@@ -62,7 +102,7 @@ impl ChessDetector {
 
     /// Create a detector with the recommended multiscale preset.
     pub fn multiscale() -> Self {
-        let config = ChessConfig::multiscale();
+        let config = RsChessConfig::multiscale();
         let levels = config.pyramid_levels;
         Self {
             config,
@@ -71,6 +111,47 @@ impl ChessDetector {
             last_radon_response: None,
             last_radon_scale: 0,
         }
+    }
+
+    /// Create a detector seeded from a typed
+    /// [`ChessConfig`]. The full public
+    /// config surface — refiner subconfigs, Radon params, descriptor
+    /// mode, coarse-to-fine radii, upscale — is reachable through
+    /// the typed object (see module docs for the alternative
+    /// setter-shortcut path).
+    #[wasm_bindgen(js_name = withConfig)]
+    pub fn with_config(config: &ChessConfig) -> Self {
+        let snapshot = config.snapshot();
+        let levels = snapshot.pyramid_levels;
+        Self {
+            config: snapshot,
+            buffers: PyramidBuffers::with_capacity(levels),
+            last_response: None,
+            last_radon_response: None,
+            last_radon_scale: 0,
+        }
+    }
+
+    /// Snapshot the current configuration as a typed
+    /// [`ChessConfig`]. The returned object is a snapshot — its
+    /// cells are *not* shared with the detector's live state. Use
+    /// [`Self::apply_config`] to commit edits made on the snapshot.
+    #[wasm_bindgen(js_name = getConfig)]
+    pub fn get_config(&self) -> ChessConfig {
+        ChessConfig::from_inner_for_js(self.config.clone())
+    }
+
+    /// Replace the detector's configuration with the given typed
+    /// [`ChessConfig`]. Resizes pyramid scratch buffers if
+    /// `pyramid_levels` changed.
+    #[wasm_bindgen(js_name = applyConfig)]
+    pub fn apply_config(&mut self, config: &ChessConfig) {
+        let snapshot = config.snapshot();
+        let levels = snapshot.pyramid_levels;
+        if levels != self.config.pyramid_levels {
+            self.buffers = PyramidBuffers::with_capacity(levels);
+        }
+        self.config = snapshot;
     }
 
     // ---- Config setters ----
@@ -90,7 +171,7 @@ impl ChessDetector {
     /// `radon_detector.threshold_rel` and clears any absolute override
     /// on `threshold_abs` so the relative value wins.
     pub fn set_threshold(&mut self, rel: f32) {
-        self.config.threshold_mode = ThresholdMode::Relative;
+        self.config.threshold_mode = RsThresholdMode::Relative;
         self.config.threshold_value = rel;
         self.config.radon_detector.threshold_rel = rel;
         self.config.radon_detector.threshold_abs = None;
@@ -114,9 +195,9 @@ impl ChessDetector {
     /// Toggle the large r=10 ring (default: r=5).
     pub fn set_broad_mode(&mut self, v: bool) {
         self.config.detector_mode = if v {
-            DetectorMode::Broad
+            RsDetectorMode::Broad
         } else {
-            DetectorMode::Canonical
+            RsDetectorMode::Canonical
         };
     }
 
@@ -128,9 +209,9 @@ impl ChessDetector {
     /// switches because those setters mirror into both detectors.
     pub fn set_detector_mode(&mut self, name: &str) -> Result<(), JsValue> {
         self.config.detector_mode = match name {
-            "canonical" => DetectorMode::Canonical,
-            "broad" => DetectorMode::Broad,
-            "radon" => DetectorMode::Radon,
+            "canonical" => RsDetectorMode::Canonical,
+            "broad" => RsDetectorMode::Broad,
+            "radon" => RsDetectorMode::Radon,
             _ => {
                 return Err(JsValue::from_str(
                     "unknown detector_mode: use canonical, broad, or radon",
@@ -172,8 +253,8 @@ impl ChessDetector {
     /// in input-image pixel space; callers do not need to rescale.
     pub fn set_upscale_factor(&mut self, factor: u32) -> Result<(), JsValue> {
         self.config.upscale = match factor {
-            0 | 1 => UpscaleConfig::disabled(),
-            2..=4 => UpscaleConfig::fixed(factor),
+            0 | 1 => RsUpscaleConfig::disabled(),
+            2..=4 => RsUpscaleConfig::fixed(factor),
             other => {
                 return Err(JsValue::from_str(&format!(
                     "unsupported upscale factor {other} (expected 0, 1, 2, 3, or 4)",
@@ -188,10 +269,10 @@ impl ChessDetector {
     pub fn set_refiner(&mut self, name: &str) -> Result<(), JsValue> {
         self.config.refiner.kind =
             match name {
-                "center_of_mass" => RefinementMethod::CenterOfMass,
-                "forstner" => RefinementMethod::Forstner,
-                "saddle_point" => RefinementMethod::SaddlePoint,
-                "radon_peak" => RefinementMethod::RadonPeak,
+                "center_of_mass" => RsRefinementMethod::CenterOfMass,
+                "forstner" => RsRefinementMethod::Forstner,
+                "saddle_point" => RsRefinementMethod::SaddlePoint,
+                "radon_peak" => RsRefinementMethod::RadonPeak,
                 _ => return Err(JsValue::from_str(
                     "unknown refiner: use center_of_mass, forstner, saddle_point, or radon_peak",
                 )),
@@ -353,4 +434,14 @@ fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::
     let arr = js_sys::Float32Array::new_with_length(flat.len() as u32);
     arr.copy_from(&flat);
     arr
+}
+
+// Helper used by `lib.rs` to wrap a Rust facade `ChessConfig` value
+// in a fresh JS-facing wrapper. The returned wrapper owns brand-new
+// cells (not shared with the source value) — this is intentional for
+// `getConfig()` snapshot semantics.
+impl ChessConfig {
+    pub(crate) fn from_inner_for_js(inner: chess_corners::ChessConfig) -> Self {
+        Self::from_value_pub(inner)
+    }
 }
