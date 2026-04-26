@@ -1052,9 +1052,7 @@ mod tests {
     //! identical on host and on wasm32.
 
     use super::*;
-    use chess_corners::{
-        DetectorMode as RsDetectorMode, RefinementMethod as RsRefinementMethod,
-    };
+    use chess_corners::{DetectorMode as RsDetectorMode, RefinementMethod as RsRefinementMethod};
 
     #[test]
     fn nested_edits_propagate_through_chess_config() {
