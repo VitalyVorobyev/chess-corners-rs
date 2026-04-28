@@ -782,15 +782,16 @@ pub fn detect_corners_from_radon(
     // the hot path — a noticeable win at `image_upsample=2` on HD
     // frames.
     let data = resp.data;
-    let mut out = Vec::new();
     let inv_up = 1.0 / (params.image_upsample_clamped() as f32);
+    let min_cluster = params.min_cluster_size;
+    let peak_fit = params.peak_fit;
 
     #[inline(always)]
     fn at(data: &[f32], w: usize, x: usize, y: usize) -> f32 {
         data[y * w + x]
     }
 
-    for y in border..(h - border) {
+    let process_row = |y: usize, sink: &mut Vec<Corner>| {
         for x in border..(w - border) {
             let v = at(data, w, x, y);
             if v <= thr {
@@ -799,7 +800,7 @@ pub fn detect_corners_from_radon(
             if !is_local_max(data, w, h, x, y, nms_r, v) {
                 continue;
             }
-            if count_positive_neighbors(data, w, h, x, y, nms_r) < params.min_cluster_size {
+            if count_positive_neighbors(data, w, h, x, y, nms_r) < min_cluster {
                 continue;
             }
 
@@ -810,21 +811,49 @@ pub fn detect_corners_from_radon(
             let r_xp = at(data, w, x + 1, y);
             let r_ym = at(data, w, x, y - 1);
             let r_yp = at(data, w, x, y + 1);
-            let fx = fit_peak_frac(r_xm, r_c, r_xp, params.peak_fit);
-            let fy = fit_peak_frac(r_ym, r_c, r_yp, params.peak_fit);
+            let fx = fit_peak_frac(r_xm, r_c, r_xp, peak_fit);
+            let fy = fit_peak_frac(r_ym, r_c, r_yp, peak_fit);
 
             // Working-resolution coordinates then back to input frame.
             let gx = (x as f32 + fx) * inv_up;
             let gy = (y as f32 + fy) * inv_up;
-            out.push(Corner {
+            sink.push(Corner {
                 x: gx,
                 y: gy,
                 strength: v,
             });
         }
-    }
+    };
 
-    out
+    // Row-parallel under `rayon`: each row reads from the immutable
+    // response slice and accumulates into a thread-local `Vec`. The
+    // per-row vectors are then concatenated in row order so the
+    // output remains deterministic.
+    #[cfg(feature = "rayon")]
+    {
+        let row_results: Vec<Vec<Corner>> = (border..(h - border))
+            .into_par_iter()
+            .map(|y| {
+                let mut sink = Vec::new();
+                process_row(y, &mut sink);
+                sink
+            })
+            .collect();
+        let total: usize = row_results.iter().map(|r| r.len()).sum();
+        let mut out = Vec::with_capacity(total);
+        for row in row_results {
+            out.extend(row);
+        }
+        out
+    }
+    #[cfg(not(feature = "rayon"))]
+    {
+        let mut out = Vec::new();
+        for y in border..(h - border) {
+            process_row(y, &mut out);
+        }
+        out
+    }
 }
 
 #[cfg(test)]
