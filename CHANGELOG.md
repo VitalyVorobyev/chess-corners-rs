@@ -5,6 +5,152 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.8.0] - 2026-04-28
+
+### Changed
+
+- **Breaking: detection entry points now return `Result<_, ChessError>` instead
+  of panicking.** The functions `find_chess_corners_u8`,
+  `find_chess_corners_u8_with_refiner`, `find_chess_corners_u8_with_ml`,
+  `find_chess_corners_image`, `find_chess_corners_image_with_refiner`,
+  `find_chess_corners_image_with_ml`, `radon_heatmap_u8`, and
+  `radon_heatmap_image` all return `Result<_, chess_corners::ChessError>` (was
+  `Vec<CornerDescriptor>` / `ResponseMap`). Call sites that previously relied
+  on the implicit panic on dimension mismatch or invalid upscale config now
+  receive an `Err` variant and can handle the error explicitly.
+
+  Migration: append `.unwrap()` or `?` to existing call sites. Python bindings
+  map the error to `ValueError`; WASM bindings map it to a `JsValue` string
+  error.
+
+- **Breaking: `#[non_exhaustive]` applied to 17 public types.** The following
+  types can no longer be constructed with struct literal syntax outside the
+  crate: `Corner`, `AxisEstimate`, `CornerDescriptor`, `RefineResult`,
+  `RefineContext`, `Refiner`, `RadonPeakConfig`, `DetectorMode`,
+  `DescriptorMode`, `ThresholdMode`, `RefinementMethod`, `RefinerConfig`,
+  `UpscaleMode`, `UpscaleConfig`, `UpscaleError`, `ChessParams`. Enums
+  additionally require a `_ =>` wildcard arm in exhaustive matches. Each
+  affected struct now provides a `::new()` or `::build()` constructor.
+
+- `ImageView::origin` demoted from `pub` to `pub(crate)`; use the new
+  `origin()` accessor method.
+
+- `chess_corners::radon` and `chess_corners::upscale` modules are now private.
+  The public surface `radon_heatmap_u8`, `radon_heatmap_image`,
+  `upscale_bilinear_u8`, `rescale_descriptors_to_input`, `UpscaleBuffers`,
+  `UpscaleConfig`, `UpscaleError`, and `UpscaleMode` are re-exported directly
+  from `chess_corners`.
+
+- `chess-corners-wasm` now imports `chess_response_u8` and `ResponseMap`
+  through the `chess-corners` facade and no longer carries a direct
+  dependency on `chess-corners-core`.
+
+### Added
+
+- `chess-corners` re-exports a small, focused set of low-level primitives
+  from `chess-corners-core` so callers composing custom
+  response → detect → describe pipelines no longer need
+  `chess-corners-core` as a separate dependency: `Corner`, `Roi`,
+  `chess_response_u8`, `chess_response_u8_patch`,
+  `detect_corners_from_response`, `detect_corners_from_response_with_refiner`,
+  and `corners_to_descriptors`. Deeper internals (ring offsets, SAT views,
+  scalar reference paths) remain reachable only via a direct
+  `chess-corners-core` dependency.
+
+### Performance
+
+- **Radon detector pipeline rewritten for parallelism.** The
+  Duda–Frese path landed in 0.7.0 with no parallelism and no SIMD.
+  Every hot stage now has a feature-gated parallel and/or SIMD
+  variant: row-parallel `compute_response` plus a portable
+  `Simd<i64, 8>` inner kernel under `simd`; row-parallel
+  `box_blur_inplace`, `upsample_bilinear_2x`, and
+  `detect_corners_from_radon` (NMS + peak-fit) under `rayon`;
+  `rayon::join` across the four mutually-independent
+  `build_cumsums` directions. Output is deterministic across all
+  feature combinations.
+
+- **`merge_corners_simple` is now O(N) typical via spatial grid.**
+  The naive O(N²) pairwise scan was the dominant pipeline cost on
+  Radon-detected frames where candidate counts run into the
+  thousands. Cell size equals the merge radius, so each incoming
+  corner only consults a 3×3 cell neighbourhood. Output is
+  order-equivalent to the old scan (verified via a randomized
+  equivalence test).
+
+  Cumulative speedup on the Radon pipeline (vs. 0.7.0 scalar
+  reference, 8-core M-class CPU):
+
+  | Bench                                  | 0.7.0   | This rev   | Speedup |
+  |----------------------------------------|--------:|-----------:|--------:|
+  | `radon_response` 1920×1080 up=2        | 130.6 ms| 28.0 ms    | 4.7×    |
+  | `radon_pipeline` 1920×1080 synth       | 692 ms  | 162 ms     | 4.3×    |
+  | `radon_pipeline` `large.png`           | 393 ms  | 188 ms     | 2.1×    |
+  | `radon_pipeline` `mid.png`             | 47 ms   | 19.6 ms    | 2.4×    |
+
+  See `book/src/part-07-benchmarks.md` §7.7.1 for the full table
+  and the `tools/profile.sh` invocations behind it.
+
+- **Side win: scalar `box_blur_inplace` is 5–28% faster** purely
+  from the row-major rewrite, regardless of `rayon` / `simd`.
+
+### Added
+
+- Full-pipeline Criterion benches:
+  `crates/chess-corners/benches/radon_pipeline.rs`,
+  `crates/chess-corners/benches/chess_pipeline.rs`, and
+  `crates/chess-corners-core/benches/refiners.rs` (per-refiner
+  ns/corner microbench). Each runs on synthetic chessboards plus
+  the `testimages/{small,mid,large}.png` real frames so absolute
+  timings are comparable across machines.
+
+- `tools/profile.sh` — wrapper around `cargo-flamegraph` and
+  `samply` with `chess` / `radon` / `refiner <kind>` / `samply`
+  subcommands. Pairs with a new
+  `crates/chess-corners/examples/profile_target.rs` so the
+  profiler sees a clean hot loop without harness noise. Outputs
+  land under `testdata/out/profiles/`.
+
+- `tools/perf_bench.py --radon` — exercises the Radon detector
+  alongside the existing ChESS `multi`/`single` configs. Reads
+  `config/config_radon.json` if present, otherwise patches
+  `config_single.json` with `detector_mode = "radon"`.
+
+- `crates/chess-corners/tests/perf_accuracy_guard.rs` — recall /
+  precision / p95-error floors per detector preset, calibrated
+  against the scalar reference. Runs under
+  `cargo test --workspace --all-features` so optimization patches
+  that change correctness fail at test time rather than silently
+  drifting in production.
+
+### Fixed
+
+- SIMD `compute_response` inner loop now exits one chunk earlier
+  (`x + RADON_LANES < interior_end` instead of `<=`) so the
+  diagonal-negative ray's `lo` lookup never reads past the row at
+  the right edge. The scalar tail then handles the boundary pixel,
+  matching the original kernel bit-for-bit. Reported by Codex on
+  PR #49 (P1). A new test
+  (`simd_kernel_matches_scalar_at_every_interior_pixel`) sweeps
+  several widths to lock the boundary down.
+
+- `upsample_bilinear_2x` and `box_blur_inplace` no longer panic on
+  zero-extent inputs (`w == 0` or `h == 0`). The row-parallel
+  rewrites used `chunks_mut(w)` / `par_chunks_mut(w)`, which
+  panic on zero chunk size; both now early-return to preserve the
+  pre-perf no-op contract. Reported by Codex on PR #49 (P2).
+
+### Documentation
+
+- New §7.7.1 in `book/src/part-07-benchmarks.md` covering the
+  Radon detector pipeline: stage-by-stage rayon / SIMD speedups,
+  the memory-bound caveat that makes SIMD stack weakly with rayon
+  on M-class CPUs, and an honest note on which optimization
+  unlocked which gain. §7.11 expanded with `cargo bench` /
+  `tools/profile.sh` reproducibility commands.
+
 ## [0.7.0] - 2026-04-26
 
 ### Highlights

@@ -195,13 +195,7 @@ fn detector_peak_matches_refiner_peak_on_clean_corner() {
     // Refine with RadonPeak seeded at the detector's integer pixel.
     let mut refiner = RadonPeakRefiner::new(RadonPeakConfig::default());
     let seed = [best_det.x.round(), best_det.y.round()];
-    let refined = refiner.refine(
-        seed,
-        RefineContext {
-            image: Some(view),
-            response: None,
-        },
-    );
+    let refined = refiner.refine(seed, RefineContext::new(Some(view), None));
     assert_eq!(refined.status, RefineStatus::Accepted);
 
     let dx = best_det.x - refined.x;

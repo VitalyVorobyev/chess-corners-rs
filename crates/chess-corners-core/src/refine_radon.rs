@@ -50,6 +50,7 @@ pub use crate::radon::PeakFitMode;
 /// Configuration for [`RadonPeakRefiner`].
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct RadonPeakConfig {
     /// Half-length of each ray, in physical image pixels. The ray is
     /// sampled with step `1 / image_upsample` and contains

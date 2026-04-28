@@ -206,36 +206,6 @@ fn refine_seed_in_roi(
     }
 }
 
-/// Single-scale detection: runs detection on the full image (level 0 only).
-fn single_scale_detect(
-    lvl_data: &[u8],
-    lvl_w: usize,
-    lvl_h: usize,
-    params: &ChessParams,
-    merge_radius: f32,
-    mut detect: impl FnMut(&ResponseMap, &ChessParams, Option<ImageView<'_>>) -> Vec<Corner>,
-) -> Vec<CornerDescriptor> {
-    #[cfg(feature = "tracing")]
-    let single_span = info_span!("single_scale", w = lvl_w, h = lvl_h).entered();
-
-    let resp = chess_response_u8(lvl_data, lvl_w, lvl_h, params);
-    let refine_view = ImageView::from_u8_slice(lvl_w, lvl_h, lvl_data)
-        .expect("image dimensions must match buffer length");
-    let mut raw = detect(&resp, params, Some(refine_view));
-    let merged = merge_corners_simple(&mut raw, merge_radius);
-    let desc = corners_to_descriptors(
-        lvl_data,
-        lvl_w,
-        lvl_h,
-        params.descriptor_ring_radius(),
-        merged,
-    );
-
-    #[cfg(feature = "tracing")]
-    drop(single_span);
-    desc
-}
-
 /// Merge refined corners and convert to descriptors.
 fn merge_and_describe(
     base: ImageView<'_>,
@@ -264,6 +234,108 @@ fn merge_and_describe(
 }
 
 // ---------------------------------------------------------------------------
+// Shared coarse-to-fine driver
+// ---------------------------------------------------------------------------
+
+/// Sequential coarse-to-fine driver parameterised over per-seed refinement.
+// Only called from the ML path; gate it so the compiler sees no dead code when
+// the `ml-refiner` feature is not enabled.
+#[cfg(feature = "ml-refiner")]
+///
+/// Used by the ML path (and non-rayon builds). The classic path with rayon
+/// parallelism is inlined in [`find_chess_corners_buff_with_refiner`] to avoid
+/// ownership conflicts from splitting `detect_fn` across two closures.
+///
+/// Callers supply:
+/// - `coarse_detect` — [`RefinerKind`] for coarse-level detection. The ML path
+///   passes `params.refiner` because the ML model is not reliable at coarse
+///   resolution.
+/// - `detect_fn` — called for the single-scale fallback and for each base-level
+///   ROI in the coarse-to-fine path (same closure, called in mutually exclusive
+///   code paths so no aliasing).
+/// - `refine_border` — pixel border the refiner requires; influences the ROI
+///   context built from the coarse scale.
+fn coarse_to_fine_with<R>(
+    base: ImageView<'_>,
+    cfg: &ChessConfig,
+    buffers: &mut PyramidBuffers,
+    coarse_detect: &RefinerKind,
+    refine_border: i32,
+    detect_fn: &mut R,
+) -> Vec<CornerDescriptor>
+where
+    R: FnMut(&ResponseMap, &ChessParams, Option<ImageView<'_>>) -> Vec<Corner>,
+{
+    let params = cfg.to_chess_params();
+    let cf = cfg.to_coarse_to_fine_params();
+
+    let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
+    if pyramid.levels.is_empty() {
+        return Vec::new();
+    }
+
+    // Single-scale fallback: run directly on the sole pyramid level.
+    if pyramid.levels.len() == 1 {
+        let lvl = &pyramid.levels[0];
+        let resp = chess_response_u8(lvl.img.data, lvl.img.width, lvl.img.height, &params);
+        let view = ImageView::from_u8_slice(lvl.img.width, lvl.img.height, lvl.img.data)
+            .expect("image dimensions must match buffer length");
+        let mut raw = detect_fn(&resp, &params, Some(view));
+        let merged = merge_corners_simple(&mut raw, cf.merge_radius);
+        return corners_to_descriptors(
+            lvl.img.data,
+            lvl.img.width,
+            lvl.img.height,
+            params.descriptor_ring_radius(),
+            merged,
+        );
+    }
+
+    // --- Coarse-to-fine path ---
+
+    let coarse_lvl = pyramid.levels.last().unwrap();
+    let coarse_w = coarse_lvl.img.width;
+    let coarse_h = coarse_lvl.img.height;
+
+    #[cfg(feature = "tracing")]
+    let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
+    let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, &params);
+    let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
+    let coarse_corners =
+        detect_with_refiner_kind(&coarse_resp, &params, Some(coarse_view), coarse_detect);
+    #[cfg(feature = "tracing")]
+    drop(coarse_span);
+
+    if coarse_corners.is_empty() {
+        return Vec::new();
+    }
+
+    let roi_ctx = make_roi_context(base, coarse_lvl.scale, &params, refine_border, &cf);
+
+    #[cfg(feature = "tracing")]
+    let refine_span = info_span!(
+        "refine",
+        seeds = coarse_corners.len(),
+        roi_r = roi_ctx.roi_r
+    )
+    .entered();
+
+    let mut refined: Vec<Corner> = coarse_corners
+        .into_iter()
+        .filter_map(|c| {
+            let roi_bounds = roi_ctx.compute_roi(&c)?;
+            refine_seed_in_roi(base, &params, roi_bounds, &mut *detect_fn)
+        })
+        .flatten()
+        .collect();
+
+    #[cfg(feature = "tracing")]
+    drop(refine_span);
+
+    merge_and_describe(base, &params, cf.merge_radius, &mut refined)
+}
+
+// ---------------------------------------------------------------------------
 // Classic (RefinerKind) path
 // ---------------------------------------------------------------------------
 
@@ -286,6 +358,11 @@ pub fn find_chess_corners_buff(
 }
 
 /// Variant of [`find_chess_corners_buff`] that accepts an explicit refiner selection.
+///
+/// When the `rayon` feature is enabled, per-seed ROI refinement in the
+/// coarse-to-fine path runs in parallel. The ML path uses
+/// [`find_chess_corners_buff_with_ml`] instead, which is always sequential
+/// due to mutable ML state.
 pub fn find_chess_corners_buff_with_refiner(
     base: ImageView<'_>,
     cfg: &ChessConfig,
@@ -301,6 +378,7 @@ pub fn find_chess_corners_buff_with_refiner(
 
     let params = cfg.to_chess_params();
     let cf = cfg.to_coarse_to_fine_params();
+    let border = refiner_radius(refiner);
 
     let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
@@ -310,17 +388,21 @@ pub fn find_chess_corners_buff_with_refiner(
     // Single-scale fallback.
     if pyramid.levels.len() == 1 {
         let lvl = &pyramid.levels[0];
-        return single_scale_detect(
+        let resp = chess_response_u8(lvl.img.data, lvl.img.width, lvl.img.height, &params);
+        let refine_view = ImageView::from_u8_slice(lvl.img.width, lvl.img.height, lvl.img.data)
+            .expect("image dimensions must match buffer length");
+        let mut raw = detect_with_refiner_kind(&resp, &params, Some(refine_view), refiner);
+        let merged = merge_corners_simple(&mut raw, cf.merge_radius);
+        return corners_to_descriptors(
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
-            &params,
-            cf.merge_radius,
-            |resp, params, image| detect_with_refiner_kind(resp, params, image, refiner),
+            params.descriptor_ring_radius(),
+            merged,
         );
     }
 
-    // --- Coarse-to-fine path ---
+    // --- Coarse-to-fine path (with optional rayon parallelism) ---
 
     let coarse_lvl = pyramid.levels.last().unwrap();
     let coarse_w = coarse_lvl.img.width;
@@ -339,20 +421,7 @@ pub fn find_chess_corners_buff_with_refiner(
         return Vec::new();
     }
 
-    let roi_ctx = make_roi_context(
-        base,
-        coarse_lvl.scale,
-        &params,
-        refiner_radius(refiner),
-        &cf,
-    );
-
-    let refine_one = |c: Corner| -> Option<Vec<Corner>> {
-        let roi_bounds = roi_ctx.compute_roi(&c)?;
-        refine_seed_in_roi(base, &params, roi_bounds, |resp, params, image| {
-            detect_with_refiner_kind(resp, params, image, refiner)
-        })
-    };
+    let roi_ctx = make_roi_context(base, coarse_lvl.scale, &params, border, &cf);
 
     #[cfg(feature = "tracing")]
     let refine_span = info_span!(
@@ -361,6 +430,13 @@ pub fn find_chess_corners_buff_with_refiner(
         roi_r = roi_ctx.roi_r
     )
     .entered();
+
+    let refine_one = |c: Corner| -> Option<Vec<Corner>> {
+        let roi_bounds = roi_ctx.compute_roi(&c)?;
+        refine_seed_in_roi(base, &params, roi_bounds, |resp, p, image| {
+            detect_with_refiner_kind(resp, p, image, refiner)
+        })
+    };
 
     #[cfg(feature = "rayon")]
     let mut refined: Vec<Corner> = coarse_corners
@@ -483,78 +559,19 @@ fn find_chess_corners_buff_with_ml_state(
     }
 
     let params = cfg.to_chess_params();
-    let cf = cfg.to_coarse_to_fine_params();
-
-    let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
-    if pyramid.levels.is_empty() {
-        return Vec::new();
-    }
-
-    // Single-scale fallback.
-    if pyramid.levels.len() == 1 {
-        let lvl = &pyramid.levels[0];
-        return single_scale_detect(
-            lvl.img.data,
-            lvl.img.width,
-            lvl.img.height,
-            &params,
-            cf.merge_radius,
-            |resp, params, image| detect_with_ml_refiner(resp, params, image, ml_state),
-        );
-    }
-
-    // --- Coarse-to-fine path ---
-    // Coarse detection always uses the classic refiner regardless of refinement path.
-
-    let coarse_lvl = pyramid.levels.last().unwrap();
-    let coarse_w = coarse_lvl.img.width;
-    let coarse_h = coarse_lvl.img.height;
-
-    #[cfg(feature = "tracing")]
-    let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
-    let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, &params);
-    let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
-    let coarse_corners =
-        detect_with_refiner_kind(&coarse_resp, &params, Some(coarse_view), &params.refiner);
-    #[cfg(feature = "tracing")]
-    drop(coarse_span);
-
-    if coarse_corners.is_empty() {
-        return Vec::new();
-    }
-
-    let roi_ctx = make_roi_context(
+    let ml_border = ml_refiner::patch_radius(ml);
+    // Coarse detection always uses the classic refiner (ML model is not
+    // reliable at coarse resolution). ROI refinement uses the ML path.
+    // `ml_state` is mutable but used in a single closure; `coarse_to_fine_with`
+    // runs sequentially so there is no aliasing.
+    coarse_to_fine_with(
         base,
-        coarse_lvl.scale,
-        &params,
-        ml_refiner::patch_radius(ml),
-        &cf,
-    );
-
-    #[cfg(feature = "tracing")]
-    let refine_span = info_span!(
-        "refine",
-        seeds = coarse_corners.len(),
-        roi_r = roi_ctx.roi_r
+        cfg,
+        buffers,
+        &params.refiner.clone(),
+        ml_border,
+        &mut |resp, p, image| detect_with_ml_refiner(resp, p, image, ml_state),
     )
-    .entered();
-
-    // ML refiner holds mutable state, so refinement is sequential.
-    let mut refined: Vec<Corner> = coarse_corners
-        .into_iter()
-        .filter_map(|c| {
-            let roi_bounds = roi_ctx.compute_roi(&c)?;
-            refine_seed_in_roi(base, &params, roi_bounds, |resp, params, image| {
-                detect_with_ml_refiner(resp, params, image, ml_state)
-            })
-        })
-        .flatten()
-        .collect();
-
-    #[cfg(feature = "tracing")]
-    drop(refine_span);
-
-    merge_and_describe(base, &params, cf.merge_radius, &mut refined)
 }
 
 // ---------------------------------------------------------------------------

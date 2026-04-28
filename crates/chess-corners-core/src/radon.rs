@@ -9,6 +9,9 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 /// Number of discrete ray angles. The paper samples
 /// `{0, π/4, π/2, 3π/4}`.
 pub const ANGLES: usize = 4;
@@ -83,33 +86,90 @@ pub fn box_blur_inplace(resp: &mut [f32], scratch: &mut [f32], w: usize, h: usiz
     if radius == 0 {
         return;
     }
-    // Horizontal pass: resp -> scratch.
-    for y in 0..h {
+    // `par_chunks_mut(w)` / `chunks_mut(w)` panic when `w == 0`; the
+    // original loop-based implementation returned a silent no-op on
+    // zero-extent grids, so preserve that contract here too.
+    if w == 0 || h == 0 {
+        return;
+    }
+
+    // Horizontal pass: resp[y, x] -> scratch[y, x].
+    //
+    // Each row is independent, so this trivially parallelizes
+    // row-wise under the `rayon` feature.
+    let horiz_kernel = |y: usize, scratch_row: &mut [f32], resp_full: &[f32]| {
         let row_start = y * w;
-        for x in 0..w {
+        for (x, dst) in scratch_row.iter_mut().enumerate() {
             let x0 = x.saturating_sub(radius);
             let x1 = (x + radius + 1).min(w);
             let mut acc = 0.0f32;
             let mut n = 0.0f32;
             for xx in x0..x1 {
-                acc += resp[row_start + xx];
+                acc += resp_full[row_start + xx];
                 n += 1.0;
             }
-            scratch[row_start + x] = acc / n;
+            *dst = acc / n;
+        }
+    };
+
+    #[cfg(feature = "rayon")]
+    {
+        // Need to read from `resp` while writing to `scratch`, so
+        // borrow `resp` immutably for the read view first.
+        let resp_view: &[f32] = resp;
+        scratch
+            .par_chunks_mut(w)
+            .enumerate()
+            .for_each(|(y, scratch_row)| {
+                horiz_kernel(y, scratch_row, resp_view);
+            });
+    }
+    #[cfg(not(feature = "rayon"))]
+    {
+        let resp_view: &[f32] = resp;
+        for (y, scratch_row) in scratch.chunks_mut(w).enumerate() {
+            horiz_kernel(y, scratch_row, resp_view);
         }
     }
-    // Vertical pass: scratch -> resp.
-    for x in 0..w {
-        for y in 0..h {
-            let y0 = y.saturating_sub(radius);
-            let y1 = (y + radius + 1).min(h);
-            let mut acc = 0.0f32;
-            let mut n = 0.0f32;
-            for yy in y0..y1 {
-                acc += scratch[yy * w + x];
-                n += 1.0;
+
+    // Vertical pass: scratch[y, x] -> resp[y, x].
+    //
+    // Rewritten to row-major: for each output row `y`, accumulate the
+    // contributions from scratch rows `y0..y1` into the output. This
+    // gives unit-stride reads/writes (vs. the earlier column-strided
+    // `for x { for y { ... } }`), and lets each output row be filled
+    // independently of every other output row.
+    let vert_kernel = |y: usize, dst: &mut [f32], scratch_full: &[f32]| {
+        let y0 = y.saturating_sub(radius);
+        let y1 = (y + radius + 1).min(h);
+        let n = (y1 - y0) as f32;
+        for v in dst.iter_mut() {
+            *v = 0.0;
+        }
+        for yy in y0..y1 {
+            let src_row = &scratch_full[yy * w..(yy + 1) * w];
+            for (d, s) in dst.iter_mut().zip(src_row.iter()) {
+                *d += *s;
             }
-            resp[y * w + x] = acc / n;
+        }
+        let inv_n = 1.0 / n;
+        for v in dst.iter_mut() {
+            *v *= inv_n;
+        }
+    };
+
+    #[cfg(feature = "rayon")]
+    {
+        let scratch_view: &[f32] = scratch;
+        resp.par_chunks_mut(w)
+            .enumerate()
+            .for_each(|(y, dst)| vert_kernel(y, dst, scratch_view));
+    }
+    #[cfg(not(feature = "rayon"))]
+    {
+        let scratch_view: &[f32] = scratch;
+        for (y, dst) in resp.chunks_mut(w).enumerate() {
+            vert_kernel(y, dst, scratch_view);
         }
     }
 }

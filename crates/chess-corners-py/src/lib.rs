@@ -118,7 +118,9 @@ fn find_chess_corners<'py>(
         .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
 
     let cfg = resolve_config(py, cfg)?;
-    let corners = chess_corners_rs::find_chess_corners_u8(slice, width_u32, height_u32, &cfg);
+    let corners = py
+        .detach(|| chess_corners_rs::find_chess_corners_u8(slice, width_u32, height_u32, &cfg))
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
     corners_to_array(py, corners)
 }
 
@@ -141,8 +143,11 @@ fn find_chess_corners_with_ml<'py>(
         .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
 
     let cfg = resolve_config(py, cfg)?;
-    let corners =
-        chess_corners_rs::find_chess_corners_u8_with_ml(slice, width_u32, height_u32, &cfg);
+    let corners = py
+        .detach(|| {
+            chess_corners_rs::find_chess_corners_u8_with_ml(slice, width_u32, height_u32, &cfg)
+        })
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
     corners_to_array(py, corners)
 }
 
@@ -164,7 +169,9 @@ fn radon_heatmap<'py>(
         .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
 
     let cfg = resolve_config(py, cfg)?;
-    let map = chess_corners_rs::radon_heatmap_u8(slice, width_u32, height_u32, &cfg);
+    let map = py
+        .detach(|| chess_corners_rs::radon_heatmap_u8(slice, width_u32, height_u32, &cfg))
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
     let arr = Array2::from_shape_vec((map.height(), map.width()), map.data().to_vec())
         .map_err(|_| PyValueError::new_err("failed to build heatmap array"))?;

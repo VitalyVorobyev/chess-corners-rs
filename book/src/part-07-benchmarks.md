@@ -199,6 +199,79 @@ Observations:
 - Multiscale is a good default. Single-scale is only worthwhile when
   you want maximum seed stability and can afford 3–5× the wall time.
 
+### 7.7.1 Whole-image Radon detector
+
+The Duda–Frese Radon path (`ChessConfig::radon()`) is an alternative
+detector for frames where ChESS's 16-sample ring fails — heavy
+defocus, motion blur, or low-contrast scenes. It is single-scale by
+construction (the SAT-based response is already O(1) per pixel), so
+the multiscale columns in §7.7 do not apply.
+
+Wall times on the same three test images, release build, averaged
+over 10 runs (milliseconds), 8-core M-class CPU:
+
+| Stage              | Features    | small 720×540 | mid 1024×576 | large 2048×1536 | 1920×1080 synth |
+|--------------------|-------------|--------------:|-------------:|----------------:|----------------:|
+| Response only      | none        |               |              |                 | 130.6           |
+| Response only      | rayon       |               |              |                 |  27.9           |
+| Response only      | simd+rayon  |               |              |                 |  28.0           |
+| Full pipeline      | none        |  28.6         |  31.3        | 298             | 162             |
+| Full pipeline      | rayon+simd  |  28.8         |  19.6        | 188             | 162             |
+
+End-to-end cumulative speedup vs. the scalar pre-opt reference (the
+state Radon shipped in at #45):
+
+| Bench | Pre-opt | Post-opt (rayon+simd) | Speedup |
+|---|---:|---:|---:|
+| `radon_response` 1920×1080 up=2 | 130.6 ms | 28.0 ms | **4.7×** |
+| `radon_pipeline` 1920×1080 synth | 692 ms | 162 ms | **4.3×** |
+| `radon_pipeline` large.png | 393 ms | 188 ms | **2.1×** |
+| `radon_pipeline` mid.png | 47 ms | 19.6 ms | **2.4×** |
+
+What was changed, in order:
+
+1. **Row-parallel `compute_response`** under `rayon`, plus a
+   handwritten `Simd<i64, 8>` inner kernel under `simd`. This is
+   the biggest single win on the response stage (~4.7×).
+2. **Row-parallel `box_blur_inplace`** under `rayon`. The vertical
+   pass was rewritten row-major (was column-strided), which also
+   speeds up the **scalar** path 5–28% as a side effect.
+3. **`upsample_bilinear_2x` and `build_cumsums` parallelism** —
+   rayon row-wise on the upsampler, `rayon::join` across the four
+   independent cumsum directions.
+4. **`merge_corners_simple` spatial grid** — the original O(N²)
+   pairwise scan was the dominant cost on synthetic chessboards
+   and low-contrast frames where Radon emits thousands of
+   candidates. Replaced with a uniform spatial grid keyed on the
+   merge radius (cell size = `radius`); expected O(N) for typical
+   distributions. This is the single largest pipeline-level win
+   (1920×1080 synth dropped from 665 ms to 185 ms with all
+   features enabled).
+5. **Row-parallel NMS + peak-fit** in `detect_corners_from_radon`
+   under `rayon`, with thread-local accumulators concatenated in
+   row order to keep the output deterministic.
+
+Caveats and notes:
+
+- Portable SIMD on the inner kernel adds ~50% over scalar
+  single-thread, but stacks weakly with rayon — the loop is
+  memory-bound on M-class CPUs and rayon already saturates DRAM
+  bandwidth. SIMD is the bigger relative win on AVX-512 hosts where
+  the i64 lane width matches natively.
+- The four cumsum directions remain individually serial (each has a
+  prefix-sum data dependency along its direction). Only the
+  inter-direction parallelism via `rayon::join` is added.
+- Small images (`small.png` at 720×540) fall outside the regime
+  where rayon's thread-startup overhead amortizes. The
+  optimization mostly preserves their wall time rather than
+  improving it.
+
+The accuracy guard test
+(`crates/chess-corners/tests/perf_accuracy_guard.rs`) locks down
+recall, precision, and p95 subpixel error per detector mode so
+optimization patches that change correctness fail at `cargo test`
+rather than silently drifting in production.
+
 ## 7.8 Comparison with OpenCV
 
 OpenCV ships two reference paths standard in calibration pipelines:
@@ -345,6 +418,31 @@ python tools/perf_bench.py
 # Integration test that gates refiner accuracy on CI
 cargo test --release -p chess-corners --test refiner_benchmark \
     --features ml-refiner -- --nocapture --test-threads=1
+
+# Recall / precision / p95-error guard against optimization regressions
+cargo test --release -p chess-corners --test perf_accuracy_guard \
+    --all-features
+
+# Criterion benchmarks (default features = scalar reference)
+cargo bench -p chess-corners        --bench radon_pipeline
+cargo bench -p chess-corners        --bench chess_pipeline
+cargo bench -p chess-corners-core   --bench refiners
+cargo bench -p chess-corners-core   --bench radon_response
+
+# Same benches under SIMD + rayon
+cargo bench -p chess-corners        --bench radon_pipeline --features rayon,simd
+cargo bench -p chess-corners-core   --bench radon_response --features rayon,simd
+
+# Save a baseline before optimizing, then re-run with --baseline <name>
+cargo bench --workspace -- --save-baseline pre-opt
+cargo bench --workspace -- --baseline pre-opt
+
+# Flamegraph / samply harness for hot-path profiling.
+# Outputs under testdata/out/profiles/.
+tools/profile.sh chess  testimages/large.png
+tools/profile.sh radon  testimages/large.png
+tools/profile.sh refiner saddle  testimages/mid.png
+tools/profile.sh samply chess testimages/large.png
 ```
 
 ---

@@ -5,6 +5,7 @@ description = "High-level chessboard / ChESS corner detection API"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 documentation = "https://vitalyvorobyev.github.io/chess-corners-rs/api/chess_corners"
 homepage = "https://vitalyvorobyev.github.io/chess-corners-rs"
 keywords = ["chessboard", "chess-corners", "corner-detection", "computer-vision", "image-processing"]
@@ -46,12 +47,28 @@ clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion.workspace = true
+image.workspace = true
 serde_json.workspace = true
 
 [[bench]]
 name = "upscale"
 harness = false
 required-features = []
+
+[[bench]]
+name = "radon_pipeline"
+harness = false
+required-features = []
+
+[[bench]]
+name = "chess_pipeline"
+harness = false
+required-features = []
+
+[[example]]
+name = "profile_target"
+path = "examples/profile_target.rs"
+required-features = ["image"]
 
 [[example]]
 name = "single_scale_image"

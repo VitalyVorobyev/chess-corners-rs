@@ -84,6 +84,7 @@ impl From<RsDetectorMode> for DetectorMode {
             RsDetectorMode::Canonical => DetectorMode::Canonical,
             RsDetectorMode::Broad => DetectorMode::Broad,
             RsDetectorMode::Radon => DetectorMode::Radon,
+            _ => DetectorMode::Canonical,
         }
     }
 }
@@ -113,6 +114,7 @@ impl From<RsDescriptorMode> for DescriptorMode {
             RsDescriptorMode::FollowDetector => DescriptorMode::FollowDetector,
             RsDescriptorMode::Canonical => DescriptorMode::Canonical,
             RsDescriptorMode::Broad => DescriptorMode::Broad,
+            _ => DescriptorMode::FollowDetector,
         }
     }
 }
@@ -139,6 +141,7 @@ impl From<RsThresholdMode> for ThresholdMode {
         match v {
             RsThresholdMode::Relative => ThresholdMode::Relative,
             RsThresholdMode::Absolute => ThresholdMode::Absolute,
+            _ => ThresholdMode::Absolute,
         }
     }
 }
@@ -172,6 +175,7 @@ impl From<RsRefinementMethod> for RefinementMethod {
             RsRefinementMethod::Forstner => RefinementMethod::Forstner,
             RsRefinementMethod::SaddlePoint => RefinementMethod::SaddlePoint,
             RsRefinementMethod::RadonPeak => RefinementMethod::RadonPeak,
+            _ => RefinementMethod::CenterOfMass,
         }
     }
 }
@@ -229,6 +233,7 @@ impl From<RsUpscaleMode> for UpscaleMode {
         match v {
             RsUpscaleMode::Disabled => UpscaleMode::Disabled,
             RsUpscaleMode::Fixed => UpscaleMode::Fixed,
+            _ => UpscaleMode::Disabled,
         }
     }
 }
@@ -613,13 +618,13 @@ impl Default for RefinerConfig {
 
 impl RefinerConfig {
     pub(crate) fn snapshot(&self) -> RsRefinerConfig {
-        RsRefinerConfig {
-            kind: *self.kind.borrow(),
-            center_of_mass: *self.center_of_mass.borrow(),
-            forstner: *self.forstner.borrow(),
-            saddle_point: *self.saddle_point.borrow(),
-            radon_peak: *self.radon_peak.borrow(),
-        }
+        RsRefinerConfig::build(
+            *self.kind.borrow(),
+            *self.center_of_mass.borrow(),
+            *self.forstner.borrow(),
+            *self.saddle_point.borrow(),
+            *self.radon_peak.borrow(),
+        )
     }
 
     pub(crate) fn from_value(value: RsRefinerConfig) -> Self {
@@ -815,6 +820,7 @@ impl UpscaleConfig {
 
 /// High-level detector configuration. Mirrors
 /// [`chess_corners::ChessConfig`].
+#[non_exhaustive]
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
 pub struct ChessConfig {

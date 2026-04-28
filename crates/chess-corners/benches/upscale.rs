@@ -1,6 +1,6 @@
 //! Benchmark the optional pre-pipeline bilinear upscaling stage.
 
-use chess_corners::upscale::{upscale_bilinear_u8, UpscaleBuffers};
+use chess_corners::{upscale_bilinear_u8, UpscaleBuffers};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;
 

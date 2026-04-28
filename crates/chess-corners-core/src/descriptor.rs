@@ -31,6 +31,7 @@ const GN_TOL: f32 = 1e-4;
 
 /// A detected ChESS corner (subpixel).
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Corner {
     /// Subpixel x coordinate in image pixels.
     pub x: f32,
@@ -40,8 +41,17 @@ pub struct Corner {
     pub strength: f32,
 }
 
+impl Corner {
+    /// Construct a [`Corner`].
+    #[inline]
+    pub fn new(x: f32, y: f32, strength: f32) -> Self {
+        Self { x, y, strength }
+    }
+}
+
 /// Direction of one local grid axis with its 1σ angular uncertainty.
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct AxisEstimate {
     /// Axis direction, radians in [0, 2π).
     ///
@@ -49,6 +59,14 @@ pub struct AxisEstimate {
     pub angle: f32,
     /// 1σ angular uncertainty (radians), from the fit's covariance.
     pub sigma: f32,
+}
+
+impl AxisEstimate {
+    /// Construct an [`AxisEstimate`].
+    #[inline]
+    pub fn new(angle: f32, sigma: f32) -> Self {
+        Self { angle, sigma }
+    }
 }
 
 /// Describes a detected chessboard corner in full-resolution image coordinates.
@@ -73,9 +91,11 @@ pub struct AxisEstimate {
 /// Each axis direction is signed as a f32 in `[0, 2π)`; the axes are
 /// **not** assumed orthogonal (holds up under projective warp).
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct CornerDescriptor {
     /// Subpixel position in full-resolution image pixels.
     pub x: f32,
+    /// Subpixel y position in full-resolution image pixels.
     pub y: f32,
 
     /// Raw, **unnormalized** ChESS response `R = SR − DR − 16·MR` at
@@ -101,6 +121,29 @@ pub struct CornerDescriptor {
 
     /// The two local grid axis directions with per-axis 1σ precision.
     pub axes: [AxisEstimate; 2],
+}
+
+impl CornerDescriptor {
+    /// Construct a [`CornerDescriptor`].
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        x: f32,
+        y: f32,
+        response: f32,
+        contrast: f32,
+        fit_rms: f32,
+        axes: [AxisEstimate; 2],
+    ) -> Self {
+        Self {
+            x,
+            y,
+            response,
+            contrast,
+            fit_rms,
+            axes,
+        }
+    }
 }
 
 /// Convert raw corner candidates into full descriptors by sampling the source image.

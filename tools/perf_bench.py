@@ -73,10 +73,20 @@ def main() -> None:
         default=DEFAULT_OUT,
         help="Path to write JSON report.",
     )
+    parser.add_argument(
+        "--radon",
+        action="store_true",
+        help=(
+            "Also run a Radon-detector config alongside the ChESS multi/single "
+            "configs. Reads config/config_radon.json if present, otherwise "
+            "patches config_single.json with detector_mode='radon'."
+        ),
+    )
     args = parser.parse_args()
 
     config = ROOT / "config" / "config.json"
     single_config = ROOT / "config" / "config_single.json"
+    radon_config_path = ROOT / "config" / "config_radon.json"
     runs = args.runs
 
     base_cfg = load_config(config)
@@ -91,6 +101,14 @@ def main() -> None:
         (base_cfg, "multi"),
         (single_cfg, "single"),
     ]
+    if args.radon:
+        if radon_config_path.exists():
+            radon_cfg = load_config(radon_config_path)
+        else:
+            radon_cfg = dict(single_cfg)
+            radon_cfg["detector_mode"] = "radon"
+            radon_cfg["pyramid_levels"] = 1
+        configs.append((radon_cfg, "radon"))
 
     for cfg, label in configs:
         for combo in combos:

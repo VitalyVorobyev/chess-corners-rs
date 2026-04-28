@@ -19,6 +19,7 @@
 use chess_corners_core::{radon_response_u8, ImageView, RadonBuffers, ResponseMap};
 
 use crate::config::ChessConfig;
+use crate::error::ChessError;
 use crate::upscale::{self, UpscaleBuffers};
 
 /// Compute the whole-image Radon response heatmap from a raw
@@ -32,20 +33,28 @@ use crate::upscale::{self, UpscaleBuffers};
 /// The heatmap data is row-major `f32`, length
 /// `map.width() * map.height()`. Values are non-negative.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `img.len() != width * height` or if the upscale
-/// configuration fails validation.
-#[must_use]
-pub fn radon_heatmap_u8(img: &[u8], width: u32, height: u32, cfg: &ChessConfig) -> ResponseMap {
-    cfg.upscale
-        .validate()
-        .expect("invalid upscale configuration");
+/// Returns [`ChessError::DimensionMismatch`] if `img.len() != width * height`.
+/// Returns [`ChessError::Upscale`] if the upscale configuration is invalid.
+pub fn radon_heatmap_u8(
+    img: &[u8],
+    width: u32,
+    height: u32,
+    cfg: &ChessConfig,
+) -> Result<ResponseMap, ChessError> {
+    cfg.upscale.validate()?;
 
     let src_w = width as usize;
     let src_h = height as usize;
-    let view = ImageView::from_u8_slice(src_w, src_h, img)
-        .expect("image dimensions must match buffer length");
+    let expected = src_w * src_h;
+    if img.len() != expected {
+        return Err(ChessError::DimensionMismatch {
+            expected,
+            actual: img.len(),
+        });
+    }
+    let view = ImageView::from_u8_slice(src_w, src_h, img).expect("dimensions were checked above");
 
     let factor = cfg.upscale.effective_factor();
     let mut rb = RadonBuffers::new();
@@ -58,12 +67,11 @@ pub fn radon_heatmap_u8(img: &[u8], width: u32, height: u32, cfg: &ChessConfig) 
             &cfg.radon_detector,
             &mut rb,
         );
-        return resp.to_response_map();
+        return Ok(resp.to_response_map());
     }
 
     let mut up_buffers = UpscaleBuffers::new();
-    let upscaled = upscale::upscale_bilinear_u8(img, src_w, src_h, factor, &mut up_buffers)
-        .expect("invalid upscale configuration");
+    let upscaled = upscale::upscale_bilinear_u8(img, src_w, src_h, factor, &mut up_buffers)?;
     let resp = radon_response_u8(
         upscaled.data,
         upscaled.width,
@@ -71,16 +79,24 @@ pub fn radon_heatmap_u8(img: &[u8], width: u32, height: u32, cfg: &ChessConfig) 
         &cfg.radon_detector,
         &mut rb,
     );
-    resp.to_response_map()
+    Ok(resp.to_response_map())
 }
 
 /// Compute the Radon response heatmap from an `image::GrayImage`.
 ///
 /// Convenience wrapper over [`radon_heatmap_u8`] when the `image`
 /// feature is enabled.
+///
+/// # Errors
+///
+/// Returns [`ChessError::Upscale`] if the upscale configuration in `cfg` is invalid.
+/// A dimension mismatch is not possible for `GrayImage` since the `image` crate
+/// guarantees `as_raw().len() == width * height`.
 #[cfg(feature = "image")]
-#[must_use]
-pub fn radon_heatmap_image(img: &::image::GrayImage, cfg: &ChessConfig) -> ResponseMap {
+pub fn radon_heatmap_image(
+    img: &::image::GrayImage,
+    cfg: &ChessConfig,
+) -> Result<ResponseMap, ChessError> {
     let (w, h) = img.dimensions();
     radon_heatmap_u8(img.as_raw(), w, h, cfg)
 }
@@ -112,7 +128,7 @@ mod tests {
         let img = synthetic_board(w, h);
         let cfg = ChessConfig::radon();
 
-        let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg);
+        let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
 
         let mut rb = CoreRadonBuffers::new();
         let view = core_radon(&img, w, h, &cfg.radon_detector, &mut rb);
@@ -130,7 +146,7 @@ mod tests {
         let cfg = ChessConfig::radon();
         let upsample = cfg.radon_detector.image_upsample.clamp(1, 2) as usize;
 
-        let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg);
+        let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
         assert_eq!(map.width(), w * upsample);
         assert_eq!(map.height(), h * upsample);
     }
@@ -141,7 +157,7 @@ mod tests {
         let img = synthetic_board(w, h);
         let cfg = ChessConfig::radon();
 
-        let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg);
+        let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
         let max = map.data().iter().copied().fold(f32::NEG_INFINITY, f32::max);
         assert!(max > 0.0, "expected positive Radon response on a board");
     }
@@ -156,7 +172,7 @@ mod tests {
         cfg.upscale = UpscaleConfig::fixed(2);
         let radon_upsample = cfg.radon_detector.image_upsample.clamp(1, 2) as usize;
 
-        let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg);
+        let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
         // Working resolution = input × upscale × radon_image_upsample.
         assert_eq!(map.width(), w * 2 * radon_upsample);
         assert_eq!(map.height(), h * 2 * radon_upsample);

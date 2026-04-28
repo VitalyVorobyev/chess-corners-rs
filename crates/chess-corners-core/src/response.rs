@@ -26,9 +26,13 @@ type I32s = Simd<i32, LANES>;
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
-/// Rectangular region of interest, in image coordinates `[x0, x1) × [y0, y1)`.
+/// Rectangular region of interest with half-open coordinate semantics
+/// `[x0, x1) × [y0, y1)`.
 ///
-/// Invariant: `x0 < x1` and `y0 < y1`.
+/// Coordinates are in image-pixel space relative to the
+/// [`ImageView`](crate::ImageView)'s `origin` offset. The invariants
+/// `x0 < x1` and `y0 < y1` are enforced by [`Roi::new`], which returns
+/// `None` when they are violated.
 #[derive(Clone, Copy, Debug)]
 pub struct Roi {
     x0: usize,
@@ -360,9 +364,12 @@ fn compute_response_parallel(img: &[u8], w: usize, h: usize, params: &ChessParam
     ResponseMap { w, h, data }
 }
 
-// Fallback stub when rayon feature is off so the name still exists
+// Fallback stub: when the `rayon` feature is off, `chess_response_u8` takes
+// the sequential branch directly and never calls `compute_response_parallel`.
+// The stub keeps the name defined so no `#[cfg]` guards are needed at call
+// sites that are themselves already gated on `#[cfg(feature = "rayon")]`.
 #[cfg(not(feature = "rayon"))]
-#[allow(dead_code)]
+#[cfg_attr(not(feature = "rayon"), allow(dead_code))]
 fn compute_response_parallel(img: &[u8], w: usize, h: usize, params: &ChessParams) -> ResponseMap {
     compute_response_sequential(img, w, h, params)
 }

@@ -2,28 +2,32 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 //! Core primitives for computing ChESS responses and extracting subpixel corners.
 //!
-//! # Overview
+//! # Modules
 //!
-//! This crate exposes two main building blocks:
+//! | Module | Description |
+//! |--------|-------------|
+//! | [`response`] | Dense ChESS response computation on 8‑bit grayscale images using a 16‑sample ring. |
+//! | [`detect`] | Thresholding, non‑maximum suppression (NMS), cluster filtering, and corner-to-descriptor pipeline. |
+//! | [`refine`] | Pluggable subpixel refinement trait [`CornerRefiner`] with three built-in backends: center-of-mass, Förstner, and saddle-point. |
+//! | [`refine_radon`] | Radon-projection refiner [`RadonPeakRefiner`]: fits Radon peaks along candidate axes for robust subpixel correction under blur and low contrast. |
+//! | [`radon`] | Low-level Radon primitives: axial-sum accumulators, box-blur helpers, and parabolic / Gaussian peak-fit utilities used by both the refiner and the whole-image detector. |
+//! | [`radon_detector`] | Whole-image Radon-based corner detector using integral-image (SAT) ray sums; [`radon_response_u8`] and [`detect_corners_from_radon`] are the main entry points. |
+//! | [`descriptor`] | Corner descriptor [`CornerDescriptor`] with subpixel position, two-axis orientation, per-axis 1σ uncertainty, contrast, and fit residual. |
+//! | [`ring`] | Ring offset tables for the 16-point ChESS rings (r=5 canonical and r=10 broad). |
+//! | [`imageview`] | Zero-copy [`ImageView`] into a borrowed grayscale buffer, with optional `origin` offset for pyramid/ROI support. |
 //!
-//! - [`response`] – dense ChESS response computation on 8‑bit grayscale images.
-//! - [`detect`] + [`refine`] – thresholding, non‑maximum suppression (NMS),
-//!   and pluggable subpixel refinement (center-of-mass, Förstner, saddle-point).
-//!
-//! The response is based on a 16‑sample ring (see [`ring`]) and is intended for
-//! chessboard‑like corner detection, as described in the ChESS paper
-//! (“Chess‑board Extraction by Subtraction and Summation”).
+//! Most users should work through the `chess-corners` facade crate rather than
+//! depending on `chess-corners-core` directly. Depend on this crate only when
+//! you need raw response maps, custom refiners, or the Radon detector primitives.
 //!
 //! # Features
 //!
 //! - `std` *(default)* – enables use of the Rust standard library. When
 //!   disabled, the crate is `no_std` + `alloc`.
-//! - `rayon` – parallelizes the dense response computation over image rows
-//!   using the `rayon` crate. This does not change numerical results, only
-//!   performance on multi‑core machines.
-//! - `simd` – enables a SIMD‑accelerated inner loop for the response
-//!   computation, based on `portable_simd`. This feature currently requires a
-//!   nightly compiler and is intended as a performance optimization; the
+//! - `rayon` – parallelizes the dense response computation and Radon accumulation
+//!   over image rows using the `rayon` crate. Does not change numerical results.
+//! - `simd` – enables a SIMD‑accelerated inner loop for the ChESS response
+//!   kernel, based on `portable_simd`. Requires a nightly compiler; the
 //!   scalar path remains the reference implementation.
 //! - `tracing` – emits structured spans around response and detector functions
 //!   using the [`tracing`](https://docs.rs/tracing) ecosystem, useful for
@@ -41,8 +45,8 @@
 //! only adds observability; none of these features change the numerical
 //! results, only performance and instrumentation.
 //!
-//! The ChESS idea is proposed in the papaer Bennett, Lasenby, *ChESS: A Fast and
-//! Accurate Chessboard Corner Detector*, CVIU 2014
+//! The ChESS idea is proposed in Bennett, Lasenby, *ChESS: A Fast and
+//! Accurate Chessboard Corner Detector*, CVIU 2014.
 
 pub mod descriptor;
 pub mod detect;
