@@ -199,6 +199,55 @@ Observations:
 - Multiscale is a good default. Single-scale is only worthwhile when
   you want maximum seed stability and can afford 3–5× the wall time.
 
+### 7.7.1 Whole-image Radon detector
+
+The Duda–Frese Radon path (`ChessConfig::radon()`) is an alternative
+detector for frames where ChESS's 16-sample ring fails — heavy
+defocus, motion blur, or low-contrast scenes. It is single-scale by
+construction (the SAT-based response is already O(1) per pixel), so
+the multiscale columns in §7.7 do not apply.
+
+Wall times on the same three test images, release build, averaged
+over 10 runs (milliseconds):
+
+| Stage              | Features      | small 720×540 | mid 1024×576 | large 2048×1536 |
+|--------------------|---------------|--------------:|-------------:|----------------:|
+| Response only (1920×1080 up=2)  | none          |               |              | 130.6           |
+| Response only (1920×1080 up=2)  | rayon         |               |              |  27.9           |
+| Response only (1920×1080 up=2)  | simd          |               |              |  92             |
+| Response only (1920×1080 up=2)  | simd+rayon    |               |              |  28.0           |
+| Full pipeline      | none          |  37.2         | 47.2         | 393             |
+| Full pipeline      | rayon         |  38.0         | 22.4         | 281             |
+
+Where the time goes:
+- `compute_response` is a 4-SAT-lookup-per-pixel hot loop. Rayon
+  parallelizes it row-wise; on an 8-core M-class CPU we measure
+  3–5× speedup on the response stage alone.
+- `box_blur_inplace` and the bilinear upsample are also row-parallel
+  under `rayon`.
+- The four SAT directions run on separate `rayon::join` tasks (they
+  are mutually independent).
+- Portable SIMD on the inner kernel adds ~50 % over scalar
+  single-thread, but stacks weakly with rayon — the loop is
+  memory-bound on M-class CPUs and rayon already saturates DRAM
+  bandwidth.
+
+The full-pipeline gain is smaller than the response-stage gain
+because `detect_corners_from_radon` (threshold + NMS + 3-point peak
+fit) and `merge_corners_simple` are still sequential. On synthetic
+chessboards or low-contrast real frames the detector emits thousands
+of candidates, and the O(N²) merge becomes the next dominant cost.
+Tightening `RadonDetectorParams::threshold_rel` or `min_cluster_size`
+is currently the cheapest way to lower wall time on Radon-heavy
+frames. A future revision can swap `merge_corners_simple` for a
+spatial-grid implementation.
+
+The accuracy guard test
+(`crates/chess-corners/tests/perf_accuracy_guard.rs`) locks down
+recall, precision, and p95 subpixel error per detector mode so
+optimization patches that change correctness fail at `cargo test`
+rather than silently drifting in production.
+
 ## 7.8 Comparison with OpenCV
 
 OpenCV ships two reference paths standard in calibration pipelines:
@@ -345,6 +394,31 @@ python tools/perf_bench.py
 # Integration test that gates refiner accuracy on CI
 cargo test --release -p chess-corners --test refiner_benchmark \
     --features ml-refiner -- --nocapture --test-threads=1
+
+# Recall / precision / p95-error guard against optimization regressions
+cargo test --release -p chess-corners --test perf_accuracy_guard \
+    --all-features
+
+# Criterion benchmarks (default features = scalar reference)
+cargo bench -p chess-corners        --bench radon_pipeline
+cargo bench -p chess-corners        --bench chess_pipeline
+cargo bench -p chess-corners-core   --bench refiners
+cargo bench -p chess-corners-core   --bench radon_response
+
+# Same benches under SIMD + rayon
+cargo bench -p chess-corners        --bench radon_pipeline --features rayon,simd
+cargo bench -p chess-corners-core   --bench radon_response --features rayon,simd
+
+# Save a baseline before optimizing, then re-run with --baseline <name>
+cargo bench --workspace -- --save-baseline pre-opt
+cargo bench --workspace -- --baseline pre-opt
+
+# Flamegraph / samply harness for hot-path profiling.
+# Outputs under testdata/out/profiles/.
+tools/profile.sh chess  testimages/large.png
+tools/profile.sh radon  testimages/large.png
+tools/profile.sh refiner saddle  testimages/mid.png
+tools/profile.sh samply chess testimages/large.png
 ```
 
 ---
