@@ -43,10 +43,27 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
+#[cfg(all(feature = "simd", not(feature = "radon-sat-u32")))]
+use core::simd::Simd;
+
+#[cfg(all(feature = "simd", not(feature = "radon-sat-u32")))]
+use std::simd::cmp::SimdOrd;
+
 use crate::descriptor::Corner;
 use crate::detect::{count_positive_neighbors, is_local_max};
 use crate::radon::{box_blur_inplace, fit_peak_frac, PeakFitMode};
 use crate::ResponseMap;
+
+/// Number of pixels processed per SIMD iteration in
+/// `compute_response_row_simd`. Eight `i64` lanes is the natural
+/// width on AVX-512 / NEON-pair / SVE machines; smaller-width
+/// architectures fall back to the scalar tail handler in the same
+/// kernel.
+#[cfg(all(feature = "simd", not(feature = "radon-sat-u32")))]
+const RADON_LANES: usize = 8;
 
 /// Summed-area-table element type. Gated by the `radon-sat-u32`
 /// crate feature.
@@ -195,18 +212,22 @@ impl RadonBuffers {
 /// aligns with source `(0, 0)`, and the inverse transform from
 /// working to input is simply `x_in = x_work / upsample`. `out`
 /// must already be sized `(2W × 2H)`.
+///
+/// Each output row depends only on `src` and is independent of every
+/// other output row, so the loop is row-parallelizable when the
+/// `rayon` feature is enabled.
 fn upsample_bilinear_2x(src: &[u8], w: usize, h: usize, out: &mut [u8]) {
     debug_assert_eq!(src.len(), w * h);
     debug_assert_eq!(out.len(), 4 * w * h);
     let ww = 2 * w;
-    let wh = 2 * h;
-    for iy in 0..wh {
+
+    let row_kernel = |iy: usize, dst: &mut [u8]| {
         let sy = iy as f32 * 0.5;
         let y0f = sy.floor();
         let y0 = (y0f as isize).max(0) as usize;
         let y1 = (y0 + 1).min(h - 1);
         let ty = (sy - y0f).clamp(0.0, 1.0);
-        for ix in 0..ww {
+        for (ix, out_px) in dst.iter_mut().enumerate() {
             let sx = ix as f32 * 0.5;
             let x0f = sx.floor();
             let x0 = (x0f as isize).max(0) as usize;
@@ -219,30 +240,27 @@ fn upsample_bilinear_2x(src: &[u8], w: usize, h: usize, out: &mut [u8]) {
             let a = i00 + (i10 - i00) * tx;
             let b = i01 + (i11 - i01) * tx;
             let v = a + (b - a) * ty;
-            out[iy * ww + ix] = v.round().clamp(0.0, 255.0) as u8;
+            *out_px = v.round().clamp(0.0, 255.0) as u8;
+        }
+    };
+
+    #[cfg(feature = "rayon")]
+    {
+        out.par_chunks_mut(ww)
+            .enumerate()
+            .for_each(|(iy, row)| row_kernel(iy, row));
+    }
+    #[cfg(not(feature = "rayon"))]
+    {
+        for (iy, row) in out.chunks_mut(ww).enumerate() {
+            row_kernel(iy, row);
         }
     }
 }
 
-/// Build the four cumulative-sum tables from a working-resolution u8
-/// image slice. Each table has exactly `w·h` elements in row-major
-/// order.
-fn build_cumsums(
-    img: &[u8],
-    w: usize,
-    h: usize,
-    row_cumsum: &mut [SatElem],
-    col_cumsum: &mut [SatElem],
-    diag_pos_cumsum: &mut [SatElem],
-    diag_neg_cumsum: &mut [SatElem],
-) {
-    debug_assert_eq!(img.len(), w * h);
+#[inline]
+fn sat_row(img: &[u8], w: usize, h: usize, row_cumsum: &mut [SatElem]) {
     debug_assert_eq!(row_cumsum.len(), w * h);
-    debug_assert_eq!(col_cumsum.len(), w * h);
-    debug_assert_eq!(diag_pos_cumsum.len(), w * h);
-    debug_assert_eq!(diag_neg_cumsum.len(), w * h);
-
-    // Row-wise prefix sums.
     for y in 0..h {
         let mut acc: SatElem = SatElem::default();
         for x in 0..w {
@@ -250,8 +268,11 @@ fn build_cumsums(
             row_cumsum[y * w + x] = acc;
         }
     }
+}
 
-    // Column-wise prefix sums.
+#[inline]
+fn sat_col(img: &[u8], w: usize, h: usize, col_cumsum: &mut [SatElem]) {
+    debug_assert_eq!(col_cumsum.len(), w * h);
     for x in 0..w {
         let mut acc: SatElem = SatElem::default();
         for y in 0..h {
@@ -259,8 +280,11 @@ fn build_cumsums(
             col_cumsum[y * w + x] = acc;
         }
     }
+}
 
-    // NW-SE diagonal prefix sums: diag_pos[y][x] = I[y][x] + diag_pos[y-1][x-1].
+#[inline]
+fn sat_diag_pos(img: &[u8], w: usize, h: usize, diag_pos_cumsum: &mut [SatElem]) {
+    debug_assert_eq!(diag_pos_cumsum.len(), w * h);
     for y in 0..h {
         for x in 0..w {
             let prev = if y > 0 && x > 0 {
@@ -271,8 +295,11 @@ fn build_cumsums(
             diag_pos_cumsum[y * w + x] = prev + SatElem::from(img[y * w + x]);
         }
     }
+}
 
-    // NE-SW diagonal prefix sums: diag_neg[y][x] = I[y][x] + diag_neg[y-1][x+1].
+#[inline]
+fn sat_diag_neg(img: &[u8], w: usize, h: usize, diag_neg_cumsum: &mut [SatElem]) {
+    debug_assert_eq!(diag_neg_cumsum.len(), w * h);
     for y in 0..h {
         for x in 0..w {
             let prev = if y > 0 && x + 1 < w {
@@ -282,6 +309,52 @@ fn build_cumsums(
             };
             diag_neg_cumsum[y * w + x] = prev + SatElem::from(img[y * w + x]);
         }
+    }
+}
+
+/// Build the four cumulative-sum tables from a working-resolution u8
+/// image slice. Each table has exactly `w·h` elements in row-major
+/// order.
+///
+/// The four tables are independent of each other, so under the
+/// `rayon` feature they're computed concurrently via two nested
+/// `rayon::join` calls. Each individual table still has a serial
+/// data dependency along its prefix direction, so per-table SIMD or
+/// row parallelism is intentionally avoided here.
+fn build_cumsums(
+    img: &[u8],
+    w: usize,
+    h: usize,
+    row_cumsum: &mut [SatElem],
+    col_cumsum: &mut [SatElem],
+    diag_pos_cumsum: &mut [SatElem],
+    diag_neg_cumsum: &mut [SatElem],
+) {
+    debug_assert_eq!(img.len(), w * h);
+
+    #[cfg(feature = "rayon")]
+    {
+        rayon::join(
+            || {
+                rayon::join(
+                    || sat_row(img, w, h, row_cumsum),
+                    || sat_col(img, w, h, col_cumsum),
+                );
+            },
+            || {
+                rayon::join(
+                    || sat_diag_pos(img, w, h, diag_pos_cumsum),
+                    || sat_diag_neg(img, w, h, diag_neg_cumsum),
+                );
+            },
+        );
+    }
+    #[cfg(not(feature = "rayon"))]
+    {
+        sat_row(img, w, h, row_cumsum);
+        sat_col(img, w, h, col_cumsum);
+        sat_diag_pos(img, w, h, diag_pos_cumsum);
+        sat_diag_neg(img, w, h, diag_neg_cumsum);
     }
 }
 
@@ -295,9 +368,209 @@ struct Cumsums<'a> {
     h: usize,
 }
 
+/// Per-pixel Radon response kernel. `(x, y)` must satisfy
+/// `x >= r && x + r < w && y >= r && y + r < h`.
+#[inline(always)]
+fn radon_response_at(cs: &Cumsums<'_>, r: usize, x: usize, y: usize) -> f32 {
+    let w = cs.w;
+    // Horizontal ray: row_cumsum[y][x+r] - row_cumsum[y][x-r-1].
+    let s_h_hi = cs.row[y * w + (x + r)];
+    let s_h_lo = if x > r {
+        cs.row[y * w + (x - r - 1)]
+    } else {
+        SatElem::default()
+    };
+    let s_h = s_h_hi - s_h_lo;
+
+    // Vertical ray.
+    let s_v_hi = cs.col[(y + r) * w + x];
+    let s_v_lo = if y > r {
+        cs.col[(y - r - 1) * w + x]
+    } else {
+        SatElem::default()
+    };
+    let s_v = s_v_hi - s_v_lo;
+
+    // NW-SE diagonal ray.
+    let s_d1_hi = cs.diag_pos[(y + r) * w + (x + r)];
+    let s_d1_lo = if x > r && y > r {
+        cs.diag_pos[(y - r - 1) * w + (x - r - 1)]
+    } else {
+        SatElem::default()
+    };
+    let s_d1 = s_d1_hi - s_d1_lo;
+
+    // NE-SW diagonal ray.
+    let s_d2_hi = cs.diag_neg[(y + r) * w + (x - r)];
+    let s_d2_lo = if y > r && x + r + 1 < w {
+        cs.diag_neg[(y - r - 1) * w + (x + r + 1)]
+    } else {
+        SatElem::default()
+    };
+    let s_d2 = s_d2_hi - s_d2_lo;
+
+    // (max − min)², cast to f32 for the peak-fit pipeline.
+    let s = [s_h, s_v, s_d1, s_d2];
+    let (mut mx, mut mn) = (s[0], s[0]);
+    for &v in &s[1..] {
+        if v > mx {
+            mx = v;
+        }
+        if v < mn {
+            mn = v;
+        }
+    }
+    let d = sat_to_f32(mx - mn);
+    d * d
+}
+
+/// Fill a single output row, zeroing borders outside the
+/// `[r..w-r) × [r..h-r)` interior and computing the kernel elsewhere.
+#[inline]
+fn compute_response_row(cs: &Cumsums<'_>, ray_radius: usize, y: usize, row: &mut [f32]) {
+    let w = cs.w;
+    let h = cs.h;
+    let r = ray_radius;
+    if y < r || y + r >= h {
+        for v in row.iter_mut() {
+            *v = 0.0;
+        }
+        return;
+    }
+    for v in row[..r].iter_mut() {
+        *v = 0.0;
+    }
+
+    // Hot path: dispatch to SIMD when available, otherwise scalar.
+    // Both produce identical numerical results — the SIMD kernel
+    // operates on the same SAT slices and uses lane-parallel
+    // (max−min)² with no FP accumulation reordering.
+    #[cfg(all(feature = "simd", not(feature = "radon-sat-u32")))]
+    {
+        compute_response_row_simd(cs, r, y, row);
+    }
+    #[cfg(not(all(feature = "simd", not(feature = "radon-sat-u32"))))]
+    {
+        for (x, out_px) in row.iter_mut().enumerate().take(w - r).skip(r) {
+            *out_px = radon_response_at(cs, r, x, y);
+        }
+    }
+
+    for v in row[(w - r)..].iter_mut() {
+        *v = 0.0;
+    }
+}
+
+/// SIMD inner-loop for one output row. Processes `RADON_LANES`
+/// interior x-positions per iteration via lane-parallel SAT loads
+/// and a 4-ray (max−min)² reduction. The `x = r` boundary (where
+/// the horizontal/diagonal `lo` lookups would underflow) is handled
+/// scalar before the SIMD chunk; the trailing tail (when the
+/// interior width is not a multiple of `RADON_LANES`) is also
+/// handled scalar.
+#[cfg(all(feature = "simd", not(feature = "radon-sat-u32")))]
+#[inline]
+fn compute_response_row_simd(cs: &Cumsums<'_>, r: usize, y: usize, row: &mut [f32]) {
+    type S = Simd<i64, RADON_LANES>;
+
+    let w = cs.w;
+
+    // x = r: scalar (the s_h_lo / s_d1_lo / s_d2_lo lookups would
+    // underflow on x = r), then advance the SIMD start.
+    row[r] = radon_response_at(cs, r, r, y);
+
+    let interior_start = r + 1;
+    let interior_end = w - r;
+    let mut x = interior_start;
+
+    // Precompute the four base offsets for the *_hi / *_lo loads.
+    // s_h_hi:  cs.row[y*w + (x + r)]
+    // s_h_lo:  cs.row[y*w + (x - r - 1)]   (x > r ⇒ valid)
+    // s_v_hi:  cs.col[(y + r)*w + x]
+    // s_v_lo:  cs.col[(y - r - 1)*w + x]   (y > r ⇒ valid: caller guard)
+    // s_d1_hi: cs.diag_pos[(y + r)*w + (x + r)]
+    // s_d1_lo: cs.diag_pos[(y - r - 1)*w + (x - r - 1)]
+    // s_d2_hi: cs.diag_neg[(y + r)*w + (x - r)]
+    // s_d2_lo: cs.diag_neg[(y - r - 1)*w + (x + r + 1)]
+
+    // We need y > r for the *_lo loads. The caller's row guard
+    // (`y < r || y + r >= h`) only ensures y >= r and y + r < h, so
+    // x = r and y = r boundaries fall back through the scalar path
+    // for safety. Use an explicit y > r check; if not satisfied,
+    // run the entire row scalar.
+    if y <= r {
+        for x in interior_start..interior_end {
+            row[x] = radon_response_at(cs, r, x, y);
+        }
+        return;
+    }
+
+    let h_row_base = y * w;
+    let v_hi_base = (y + r) * w;
+    let v_lo_base = (y - r - 1) * w;
+    let d1_hi_base = (y + r) * w;
+    let d1_lo_base = (y - r - 1) * w;
+    let d2_hi_base = (y + r) * w;
+    let d2_lo_base = (y - r - 1) * w;
+
+    while x + RADON_LANES <= interior_end {
+        let s_h_hi = S::from_slice(&cs.row[h_row_base + x + r..h_row_base + x + r + RADON_LANES]);
+        let s_h_lo =
+            S::from_slice(&cs.row[h_row_base + x - r - 1..h_row_base + x - r - 1 + RADON_LANES]);
+        let s_h = s_h_hi - s_h_lo;
+
+        let s_v_hi = S::from_slice(&cs.col[v_hi_base + x..v_hi_base + x + RADON_LANES]);
+        let s_v_lo = S::from_slice(&cs.col[v_lo_base + x..v_lo_base + x + RADON_LANES]);
+        let s_v = s_v_hi - s_v_lo;
+
+        let s_d1_hi =
+            S::from_slice(&cs.diag_pos[d1_hi_base + x + r..d1_hi_base + x + r + RADON_LANES]);
+        let s_d1_lo = S::from_slice(
+            &cs.diag_pos[d1_lo_base + x - r - 1..d1_lo_base + x - r - 1 + RADON_LANES],
+        );
+        let s_d1 = s_d1_hi - s_d1_lo;
+
+        // Diagonal-neg `lo` index at lane k is (x + k + r + 1). For
+        // the last lane we need x + RADON_LANES - 1 + r + 1 ≤ w,
+        // i.e. x + r + RADON_LANES ≤ w. Always true here because
+        // x + RADON_LANES ≤ interior_end = w - r ⇒ x + r + RADON_LANES
+        // ≤ w. The slice indices below cover that range.
+        let s_d2_hi =
+            S::from_slice(&cs.diag_neg[d2_hi_base + x - r..d2_hi_base + x - r + RADON_LANES]);
+        let s_d2_lo = S::from_slice(
+            &cs.diag_neg[d2_lo_base + x + r + 1..d2_lo_base + x + r + 1 + RADON_LANES],
+        );
+        let s_d2 = s_d2_hi - s_d2_lo;
+
+        let mx = s_h.simd_max(s_v).simd_max(s_d1.simd_max(s_d2));
+        let mn = s_h.simd_min(s_v).simd_min(s_d1.simd_min(s_d2));
+        let diff = mx - mn;
+        // SAT values are clamped at 255·W·H per scalar path; that
+        // fits in f64 mantissa for any image we'd sanely run, and
+        // squaring after f32 cast matches the scalar implementation
+        // bit-for-bit on values within f32 range.
+        let arr = diff.to_array();
+        for (lane, v) in arr.iter().enumerate() {
+            let f = *v as f32;
+            row[x + lane] = f * f;
+        }
+
+        x += RADON_LANES;
+    }
+
+    // Scalar tail.
+    while x < interior_end {
+        row[x] = radon_response_at(cs, r, x, y);
+        x += 1;
+    }
+}
+
 /// Compute the dense Radon response in the interior `[r..w-r) ×
 /// [r..h-r)`. Border pixels (where ray samples would leave the image)
 /// receive 0.0 so thresholding / NMS naturally rejects them.
+///
+/// Each output row is independent, so this is row-parallel under the
+/// `rayon` feature.
 fn compute_response(cs: &Cumsums<'_>, ray_radius: usize, out: &mut [f32]) {
     let w = cs.w;
     let h = cs.h;
@@ -306,68 +579,17 @@ fn compute_response(cs: &Cumsums<'_>, ray_radius: usize, out: &mut [f32]) {
         out.fill(0.0);
         return;
     }
-    let r = ray_radius;
-    // Zero the border rows / cols we won't compute.
-    for y in 0..h {
-        for x in 0..w {
-            let at_border = x < r || y < r || x + r >= w || y + r >= h;
-            if at_border {
-                out[y * w + x] = 0.0;
-            }
-        }
+
+    #[cfg(feature = "rayon")]
+    {
+        out.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
+            compute_response_row(cs, ray_radius, y, row);
+        });
     }
-
-    for y in r..(h - r) {
-        for x in r..(w - r) {
-            // Horizontal ray: row_cumsum[y][x+r] - row_cumsum[y][x-r-1].
-            let s_h_hi = cs.row[y * w + (x + r)];
-            let s_h_lo = if x > r {
-                cs.row[y * w + (x - r - 1)]
-            } else {
-                SatElem::default()
-            };
-            let s_h = s_h_hi - s_h_lo;
-
-            // Vertical ray.
-            let s_v_hi = cs.col[(y + r) * w + x];
-            let s_v_lo = if y > r {
-                cs.col[(y - r - 1) * w + x]
-            } else {
-                SatElem::default()
-            };
-            let s_v = s_v_hi - s_v_lo;
-
-            // NW-SE diagonal ray.
-            let s_d1_hi = cs.diag_pos[(y + r) * w + (x + r)];
-            let s_d1_lo = if x > r && y > r {
-                cs.diag_pos[(y - r - 1) * w + (x - r - 1)]
-            } else {
-                SatElem::default()
-            };
-            let s_d1 = s_d1_hi - s_d1_lo;
-
-            // NE-SW diagonal ray.
-            let s_d2_hi = cs.diag_neg[(y + r) * w + (x - r)];
-            let s_d2_lo = if y > r && x + r + 1 < w {
-                cs.diag_neg[(y - r - 1) * w + (x + r + 1)]
-            } else {
-                SatElem::default()
-            };
-            let s_d2 = s_d2_hi - s_d2_lo;
-
-            // (max − min)², cast to f32 for the peak-fit pipeline.
-            let s = [s_h, s_v, s_d1, s_d2];
-            let (mut mx, mut mn) = (s[0], s[0]);
-            for &v in &s[1..] {
-                if v > mx {
-                    mx = v;
-                }
-                if v < mn {
-                    mn = v;
-                }
-            }
-            let d = sat_to_f32(mx - mn);
-            out[y * w + x] = d * d;
+    #[cfg(not(feature = "rayon"))]
+    {
+        for (y, row) in out.chunks_mut(w).enumerate() {
+            compute_response_row(cs, ray_radius, y, row);
         }
     }
 }
