@@ -208,39 +208,63 @@ construction (the SAT-based response is already O(1) per pixel), so
 the multiscale columns in §7.7 do not apply.
 
 Wall times on the same three test images, release build, averaged
-over 10 runs (milliseconds):
+over 10 runs (milliseconds), 8-core M-class CPU:
 
-| Stage              | Features      | small 720×540 | mid 1024×576 | large 2048×1536 |
-|--------------------|---------------|--------------:|-------------:|----------------:|
-| Response only (1920×1080 up=2)  | none          |               |              | 130.6           |
-| Response only (1920×1080 up=2)  | rayon         |               |              |  27.9           |
-| Response only (1920×1080 up=2)  | simd          |               |              |  92             |
-| Response only (1920×1080 up=2)  | simd+rayon    |               |              |  28.0           |
-| Full pipeline      | none          |  37.2         | 47.2         | 393             |
-| Full pipeline      | rayon         |  38.0         | 22.4         | 281             |
+| Stage              | Features    | small 720×540 | mid 1024×576 | large 2048×1536 | 1920×1080 synth |
+|--------------------|-------------|--------------:|-------------:|----------------:|----------------:|
+| Response only      | none        |               |              |                 | 130.6           |
+| Response only      | rayon       |               |              |                 |  27.9           |
+| Response only      | simd+rayon  |               |              |                 |  28.0           |
+| Full pipeline      | none        |  28.6         |  31.3        | 298             | 162             |
+| Full pipeline      | rayon+simd  |  28.8         |  19.6        | 188             | 162             |
 
-Where the time goes:
-- `compute_response` is a 4-SAT-lookup-per-pixel hot loop. Rayon
-  parallelizes it row-wise; on an 8-core M-class CPU we measure
-  3–5× speedup on the response stage alone.
-- `box_blur_inplace` and the bilinear upsample are also row-parallel
-  under `rayon`.
-- The four SAT directions run on separate `rayon::join` tasks (they
-  are mutually independent).
-- Portable SIMD on the inner kernel adds ~50 % over scalar
+End-to-end cumulative speedup vs. the scalar pre-opt reference (the
+state Radon shipped in at #45):
+
+| Bench | Pre-opt | Post-opt (rayon+simd) | Speedup |
+|---|---:|---:|---:|
+| `radon_response` 1920×1080 up=2 | 130.6 ms | 28.0 ms | **4.7×** |
+| `radon_pipeline` 1920×1080 synth | 692 ms | 162 ms | **4.3×** |
+| `radon_pipeline` large.png | 393 ms | 188 ms | **2.1×** |
+| `radon_pipeline` mid.png | 47 ms | 19.6 ms | **2.4×** |
+
+What was changed, in order:
+
+1. **Row-parallel `compute_response`** under `rayon`, plus a
+   handwritten `Simd<i64, 8>` inner kernel under `simd`. This is
+   the biggest single win on the response stage (~4.7×).
+2. **Row-parallel `box_blur_inplace`** under `rayon`. The vertical
+   pass was rewritten row-major (was column-strided), which also
+   speeds up the **scalar** path 5–28% as a side effect.
+3. **`upsample_bilinear_2x` and `build_cumsums` parallelism** —
+   rayon row-wise on the upsampler, `rayon::join` across the four
+   independent cumsum directions.
+4. **`merge_corners_simple` spatial grid** — the original O(N²)
+   pairwise scan was the dominant cost on synthetic chessboards
+   and low-contrast frames where Radon emits thousands of
+   candidates. Replaced with a uniform spatial grid keyed on the
+   merge radius (cell size = `radius`); expected O(N) for typical
+   distributions. This is the single largest pipeline-level win
+   (1920×1080 synth dropped from 665 ms to 185 ms with all
+   features enabled).
+5. **Row-parallel NMS + peak-fit** in `detect_corners_from_radon`
+   under `rayon`, with thread-local accumulators concatenated in
+   row order to keep the output deterministic.
+
+Caveats and notes:
+
+- Portable SIMD on the inner kernel adds ~50% over scalar
   single-thread, but stacks weakly with rayon — the loop is
   memory-bound on M-class CPUs and rayon already saturates DRAM
-  bandwidth.
-
-The full-pipeline gain is smaller than the response-stage gain
-because `detect_corners_from_radon` (threshold + NMS + 3-point peak
-fit) and `merge_corners_simple` are still sequential. On synthetic
-chessboards or low-contrast real frames the detector emits thousands
-of candidates, and the O(N²) merge becomes the next dominant cost.
-Tightening `RadonDetectorParams::threshold_rel` or `min_cluster_size`
-is currently the cheapest way to lower wall time on Radon-heavy
-frames. A future revision can swap `merge_corners_simple` for a
-spatial-grid implementation.
+  bandwidth. SIMD is the bigger relative win on AVX-512 hosts where
+  the i64 lane width matches natively.
+- The four cumsum directions remain individually serial (each has a
+  prefix-sum data dependency along its direction). Only the
+  inter-direction parallelism via `rayon::join` is added.
+- Small images (`small.png` at 720×540) fall outside the regime
+  where rayon's thread-startup overhead amortizes. The
+  optimization mostly preserves their wall time rather than
+  improving it.
 
 The accuracy guard test
 (`crates/chess-corners/tests/perf_accuracy_guard.rs`) locks down
