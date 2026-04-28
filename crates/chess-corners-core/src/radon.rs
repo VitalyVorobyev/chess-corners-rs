@@ -86,6 +86,12 @@ pub fn box_blur_inplace(resp: &mut [f32], scratch: &mut [f32], w: usize, h: usiz
     if radius == 0 {
         return;
     }
+    // `par_chunks_mut(w)` / `chunks_mut(w)` panic when `w == 0`; the
+    // original loop-based implementation returned a silent no-op on
+    // zero-extent grids, so preserve that contract here too.
+    if w == 0 || h == 0 {
+        return;
+    }
 
     // Horizontal pass: resp[y, x] -> scratch[y, x].
     //

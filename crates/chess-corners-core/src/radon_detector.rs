@@ -219,6 +219,12 @@ impl RadonBuffers {
 fn upsample_bilinear_2x(src: &[u8], w: usize, h: usize, out: &mut [u8]) {
     debug_assert_eq!(src.len(), w * h);
     debug_assert_eq!(out.len(), 4 * w * h);
+    // Empty inputs would otherwise panic in `chunks_mut(0)` /
+    // `par_chunks_mut(0)` below. Match the previous (loop-based)
+    // behaviour of returning a no-op on zero-extent images.
+    if w == 0 || h == 0 {
+        return;
+    }
     let ww = 2 * w;
 
     let row_kernel = |iy: usize, dst: &mut [u8]| {
@@ -513,7 +519,7 @@ fn compute_response_row_simd(cs: &Cumsums<'_>, r: usize, y: usize, row: &mut [f3
     let d2_hi_base = (y + r) * w;
     let d2_lo_base = (y - r - 1) * w;
 
-    while x + RADON_LANES <= interior_end {
+    while x + RADON_LANES < interior_end {
         let s_h_hi = S::from_slice(&cs.row[h_row_base + x + r..h_row_base + x + r + RADON_LANES]);
         let s_h_lo =
             S::from_slice(&cs.row[h_row_base + x - r - 1..h_row_base + x - r - 1 + RADON_LANES]);
@@ -530,11 +536,20 @@ fn compute_response_row_simd(cs: &Cumsums<'_>, r: usize, y: usize, row: &mut [f3
         );
         let s_d1 = s_d1_hi - s_d1_lo;
 
-        // Diagonal-neg `lo` index at lane k is (x + k + r + 1). For
-        // the last lane we need x + RADON_LANES - 1 + r + 1 ≤ w,
-        // i.e. x + r + RADON_LANES ≤ w. Always true here because
-        // x + RADON_LANES ≤ interior_end = w - r ⇒ x + r + RADON_LANES
-        // ≤ w. The slice indices below cover that range.
+        // Diagonal-neg `lo` index at lane k is `(x + k) + r + 1`.
+        // Scalar uses `s_d2_lo = 0` whenever `(x + k) + r + 1 == w`,
+        // so for the SIMD output to match scalar bit-for-bit, every
+        // lane in the chunk must satisfy `(x + k) + r + 1 < w`. The
+        // strongest constraint is at the last lane:
+        //
+        //     (x + RADON_LANES − 1) + r + 1 < w
+        //  ⇔  x + RADON_LANES < w − r = interior_end
+        //
+        // The outer `while` loop bound (`<` rather than `<=`) enforces
+        // exactly that — see the loop header above. The remaining
+        // `interior_end − 1` interior position is handled by the
+        // scalar tail handler, where the conditional fallback to 0
+        // matches the original kernel.
         let s_d2_hi =
             S::from_slice(&cs.diag_neg[d2_hi_base + x - r..d2_hi_base + x - r + RADON_LANES]);
         let s_d2_lo = S::from_slice(
@@ -1187,5 +1202,93 @@ mod tests {
         let resp = radon_response_u8(&img, SIZE, SIZE, &params, &mut buffers);
         assert_eq!(resp.width(), SIZE);
         assert_eq!(resp.height(), SIZE);
+    }
+
+    #[test]
+    fn radon_response_u8_handles_zero_extent_image() {
+        // Empty input used to silently return an empty response;
+        // after the row-parallel rewrite it would have panicked in
+        // `chunks_mut(0)` / `par_chunks_mut(0)` inside the upsampler
+        // and box-blur. Codex flagged this on PR #49. Default
+        // `image_upsample = 2` exercises the upsample path; the
+        // assertion here is that we don't panic.
+        let img: Vec<u8> = Vec::new();
+        let params = RadonDetectorParams::default();
+        let mut buffers = RadonBuffers::new();
+        let resp = radon_response_u8(&img, 0, 0, &params, &mut buffers);
+        assert_eq!(resp.width(), 0);
+        assert_eq!(resp.height(), 0);
+        assert!(resp.data().is_empty());
+
+        // Same check on `image_upsample = 1` (skips the upsampler
+        // but still exercises `box_blur_inplace` / `compute_response`
+        // with `w == 0`).
+        let params_no_upsample = RadonDetectorParams {
+            image_upsample: 1,
+            ..RadonDetectorParams::default()
+        };
+        let resp = radon_response_u8(&img, 0, 0, &params_no_upsample, &mut buffers);
+        assert_eq!(resp.width(), 0);
+        assert_eq!(resp.height(), 0);
+    }
+
+    /// Direct equivalence test between the SIMD inner loop and the
+    /// scalar `radon_response_at` helper at every interior pixel,
+    /// including the right-edge boundary where Codex's P1 review
+    /// found the SIMD path was reading past the row when computing
+    /// `s_d2_lo`. Runs only when the `simd` feature is on with the
+    /// default `i64` SAT element type — matches the gating of the
+    /// SIMD kernel itself.
+    #[cfg(all(feature = "simd", not(feature = "radon-sat-u32")))]
+    #[test]
+    fn simd_kernel_matches_scalar_at_every_interior_pixel() {
+        // Sweep widths so the SIMD chunk boundary lands at every
+        // possible alignment relative to `interior_end`. With
+        // `RADON_LANES = 8` and `ray_radius = 4`, interior runs from
+        // `r + 1` to `w - r`, so widths in the 16..32 band cover
+        // multiple chunk-count regimes including the cases that
+        // exposed the original off-by-one.
+        for w in [16usize, 17, 18, 23, 24, 25, 32, 33] {
+            let h = 24usize;
+            let mut img = vec![0u8; w * h];
+            // Pseudo-deterministic content so the SIMD path actually
+            // diverges from scalar if any boundary lookup is wrong.
+            for (i, p) in img.iter_mut().enumerate() {
+                *p = ((i.wrapping_mul(37) ^ (i >> 3)) & 0xff) as u8;
+            }
+            let params = RadonDetectorParams {
+                image_upsample: 1,
+                response_blur_radius: 0, // bypass blur to get raw response
+                threshold_abs: Some(0.0),
+                ..RadonDetectorParams::default()
+            };
+            let mut buffers = RadonBuffers::new();
+            // Snapshot the response data, drop the view, then take an
+            // immutable borrow of the SAT tables for scalar reference.
+            let response_snapshot: Vec<f32> = {
+                let resp = radon_response_u8(&img, w, h, &params, &mut buffers);
+                resp.data().to_vec()
+            };
+
+            let r = params.ray_radius_clamped() as usize;
+            let cs = Cumsums {
+                row: &buffers.row_cumsum,
+                col: &buffers.col_cumsum,
+                diag_pos: &buffers.diag_pos_cumsum,
+                diag_neg: &buffers.diag_neg_cumsum,
+                w,
+                h,
+            };
+            for y in r..(h - r) {
+                for x in r..(w - r) {
+                    let expected = radon_response_at(&cs, r, x, y);
+                    let got = response_snapshot[y * w + x];
+                    assert!(
+                        (expected - got).abs() < 1e-3,
+                        "mismatch at w={w}, (x={x}, y={y}): scalar={expected}, simd={got}",
+                    );
+                }
+            }
+        }
     }
 }
