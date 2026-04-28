@@ -56,7 +56,7 @@ fn bench_radon_pipeline_synth(c: &mut Criterion) {
         group.throughput(Throughput::Elements((w * h) as u64));
         group.bench_function(format!("{}x{}", w, h), |b| {
             b.iter(|| {
-                let corners = find_chess_corners_u8(&img, w as u32, h as u32, &cfg);
+                let corners = find_chess_corners_u8(&img, w as u32, h as u32, &cfg).unwrap();
                 black_box(corners.len())
             });
         });
@@ -75,7 +75,7 @@ fn bench_radon_pipeline_real(c: &mut Criterion) {
         group.throughput(Throughput::Elements((w as u64) * (h as u64)));
         group.bench_function(name, |b| {
             b.iter(|| {
-                let corners = find_chess_corners_u8(&data, w, h, &cfg);
+                let corners = find_chess_corners_u8(&data, w, h, &cfg).unwrap();
                 black_box(corners.len())
             });
         });

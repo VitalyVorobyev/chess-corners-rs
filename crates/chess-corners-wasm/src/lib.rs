@@ -64,6 +64,7 @@ fn rgba_to_gray(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
 /// Holds configuration and reusable pyramid buffers so that repeated
 /// calls (e.g. from a webcam feed) avoid re-allocating intermediate
 /// storage.
+#[non_exhaustive]
 #[wasm_bindgen]
 pub struct ChessDetector {
     config: RsChessConfig,
@@ -287,15 +288,29 @@ impl ChessDetector {
     /// Returns a `Float32Array` with stride 9 per corner:
     /// `[x, y, response, contrast, fit_rms,
     ///   axis0_angle, axis0_sigma, axis1_angle, axis1_sigma, ...]`.
-    pub fn detect(&mut self, pixels: &[u8], width: u32, height: u32) -> js_sys::Float32Array {
-        let corners = chess_corners::find_chess_corners_u8(pixels, width, height, &self.config);
-        corners_to_f32_array(&corners)
+    ///
+    /// Throws a JS error string if the pixel buffer length does not match
+    /// `width * height` or if the upscale configuration is invalid.
+    pub fn detect(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<js_sys::Float32Array, JsValue> {
+        let corners = chess_corners::find_chess_corners_u8(pixels, width, height, &self.config)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        Ok(corners_to_f32_array(&corners))
     }
 
     /// Detect corners from RGBA pixels (e.g. from canvas `getImageData`).
     ///
     /// Converts to grayscale internally, then detects.
-    pub fn detect_rgba(&mut self, pixels: &[u8], width: u32, height: u32) -> js_sys::Float32Array {
+    pub fn detect_rgba(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<js_sys::Float32Array, JsValue> {
         let gray = rgba_to_gray(pixels, width, height);
         self.detect(&gray, width, height)
     }
@@ -356,8 +371,9 @@ impl ChessDetector {
         pixels: &[u8],
         width: u32,
         height: u32,
-    ) -> js_sys::Float32Array {
-        let resp = radon_heatmap_u8(pixels, width, height, &self.config);
+    ) -> Result<js_sys::Float32Array, JsValue> {
+        let resp = radon_heatmap_u8(pixels, width, height, &self.config)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
         let arr = js_sys::Float32Array::new_with_length(resp.data().len() as u32);
         arr.copy_from(resp.data());
         // Cache the scale alongside the response so the three
@@ -368,7 +384,7 @@ impl ChessDetector {
         let radon_up = self.config.radon_detector.image_upsample.clamp(1, 2);
         self.last_radon_scale = upscale * radon_up;
         self.last_radon_response = Some(resp);
-        arr
+        Ok(arr)
     }
 
     /// Compute the Radon heatmap from RGBA pixels (e.g. from canvas
@@ -378,7 +394,7 @@ impl ChessDetector {
         pixels: &[u8],
         width: u32,
         height: u32,
-    ) -> js_sys::Float32Array {
+    ) -> Result<js_sys::Float32Array, JsValue> {
         let gray = rgba_to_gray(pixels, width, height);
         self.radon_heatmap(&gray, width, height)
     }

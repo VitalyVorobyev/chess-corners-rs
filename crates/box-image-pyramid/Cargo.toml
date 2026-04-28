@@ -5,6 +5,7 @@ description = "Minimal u8 grayscale image pyramid using 2x box-filter downsampli
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 readme = "README.md"
 keywords = ["image-pyramid", "downsample", "box-filter", "computer-vision"]
 

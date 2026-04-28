@@ -151,13 +151,7 @@ fn refine_err<R: CornerRefiner>(
     seed: [f32; 2],
     truth: (f32, f32),
 ) -> Option<f32> {
-    let res = refiner.refine(
-        seed,
-        RefineContext {
-            image: Some(view),
-            response: None,
-        },
-    );
+    let res = refiner.refine(seed, RefineContext::new(Some(view), None));
     if res.status != RefineStatus::Accepted {
         return None;
     }

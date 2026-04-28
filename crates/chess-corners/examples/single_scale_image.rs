@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let cfg = ChessConfig::single_scale();
 
-    let corners = chess_corners::find_chess_corners_image(&img, &cfg);
+    let corners = chess_corners::find_chess_corners_image(&img, &cfg)?;
     println!("image: {}", img_path.display());
     println!("found {} corners", corners.len());
 

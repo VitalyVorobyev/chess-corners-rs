@@ -74,10 +74,10 @@ fn build_scene(side: usize, cell: usize) -> Scene {
 }
 
 fn ctx<'a>(scene: &'a Scene) -> RefineContext<'a> {
-    RefineContext {
-        image: ImageView::from_u8_slice(scene.side, scene.side, &scene.img),
-        response: Some(&scene.resp),
-    }
+    RefineContext::new(
+        ImageView::from_u8_slice(scene.side, scene.side, &scene.img),
+        Some(&scene.resp),
+    )
 }
 
 fn bench_refiners(c: &mut Criterion) {

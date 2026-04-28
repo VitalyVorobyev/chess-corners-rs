@@ -237,10 +237,7 @@ fn bench_refiner<R: CornerRefiner>(
     truth: (f32, f32),
     bucket: &mut Bucket,
 ) {
-    let ctx = RefineContext {
-        image: Some(view),
-        response,
-    };
+    let ctx = RefineContext::new(Some(view), response);
     let _ = refiner.refine(seed, ctx);
     let first = refiner.refine(seed, ctx);
     let err = if first.status == RefineStatus::Accepted {

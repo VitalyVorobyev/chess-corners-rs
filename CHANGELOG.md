@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: detection entry points now return `Result<_, ChessError>` instead
+  of panicking.** The functions `find_chess_corners_u8`,
+  `find_chess_corners_u8_with_refiner`, `find_chess_corners_u8_with_ml`,
+  `find_chess_corners_image`, `find_chess_corners_image_with_refiner`,
+  `find_chess_corners_image_with_ml`, `radon_heatmap_u8`, and
+  `radon_heatmap_image` all return `Result<_, chess_corners::ChessError>` (was
+  `Vec<CornerDescriptor>` / `ResponseMap`). Call sites that previously relied
+  on the implicit panic on dimension mismatch or invalid upscale config now
+  receive an `Err` variant and can handle the error explicitly.
+
+  Migration: append `.unwrap()` or `?` to existing call sites. Python bindings
+  map the error to `ValueError`; WASM bindings map it to a `JsValue` string
+  error.
+
+- **Breaking: `#[non_exhaustive]` applied to 17 public types.** The following
+  types can no longer be constructed with struct literal syntax outside the
+  crate: `Corner`, `AxisEstimate`, `CornerDescriptor`, `RefineResult`,
+  `RefineContext`, `Refiner`, `RadonPeakConfig`, `DetectorMode`,
+  `DescriptorMode`, `ThresholdMode`, `RefinementMethod`, `RefinerConfig`,
+  `UpscaleMode`, `UpscaleConfig`, `UpscaleError`, `ChessParams`. Enums
+  additionally require a `_ =>` wildcard arm in exhaustive matches. Each
+  affected struct now provides a `::new()` or `::build()` constructor.
+
+- `ImageView::origin` demoted from `pub` to `pub(crate)`; use the new
+  `origin()` accessor method.
+
+- `chess_corners::radon` and `chess_corners::upscale` modules are now private.
+  The public surface `radon_heatmap_u8`, `radon_heatmap_image`,
+  `upscale_bilinear_u8`, `rescale_descriptors_to_input`, `UpscaleBuffers`,
+  `UpscaleConfig`, `UpscaleError`, and `UpscaleMode` are re-exported directly
+  from `chess_corners`.
+
 ### Performance
 
 - **Radon detector pipeline rewritten for parallelism.** The

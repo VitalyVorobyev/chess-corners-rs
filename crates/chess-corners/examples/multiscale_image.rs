@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut cfg = ChessConfig::multiscale();
     cfg.pyramid_min_size = 64;
 
-    let corners = chess_corners::find_chess_corners_image(&img, &cfg);
+    let corners = chess_corners::find_chess_corners_image(&img, &cfg)?;
     println!("image: {}", img_path.display());
     println!(
         "multiscale: levels={}, min_size={}, refinement_radius={}, merge_radius={}",

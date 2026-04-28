@@ -90,13 +90,14 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
         {
             info!("ml refiner: enabled");
             find_chess_corners_image_with_ml(&img, &cfg.algorithm)
+                .map_err(|e| anyhow::anyhow!(e))?
         }
         #[cfg(not(feature = "ml-refiner"))]
         {
             anyhow::bail!("ml refiner requires the \"ml-refiner\" feature")
         }
     } else {
-        find_chess_corners_image(&img, &cfg.algorithm)
+        find_chess_corners_image(&img, &cfg.algorithm).map_err(|e| anyhow::anyhow!(e))?
     };
 
     let json_out = cfg.output_json.clone().unwrap_or_else(|| {

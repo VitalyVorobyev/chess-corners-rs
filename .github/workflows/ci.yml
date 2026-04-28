@@ -80,6 +80,27 @@ jobs:
           cargo test -p chess-corners --lib --no-default-features --features simd
           cargo test -p chess-corners --lib --no-default-features --features "simd,rayon"
 
+  msrv:
+    name: MSRV check (Rust 1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Build (no-default-features + rayon)
+        # Verifies the declared MSRV (rust-version = "1.88" in workspace Cargo.toml).
+        # The `simd` feature requires nightly, so it is excluded here.
+        run: cargo build --workspace --no-default-features --features rayon
+
   python-build-smoke:
     name: Build wheel smoke test (linux)
     runs-on: ubuntu-latest

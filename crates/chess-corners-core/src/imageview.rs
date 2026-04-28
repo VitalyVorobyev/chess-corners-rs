@@ -5,7 +5,10 @@ pub struct ImageView<'a> {
     pub width: usize,
     pub height: usize,
     /// Origin of the view in the coordinate system of the response map / base image.
-    pub origin: [i32; 2],
+    ///
+    /// Use [`Self::origin`] to read this value from outside the crate. Setting the
+    /// origin is done through [`Self::with_origin`], which preserves invariants.
+    pub(crate) origin: [i32; 2],
 }
 
 impl<'a> ImageView<'a> {
@@ -31,6 +34,14 @@ impl<'a> ImageView<'a> {
             view.origin = origin;
             view
         })
+    }
+
+    /// Return the view's origin in the coordinate system of the response
+    /// map / base image. Use [`Self::with_origin`] to construct a view
+    /// with a non-zero origin.
+    #[inline]
+    pub fn origin(&self) -> [i32; 2] {
+        self.origin
     }
 
     #[inline]

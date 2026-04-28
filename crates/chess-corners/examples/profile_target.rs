@@ -137,8 +137,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Warm up: pages, caches, and any one-time allocations.
     let warm = match args.mode {
-        Mode::Chess => find_chess_corners_u8_with_refiner(&data, w, h, &cfg, &kind),
-        Mode::Radon => find_chess_corners_u8(&data, w, h, &cfg),
+        Mode::Chess => find_chess_corners_u8_with_refiner(&data, w, h, &cfg, &kind).unwrap(),
+        Mode::Radon => find_chess_corners_u8(&data, w, h, &cfg).unwrap(),
     };
     println!(
         "warm: {} corners in {}x{} ({:?} mode, refiner={:?})",
@@ -153,8 +153,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut total = 0usize;
     for _ in 0..args.iters {
         let corners = match args.mode {
-            Mode::Chess => find_chess_corners_u8_with_refiner(&data, w, h, &cfg, &kind),
-            Mode::Radon => find_chess_corners_u8(&data, w, h, &cfg),
+            Mode::Chess => find_chess_corners_u8_with_refiner(&data, w, h, &cfg, &kind).unwrap(),
+            Mode::Radon => find_chess_corners_u8(&data, w, h, &cfg).unwrap(),
         };
         total = total.wrapping_add(corners.len());
     }

@@ -5,6 +5,7 @@ description = "ONNX-based ML refiner inference for chess-corners"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+rust-version.workspace = true
 documentation = "https://vitalyvorobyev.github.io/chess-corners-rs/api/chess_corners_ml"
 homepage = "https://vitalyvorobyev.github.io/chess-corners-rs"
 keywords = ["chessboard", "chess-corners", "corner-detection", "computer-vision", "image-processing"]

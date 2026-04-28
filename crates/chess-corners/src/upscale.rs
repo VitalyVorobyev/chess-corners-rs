@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 /// callers.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum UpscaleMode {
     /// Do not upscale (default).
     #[default]
@@ -33,6 +34,7 @@ pub enum UpscaleMode {
 /// JSON shape: `{ "mode": "disabled" }` or `{ "mode": "fixed", "factor": 2 }`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct UpscaleConfig {
     /// Selected upscale mode. Default: [`UpscaleMode::Disabled`].
     pub mode: UpscaleMode,
@@ -84,11 +86,19 @@ impl UpscaleConfig {
 
 /// Errors returned by upscaling setup or execution.
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UpscaleError {
     /// The requested factor is not in the supported set {2, 3, 4}.
     InvalidFactor(u32),
     /// Upscaled dimensions would overflow `usize`.
     DimensionOverflow { src: (usize, usize), factor: u32 },
+    /// The image buffer length does not match the declared `src_w * src_h`.
+    DimensionMismatch {
+        /// Actual buffer length.
+        actual: usize,
+        /// Expected length (`src_w * src_h`).
+        expected: usize,
+    },
 }
 
 impl core::fmt::Display for UpscaleError {
@@ -101,6 +111,10 @@ impl core::fmt::Display for UpscaleError {
                 f,
                 "upscaled dimensions overflow: {}x{} * {} exceeds usize",
                 src.0, src.1, factor
+            ),
+            Self::DimensionMismatch { actual, expected } => write!(
+                f,
+                "image buffer length mismatch: expected {expected} bytes (src_w*src_h), got {actual}"
             ),
         }
     }
@@ -174,10 +188,13 @@ pub fn upscale_bilinear_u8<'a>(
             factor,
         })?;
 
-    assert!(
-        src.len() == src_w * src_h,
-        "src dimensions / buffer mismatch"
-    );
+    let expected = src_w * src_h;
+    if src.len() != expected {
+        return Err(UpscaleError::DimensionMismatch {
+            actual: src.len(),
+            expected,
+        });
+    }
     buffers.ensure(dst_w, dst_h);
 
     if src_w == 0 || src_h == 0 {
@@ -366,23 +383,14 @@ mod tests {
         // that through `rescale_descriptors_to_input` must return
         // exactly the original source position, not x_out / k.
         fn desc(x: f32, y: f32) -> CornerDescriptor {
-            CornerDescriptor {
+            CornerDescriptor::new(
                 x,
                 y,
-                response: 1.0,
-                contrast: 0.0,
-                fit_rms: 0.0,
-                axes: [
-                    AxisEstimate {
-                        angle: 0.0,
-                        sigma: 0.0,
-                    },
-                    AxisEstimate {
-                        angle: 0.0,
-                        sigma: 0.0,
-                    },
-                ],
-            }
+                1.0,
+                0.0,
+                0.0,
+                [AxisEstimate::new(0.0, 0.0), AxisEstimate::new(0.0, 0.0)],
+            )
         }
 
         for &(k, x_src, y_src) in &[
@@ -412,23 +420,14 @@ mod tests {
     #[test]
     fn rescale_is_noop_for_factor_1() {
         use chess_corners_core::{AxisEstimate, CornerDescriptor};
-        let mut d = [CornerDescriptor {
-            x: 2.5,
-            y: 3.75,
-            response: 1.0,
-            contrast: 0.0,
-            fit_rms: 0.0,
-            axes: [
-                AxisEstimate {
-                    angle: 0.0,
-                    sigma: 0.0,
-                },
-                AxisEstimate {
-                    angle: 0.0,
-                    sigma: 0.0,
-                },
-            ],
-        }];
+        let mut d = [CornerDescriptor::new(
+            2.5,
+            3.75,
+            1.0,
+            0.0,
+            0.0,
+            [AxisEstimate::new(0.0, 0.0), AxisEstimate::new(0.0, 0.0)],
+        )];
         rescale_descriptors_to_input(&mut d, 1);
         assert_eq!(d[0].x, 2.5);
         assert_eq!(d[0].y, 3.75);

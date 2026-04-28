@@ -217,10 +217,7 @@ fn bench_refiner<R: CornerRefiner>(
     truth: (f32, f32),
     stats: &mut Stats,
 ) {
-    let ctx = RefineContext {
-        image: Some(view),
-        response,
-    };
+    let ctx = RefineContext::new(Some(view), response);
 
     // Warm-up (touch allocations / caches before timing).
     let _ = refiner.refine(seed, ctx);

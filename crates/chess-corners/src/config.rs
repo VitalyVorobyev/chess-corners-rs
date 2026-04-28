@@ -17,6 +17,7 @@ use crate::upscale::UpscaleConfig;
 /// smaller than the ChESS ring support.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum DetectorMode {
     #[default]
     Canonical,
@@ -26,6 +27,7 @@ pub enum DetectorMode {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum DescriptorMode {
     #[default]
     FollowDetector,
@@ -35,6 +37,7 @@ pub enum DescriptorMode {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ThresholdMode {
     #[default]
     Relative,
@@ -43,6 +46,7 @@ pub enum ThresholdMode {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum RefinementMethod {
     #[default]
     CenterOfMass,
@@ -53,6 +57,7 @@ pub enum RefinementMethod {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct RefinerConfig {
     pub kind: RefinementMethod,
     pub center_of_mass: CenterOfMassConfig,
@@ -62,6 +67,27 @@ pub struct RefinerConfig {
 }
 
 impl RefinerConfig {
+    /// Construct a [`RefinerConfig`] with all fields specified.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build(
+        kind: RefinementMethod,
+        center_of_mass: CenterOfMassConfig,
+        forstner: ForstnerConfig,
+        saddle_point: SaddlePointConfig,
+        radon_peak: RadonPeakConfig,
+    ) -> Self {
+        Self {
+            kind,
+            center_of_mass,
+            forstner,
+            saddle_point,
+            radon_peak,
+        }
+    }
+
+    /// Preset that selects the center-of-mass (intensity centroid) refiner.
+    /// Fast and stable; best when corners have clear ring support and moderate
+    /// blur. This is the library default.
     pub fn center_of_mass() -> Self {
         Self {
             kind: RefinementMethod::CenterOfMass,
@@ -69,6 +95,9 @@ impl RefinerConfig {
         }
     }
 
+    /// Preset that selects the Förstner corner refiner.
+    /// Uses a structure-tensor moment approach; more accurate than
+    /// center-of-mass on anisotropic corners.
     pub fn forstner() -> Self {
         Self {
             kind: RefinementMethod::Forstner,
@@ -76,6 +105,9 @@ impl RefinerConfig {
         }
     }
 
+    /// Preset that selects the saddle-point refiner.
+    /// Fits a local quadratic and locates the saddle; very accurate on
+    /// clean, symmetric chessboard corners.
     pub fn saddle_point() -> Self {
         Self {
             kind: RefinementMethod::SaddlePoint,
@@ -83,6 +115,9 @@ impl RefinerConfig {
         }
     }
 
+    /// Preset that selects the Radon-peak refiner.
+    /// Reconstructs the corner by projecting intensity along candidate
+    /// axes; robust to heavy blur and low contrast.
     pub fn radon_peak() -> Self {
         Self {
             kind: RefinementMethod::RadonPeak,
@@ -90,6 +125,9 @@ impl RefinerConfig {
         }
     }
 
+    /// Convert this config into the lower-level [`RefinerKind`] used by
+    /// `chess-corners-core`. Each variant carries its own tuning struct
+    /// taken from the corresponding field of this config.
     pub fn to_refiner_kind(&self) -> RefinerKind {
         match self.kind {
             RefinementMethod::CenterOfMass => RefinerKind::CenterOfMass(self.center_of_mass),
@@ -148,10 +186,16 @@ impl Default for ChessConfig {
 }
 
 impl ChessConfig {
+    /// Single-scale preset (one pyramid level). Recommended for images
+    /// where the cell size comfortably exceeds the ChESS ring support (~12 px
+    /// diameter) and no multiscale coverage is needed.
     pub fn single_scale() -> Self {
         Self::default()
     }
 
+    /// Three-level coarse-to-fine pyramid preset. Recommended for images
+    /// ≥ 1 MP or whenever cell sizes vary significantly across the frame.
+    /// The pyramid stops at `pyramid_min_size = 128` pixels on the short edge.
     pub fn multiscale() -> Self {
         Self {
             pyramid_levels: 3,
@@ -175,6 +219,10 @@ impl ChessConfig {
         }
     }
 
+    /// Translate this config into the low-level [`ChessParams`] consumed by
+    /// `chess-corners-core`. This is called internally by the detection
+    /// pipeline; callers that need direct access to `core` primitives can use
+    /// the returned value with [`chess_corners_core::detect`] functions.
     pub fn to_chess_params(&self) -> ChessParams {
         let mut params = ChessParams::default();
         params.use_radius10 = matches!(self.detector_mode, DetectorMode::Broad);
@@ -198,6 +246,9 @@ impl ChessConfig {
         params
     }
 
+    /// Translate this config into the [`CoarseToFineParams`] that drive the
+    /// multiscale pipeline. Pyramid levels, minimum pyramid size, refinement
+    /// radius, and merge radius are all copied from this struct.
     pub fn to_coarse_to_fine_params(&self) -> CoarseToFineParams {
         let mut cfg = CoarseToFineParams::default();
         let mut pyramid = PyramidParams::default();

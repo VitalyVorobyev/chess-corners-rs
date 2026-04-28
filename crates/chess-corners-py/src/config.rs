@@ -281,6 +281,7 @@ fn detector_mode_str(v: RsDetectorMode) -> &'static str {
         RsDetectorMode::Canonical => "canonical",
         RsDetectorMode::Broad => "broad",
         RsDetectorMode::Radon => "radon",
+        _ => "canonical",
     }
 }
 
@@ -289,6 +290,7 @@ fn descriptor_mode_str(v: RsDescriptorMode) -> &'static str {
         RsDescriptorMode::FollowDetector => "follow_detector",
         RsDescriptorMode::Canonical => "canonical",
         RsDescriptorMode::Broad => "broad",
+        _ => "follow_detector",
     }
 }
 
@@ -296,6 +298,7 @@ fn threshold_mode_str(v: RsThresholdMode) -> &'static str {
     match v {
         RsThresholdMode::Relative => "relative",
         RsThresholdMode::Absolute => "absolute",
+        _ => "absolute",
     }
 }
 
@@ -305,6 +308,7 @@ fn refinement_method_str(v: RsRefinementMethod) -> &'static str {
         RsRefinementMethod::Forstner => "forstner",
         RsRefinementMethod::SaddlePoint => "saddle_point",
         RsRefinementMethod::RadonPeak => "radon_peak",
+        _ => "center_of_mass",
     }
 }
 
@@ -1038,13 +1042,13 @@ impl RefinerConfig {
     }
 
     pub(crate) fn to_inner(&self, py: Python<'_>) -> RsRefinerConfig {
-        RsRefinerConfig {
-            kind: self.kind,
-            center_of_mass: self.center_of_mass.borrow(py).inner,
-            forstner: self.forstner.borrow(py).inner,
-            saddle_point: self.saddle_point.borrow(py).inner,
-            radon_peak: self.radon_peak.borrow(py).inner,
-        }
+        RsRefinerConfig::build(
+            self.kind,
+            self.center_of_mass.borrow(py).inner,
+            self.forstner.borrow(py).inner,
+            self.saddle_point.borrow(py).inner,
+            self.radon_peak.borrow(py).inner,
+        )
     }
 }
 

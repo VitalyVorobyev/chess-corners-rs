@@ -154,10 +154,7 @@ pub(crate) fn detect_corners_with_ml(
         );
     }
 
-    let ctx = RefineContext {
-        image: Some(image),
-        response: Some(resp),
-    };
+    let ctx = RefineContext::new(Some(image), Some(resp));
 
     #[cfg(feature = "tracing")]
     let ml_span = info_span!(
@@ -360,11 +357,7 @@ fn run_batch(
         let dy = pred[1];
 
         stats.applied += 1;
-        results[idx] = Some(Corner {
-            x: corner.x + dx,
-            y: corner.y + dy,
-            strength: corner.strength,
-        });
+        results[idx] = Some(Corner::new(corner.x + dx, corner.y + dy, corner.strength));
     }
     if preds.len() < indices.len() {
         warn!(
@@ -401,10 +394,7 @@ fn apply_fallbacks(
     fallback_refiner: &mut Option<Refiner>,
     candidates: Vec<Corner>,
 ) -> Vec<Corner> {
-    let ctx = RefineContext {
-        image,
-        response: Some(resp),
-    };
+    let ctx = RefineContext::new(image, Some(resp));
     let mut out = Vec::with_capacity(candidates.len());
     for corner in candidates {
         if let Some(refined) = apply_fallback(&corner, params, &ctx, fallback_refiner) {
@@ -421,21 +411,13 @@ fn apply_fallback(
     fallback_refiner: &mut Option<Refiner>,
 ) -> Option<Corner> {
     match params.fallback {
-        MlFallback::KeepCandidate => Some(Corner {
-            x: corner.x,
-            y: corner.y,
-            strength: corner.strength,
-        }),
+        MlFallback::KeepCandidate => Some(Corner::new(corner.x, corner.y, corner.strength)),
         MlFallback::Reject => None,
         MlFallback::UseClassicRefiner => {
             let refiner = fallback_refiner.as_mut()?;
             let res = refiner.refine([corner.x, corner.y], *ctx);
             if matches!(res.status, RefineStatus::Accepted) {
-                Some(Corner {
-                    x: res.x,
-                    y: res.y,
-                    strength: corner.strength,
-                })
+                Some(Corner::new(res.x, res.y, corner.strength))
             } else {
                 None
             }
@@ -484,8 +466,9 @@ pub(crate) fn extract_patch_u8_to_f32(
     }
 
     let half = (patch_size as f32 - 1.0) * 0.5;
-    let origin_x = view.origin[0] as f32;
-    let origin_y = view.origin[1] as f32;
+    let [ox, oy] = view.origin();
+    let origin_x = ox as f32;
+    let origin_y = oy as f32;
 
     let min_x = x - half + origin_x;
     let max_x = x + half + origin_x;

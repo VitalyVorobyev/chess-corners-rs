@@ -1,24 +1,79 @@
+//! ONNX-backed ML refiner for ChESS corner candidates.
+//!
+//! This crate provides [`MlModel`], a thin wrapper around a
+//! [tract-onnx](https://docs.rs/tract-onnx) runtime that predicts
+//! subpixel `(dx, dy)` offsets for each corner candidate from a
+//! normalized intensity patch.
+//!
+//! # Intended use
+//!
+//! This crate is not meant to be used directly. It is consumed by the
+//! `chess-corners` facade crate when the `ml-refiner` feature is
+//! enabled. Enable it there to get the
+//! `find_chess_corners_image_with_ml` / `find_chess_corners_u8_with_ml`
+//! entry points.
+//!
+//! # Embedded model
+//!
+//! When the optional `embed-model` feature is enabled, the ONNX model
+//! and its external data file are compiled into the binary via
+//! `include_bytes!` and extracted to a temporary directory on first
+//! use. The extraction is thread-safe and idempotent (write-then-rename
+//! with byte-match skip).
+//!
+//! # Performance note
+//!
+//! ML refinement is significantly slower than the geometric refiners
+//! (~24 ms vs <1 ms for 77 corners on a 640×480 image). Use it only
+//! when maximum subpixel accuracy is required and throughput allows.
+
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use tract_onnx::prelude::tract_ndarray::{Array4, Ix2};
 use tract_onnx::prelude::*;
 
+/// Specifies where [`MlModel::load`] should read the ONNX model from.
 #[derive(Clone, Debug)]
 pub enum ModelSource {
+    /// Load from an explicit filesystem path to the `.onnx` file.
+    /// A `fixtures/meta.json` sidecar next to the model's parent directory
+    /// is read to determine the patch size; falls back to the compiled-in
+    /// default (21 px) when absent.
     Path(PathBuf),
+    /// Use the model compiled into the binary via the `embed-model`
+    /// Cargo feature. Returns an error when that feature is not enabled.
     EmbeddedDefault,
 }
 
+/// Loaded and optimised ONNX model for corner refinement.
+///
+/// The model accepts a batch of `f32` intensity patches with shape
+/// `[N, 1, patch_size, patch_size]` (values in `[0, 1]`) and returns
+/// `[N, 3]` with columns `[dx, dy, conf_logit]`. Only `dx` and `dy`
+/// are currently used; `conf_logit` is ignored.
 pub struct MlModel {
     model: TypedRunnableModel<TypedModel>,
     patch_size: usize,
+    // `SymbolScope` owns the `Symbol` object for the dynamic batch
+    // dimension "N". Dropping it before `model` would leave the compiled
+    // graph with a dangling reference to the scope's internal table, so
+    // this field must be kept alive for the lifetime of `MlModel` even
+    // though it is never explicitly read after construction.
     #[allow(dead_code)]
-    // Keep SymbolScope alive for dynamic batch resolution.
     symbols: SymbolScope,
 }
 
 impl MlModel {
+    /// Load and optimise an ONNX model from the given source.
+    ///
+    /// For [`ModelSource::EmbeddedDefault`] the `embed-model` Cargo
+    /// feature must be enabled; an error is returned otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model file cannot be read, the ONNX
+    /// graph is malformed, or tract optimisation / compilation fails.
     pub fn load(source: ModelSource) -> Result<Self> {
         let (model_path, patch_size) = match source {
             ModelSource::Path(path) => {
@@ -70,10 +125,22 @@ impl MlModel {
         })
     }
 
+    /// Side length (in pixels) of the square intensity patch the model expects.
     pub fn patch_size(&self) -> usize {
         self.patch_size
     }
 
+    /// Run inference on a flat batch of intensity patches.
+    ///
+    /// `patches` must contain exactly `batch * patch_size * patch_size`
+    /// `f32` values in `[N, 1, H, W]` order (values in `[0, 1]`).
+    /// Returns one `[dx, dy, conf_logit]` triple per input patch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slice length does not match
+    /// `batch * patch_size²`, if the ONNX output shape is unexpected,
+    /// or if tract inference fails.
     pub fn infer_batch(&self, patches: &[f32], batch: usize) -> Result<Vec<[f32; 3]>> {
         if batch == 0 {
             return Ok(Vec::new());

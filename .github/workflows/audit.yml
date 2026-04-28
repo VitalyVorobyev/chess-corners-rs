@@ -25,4 +25,7 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Run cargo audit
+        # RUSTSEC-2024-0436: `paste` crate is unmaintained (informational, not a CVE).
+        # Reaches us transitively through tract-onnx; we cannot remove it until
+        # tract-onnx upgrades. Re-evaluate when tract-onnx > 0.22 is released.
         run: cargo audit --ignore RUSTSEC-2024-0436

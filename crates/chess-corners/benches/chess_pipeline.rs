@@ -63,7 +63,7 @@ fn bench_chess_pipeline_synth(c: &mut Criterion) {
                 &cfg,
                 |b, cfg| {
                     b.iter(|| {
-                        let corners = find_chess_corners_u8(&img, w as u32, h as u32, cfg);
+                        let corners = find_chess_corners_u8(&img, w as u32, h as u32, cfg).unwrap();
                         black_box(corners.len())
                     });
                 },
@@ -89,7 +89,7 @@ fn bench_chess_pipeline_real(c: &mut Criterion) {
             let cfg = mk();
             group.bench_with_input(BenchmarkId::new(label, name), &cfg, |b, cfg| {
                 b.iter(|| {
-                    let corners = find_chess_corners_u8(&data, w, h, cfg);
+                    let corners = find_chess_corners_u8(&data, w, h, cfg).unwrap();
                     black_box(corners.len())
                 });
             });

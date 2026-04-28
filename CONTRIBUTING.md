@@ -36,6 +36,19 @@ Useful commands:
   cargo test -p chess-corners --lib --features rayon
   ```
 
+## MSRV (Minimum Supported Rust Version)
+
+The workspace declares `rust-version = "1.88"` (stable) in `Cargo.toml`. The
+`simd` feature requires nightly (see `rust-toolchain.toml`). The MSRV is
+verified in CI via the `msrv` job, which runs:
+
+```bash
+cargo build --workspace --no-default-features --features rayon
+```
+
+on Rust 1.88. Please do not introduce dependencies or language features that
+raise the MSRV beyond 1.88 without a discussion first.
+
 SIMD (`simd` feature) is tested on nightly in CI; if you have a nightly toolchain installed you can run:
 
 ```bash

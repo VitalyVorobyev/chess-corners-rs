@@ -21,6 +21,7 @@ pub enum RefineStatus {
 
 /// Result of refining a single corner candidate.
 #[derive(Copy, Clone, Debug)]
+#[non_exhaustive]
 pub struct RefineResult {
     /// Refined subpixel x coordinate.
     pub x: f32,
@@ -44,9 +45,18 @@ impl RefineResult {
 
 /// Inputs shared by refinement methods.
 #[derive(Copy, Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct RefineContext<'a> {
     pub image: Option<ImageView<'a>>,
     pub response: Option<&'a ResponseMap>,
+}
+
+impl<'a> RefineContext<'a> {
+    /// Construct a [`RefineContext`] with the given image and response.
+    #[inline]
+    pub fn new(image: Option<ImageView<'a>>, response: Option<&'a ResponseMap>) -> Self {
+        Self { image, response }
+    }
 }
 
 /// Trait implemented by pluggable refinement backends.
@@ -74,6 +84,7 @@ impl Default for RefinerKind {
 
 /// Runtime refiner with reusable scratch buffers.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Refiner {
     CenterOfMass(CenterOfMassRefiner),
     Forstner(ForstnerRefiner),

@@ -32,11 +32,11 @@ fn synth_corners(n: usize, w: usize, h: usize) -> Vec<Corner> {
             if v.len() >= n {
                 break;
             }
-            v.push(Corner {
-                x: (margin + i * x_stride) as f32 + 0.25,
-                y: (margin + j * y_stride) as f32 + 0.25,
-                strength: 1.0,
-            });
+            v.push(Corner::new(
+                (margin + i * x_stride) as f32 + 0.25,
+                (margin + j * y_stride) as f32 + 0.25,
+                1.0,
+            ));
         }
     }
     v

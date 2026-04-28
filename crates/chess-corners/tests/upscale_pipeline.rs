@@ -1,6 +1,6 @@
 //! Integration tests for the optional pre-pipeline upscaling stage.
 
-use chess_corners::{find_chess_corners_u8, ChessConfig, UpscaleConfig};
+use chess_corners::{find_chess_corners_u8, ChessConfig, ChessError, UpscaleConfig};
 
 /// Render a synthetic quadrant-corner tile of the given size.
 ///
@@ -37,9 +37,9 @@ fn upscale_disabled_is_passthrough() {
     let size = 32u32;
     let img = quadrant_corner(size, 20, 220);
     let mut cfg = low_res_cfg();
-    let baseline = find_chess_corners_u8(&img, size, size, &cfg);
+    let baseline = find_chess_corners_u8(&img, size, size, &cfg).unwrap();
     cfg.upscale = UpscaleConfig::disabled();
-    let passthrough = find_chess_corners_u8(&img, size, size, &cfg);
+    let passthrough = find_chess_corners_u8(&img, size, size, &cfg).unwrap();
     assert_eq!(baseline.len(), passthrough.len());
     for (a, b) in baseline.iter().zip(passthrough.iter()) {
         assert!((a.x - b.x).abs() < 1e-5 && (a.y - b.y).abs() < 1e-5);
@@ -59,7 +59,7 @@ fn upscale_recovers_corner_in_low_res_tile() {
     let mut cfg = low_res_cfg();
     cfg.upscale = UpscaleConfig::fixed(2);
 
-    let corners = find_chess_corners_u8(&img, size, size, &cfg);
+    let corners = find_chess_corners_u8(&img, size, size, &cfg).unwrap();
     assert!(
         !corners.is_empty(),
         "expected upscale pipeline to find the low-res corner"
@@ -92,8 +92,8 @@ fn upscale_returns_input_frame_coordinates() {
     let mut cfg_on = cfg_off.clone();
     cfg_on.upscale = UpscaleConfig::fixed(2);
 
-    let corners_off = find_chess_corners_u8(&img, size, size, &cfg_off);
-    let corners_on = find_chess_corners_u8(&img, size, size, &cfg_on);
+    let corners_off = find_chess_corners_u8(&img, size, size, &cfg_off).unwrap();
+    let corners_on = find_chess_corners_u8(&img, size, size, &cfg_on).unwrap();
     assert!(!corners_off.is_empty());
     assert!(!corners_on.is_empty());
 
@@ -121,25 +121,33 @@ fn upscale_returns_input_frame_coordinates() {
 }
 
 #[test]
-#[should_panic(expected = "invalid upscale configuration")]
-fn upscale_fixed_factor_one_panics() {
+fn upscale_fixed_factor_one_returns_err() {
     // `UpscaleMode::Fixed` with factor 1 is an invariant violation:
     // `UpscaleConfig::validate()` rejects it, and the detection
-    // entrypoint must fail loudly instead of silently treating it as
+    // entrypoint must return Err instead of silently treating it as
     // disabled.
     let size = 32u32;
     let img = quadrant_corner(size, 20, 220);
     let mut cfg = low_res_cfg();
     cfg.upscale = UpscaleConfig::fixed(1);
-    let _ = find_chess_corners_u8(&img, size, size, &cfg);
+    let result = find_chess_corners_u8(&img, size, size, &cfg);
+    assert!(
+        matches!(result, Err(ChessError::Upscale(_))),
+        "expected Err(ChessError::Upscale) for factor=1, got {:?}",
+        result
+    );
 }
 
 #[test]
-#[should_panic(expected = "invalid upscale configuration")]
-fn upscale_fixed_factor_zero_panics() {
+fn upscale_fixed_factor_zero_returns_err() {
     let size = 32u32;
     let img = quadrant_corner(size, 20, 220);
     let mut cfg = low_res_cfg();
     cfg.upscale = UpscaleConfig::fixed(0);
-    let _ = find_chess_corners_u8(&img, size, size, &cfg);
+    let result = find_chess_corners_u8(&img, size, size, &cfg);
+    assert!(
+        matches!(result, Err(ChessError::Upscale(_))),
+        "expected Err(ChessError::Upscale) for factor=0, got {:?}",
+        result
+    );
 }

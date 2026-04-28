@@ -41,7 +41,7 @@
 //! cfg.threshold_value = 0.15;
 //! cfg.refiner.kind = RefinementMethod::Forstner;
 //!
-//! let corners = find_chess_corners_image(&img, &cfg);
+//! let corners = find_chess_corners_image(&img, &cfg)?;
 //! println!("found {} corners", corners.len());
 //!
 //! for c in &corners {
@@ -61,14 +61,14 @@
 //! ```no_run
 //! use chess_corners::{ChessConfig, find_chess_corners_u8};
 //!
-//! # fn detect(img: &[u8], width: u32, height: u32) {
+//! # fn detect(img: &[u8], width: u32, height: u32) -> Result<(), chess_corners::ChessError> {
 //! // Single-scale convenience configuration.
 //! let cfg = ChessConfig::single_scale();
 //!
-//! let corners = find_chess_corners_u8(img, width, height, &cfg);
+//! let corners = find_chess_corners_u8(img, width, height, &cfg)?;
 //! println!("found {} corners", corners.len());
 //! # let _ = corners;
-//! # }
+//! # Ok(()) }
 //! ```
 //!
 //! ## ML refiner (feature `ml-refiner`)
@@ -82,7 +82,7 @@
 //! let img = GrayImage::new(1, 1);
 //! let cfg = ChessConfig::single_scale();
 //!
-//! let corners = find_chess_corners_image_with_ml(&img, &cfg);
+//! let corners = find_chess_corners_image_with_ml(&img, &cfg).unwrap();
 //! # let _ = corners;
 //! # }
 //! ```
@@ -152,11 +152,12 @@
 //! Accurate Chessboard Corner Detector*, CVIU 2014
 
 mod config;
+mod error;
 #[cfg(feature = "ml-refiner")]
 mod ml_refiner;
 mod multiscale;
-pub mod radon;
-pub mod upscale;
+mod radon;
+mod upscale;
 
 // Re-export a focused subset of core types for convenience. Consumers that
 // need lower-level primitives (rings, raw response functions, etc.) are
@@ -164,7 +165,11 @@ pub mod upscale;
 pub use crate::config::{
     ChessConfig, DescriptorMode, DetectorMode, RefinementMethod, RefinerConfig, ThresholdMode,
 };
-pub use crate::upscale::{UpscaleBuffers, UpscaleConfig, UpscaleError, UpscaleMode};
+pub use crate::error::ChessError;
+pub use crate::upscale::{
+    rescale_descriptors_to_input, upscale_bilinear_u8, UpscaleBuffers, UpscaleConfig, UpscaleError,
+    UpscaleMode,
+};
 pub use chess_corners_core::{
     AxisEstimate, CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner, ForstnerConfig,
     ImageView, PeakFitMode, RadonBuffers, RadonDetectorParams, RadonPeakConfig, RefineResult,
@@ -200,45 +205,52 @@ pub use crate::radon::radon_heatmap_u8;
 /// output corner coordinates are rescaled back to the original input
 /// pixel frame.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `img.len() != width * height` or if the upscale
-/// configuration fails validation.
-#[must_use]
+/// Returns [`ChessError::DimensionMismatch`] if `img.len() != width * height`.
+/// Returns [`ChessError::Upscale`] if the upscale configuration is invalid.
 pub fn find_chess_corners_u8(
     img: &[u8],
     width: u32,
     height: u32,
     cfg: &ChessConfig,
-) -> Vec<CornerDescriptor> {
+) -> Result<Vec<CornerDescriptor>, ChessError> {
     run_with_upscale(img, width, height, cfg, |view, cfg| {
         multiscale::find_chess_corners(view, cfg)
     })
 }
 
 /// Detect corners from a raw grayscale buffer with an explicit refiner choice.
-#[must_use]
+///
+/// # Errors
+///
+/// Returns [`ChessError::DimensionMismatch`] if `img.len() != width * height`.
+/// Returns [`ChessError::Upscale`] if the upscale configuration is invalid.
 pub fn find_chess_corners_u8_with_refiner(
     img: &[u8],
     width: u32,
     height: u32,
     cfg: &ChessConfig,
     refiner: &RefinerKind,
-) -> Vec<CornerDescriptor> {
+) -> Result<Vec<CornerDescriptor>, ChessError> {
     run_with_upscale(img, width, height, cfg, |view, cfg| {
         multiscale::find_chess_corners_with_refiner(view, cfg, refiner)
     })
 }
 
 /// Detect corners from a raw grayscale buffer using the ML refiner pipeline.
-#[must_use]
+///
+/// # Errors
+///
+/// Returns [`ChessError::DimensionMismatch`] if `img.len() != width * height`.
+/// Returns [`ChessError::Upscale`] if the upscale configuration is invalid.
 #[cfg(feature = "ml-refiner")]
 pub fn find_chess_corners_u8_with_ml(
     img: &[u8],
     width: u32,
     height: u32,
     cfg: &ChessConfig,
-) -> Vec<CornerDescriptor> {
+) -> Result<Vec<CornerDescriptor>, ChessError> {
     run_with_upscale(img, width, height, cfg, |view, cfg| {
         multiscale::find_chess_corners_with_ml(view, cfg)
     })
@@ -247,35 +259,38 @@ pub fn find_chess_corners_u8_with_ml(
 /// Thread the optional upscaling stage around the detection closure.
 /// Allocates a single-use `UpscaleBuffers`; callers with their own
 /// buffer reuse pattern should drive the pipeline directly via the
-/// `multiscale` module plus `upscale::upscale_bilinear_u8`.
+/// `multiscale` module plus `upscale_bilinear_u8`.
 fn run_with_upscale(
     img: &[u8],
     width: u32,
     height: u32,
     cfg: &ChessConfig,
     detect: impl FnOnce(ImageView<'_>, &ChessConfig) -> Vec<CornerDescriptor>,
-) -> Vec<CornerDescriptor> {
+) -> Result<Vec<CornerDescriptor>, ChessError> {
     let src_w = width as usize;
     let src_h = height as usize;
-    let view = ImageView::from_u8_slice(src_w, src_h, img)
-        .expect("image dimensions must match buffer length");
+    let expected = src_w * src_h;
+    if img.len() != expected {
+        return Err(ChessError::DimensionMismatch {
+            expected,
+            actual: img.len(),
+        });
+    }
+    // SAFETY: length check above guarantees dimensions match.
+    let view = ImageView::from_u8_slice(src_w, src_h, img).expect("dimensions were checked above");
 
     // Enforce the upscale invariants up-front so a misconfigured
-    // `UpscaleMode::Fixed` with factor 0 or 1 fails loudly instead of
-    // silently behaving like `Disabled`.
-    cfg.upscale
-        .validate()
-        .expect("invalid upscale configuration");
+    // `UpscaleMode::Fixed` with factor 0 or 1 fails clearly.
+    cfg.upscale.validate()?;
 
     let factor = cfg.upscale.effective_factor();
     if factor <= 1 {
-        return detect(view, cfg);
+        return Ok(detect(view, cfg));
     }
 
     let mut buffers = UpscaleBuffers::new();
-    let upscaled = upscale::upscale_bilinear_u8(img, src_w, src_h, factor, &mut buffers)
-        .expect("invalid upscale configuration");
+    let upscaled = upscale::upscale_bilinear_u8(img, src_w, src_h, factor, &mut buffers)?;
     let mut corners = detect(upscaled, cfg);
     upscale::rescale_descriptors_to_input(&mut corners, factor);
-    corners
+    Ok(corners)
 }

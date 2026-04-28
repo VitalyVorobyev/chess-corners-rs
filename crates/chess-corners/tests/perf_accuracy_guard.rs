@@ -146,7 +146,7 @@ fn match_detections(detected: &[CornerDescriptor], gt: &[(f32, f32)]) -> MatchSt
 }
 
 fn check(label: &str, cfg: &ChessConfig, img: &[u8], side: usize, gt: &[(f32, f32)], b: &Bounds) {
-    let detected = find_chess_corners_u8(img, side as u32, side as u32, cfg);
+    let detected = find_chess_corners_u8(img, side as u32, side as u32, cfg).unwrap();
     let stats = match_detections(&detected, gt);
     eprintln!(
         "[{label}] det={}, gt={}, tp={}, fp={}, fn={}, recall={:.3}, precision={:.3}, p95_err={:.3}px",
