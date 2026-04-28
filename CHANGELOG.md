@@ -41,6 +41,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `UpscaleConfig`, `UpscaleError`, and `UpscaleMode` are re-exported directly
   from `chess_corners`.
 
+- `chess-corners-wasm` now imports `chess_response_u8` and `ResponseMap`
+  through the `chess-corners` facade and no longer carries a direct
+  dependency on `chess-corners-core`.
+
+### Added
+
+- `chess-corners` re-exports a small, focused set of low-level primitives
+  from `chess-corners-core` so callers composing custom
+  response → detect → describe pipelines no longer need
+  `chess-corners-core` as a separate dependency: `Corner`, `Roi`,
+  `chess_response_u8`, `chess_response_u8_patch`,
+  `detect_corners_from_response`, `detect_corners_from_response_with_refiner`,
+  and `corners_to_descriptors`. Deeper internals (ring offsets, SAT views,
+  scalar reference paths) remain reachable only via a direct
+  `chess-corners-core` dependency.
+
 ### Performance
 
 - **Radon detector pipeline rewritten for parallelism.** The

@@ -403,7 +403,6 @@ name = "chess-corners-wasm"
 version = "0.7.0"
 dependencies = [
  "chess-corners",
- "chess-corners-core",
  "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-test",

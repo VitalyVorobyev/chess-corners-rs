@@ -32,12 +32,10 @@
 pub mod config;
 
 use chess_corners::{
-    radon_heatmap_u8, ChessConfig as RsChessConfig, DetectorMode as RsDetectorMode, PyramidBuffers,
-    RefinementMethod as RsRefinementMethod, ThresholdMode as RsThresholdMode,
-    UpscaleConfig as RsUpscaleConfig,
+    chess_response_u8, radon_heatmap_u8, ChessConfig as RsChessConfig,
+    DetectorMode as RsDetectorMode, PyramidBuffers, RefinementMethod as RsRefinementMethod,
+    ResponseMap, ThresholdMode as RsThresholdMode, UpscaleConfig as RsUpscaleConfig,
 };
-use chess_corners_core::response::chess_response_u8;
-use chess_corners_core::ResponseMap;
 use wasm_bindgen::prelude::*;
 
 pub use crate::config::{

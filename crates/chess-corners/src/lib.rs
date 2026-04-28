@@ -119,10 +119,13 @@
 //! that high-level config into lower-level [`ChessParams`] and
 //! [`CoarseToFineParams`] internally.
 //!
-//! If you need raw response maps or more control, depend directly on
-//! `chess-corners-core` and use its [`chess_corners_core::response`]
-//! and [`chess_corners_core::detect`] modules alongside the
-//! re-exported [`ResponseMap`] and [`CornerDescriptor`] types.
+//! If you need raw response maps or more control, the most useful
+//! low-level primitives are re-exported here:
+//! [`chess_response_u8`], [`chess_response_u8_patch`], [`Roi`],
+//! [`detect_corners_from_response_with_refiner`], [`Corner`], and
+//! [`corners_to_descriptors`]. For deeper internals (ring offsets,
+//! SAT views, scalar reference paths) depend on `chess-corners-core`
+//! directly.
 //!
 //! # Features
 //!
@@ -159,9 +162,12 @@ mod multiscale;
 mod radon;
 mod upscale;
 
-// Re-export a focused subset of core types for convenience. Consumers that
-// need lower-level primitives (rings, raw response functions, etc.) are
-// encouraged to depend on `chess-corners-core` directly.
+// Re-export a focused subset of core types for convenience. The facade also
+// surfaces the most useful low-level primitives (response, detect,
+// describe) below so callers composing custom pipelines don't need a
+// separate `chess-corners-core` dependency. Deeper internals (ring offsets,
+// SAT views, scalar reference paths) remain reachable only via a direct
+// `chess-corners-core` dep.
 pub use crate::config::{
     ChessConfig, DescriptorMode, DetectorMode, RefinementMethod, RefinerConfig, ThresholdMode,
 };
@@ -175,6 +181,14 @@ pub use chess_corners_core::{
     ImageView, PeakFitMode, RadonBuffers, RadonDetectorParams, RadonPeakConfig, RefineResult,
     RefineStatus, Refiner, RefinerKind, ResponseMap, SaddlePointConfig,
 };
+
+// Low-level building blocks for callers composing custom pipelines:
+// response → detect → describe. Surfaced from core's submodules.
+pub use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
+pub use chess_corners_core::detect::{
+    detect_corners_from_response, detect_corners_from_response_with_refiner,
+};
+pub use chess_corners_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
 
 // High-level helpers on `image::GrayImage`.
 #[cfg(feature = "image")]
