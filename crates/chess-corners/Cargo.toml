@@ -46,12 +46,28 @@ clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion.workspace = true
+image.workspace = true
 serde_json.workspace = true
 
 [[bench]]
 name = "upscale"
 harness = false
 required-features = []
+
+[[bench]]
+name = "radon_pipeline"
+harness = false
+required-features = []
+
+[[bench]]
+name = "chess_pipeline"
+harness = false
+required-features = []
+
+[[example]]
+name = "profile_target"
+path = "examples/profile_target.rs"
+required-features = ["image"]
 
 [[example]]
 name = "single_scale_image"
