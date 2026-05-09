@@ -177,14 +177,17 @@ pub use crate::upscale::{
     UpscaleMode,
 };
 pub use chess_corners_core::{
-    AxisEstimate, CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner, ForstnerConfig,
-    ImageView, PeakFitMode, RadonBuffers, RadonDetectorParams, RadonPeakConfig, RefineResult,
-    RefineStatus, Refiner, RefinerKind, ResponseMap, SaddlePointConfig,
+    AxisEstimate, AxisFitResult, CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner,
+    ForstnerConfig, ImageView, OrientationMethod, OrientationSolver, PeakFitMode, RadonBuffers,
+    RadonDetectorParams, RadonPeakConfig, RefineResult, RefineStatus, Refiner, RefinerKind,
+    ResponseMap, SaddlePointConfig,
 };
 
 // Low-level building blocks for callers composing custom pipelines:
 // response → detect → describe. Surfaced from core's submodules.
-pub use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
+pub use chess_corners_core::descriptor::{
+    corners_to_descriptors, corners_to_descriptors_with_method, Corner,
+};
 pub use chess_corners_core::detect::{
     detect_corners_from_response, detect_corners_from_response_with_refiner,
 };

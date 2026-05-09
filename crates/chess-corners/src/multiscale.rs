@@ -23,7 +23,7 @@
 use crate::ml_refiner;
 use crate::{ChessConfig, ChessParams, DetectorMode};
 use box_image_pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
-use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
+use chess_corners_core::descriptor::{corners_to_descriptors_with_method, Corner};
 use chess_corners_core::detect::{detect_corners_from_response_with_refiner, merge_corners_simple};
 use chess_corners_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
 use chess_corners_core::{
@@ -224,12 +224,13 @@ fn merge_and_describe(
     #[cfg(feature = "tracing")]
     drop(merge_span);
 
-    corners_to_descriptors(
+    corners_to_descriptors_with_method(
         base.data,
         base.width,
         base.height,
         params.descriptor_ring_radius(),
         merged,
+        params.orientation_method,
     )
 }
 
@@ -282,12 +283,13 @@ where
             .expect("image dimensions must match buffer length");
         let mut raw = detect_fn(&resp, &params, Some(view));
         let merged = merge_corners_simple(&mut raw, cf.merge_radius);
-        return corners_to_descriptors(
+        return corners_to_descriptors_with_method(
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
             params.descriptor_ring_radius(),
             merged,
+            params.orientation_method,
         );
     }
 
@@ -393,12 +395,13 @@ pub fn find_chess_corners_buff_with_refiner(
             .expect("image dimensions must match buffer length");
         let mut raw = detect_with_refiner_kind(&resp, &params, Some(refine_view), refiner);
         let merged = merge_corners_simple(&mut raw, cf.merge_radius);
-        return corners_to_descriptors(
+        return corners_to_descriptors_with_method(
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
             params.descriptor_ring_radius(),
             merged,
+            params.orientation_method,
         );
     }
 
@@ -511,12 +514,13 @@ fn detect_with_radon(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescri
     let params = cfg.to_chess_params();
     let mut merged = corners;
     let merged = merge_corners_simple(&mut merged, cfg.merge_radius);
-    let out = corners_to_descriptors(
+    let out = corners_to_descriptors_with_method(
         base.data,
         base.width,
         base.height,
         params.descriptor_ring_radius(),
         merged,
+        params.orientation_method,
     );
     #[cfg(feature = "tracing")]
     drop(span);

@@ -18,8 +18,8 @@ use pyo3::types::{PyAny, PyModule};
 
 use crate::config::{
     CenterOfMassConfig, ChessConfig, ConfigError, DescriptorMode, DetectorMode, ForstnerConfig,
-    PeakFitMode, RadonDetectorParams, RadonPeakConfig, RefinementMethod, RefinerConfig,
-    SaddlePointConfig, ThresholdMode,
+    OrientationMethod, PeakFitMode, RadonDetectorParams, RadonPeakConfig, RefinementMethod,
+    RefinerConfig, SaddlePointConfig, ThresholdMode,
 };
 
 fn extract_image<'py>(
@@ -187,6 +187,7 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ThresholdMode>()?;
     m.add_class::<RefinementMethod>()?;
     m.add_class::<PeakFitMode>()?;
+    m.add_class::<OrientationMethod>()?;
 
     m.add_class::<CenterOfMassConfig>()?;
     m.add_class::<ForstnerConfig>()?;

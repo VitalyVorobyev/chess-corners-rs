@@ -1,0 +1,61 @@
+name: bench_smoke
+seed: 1
+n_per_cell_patch: 50
+n_per_cell_chess: 5
+
+defaults:
+  render_mode: tanh
+  blur_sigma: 1.0
+  noise_sigma: 2.0
+  sp_prob: 0.0
+  contrast: 1.0
+  brightness: 0.0
+  gamma: 1.0
+  vignetting: 0.0
+  axis_skew_deg: 90.0
+  dx: 0.25
+  dy: 0.25
+  scale: 1.0
+  edge_softness: 0.15
+  cell_size_px: 6.0
+
+homography:
+  enabled: false
+
+chess:
+  inner_x: 5
+  inner_y: 4
+  pps: 24
+  square_size: 0.03
+  img_w: 480
+  img_h: 360
+  fx: 600.0
+  fy: 600.0
+  z_range: [0.4, 0.7]
+  margin: 24
+  noise_sigma: 1.0
+  sp_prob: 0.0
+  blur_sigma: 0.7
+  gamma_range: [0.95, 1.05]
+  contrast_range: [0.95, 1.05]
+  brightness_range: [-5.0, 5.0]
+  vignetting: 0.0
+  roll_max: 5.0
+
+sweeps:
+  - name: blur
+    mode: patch
+    param: blur_sigma
+    values: [0.0, 1.0, 2.0]
+
+  - name: noise
+    mode: patch
+    param: noise_sigma
+    values: [0.0, 5.0]
+
+  - name: chess_pose
+    mode: chess
+    param: pose
+    values:
+      - [0, 0]
+      - [20, 20]

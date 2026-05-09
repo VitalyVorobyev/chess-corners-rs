@@ -118,6 +118,24 @@ Notes:
 - WASM: `wasm-pack build crates/chess-corners-wasm --target web` when
   the JS-facing API changes.
 
+## Subagent-driven workflow
+
+**Benchmark and algorithm-tuning work** (e.g. orientation-fit studies,
+refiner comparisons, large parameter sweeps) is delegated to subagents to
+keep the main context clean. The pattern:
+
+1. A coding subagent implements scaffolding / variants and writes a short
+   summary back.
+2. A reviewer subagent (`algo-review`, `calibration-review`, or
+   `perf-architect` depending on the surface) audits the implementation
+   independently.
+3. A long-running subagent (often background) executes the sweeps and
+   renders artifacts (`REPORT.md`, plots, `metrics.json`).
+4. Decision gates hand back to the user with the data; the user picks the
+   next variant.
+
+See `tools/orientation_bench/README.md` once it exists.
+
 ## Key Design Constraints (from AGENTS.md)
 
 - **Determinism:** Same inputs → same outputs. Parallel results must be sorted by stable keys.

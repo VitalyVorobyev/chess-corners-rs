@@ -1,7 +1,7 @@
 use box_image_pyramid::PyramidParams;
 use chess_corners_core::{
-    CenterOfMassConfig, ChessParams, ForstnerConfig, RadonDetectorParams, RadonPeakConfig,
-    RefinerKind, SaddlePointConfig,
+    CenterOfMassConfig, ChessParams, ForstnerConfig, OrientationMethod, RadonDetectorParams,
+    RadonPeakConfig, RefinerKind, SaddlePointConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -159,6 +159,11 @@ pub struct ChessConfig {
     /// when [`detector_mode`](Self::detector_mode) is
     /// [`DetectorMode::Radon`]; otherwise left at its default.
     pub radon_detector: RadonDetectorParams,
+    /// Orientation-fit method used when building corner descriptors.
+    /// Default [`OrientationMethod::Baseline`] preserves the legacy
+    /// 16-sample Gauss-Newton fit bit-identically.
+    #[serde(default)]
+    pub orientation_method: OrientationMethod,
 }
 
 impl Default for ChessConfig {
@@ -181,6 +186,7 @@ impl Default for ChessConfig {
             merge_radius: 3.0,
             upscale: UpscaleConfig::default(),
             radon_detector: RadonDetectorParams::default(),
+            orientation_method: OrientationMethod::default(),
         }
     }
 }
@@ -243,6 +249,7 @@ impl ChessConfig {
         params.nms_radius = self.nms_radius;
         params.min_cluster_size = self.min_cluster_size;
         params.refiner = self.refiner.to_refiner_kind();
+        params.orientation_method = self.orientation_method;
         params
     }
 

@@ -18,10 +18,11 @@ use std::collections::BTreeSet;
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
     DescriptorMode as RsDescriptorMode, DetectorMode as RsDetectorMode,
-    ForstnerConfig as RsForstnerConfig, PeakFitMode as RsPeakFitMode,
-    RadonDetectorParams as RsRadonDetectorParams, RadonPeakConfig as RsRadonPeakConfig,
-    RefinementMethod as RsRefinementMethod, RefinerConfig as RsRefinerConfig,
-    SaddlePointConfig as RsSaddlePointConfig, ThresholdMode as RsThresholdMode,
+    ForstnerConfig as RsForstnerConfig, OrientationMethod as RsOrientationMethod,
+    PeakFitMode as RsPeakFitMode, RadonDetectorParams as RsRadonDetectorParams,
+    RadonPeakConfig as RsRadonPeakConfig, RefinementMethod as RsRefinementMethod,
+    RefinerConfig as RsRefinerConfig, SaddlePointConfig as RsSaddlePointConfig,
+    ThresholdMode as RsThresholdMode,
 };
 use pyo3::create_exception;
 use pyo3::exceptions::PyValueError;
@@ -198,6 +199,29 @@ py_enum!(
     ]
 );
 
+py_enum!(
+    /// Orientation-fit method used to estimate the two grid axes at
+    /// each detected corner. `BASELINE` reproduces the legacy
+    /// 16-sample Gauss-Newton fit bit-identically.
+    /// `SIGMA_CORRECTION_LUT` keeps the fit unchanged but rescales the
+    /// per-axis 1σ uncertainties via a piecewise-linear LUT keyed on
+    /// `fit_rms`, calibrating the reported sigmas closer to the true
+    /// RMSE. `FULL_DISK_SECTOR` is an opt-in full-disk estimator with
+    /// sigma-LUT fallback for weak local evidence.
+    ///
+    /// The constant-multiplier variant from the Rust core crate
+    /// (`SigmaCorrectionConst { multiplier }`) is intentionally not
+    /// exposed in Python — it is only used for unit tests / direct
+    /// Rust API consumers.
+    OrientationMethod, RsOrientationMethod,
+    [
+        (Baseline, "BASELINE", Baseline),
+        (SigmaCorrectionLut, "SIGMA_CORRECTION_LUT", SigmaCorrectionLut),
+        (AdaptiveBeta, "ADAPTIVE_BETA", AdaptiveBeta),
+        (FullDiskSector, "FULL_DISK_SECTOR", FullDiskSector),
+    ]
+);
+
 fn parse_enum<E>(value: &str, path: &str, allowed: &[(&str, E)]) -> PyResult<E>
 where
     E: Copy,
@@ -276,6 +300,22 @@ fn parse_peak_fit_mode(value: &str, path: &str) -> PyResult<RsPeakFitMode> {
     )
 }
 
+fn parse_orientation_method(value: &str, path: &str) -> PyResult<RsOrientationMethod> {
+    parse_enum(
+        value,
+        path,
+        &[
+            ("baseline", RsOrientationMethod::Baseline),
+            (
+                "sigma_correction_lut",
+                RsOrientationMethod::SigmaCorrectionLut,
+            ),
+            ("adaptive_beta", RsOrientationMethod::AdaptiveBeta),
+            ("full_disk_sector", RsOrientationMethod::FullDiskSector),
+        ],
+    )
+}
+
 fn detector_mode_str(v: RsDetectorMode) -> &'static str {
     match v {
         RsDetectorMode::Canonical => "canonical",
@@ -317,6 +357,23 @@ fn peak_fit_mode_str(v: RsPeakFitMode) -> &'static str {
         RsPeakFitMode::Parabolic => "parabolic",
         RsPeakFitMode::Gaussian => "gaussian",
         _ => "gaussian",
+    }
+}
+
+fn orientation_method_str(v: RsOrientationMethod) -> &'static str {
+    match v {
+        RsOrientationMethod::Baseline => "baseline",
+        RsOrientationMethod::SigmaCorrectionLut => "sigma_correction_lut",
+        RsOrientationMethod::AdaptiveBeta => "adaptive_beta",
+        RsOrientationMethod::FullDiskSector => "full_disk_sector",
+        // The const-multiplier variant carries an `f32` payload that
+        // Python doesn't surface; serialise it as `sigma_correction_const`
+        // so a round-trip back through `parse_orientation_method` will
+        // raise a clear "unsupported" error. (We never construct this
+        // value through the Python wrapper, so this branch is
+        // defensive.)
+        RsOrientationMethod::SigmaCorrectionConst { .. } => "sigma_correction_const",
+        _ => "baseline",
     }
 }
 
@@ -1231,6 +1288,7 @@ pub struct ChessConfig {
     pub(crate) refinement_radius: u32,
     pub(crate) merge_radius: f32,
     pub(crate) radon_detector: Py<RadonDetectorParams>,
+    pub(crate) orientation_method: RsOrientationMethod,
 }
 
 impl ChessConfig {
@@ -1252,6 +1310,7 @@ impl ChessConfig {
             refinement_radius: defaults.refinement_radius,
             merge_radius: defaults.merge_radius,
             radon_detector: Py::new(py, RadonDetectorParams::new())?,
+            orientation_method: defaults.orientation_method,
         })
     }
 
@@ -1271,6 +1330,7 @@ impl ChessConfig {
         cfg.refinement_radius = self.refinement_radius;
         cfg.merge_radius = self.merge_radius;
         cfg.radon_detector = self.radon_detector.borrow(py).inner;
+        cfg.orientation_method = self.orientation_method;
         cfg
     }
 }
@@ -1395,6 +1455,15 @@ impl ChessConfig {
         self.merge_radius = v;
     }
 
+    #[getter]
+    fn orientation_method(&self) -> OrientationMethod {
+        self.orientation_method.into()
+    }
+    #[setter]
+    fn set_orientation_method(&mut self, v: OrientationMethod) {
+        self.orientation_method = v.into();
+    }
+
     // ---- nested wrappers (returned by reference) ----
 
     #[getter]
@@ -1434,6 +1503,10 @@ impl ChessConfig {
             "radon_detector",
             self.radon_detector.borrow(py).to_dict(py)?,
         )?;
+        d.set_item(
+            "orientation_method",
+            orientation_method_str(self.orientation_method),
+        )?;
         Ok(d.unbind())
     }
 
@@ -1459,6 +1532,7 @@ impl ChessConfig {
                 "refinement_radius",
                 "merge_radius",
                 "radon_detector",
+                "orientation_method",
             ],
             "config",
         )?;
@@ -1500,6 +1574,9 @@ impl ChessConfig {
         if let Some(value) = dict.get_item("radon_detector")? {
             let radon_type = py.get_type::<RadonDetectorParams>();
             cfg.radon_detector = Py::new(py, RadonDetectorParams::from_dict(&radon_type, &value)?)?;
+        }
+        if let Some(s) = extract_string(&dict, "orientation_method", "config")? {
+            cfg.orientation_method = parse_orientation_method(&s, "config.orientation_method")?;
         }
         Ok(cfg)
     }

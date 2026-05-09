@@ -8,26 +8,29 @@
 //! values; [`corners_to_descriptors`] then samples the original image
 //! on a ChESS ring around each corner and fits a parametric two-axis
 //! intensity model to estimate the local grid geometry.
+//!
+//! The orientation fit body lives in [`crate::orientation`]; this
+//! module is a thin sampling and assembly shim. Future algorithm
+//! variants are added through [`crate::orientation::OrientationMethod`]
+//! without touching this file.
+use crate::orientation::{self, OrientationMethod, TwoAxisFit};
 use crate::ring::ring_offsets;
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
-use core::f32::consts::{PI, TAU};
-
-/// Smoothing slope of the tanh sign approximation used in the intensity
-/// model. Fixed constant — not a fit parameter. Reflects the effective
-/// ring-integration blur at the sampled radius.
+/// Smoothing slope of the tanh sign approximation used in the
+/// intensity model. Re-exposed at module scope (with the same value as
+/// the canonical constant in [`crate::orientation`]) so the
+/// existing tests in this file keep compiling unchanged after the
+/// fit body moved to its own module.
+#[cfg(test)]
 const TANH_BETA: f32 = 4.0;
 
-/// Maximum Gauss-Newton iterations in the two-axis fit.
-const GN_MAX_ITERS: usize = 6;
-
-/// Cap on angular step per Gauss-Newton iteration (radians). Prevents
-/// runaway updates near pathological configurations.
-const GN_MAX_ANGLE_STEP: f32 = 0.5;
-
-/// Convergence threshold on angular updates (radians).
-const GN_TOL: f32 = 1e-4;
+/// Full-frame ChESS runs can produce thousands of positive-response
+/// candidates under permissive thresholds. The full-disk estimator is
+/// intentionally local and expensive, so only the strongest candidates
+/// get the disk pass; the rest keep the sigma-LUT fallback.
+const FULL_DISK_MAX_FULL_IMAGE_CORNERS: usize = 80;
 
 /// A detected ChESS corner (subpixel).
 #[derive(Clone, Debug)]
@@ -107,12 +110,11 @@ pub struct CornerDescriptor {
     pub response: f32,
 
     /// Bright/dark amplitude (`|A|`, ≥ 0) recovered by the two-axis
-    /// tanh fit (see the `fit_two_axes` internal helper). Units are
-    /// gray levels. Larger means a stronger bright/dark separation at
-    /// the ring radius.
-    /// This is an independent quantity from [`Self::response`] — they
-    /// are computed by different estimators and must not be compared
-    /// against each other or against the same threshold.
+    /// tanh fit (see [`crate::orientation`]). Units are gray levels.
+    /// Larger means a stronger bright/dark separation at the ring
+    /// radius. This is an independent quantity from [`Self::response`]
+    /// — they are computed by different estimators and must not be
+    /// compared against each other or against the same threshold.
     pub contrast: f32,
 
     /// RMS fit residual of the two-axis intensity model (in gray levels).
@@ -164,12 +166,53 @@ pub fn corners_to_descriptors(
     radius: u32,
     corners: Vec<Corner>,
 ) -> Vec<CornerDescriptor> {
+    corners_to_descriptors_with_method(img, w, h, radius, corners, OrientationMethod::Baseline)
+}
+
+/// Variant of [`corners_to_descriptors`] that lets callers pick the
+/// orientation-fit [`OrientationMethod`] used to populate
+/// [`CornerDescriptor::axes`]. The default
+/// [`OrientationMethod::Baseline`] reproduces the legacy
+/// 16-sample Gauss-Newton fit bit-identically; future variants will
+/// trade extra image-side work for better accuracy on non-orthogonal
+/// corners.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, corners),
+        fields(corners = corners.len(), method = ?method)
+    )
+)]
+pub fn corners_to_descriptors_with_method(
+    img: &[u8],
+    w: usize,
+    h: usize,
+    radius: u32,
+    corners: Vec<Corner>,
+    method: OrientationMethod,
+) -> Vec<CornerDescriptor> {
     let ring = ring_offsets(radius);
     let ring_phi = ring_angles(ring);
     let mut out = Vec::with_capacity(corners.len());
-    for c in corners {
+    let full_disk_mask = full_disk_top_response_mask(&corners, method);
+    for (idx, c) in corners.into_iter().enumerate() {
         let samples = sample_ring(img, w, h, c.x, c.y, ring);
-        let fit = fit_two_axes(&samples, &ring_phi);
+        let orientation_method = match &full_disk_mask {
+            Some(mask) if !mask[idx] => OrientationMethod::SigmaCorrectionLut,
+            _ => method,
+        };
+        let fit = fit_two_axes_with_method(
+            &samples,
+            &ring_phi,
+            img,
+            w,
+            h,
+            c.x,
+            c.y,
+            radius,
+            orientation_method,
+        );
 
         out.push(CornerDescriptor {
             x: c.x,
@@ -192,8 +235,30 @@ pub fn corners_to_descriptors(
     out
 }
 
+fn full_disk_top_response_mask(corners: &[Corner], method: OrientationMethod) -> Option<Vec<bool>> {
+    if !matches!(method, OrientationMethod::FullDiskSector)
+        || corners.len() <= FULL_DISK_MAX_FULL_IMAGE_CORNERS
+    {
+        return None;
+    }
+
+    let mut indices: Vec<usize> = (0..corners.len()).collect();
+    indices.sort_by(|&a, &b| {
+        corners[b]
+            .strength
+            .total_cmp(&corners[a].strength)
+            .then_with(|| a.cmp(&b))
+    });
+
+    let mut mask = vec![false; corners.len()];
+    for &idx in indices.iter().take(FULL_DISK_MAX_FULL_IMAGE_CORNERS) {
+        mask[idx] = true;
+    }
+    Some(mask)
+}
+
 /// Sample the 16-point ChESS ring around (x, y) using bilinear interpolation.
-fn sample_ring(
+pub(crate) fn sample_ring(
     img: &[u8],
     w: usize,
     h: usize,
@@ -212,7 +277,7 @@ fn sample_ring(
 
 /// Angles of each ring sample in image coordinates, via `atan2(dy, dx)`.
 #[inline]
-fn ring_angles(ring: &[(i32, i32); 16]) -> [f32; 16] {
+pub(crate) fn ring_angles(ring: &[(i32, i32); 16]) -> [f32; 16] {
     let mut out = [0.0f32; 16];
     for (i, &(dx, dy)) in ring.iter().enumerate() {
         out[i] = (dy as f32).atan2(dx as f32);
@@ -220,271 +285,60 @@ fn ring_angles(ring: &[(i32, i32); 16]) -> [f32; 16] {
     out
 }
 
-/// Result of the parametric two-axis intensity fit.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct TwoAxisFit {
-    pub amp: f32,
-    pub theta1: f32,
-    pub theta2: f32,
-    pub sigma_theta1: f32,
-    pub sigma_theta2: f32,
-    pub rms: f32,
-}
-
-/// Fit a two-axis chessboard-corner intensity model to 16 ring samples.
-///
-/// Model: `I(φ) = μ + A · tanh(β · sin(φ − θ₁)) · tanh(β · sin(φ − θ₂))`,
-/// with fixed `β = TANH_BETA`. Four free parameters: `μ, A, θ₁, θ₂`.
-/// Solved via Gauss-Newton seeded from the 2nd-harmonic orientation.
-/// Returns canonicalized angles plus per-axis 1σ uncertainties.
-pub(crate) fn fit_two_axes(samples: &[f32; 16], ring_phi: &[f32; 16]) -> TwoAxisFit {
-    let mean = samples.iter().copied().sum::<f32>() / 16.0;
-    let centered_var = samples
-        .iter()
-        .map(|&v| (v - mean) * (v - mean))
-        .sum::<f32>()
-        / 16.0;
-
-    // 2nd-harmonic seed: theta_seed ∈ [-π/2, π/2] is a SECTOR MIDPOINT
-    // direction; the two grid axes bracket it at ±π/4.
-    let (theta_seed, harmonic_mag) = second_harmonic(samples, ring_phi, mean);
-    let mut mu = mean;
-    let mut amp = harmonic_mag; // positive magnitude seed
-    let mut theta1 = theta_seed + core::f32::consts::FRAC_PI_4;
-    let mut theta2 = theta_seed + 3.0 * core::f32::consts::FRAC_PI_4;
-
-    // If the 2nd-harmonic "signal" is negligible, return a degenerate fit.
-    if !amp.is_finite() || amp.abs() < 1e-4 || centered_var < 1e-6 {
-        return degenerate_fit(centered_var);
-    }
-
-    let mut jtj: [[f32; 4]; 4];
-    let mut ssr: f32;
-    let mut iter = 0usize;
-
-    loop {
-        // Evaluate residual/Jacobian at current state.
-        jtj = [[0f32; 4]; 4];
-        let mut jtr = [0f32; 4];
-        ssr = 0.0;
-
-        for i in 0..16 {
-            let phi = ring_phi[i];
-            let s1a = (phi - theta1).sin();
-            let s2a = (phi - theta2).sin();
-            let c1a = (phi - theta1).cos();
-            let c2a = (phi - theta2).cos();
-
-            let h1 = (TANH_BETA * s1a).tanh();
-            let h2 = (TANH_BETA * s2a).tanh();
-            let sech2_1 = 1.0 - h1 * h1;
-            let sech2_2 = 1.0 - h2 * h2;
-
-            let pred = mu + amp * h1 * h2;
-            let r = samples[i] - pred;
-            ssr += r * r;
-
-            let j = [
-                1.0,
-                h1 * h2,
-                -amp * sech2_1 * TANH_BETA * c1a * h2,
-                -amp * h1 * sech2_2 * TANH_BETA * c2a,
-            ];
-
-            for k in 0..4 {
-                jtr[k] += j[k] * r;
-                for l in 0..4 {
-                    jtj[k][l] += j[k] * j[l];
-                }
-            }
-        }
-
-        if iter >= GN_MAX_ITERS {
-            break;
-        }
-
-        let delta = match solve_4x4(&jtj, &jtr) {
-            Some(d) => d,
-            None => break,
-        };
-
-        // Clamp angular steps to avoid runaway.
-        let mut d = delta;
-        if d[2].abs() > GN_MAX_ANGLE_STEP {
-            d[2] = d[2].signum() * GN_MAX_ANGLE_STEP;
-        }
-        if d[3].abs() > GN_MAX_ANGLE_STEP {
-            d[3] = d[3].signum() * GN_MAX_ANGLE_STEP;
-        }
-
-        // If the proposed step is negligible we are already at the
-        // optimum of the current linearisation; keep the evaluated
-        // jtj/ssr and stop.
-        if d[2].abs() < GN_TOL && d[3].abs() < GN_TOL && d[1].abs() < 1e-4 {
-            break;
-        }
-
-        mu += d[0];
-        amp += d[1];
-        theta1 += d[2];
-        theta2 += d[3];
-        iter += 1;
-    }
-
-    // Covariance from the final Hessian. Degrees of freedom = N − params = 12.
-    let residual_var = ssr / 12.0;
-    let cov = invert_4x4(&jtj);
-    let (sigma_t1, sigma_t2) = match cov {
-        Some(c) => (
-            (residual_var * c[2][2].max(0.0)).sqrt(),
-            (residual_var * c[3][3].max(0.0)).sqrt(),
-        ),
-        None => (PI, PI),
-    };
-
-    let rms = (ssr / 16.0).sqrt();
-
-    let (theta1_c, theta2_c, amp_c) = canonicalize(theta1, theta2, amp);
-    let _ = mu;
-
-    TwoAxisFit {
-        amp: amp_c,
-        theta1: theta1_c,
-        theta2: theta2_c,
-        sigma_theta1: sigma_t1.min(PI),
-        sigma_theta2: sigma_t2.min(PI),
-        rms,
-    }
-}
-
-/// Fallback result for flat / no-contrast inputs.
-fn degenerate_fit(centered_var: f32) -> TwoAxisFit {
-    TwoAxisFit {
-        amp: 0.0,
-        theta1: 0.0,
-        theta2: core::f32::consts::FRAC_PI_2,
-        sigma_theta1: PI,
-        sigma_theta2: PI,
-        rms: centered_var.max(0.0).sqrt(),
-    }
-}
-
-/// Canonicalize (θ₁, θ₂, A) into the convention documented on
-/// [`CornerDescriptor`]. Returns `(θ₁, θ₂, |A|)` with:
-/// * θ₁ ∈ [0, π)
-/// * θ₂ ∈ (θ₁, θ₁ + π) ⊂ [0, 2π)
-/// * the sector (θ₁, θ₂) (CCW) is a dark sector of the corner
-fn canonicalize(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32) {
-    let mut t1 = wrap_to_tau(theta1);
-    let mut t2 = wrap_to_tau(theta2);
-    let mut a = amp;
-
-    // Force A > 0 by flipping one axis's polarity.
-    if a < 0.0 {
-        t1 = wrap_to_tau(t1 + PI);
-        a = -a;
-    }
-
-    // With A > 0, dark sectors sit where sin(φ − θ₁)·sin(φ − θ₂) is
-    // negative — two antipodal sectors. Pick θ₁'s representative ray
-    // so that the CCW-adjacent dark sector ends at θ₂ within a
-    // rotation of less than π.
-    let mut diff = (t2 - t1).rem_euclid(TAU);
-    if diff >= PI {
-        t1 = wrap_to_tau(t1 + PI);
-        diff = (t2 - t1).rem_euclid(TAU);
-    }
-
-    // Reduce θ₁ into [0, π) via π-wraparound (antipode ray of the same
-    // line axis). Rebuild θ₂ so it still marks the dark-sector end.
-    t1 = t1.rem_euclid(PI);
-    t2 = t1 + diff;
-
-    (t1, t2, a)
-}
-
+/// Crate-internal entry point preserved for the existing in-file
+/// test suite. Delegates to the baseline orientation fit in
+/// [`crate::orientation`]. Production code should use
+/// [`corners_to_descriptors_with_method`] (or the
+/// [`OrientationMethod`]-aware [`crate::orientation::fit_axes_at_point`]
+/// helper).
+#[cfg(test)]
 #[inline]
-fn wrap_to_tau(mut x: f32) -> f32 {
-    x = x.rem_euclid(TAU);
-    if !x.is_finite() {
-        return 0.0;
-    }
-    x
+pub(crate) fn fit_two_axes(samples: &[f32; 16], ring_phi: &[f32; 16]) -> TwoAxisFit {
+    orientation::baseline_fit_for_descriptor(samples, ring_phi)
 }
 
-/// 2nd-harmonic estimate: returns `(theta_seed, magnitude)` where
-/// `theta_seed` is a sector-midpoint direction (mod π) and magnitude
-/// is a non-negative estimate of the A parameter amplitude.
-fn second_harmonic(samples: &[f32; 16], ring_phi: &[f32; 16], mean: f32) -> (f32, f32) {
-    let mut c2 = 0.0f32;
-    let mut s2 = 0.0f32;
-    for i in 0..16 {
-        let v = samples[i] - mean;
-        c2 += v * (2.0 * ring_phi[i]).cos();
-        s2 += v * (2.0 * ring_phi[i]).sin();
+/// Crate-internal dispatcher used by
+/// [`corners_to_descriptors_with_method`]. The baseline path matches
+/// [`fit_two_axes`] bit-identically; other variants forward to the
+/// appropriate entry in [`crate::orientation`]. Called once per
+/// detected corner so it is deliberately monomorphic.
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn fit_two_axes_with_method(
+    samples: &[f32; 16],
+    ring_phi: &[f32; 16],
+    img: &[u8],
+    w: usize,
+    h: usize,
+    cx: f32,
+    cy: f32,
+    radius: u32,
+    method: OrientationMethod,
+) -> TwoAxisFit {
+    match method {
+        OrientationMethod::Baseline => orientation::baseline_fit_for_descriptor(samples, ring_phi),
+        OrientationMethod::SigmaCorrectionConst { multiplier } => {
+            orientation::sigma_correction_const_fit_for_descriptor(samples, ring_phi, multiplier)
+        }
+        OrientationMethod::SigmaCorrectionLut => {
+            orientation::sigma_correction_lut_fit_for_descriptor(samples, ring_phi)
+        }
+        OrientationMethod::AdaptiveBeta => {
+            orientation::adaptive_beta_fit_for_descriptor(samples, ring_phi)
+        }
+        OrientationMethod::FullDiskSector => orientation::full_disk_sector_fit_for_descriptor(
+            img, w, h, cx, cy, radius, samples, ring_phi,
+        ),
     }
-    let mut theta = 0.5 * s2.atan2(c2);
-    if !theta.is_finite() {
-        theta = 0.0;
-    }
-    // Magnitude of the complex Fourier coefficient, normalised by
-    // Σ cos²(2φᵢ) ≈ 8 for 16 samples. Always non-negative.
-    let mag = (c2 * c2 + s2 * s2).sqrt() / 8.0;
-    (theta, mag)
 }
 
-/// Solve a 4x4 linear system A x = b with partial pivoting.
-fn solve_4x4(a: &[[f32; 4]; 4], b: &[f32; 4]) -> Option<[f32; 4]> {
-    let mut m = [[0f32; 5]; 4];
-    for (i, row) in m.iter_mut().enumerate() {
-        row[..4].copy_from_slice(&a[i]);
-        row[4] = b[i];
-    }
-    for i in 0..4 {
-        let mut max_row = i;
-        for k in (i + 1)..4 {
-            if m[k][i].abs() > m[max_row][i].abs() {
-                max_row = k;
-            }
-        }
-        m.swap(i, max_row);
-        let pivot = m[i][i];
-        if !pivot.is_finite() || pivot.abs() < 1e-20 {
-            return None;
-        }
-        let inv_pivot = 1.0 / pivot;
-        for v in &mut m[i] {
-            *v *= inv_pivot;
-        }
-        let pivot_row = m[i];
-        for (k, row) in m.iter_mut().enumerate() {
-            if k == i {
-                continue;
-            }
-            let f = row[i];
-            if f == 0.0 {
-                continue;
-            }
-            for (rv, &pv) in row.iter_mut().zip(pivot_row.iter()) {
-                *rv -= f * pv;
-            }
-        }
-    }
-    Some([m[0][4], m[1][4], m[2][4], m[3][4]])
-}
-
-/// Invert a 4x4 matrix by solving `A X = I` column-wise. Returns `None` on singularity.
-fn invert_4x4(a: &[[f32; 4]; 4]) -> Option<[[f32; 4]; 4]> {
-    let mut inv = [[0f32; 4]; 4];
-    for col in 0..4 {
-        let mut b = [0f32; 4];
-        b[col] = 1.0;
-        let x = solve_4x4(a, &b)?;
-        for (row_idx, inv_row) in inv.iter_mut().enumerate() {
-            inv_row[col] = x[row_idx];
-        }
-    }
-    Some(inv)
+/// Test-only canonicalization shim. Re-exposes the implementation
+/// that lives in [`crate::orientation`] under the name the
+/// in-file tests use, so they keep compiling unchanged.
+#[cfg(test)]
+#[inline]
+fn canonicalize(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32) {
+    orientation::baseline_canonicalize_for_test(theta1, theta2, amp)
 }
 
 fn sample_bilinear(img: &[u8], w: usize, h: usize, x: f32, y: f32) -> f32 {
