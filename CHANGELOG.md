@@ -29,16 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `chess-corners-core` (and re-exported from `chess-corners`) that lets
   callers pick the orientation method explicitly.
 
-- **`DiskFit` optimization.** `OrientationMethod::DiskFit`
-  delivers ~10× single-thread speedup and ~84× with rayon over the
-  original prototype, primarily through: a lazy-disk gate that
-  short-circuits on clean orthogonal corners, a gradient-histogram-seeded
-  candidate set with pair pruning (keeping only the top 24 pairs for
-  expensive scoring), a per-candidate tanh cache that eliminates redundant
-  transcendental calls, and `TOP_FITS` reduced from 4 to 2. The ring-fit
-  Gauss-Newton solve was also sped up by hoisting trig (`sin_cos`) out of
-  the inner GN loop.
-
 ### Changed
 
 - **`OrientationMethod` API simplified to two variants.** `RingFit`

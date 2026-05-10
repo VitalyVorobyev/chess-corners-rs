@@ -442,6 +442,93 @@ For the per-method precision/cost trade-off on the synthetic bench, see the
 orientation bench `REPORT.md` in `tools/orientation_bench/`. Most users should
 leave the default (`RingFit`) unchanged.
 
+### 3.4.8 How DiskFit works
+
+`DiskFit` models a corner as two crossing transition lines through the
+detected center. The intensity at every pixel `p` in a support disk
+around the center is fitted to
+
+```text
+I(p) = μ + A · tanh(d₀(p)/w) · tanh(d₁(p)/w)
+```
+
+where `d₀(p)`, `d₁(p)` are the signed perpendicular distances from `p`
+to the two lines and `w` is a discrete edge width drawn from
+`{0.35, 0.70, 1.40, 2.80}` px. Recovering the corner means picking the
+line pair `(θ₀, θ₁)` and width `w` that best reconstruct the disk's
+pixel intensities.
+
+The pipeline runs in seven steps:
+
+1. **Lazy-disk gate.** If the ring fit's relative residual
+   `rms / max(amp, 1)` is below `0.04` and its axes are near-orthogonal
+   (separation in `[70°, 110°]`), return the ring fit unchanged. Most
+   chessboard corners pass this gate. The expensive disk pipeline only
+   runs on suspect corners — extreme skew, blur, or low contrast — that
+   fail one of these conditions.
+
+2. **Disk extraction.** Sample a support disk of radius `1.6·r`
+   (capped at 8 px) around `(cx, cy)`. Exclude the inner 1 px and any
+   pixels outside the image. Require ≥ 64 valid pixels. For each pixel
+   store its signed offset from the center, intensity, and 3×3 Sobel
+   gradient (magnitude and direction).
+
+3. **Candidate generation.** Build up to 64 candidate line directions
+   from three sources, dropping any new candidate within 1°–4° of an
+   existing one:
+
+   - up to 8 peaks of a 72-bin gradient-direction histogram (smoothed
+     with `[0.25, 0.5, 0.25]`, pruned at 12% of the dominant peak);
+   - both ring-fit seed angles ± `{0°, 4°, 8°}`;
+   - a coarse 30°-spaced global grid as a deterministic safety net.
+
+   Histogram peaks find the truly observable lines; seed offsets cover
+   the easy case; the global grid catches degenerate gradient
+   distributions.
+
+4. **Pair pruning.** Form all candidate pairs whose angular separation
+   lies in `[12°, 89.5°]`. Score each pair by Gaussian-weighted
+   per-pixel gradient alignment (`σ = 4°` around each candidate angle).
+   Keep the top 24 by score; force-include the pair closest to the
+   ring-fit seed and the pair of the two strongest single-candidate
+   alignments so high-evidence seeds are never dropped.
+
+5. **Closed-form fit per pair × width.** For each surviving pair and
+   each width, compute `q_p = tanh(d₀_p/w) · tanh(d₁_p/w)` for every
+   disk pixel and solve the OLS regression `I_p − μ̂ ≈ A · q_p` for
+   amplitude `A` directly from sufficient statistics. The residual
+   `SSR` falls out of the same statistics — no second pass over the
+   disk. The objective is `rel_rms − 1.25·edge_score`, with
+   `rel_rms = rms / max(|A|, 1)`. Keep the top 2 fits by deterministic
+   comparator (objective, then `rel_rms`, then `edge_score`, then
+   narrower `w`, then smaller angles).
+
+6. **Local refinement.** Around each top-2 seed, grid-search angle
+   perturbations at step sizes `{1°, 0.5°, 0.25°}` (3×3 grid per step,
+   24 trials per seed). Width is held fixed.
+
+7. **Acceptance.** Replace the ring fit only when the disk fit clears
+   minimum amplitude (`A ≥ 10`), correlation (`≥ 0.74`), and edge
+   support (`≥ 0.035`), AND one of:
+
+   - `rel_rms` beats the ring fit by absolute margin (`≥ 0.03`) or
+     ratio (`≤ 92%`);
+   - axis separation is strongly non-orthogonal (`< 55°`);
+   - axis separation is `≥ 75°` AND `w ≤ 0.7` px (sharp orthogonal);
+   - the disk axes disagree with the ring axes by `> 12°` and edge
+     support is `≥ 0.18`.
+
+   When accepted, the per-axis sigma is recomputed from the recovered
+   separation and `rel_rms` (a 1.5°/3° floor depending on whether
+   separation is `≥ 55°` or not, plus `8·rel_rms` capped at 6°, all
+   scaled by 0.55). When rejected but the disk and ring axes disagreed
+   by more than 12°, the ring fit's sigma is inflated to at least 10°
+   to flag the ambiguity.
+
+The two methods produce the same `AxisFitResult` shape; `DiskFit`
+transparently falls back to `RingFit` whenever local evidence is too
+weak to beat it.
+
 ---
 
 Next: [Part IV](part-04-radon-detector.md) covers the alternative

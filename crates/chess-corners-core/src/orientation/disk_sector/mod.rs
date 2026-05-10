@@ -1,11 +1,23 @@
 //! Full-disk two-axis orientation estimator.
 //!
-//! This module ports the benchmark `disk_sector_py` prototype into the
-//! core crate as an opt-in method. It keeps the detected center fixed,
-//! samples the image disk around that center, searches candidate
-//! crossing lines, and only publishes the disk result when the
-//! full-area model is confident. Otherwise it returns the sigma-LUT
-//! fallback unchanged.
+//! Models a chessboard corner as two crossing transition lines through
+//! the detected center and recovers their angles from all pixels in a
+//! support disk around that center. The intensity model is
+//! `I(p) = μ + A · tanh(d₀(p)/w) · tanh(d₁(p)/w)`, where `d_i(p)` is
+//! the signed perpendicular distance from pixel `p` to the i-th line
+//! and `w` is a discrete edge width.
+//!
+//! Generates candidate line directions from a Sobel gradient-direction
+//! histogram, the ring-fit seed angles plus small offsets, and a sparse
+//! global grid; prunes to the top pairs by edge alignment; sweeps a
+//! small fixed set of edge widths with a closed-form OLS solve for
+//! amplitude; and refines the strongest survivors via local angular
+//! grid search. The disk result only displaces the ring fit when
+//! residual margin, edge alignment, and axis-separation checks all
+//! confirm it; otherwise the ring fit is returned unchanged.
+//!
+//! See `book/src/part-03-chess-detector.md` for the step-by-step
+//! algorithm description.
 //!
 //! ## Module layout
 //!
