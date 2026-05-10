@@ -31,8 +31,11 @@ cargo test -p chess-corners --no-default-features --features simd    # nightly o
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# Python bindings (dev build)
-maturin develop -m crates/chess-corners-py/pyproject.toml
+# Python bindings (dev build) — `maturin develop` does NOT accept a
+# pyproject.toml via `-m`; that flag wants a Cargo.toml. Either cd in:
+(cd crates/chess-corners-py && maturin develop --release)
+# …or pass the manifest path explicitly:
+maturin develop --release -m crates/chess-corners-py/Cargo.toml
 
 # WASM bindings (build npm package)
 wasm-pack build crates/chess-corners-wasm --target web
@@ -73,7 +76,8 @@ chess-corners-ml    (ONNX inference, optional via ml-refiner feature)
 1. **Response** (`core/response.rs`) — Dense ChESS response using 16-sample rings
 2. **Detection** (`core/detect.rs`) — Thresholding + NMS + cluster filtering
 3. **Refinement** (`core/refine.rs`) — Pluggable trait with 3 built-in refiners: CenterOfMass, Förstner, SaddlePoint
-4. **Descriptors** (`core/descriptor.rs`) — Corner descriptors with two-axis orientation (see `fit_two_axes`), per-axis 1σ uncertainty, contrast, and fit residual
+4. **Descriptors** (`core/descriptor.rs`) — Corner descriptors lifted from raw detections via `corners_to_descriptors_with_method`. Carries two-axis orientation, per-axis 1σ uncertainty, contrast, and fit residual.
+5. **Orientation methods** (`core/orientation/`) — Detector-agnostic. `RingFit` (default) runs a 16-sample ring Gauss-Newton fit; `DiskFit` is a full-disk crossing-line estimator with a lazy-gate fallback to `RingFit`. Both ChESS and Radon detectors share this stage.
 
 ### Multiscale Pipeline (`chess-corners`)
 
@@ -112,11 +116,109 @@ Notes:
 - `cargo doc` warnings (broken intra-doc links, missing docs on public
   items, links to private items) are blocking — do not push with them.
 - Book rewrites should also be visually inspected: `mdbook serve book`.
-- Python bindings: `maturin develop -m crates/chess-corners-py/pyproject.toml`
+- Python bindings: `(cd crates/chess-corners-py && maturin develop --release)`
   plus `pytest crates/chess-corners-py/python_tests` when the Python
   surface changes.
 - WASM: `wasm-pack build crates/chess-corners-wasm --target web` when
   the JS-facing API changes.
+
+## Documentation conventions
+
+### Public surface hygiene (CRITICAL)
+
+Public surfaces — anything that appears in `cargo doc`, the book, the
+README, the CHANGELOG, or binding type stubs — describe **what the
+code does**, not how it got there. The user has rejected this kind of
+content multiple times and considers it a quality issue, not a style
+preference. Banned from public surfaces:
+
+- **Lineage names** as method/variant/field labels: `Baseline`, `V1`,
+  `V6`, `v6a`, `Phase N`, "previously known as X". Public enum
+  variants should describe what the method does (`RingFit`, `DiskFit`),
+  never its development chronology.
+- **Origin notes**: "ports the Python prototype `disk_sector_py`",
+  "based on the bench branch", "originally written in NumPy".
+- **Optimization narratives for brand-new features**: "10× faster
+  than the internal prototype", "Phase 1–5 perf wins delivered". For
+  a feature that did not previously ship, internal speedup history
+  is invisible to users — drop it from the changelog.
+- **Phase / sprint references**: "Phase 1", "Phase 2 blur sweep
+  showed".
+
+Rule of thumb: if a user of this API needs to know X to use the API
+correctly, X is public. Otherwise X is internal context — it can live
+in commit messages, internal comments inside `.rs` files (so long as
+they don't render in `cargo doc`), or `tools/orientation_bench/REPORT.md`-style
+historical records, but not in user-facing docs.
+
+When the user pushes back on dev-history terms, do not just remove
+the called-out example — sweep the entire change for the same pattern.
+
+### Decisive cleanup
+
+When removing a public-API entity (enum variant, function, type),
+sweep ALL of:
+
+- Rust enum + dispatcher arms.
+- Rust public re-exports (`pub use`) in facade and crate roots.
+- Python bindings (`crates/chess-corners-py/src/config.rs`,
+  Python tests, `python/chess_corners/__init__.py`).
+- WASM bindings (`crates/chess-corners-wasm/src/config.rs` — and its
+  parametrised tests; renumber discriminants to stay contiguous if
+  no external pin is found).
+- README, book chapters, CHANGELOG bullets.
+- Bench tooling (`tools/orientation_bench/{variants,runner,status_plots,
+  __main__,README}.{py,md}`).
+- Test files (delete obsolete coverage, rename function names that
+  encoded the dropped lineage).
+
+If a method A is strictly dominated by method B at equivalent cost,
+drop A — even if it has been there for a while. Diagnostic-only paths
+("kept for comparison") that no longer feed active development go too.
+
+### Book (mdBook)
+
+- Source: `book/src/`. Built output: `book/book/` (gitignored).
+- Chapter files follow `part-NN-<topic>.md`. Inserting a chapter
+  mid-stream means renaming subsequent files (`git mv`) and updating
+  ALL cross-references — every chapter has both prose mentions
+  ("see Part VI") and link targets (`part-06-...md`). Use targeted
+  search-and-replace and verify with grep before declaring done.
+- Images live in `book/src/img/`. Render scripts live as
+  `tools/render_*_overlays.py` and emit there. Existing renderers
+  (`tools/render_book_overlays.py`, `tools/synthimages.py`) demonstrate
+  the convention.
+- Math rendering is enabled (`[output.html] mathjax-support = true`
+  in `book/book.toml`). Use `\\[ ... \\]` for display math and
+  `\\(...\\)` for inline. Inside math blocks, use single-backslash
+  LaTeX commands (`\theta_1`, `\tanh`, `\frac{a}{b}`). Do NOT put
+  equations inside ```text fences — they look like ASCII output, not
+  math.
+- **Topical organization, not file-organization.** A concept that is
+  shared across multiple components (orientation methods consumed by
+  both ChESS and Radon detectors) gets its own chapter, not a
+  sub-section under one of the detectors. Default to placing
+  cross-cutting concerns in their own Part.
+- **Algorithm chapters need motivating illustrations**, not just
+  step-listings. The user explicitly rejected formal step-listings
+  alone — they want the failure modes that motivate the algorithm
+  shown visually first, then the formal description. Build the
+  visualization tooling (Python wheel via maturin develop, render
+  script, save PNG to `book/src/img/`) rather than skipping the
+  illustration.
+- Each chapter ends with `---` and a `Next: [Part X](...)` link.
+
+### CHANGELOG hygiene
+
+- `CHANGELOG.md` keeps `[Unreleased]` inline plus a "Past releases"
+  link index. Per-version notes live under `docs/changelog/X.Y.Z.md`.
+  When cutting a release, move the released `[Unreleased]` content
+  into a new file under `docs/changelog/` and add a link to the index.
+- User-facing entries describe **user-visible** changes only. Drop
+  internal optimization narratives, lineage references, architecture
+  details that don't touch the user's API. Brand-new features get
+  one bullet describing what they do — their internal architecture
+  is not changelog content.
 
 ## Subagent-driven workflow
 
