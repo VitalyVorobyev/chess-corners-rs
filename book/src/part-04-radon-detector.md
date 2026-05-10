@@ -158,7 +158,7 @@ values. The practical differences:
 ChESS is faster and has a more selective response on sharp, typical
 calibration imagery. The Radon detector is the right pick when one
 of ChESS's assumptions breaks: small cells, heavy blur, low contrast,
-or low light. Part VII has the measured numbers.
+or low light. Part VIII has the measured numbers.
 
 The two detectors are not meant to be stacked. They are peers, and
 `ChessConfig.detector_mode` picks one.
@@ -216,7 +216,9 @@ let corners = find_chess_corners_image(&gray_image, &cfg);
 
 The facade runs the Radon detector, feeds its output into
 `corners_to_descriptors` (the shared descriptor stage from Part III §3.4),
-and returns `CornerDescriptor` values in the input pixel frame. Multiscale
+and returns `CornerDescriptor` values in the input pixel frame. The
+orientation method that fills `axes` and `sigma_theta*` is shared with
+the ChESS pipeline; see [Part VI: Orientation methods](part-06-orientation-methods.md). Multiscale
 is not applied to the Radon path: the detector already handles scale via
 `image_upsample`, and the peak fit already emits subpixel positions.
 

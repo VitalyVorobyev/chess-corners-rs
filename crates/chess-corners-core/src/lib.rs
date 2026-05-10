@@ -51,6 +51,7 @@
 pub mod descriptor;
 pub mod detect;
 pub mod imageview;
+pub mod orientation;
 pub mod radon;
 pub mod radon_detector;
 pub mod refine;
@@ -62,6 +63,9 @@ use crate::ring::RingOffsets;
 use serde::{Deserialize, Serialize};
 
 pub use crate::descriptor::{AxisEstimate, CornerDescriptor};
+pub use crate::orientation::{
+    fit_axes_at_point, fit_axes_from_samples, AxisFitResult, OrientationMethod,
+};
 pub use crate::radon::{fit_peak_frac, PeakFitMode};
 pub use crate::radon_detector::{
     detect_corners_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
@@ -96,6 +100,12 @@ pub struct ChessParams {
     /// Subpixel refinement backend and its configuration. Defaults to the legacy
     /// center-of-mass refiner on the response map.
     pub refiner: RefinerKind,
+    /// Orientation-fit method used to estimate the two grid axes at
+    /// each detected corner. Default [`OrientationMethod::RingFit`]
+    /// fits the parametric two-axis model with calibrated per-axis
+    /// uncertainties.
+    #[serde(default)]
+    pub orientation_method: OrientationMethod,
 }
 
 impl Default for ChessParams {
@@ -114,6 +124,7 @@ impl Default for ChessParams {
             nms_radius: 2,
             min_cluster_size: 2,
             refiner: RefinerKind::default(),
+            orientation_method: OrientationMethod::default(),
         }
     }
 }

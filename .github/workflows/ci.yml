@@ -43,7 +43,7 @@ jobs:
 
       - name: clippy
         if: matrix.toolchain == 'stable'
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
       - name: test (default features)
         run: cargo test --workspace

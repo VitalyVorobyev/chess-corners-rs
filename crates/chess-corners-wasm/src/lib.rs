@@ -200,12 +200,12 @@ impl ChessDetector {
         };
     }
 
-    /// Select the detector kernel: `"canonical"`, `"broad"`, or
-    /// `"radon"`. `canonical` / `broad` are the two ChESS variants;
-    /// `radon` picks the whole-image Duda-Frese detector, useful
-    /// under heavy blur or low contrast. Threshold / NMS / cluster
-    /// tuning from the other setters is preserved across mode
-    /// switches because those setters mirror into both detectors.
+    /// Select the detector kernel: `"canonical"`, `"broad"`, or `"radon"`.
+    ///
+    /// **Legacy compatibility shortcut.** The typed [`ChessConfig`] returned by
+    /// `getConfig()` / `withConfig()` is the canonical API — prefer
+    /// `cfg.detectorMode = DetectorMode.Radon` for new code. This string setter
+    /// is retained for callers that pre-date the typed config surface.
     pub fn set_detector_mode(&mut self, name: &str) -> Result<(), JsValue> {
         self.config.detector_mode = match name {
             "canonical" => RsDetectorMode::Canonical,
@@ -265,6 +265,11 @@ impl ChessDetector {
 
     /// Set the subpixel refiner: `"center_of_mass"`, `"forstner"`,
     /// `"saddle_point"`, or `"radon_peak"`.
+    ///
+    /// **Legacy compatibility shortcut.** The typed [`ChessConfig`] returned by
+    /// `getConfig()` / `withConfig()` is the canonical API — prefer
+    /// `cfg.refiner.kind = RefinementMethod.Forstner` for new code. This string
+    /// setter is retained for callers that pre-date the typed config surface.
     pub fn set_refiner(&mut self, name: &str) -> Result<(), JsValue> {
         self.config.refiner.kind =
             match name {

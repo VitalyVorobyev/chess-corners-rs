@@ -256,10 +256,13 @@ def generate_one(idx: int,
     # Inner corners ground truth: OpenCV order is row-major (y then x)
     # We place origin at the top-left outer corner.
     inner_pts_XY = []
+    inner_pts_UV_tex = []
     for iy in range(1, inner_y + 1):
         for ix in range(1, inner_x + 1):
             inner_pts_XY.append([ix * square_size, iy * square_size])
+            inner_pts_UV_tex.append([ix * pps, iy * pps])
     inner_pts_XY = np.array(inner_pts_XY, dtype=np.float64)
+    inner_pts_UV_tex = np.array(inner_pts_UV_tex, dtype=np.float64)
 
     # Choose translation ranges relative to board size (enough to cover various placements)
     xy_range = (0.6 * board_w, 0.6 * board_h)
@@ -332,6 +335,7 @@ def generate_one(idx: int,
         },
         "H_tex2img": H.tolist(),
         "gt_corners_uv": inner_uv.reshape(-1, 2).tolist(),
+        "gt_corners_uv_tex": inner_pts_UV_tex.tolist(),
     }
 
     return img, meta

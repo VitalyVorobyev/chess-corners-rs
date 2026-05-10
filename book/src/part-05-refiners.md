@@ -134,7 +134,7 @@ rejects:
 | Weaknesses       | Parabolic model is approximate on sharp edges   |
 
 A reasonable default when you don't know in advance whether frames
-will be sharp or blurred. Stable across the full blur sweep in Part VII.
+will be sharp or blurred. Stable across the full blur sweep in Part VIII.
 
 ## 5.5 RadonPeak
 
@@ -222,7 +222,7 @@ two rendering modes:
   a random cell size in `[4, 12]` px, then blurred by a Gaussian
   PSF in `σ ∈ [0.3, 2.0]` px. This matches real camera output: ink/paper
   step edges, softened by the optical system's PSF, sampled by the
-  sensor. The benchmark fixture in Part VII uses the same renderer.
+  sensor. The benchmark fixture in Part VIII uses the same renderer.
 - **Smooth saddle.** The `tanh(x)·tanh(y)` model from earlier
   dataset revisions. Included at 50 % weight so callers who still
   feed the model smooth synthetic patches — as older documentation
@@ -255,7 +255,7 @@ opposite distribution failure.
 
 v4 is the mixed dataset (50/50) plus retuned offsets and augmentations.
 It is robust across both distributions and best-in-class on noise-heavy
-scenes (`σ ≥ 8` gray levels) per the measurements in Part VII. It does
+scenes (`σ ≥ 8` gray levels) per the measurements in Part VIII. It does
 not beat `RadonPeak` on clean or mildly blurred data; the gap appears
 to be a training-signal limit (neither a wider CNN nor a softargmax
 head closed it in our sweeps), not a capacity ceiling. Closing the
@@ -279,7 +279,7 @@ calls without re-optimization.
 
 ## 5.7 Picking a refiner
 
-The measurement-driven comparison lives in Part VII. In short:
+The measurement-driven comparison lives in Part VIII. In short:
 
 - Budget matters more than anything else: the structure-tensor
   refiners are 100–1000× faster than RadonPeak and ML.
@@ -291,11 +291,11 @@ The measurement-driven comparison lives in Part VII. In short:
 
 The refiner is selected via `ChessConfig.refiner.kind`, which is a
 simple enum — switching between them is a single-line change, and
-the comparison numbers in Part VII come from running all five on the
+the comparison numbers in Part VIII come from running all five on the
 same fixture at a single build.
 
 ---
 
-Next, [Part VI](part-06-multiscale-and-pyramids.md) describes how the
-pyramid and coarse-to-fine pipeline are built around these refiners
-for wide-resolution input and small boards.
+Next, [Part VI](part-06-orientation-methods.md) covers the orientation
+methods that produce the `axes` and `sigma_theta*` descriptor fields,
+shared by both the ChESS and Radon pipelines.

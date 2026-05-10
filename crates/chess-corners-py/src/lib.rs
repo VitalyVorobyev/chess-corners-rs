@@ -3,10 +3,8 @@
 //! Exposes a typed [`config::ChessConfig`] (with nested
 //! [`config::RefinerConfig`], [`config::RadonDetectorParams`], and
 //! per-variant refiner configs) plus thin wrappers over the facade's
-//! detection entry points. The FFI accepts the typed config directly
-//! — no JSON serialization across the boundary — while preserving a
-//! string-only fallback so callers built against the older Python
-//! `to_json()`-then-pass-string path keep working for one release.
+//! detection entry points. The FFI accepts the typed config directly —
+//! no JSON serialization across the boundary.
 
 mod config;
 
@@ -18,8 +16,8 @@ use pyo3::types::{PyAny, PyModule};
 
 use crate::config::{
     CenterOfMassConfig, ChessConfig, ConfigError, DescriptorMode, DetectorMode, ForstnerConfig,
-    PeakFitMode, RadonDetectorParams, RadonPeakConfig, RefinementMethod, RefinerConfig,
-    SaddlePointConfig, ThresholdMode,
+    OrientationMethod, PeakFitMode, RadonDetectorParams, RadonPeakConfig, RefinementMethod,
+    RefinerConfig, SaddlePointConfig, ThresholdMode, UpscaleConfig, UpscaleMode,
 };
 
 fn extract_image<'py>(
@@ -74,10 +72,9 @@ fn corners_to_array(
     Ok(out.into_pyarray(py).into_any().unbind())
 }
 
-/// Resolve the optional `cfg` argument into a Rust facade
-/// `ChessConfig`. Accepts either a typed [`ChessConfig`] (preferred,
-/// no JSON across the boundary), or a JSON string (legacy path
-/// retained for one release). Anything else raises `TypeError`.
+/// Resolve the optional `cfg` argument into a Rust facade `ChessConfig`.
+/// Accepts a typed [`ChessConfig`] or `None` (uses defaults). Any other
+/// type raises `TypeError`.
 fn resolve_config(
     py: Python<'_>,
     cfg: Option<&Bound<'_, PyAny>>,
@@ -91,13 +88,7 @@ fn resolve_config(
     if let Ok(typed) = cfg.cast::<ChessConfig>() {
         return Ok(typed.borrow().to_inner(py));
     }
-    if let Ok(json) = cfg.extract::<&str>() {
-        return serde_json::from_str(json)
-            .map_err(|err| PyValueError::new_err(format!("invalid config JSON: {err}")));
-    }
-    Err(PyTypeError::new_err(
-        "cfg must be a ChessConfig or a JSON string",
-    ))
+    Err(PyTypeError::new_err("cfg must be a ChessConfig"))
 }
 
 #[pyfunction(signature = (image, cfg=None))]
@@ -187,6 +178,8 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ThresholdMode>()?;
     m.add_class::<RefinementMethod>()?;
     m.add_class::<PeakFitMode>()?;
+    m.add_class::<OrientationMethod>()?;
+    m.add_class::<UpscaleMode>()?;
 
     m.add_class::<CenterOfMassConfig>()?;
     m.add_class::<ForstnerConfig>()?;
@@ -194,6 +187,7 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<RadonPeakConfig>()?;
     m.add_class::<RadonDetectorParams>()?;
     m.add_class::<RefinerConfig>()?;
+    m.add_class::<UpscaleConfig>()?;
     m.add_class::<ChessConfig>()?;
 
     m.add_function(wrap_pyfunction!(find_chess_corners, m)?)?;

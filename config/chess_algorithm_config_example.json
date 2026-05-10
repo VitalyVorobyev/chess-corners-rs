@@ -27,5 +27,6 @@
   "pyramid_levels": 3,
   "pyramid_min_size": 96,
   "refinement_radius": 4,
-  "merge_radius": 2.5
+  "merge_radius": 2.5,
+  "orientation_method": "ring_fit"
 }

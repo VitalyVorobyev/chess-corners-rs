@@ -246,7 +246,7 @@ pub struct Corner {
 
 The refinement step preserves the detector's noise robustness and
 adds subpixel precision. Measured accuracy and throughput for each
-refiner are in [Part VII](part-07-benchmarks.md).
+refiner are in [Part VIII](part-08-benchmarks.md).
 
 ---
 
@@ -412,7 +412,7 @@ optimisation or topology reasoning at this stage.
 You get `CornerDescriptor` values when you use the high‑level APIs:
 
 - `chess-corners-core` users can run the response and detector
-  stages manually and then call `corners_to_descriptors`.
+  stages manually and then call `corners_to_descriptors_with_method`.
 - `chess-corners` users get `Vec<CornerDescriptor>` directly from
   helpers such as `find_chess_corners_image`,
   `find_chess_corners_u8`, or the multiscale APIs.
@@ -422,6 +422,12 @@ more insight into local structure — grid fitting, lens‑distortion
 modelling, calibration with per‑corner weights, or outlier rejection
 before bundle adjustment — `axes`, `sigma`, `contrast`, and `fit_rms`
 are the extra handles you get "for free" with each detection.
+
+The `axes`, `sigma_theta1`, `sigma_theta2`, `amp`, and `fit_rms`
+fields are produced by an orientation method shared with the Radon
+detector. See [Part VI: Orientation methods](part-06-orientation-methods.md)
+for the API surface, the two available algorithms (`RingFit` and
+`DiskFit`), and step-by-step descriptions of each.
 
 ---
 

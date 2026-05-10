@@ -1,0 +1,108 @@
+name: bench_default
+seed: 1
+n_per_cell_patch: 300
+n_per_cell_chess: 30
+
+# Moderate defaults applied when an axis is held fixed.
+defaults:
+  render_mode: tanh
+  blur_sigma: 1.0
+  noise_sigma: 2.0
+  sp_prob: 0.0
+  contrast: 1.0
+  brightness: 0.0
+  gamma: 1.0
+  vignetting: 0.0
+  axis_skew_deg: 90.0
+  dx: 0.25
+  dy: 0.25
+  scale: 1.0
+  edge_softness: 0.15
+  cell_size_px: 6.0
+
+homography:
+  enabled: false
+
+chess:
+  inner_x: 9
+  inner_y: 6
+  pps: 32
+  square_size: 0.03
+  img_w: 1280
+  img_h: 960
+  fx: 1100.0
+  fy: 1100.0
+  z_range: [0.5, 1.2]
+  margin: 32
+  noise_sigma: 2.0
+  sp_prob: 0.0
+  blur_sigma: 0.8
+  gamma_range: [0.9, 1.1]
+  contrast_range: [0.9, 1.1]
+  brightness_range: [-10.0, 10.0]
+  vignetting: 0.0
+  roll_max: 10.0
+
+sweeps:
+  - name: blur
+    mode: patch
+    param: blur_sigma
+    values: [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0]
+
+  - name: noise
+    mode: patch
+    param: noise_sigma
+    values: [0.0, 2.0, 5.0, 10.0, 20.0]
+
+  - name: salt_pepper
+    mode: patch
+    param: sp_prob
+    values: [0.0, 0.005, 0.01]
+
+  - name: contrast
+    mode: patch
+    param: contrast
+    values: [1.0, 0.6, 0.3]
+
+  - name: brightness
+    mode: patch
+    param: brightness
+    values: [-50.0, -20.0, 0.0, 20.0, 50.0]
+
+  - name: gamma
+    mode: patch
+    param: gamma
+    values: [0.7, 1.0, 1.4]
+
+  - name: axis_skew
+    mode: patch
+    param: axis_skew_deg
+    values: [30.0, 60.0, 75.0, 90.0, 105.0, 120.0, 150.0]
+
+  - name: subpixel
+    mode: patch_grid
+    param: dx_dy
+    grid:
+      size_x: 11
+      size_y: 11
+      x_range: [-0.5, 0.5]
+      y_range: [-0.5, 0.5]
+
+  - name: ring_radius
+    mode: patch
+    param: scale
+    values: [1.0, 2.0]
+
+  - name: chess_pose
+    mode: chess
+    param: pose
+    values:
+      - [0, 0]
+      - [20, 0]
+      - [-20, 0]
+      - [0, 20]
+      - [0, -20]
+      - [35, 20]
+      - [-35, -20]
+      - [45, 35]
+      - [-45, -35]

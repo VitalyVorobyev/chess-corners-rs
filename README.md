@@ -210,9 +210,22 @@ and WASM setters.
   "pyramid_levels": 3,
   "pyramid_min_size": 96,
   "refinement_radius": 4,
-  "merge_radius": 2.5
+  "merge_radius": 2.5,
+  "orientation_method": "ring_fit"
 }
 ```
+
+`orientation_method` controls the two-axis orientation fit applied to each
+detected corner. Two values are available:
+
+- `ring_fit` *(default)* — fits the parametric two-axis chessboard intensity
+  model to 16 ring samples via Gauss-Newton, with per-axis 1σ uncertainties
+  calibrated by a piecewise-linear lookup table. Suitable for the full range
+  of standard chessboard images.
+- `disk_fit` — full-disk crossing-line estimator. Samples all image pixels
+  in a disk around the corner center and fits two possibly non-orthogonal
+  axes. Falls back to `ring_fit` on clean orthogonal corners and near image
+  borders. Use when corners are imaged under strong projective warp.
 
 `detector_mode` picks a detector:
 

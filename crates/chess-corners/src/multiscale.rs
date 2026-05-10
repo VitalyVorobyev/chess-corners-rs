@@ -23,7 +23,7 @@
 use crate::ml_refiner;
 use crate::{ChessConfig, ChessParams, DetectorMode};
 use box_image_pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
-use chess_corners_core::descriptor::{corners_to_descriptors, Corner};
+use chess_corners_core::descriptor::{corners_to_descriptors_with_method, Corner};
 use chess_corners_core::detect::{detect_corners_from_response_with_refiner, merge_corners_simple};
 use chess_corners_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
 use chess_corners_core::{
@@ -33,6 +33,7 @@ use chess_corners_core::{ImageView, Refiner, RefinerKind, ResponseMap};
 
 /// Bridge from `chess_corners_core::ImageView` to `box_image_pyramid::ImageView`.
 fn to_pyramid_view(v: ImageView<'_>) -> box_image_pyramid::ImageView<'_> {
+    // invariant: v was already validated as a coherent ImageView, so the pyramid view cannot fail.
     box_image_pyramid::ImageView::new(v.width, v.height, v.data).unwrap()
 }
 #[cfg(feature = "rayon")]
@@ -224,12 +225,13 @@ fn merge_and_describe(
     #[cfg(feature = "tracing")]
     drop(merge_span);
 
-    corners_to_descriptors(
+    corners_to_descriptors_with_method(
         base.data,
         base.width,
         base.height,
         params.descriptor_ring_radius(),
         merged,
+        params.orientation_method,
     )
 }
 
@@ -282,17 +284,19 @@ where
             .expect("image dimensions must match buffer length");
         let mut raw = detect_fn(&resp, &params, Some(view));
         let merged = merge_corners_simple(&mut raw, cf.merge_radius);
-        return corners_to_descriptors(
+        return corners_to_descriptors_with_method(
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
             params.descriptor_ring_radius(),
             merged,
+            params.orientation_method,
         );
     }
 
     // --- Coarse-to-fine path ---
 
+    // invariant: pyramid was built from a validated input image, so at least one level exists.
     let coarse_lvl = pyramid.levels.last().unwrap();
     let coarse_w = coarse_lvl.img.width;
     let coarse_h = coarse_lvl.img.height;
@@ -300,6 +304,7 @@ where
     #[cfg(feature = "tracing")]
     let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
     let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, &params);
+    // invariant: coarse level dimensions come from the pyramid which already validated them.
     let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
     let coarse_corners =
         detect_with_refiner_kind(&coarse_resp, &params, Some(coarse_view), coarse_detect);
@@ -393,17 +398,19 @@ pub fn find_chess_corners_buff_with_refiner(
             .expect("image dimensions must match buffer length");
         let mut raw = detect_with_refiner_kind(&resp, &params, Some(refine_view), refiner);
         let merged = merge_corners_simple(&mut raw, cf.merge_radius);
-        return corners_to_descriptors(
+        return corners_to_descriptors_with_method(
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
             params.descriptor_ring_radius(),
             merged,
+            params.orientation_method,
         );
     }
 
     // --- Coarse-to-fine path (with optional rayon parallelism) ---
 
+    // invariant: pyramid was built from a validated input image, so at least one level exists.
     let coarse_lvl = pyramid.levels.last().unwrap();
     let coarse_w = coarse_lvl.img.width;
     let coarse_h = coarse_lvl.img.height;
@@ -411,6 +418,7 @@ pub fn find_chess_corners_buff_with_refiner(
     #[cfg(feature = "tracing")]
     let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
     let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, &params);
+    // invariant: coarse level dimensions come from the pyramid which already validated them.
     let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
     let coarse_corners =
         detect_with_refiner_kind(&coarse_resp, &params, Some(coarse_view), refiner);
@@ -511,12 +519,13 @@ fn detect_with_radon(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescri
     let params = cfg.to_chess_params();
     let mut merged = corners;
     let merged = merge_corners_simple(&mut merged, cfg.merge_radius);
-    let out = corners_to_descriptors(
+    let out = corners_to_descriptors_with_method(
         base.data,
         base.width,
         base.height,
         params.descriptor_ring_radius(),
         merged,
+        params.orientation_method,
     );
     #[cfg(feature = "tracing")]
     drop(span);

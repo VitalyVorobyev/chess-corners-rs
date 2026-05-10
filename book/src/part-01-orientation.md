@@ -19,7 +19,7 @@ single configuration type:
   ChESS ring loses support. Covered in [Part IV](part-04-radon-detector.md).
 
 Both produce the same `CornerDescriptor` output, and both feed the
-same [multiscale pipeline](part-06-multiscale-and-pyramids.md).
+same [multiscale pipeline](part-07-multiscale-and-pyramids.md).
 
 Once a detector has produced integer-pixel seeds, one of five
 subpixel refiners brings the coordinates under a pixel:
@@ -27,7 +27,7 @@ subpixel refiners brings the coordinates under a pixel:
 ONNX-backed `ML` refiner. Each is a one-line swap via
 `ChessConfig.refiner.kind`. The refiners are described in
 [Part V](part-05-refiners.md) and benchmarked in
-[Part VII](part-07-benchmarks.md).
+[Part VIII](part-08-benchmarks.md).
 
 The same `ChessConfig` drives a Rust API, a Python package, a
 browser WebAssembly package, and a CLI. Results are bit-identical
@@ -125,9 +125,10 @@ details and the fit math are in
 - To understand the ChESS response: [Part III](part-03-chess-detector.md).
 - To understand the Radon response: [Part IV](part-04-radon-detector.md).
 - To pick a refiner: [Part V](part-05-refiners.md) for algorithms,
-  [Part VII](part-07-benchmarks.md) for measurements.
-- Multiscale pipeline and pyramid tuning: [Part VI](part-06-multiscale-and-pyramids.md).
-- To contribute: [Part VIII](part-08-contributing.md).
+  [Part VIII](part-08-benchmarks.md) for measurements.
+- Orientation methods (`RingFit` / `DiskFit`): [Part VI](part-06-orientation-methods.md).
+- Multiscale pipeline and pyramid tuning: [Part VII](part-07-multiscale-and-pyramids.md).
+- To contribute: [Part IX](part-09-contributing.md).
 
 Rust API documentation builds alongside this book and is published
 at the same site:
