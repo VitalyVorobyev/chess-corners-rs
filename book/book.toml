@@ -6,3 +6,6 @@ src = "src"
 
 [build]
 create-missing = true
+
+[output.html]
+mathjax-support = true

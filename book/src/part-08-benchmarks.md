@@ -1,4 +1,4 @@
-# Part VII: Benchmarks and performance
+# Part VIII: Benchmarks and performance
 
 This chapter measures what the library does on controlled synthetic
 fixtures and on real calibration frames. It covers the five refiners
@@ -447,5 +447,5 @@ tools/profile.sh samply chess testimages/large.png
 
 ---
 
-[Part VIII](part-08-contributing.md) describes how to contribute
+[Part IX](part-09-contributing.md) describes how to contribute
 code, tests, or datasets back to the project.

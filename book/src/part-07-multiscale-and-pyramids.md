@@ -1,4 +1,4 @@
-# Part VI: Multiscale pipeline
+# Part VII: Multiscale pipeline
 
 Parts II–V treated detection mostly as a single-scale operation: one
 call, one image, one response map. In practice, frames vary in scale
@@ -432,6 +432,6 @@ JSON for batch experiments.
 
 ---
 
-Next: [Part VII](part-07-benchmarks.md) — measured accuracy and
+Next: [Part VIII](part-08-benchmarks.md) — measured accuracy and
 throughput for both detectors, every refiner, and the full multiscale
 pipeline.

@@ -1,4 +1,4 @@
-# Part VIII: Contributing
+# Part IX: Contributing
 
 The workspace is a practical reference implementation rather than a
 one-off experiment. Contributions are welcome in three forms.
@@ -12,7 +12,7 @@ added directly to the test suite.
 and the images in `testdata/` are designed for rerunning accuracy and
 performance experiments after code changes. Extending them, or
 contributing new datasets, is a good way to validate improvements.
-The benchmark fixture in [Part VII §7.1](part-07-benchmarks.md#71-the-benchmark-fixture)
+The benchmark fixture in [Part VIII §7.1](part-08-benchmarks.md#71-the-benchmark-fixture)
 and the ML refiner pipeline in `tools/ml_refiner/` have their own
 knobs and regression gates.
 
