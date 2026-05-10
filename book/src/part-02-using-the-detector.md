@@ -122,7 +122,7 @@ level, only the refiner is nested:
 | `min_cluster_size`    | Minimum number of positive-response neighbors inside the NMS window.                             |
 | `refiner`             | Nested refiner selection + per-refiner configs (see Part V).                                      |
 | `pyramid_levels`      | `1` means single-scale; `> 1` enables the coarse-to-fine multiscale pipeline.                    |
-| `pyramid_min_size`    | Smallest pyramid level dimension allowed during construction.                                    |
+| `pyramid_min_size`    | Smallest downsampled pyramid level dimension allowed; level 0 is still included for valid images. |
 | `refinement_radius`   | ROI size (in coarse-level pixels) used when refining coarse seeds at base resolution.            |
 | `merge_radius`        | Duplicate-suppression distance (in base-level pixels) for the final merge step.                  |
 | `radon_detector`      | Full `RadonDetectorParams` struct, only consulted when `detector_mode = Radon`.                   |

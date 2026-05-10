@@ -102,7 +102,7 @@ pub fn build_pyramid<'a>(
     params: &PyramidParams,
     buffers: &'a mut PyramidBuffers,
 ) -> Pyramid<'a> {
-    if params.num_levels == 0 || base.width < params.min_size || base.height < params.min_size {
+    if params.num_levels == 0 {
         return Pyramid { levels: Vec::new() };
     }
 
@@ -402,6 +402,21 @@ mod tests {
     }
 
     #[test]
+    fn build_pyramid_includes_single_small_base_level() {
+        let img = ImageBuffer::new(32, 24);
+        let params = PyramidParams {
+            num_levels: 1,
+            min_size: 128,
+        };
+        let mut buffers = PyramidBuffers::new();
+        let pyramid = build_pyramid(img.as_view(), &params, &mut buffers);
+        assert_eq!(pyramid.levels.len(), 1);
+        assert_eq!(pyramid.levels[0].img.width, 32);
+        assert_eq!(pyramid.levels[0].img.height, 24);
+        assert_eq!(pyramid.levels[0].scale, 1.0);
+    }
+
+    #[test]
     fn build_pyramid_multiple_levels() {
         let img = ImageBuffer::new(128, 128);
         let params = PyramidParams {
@@ -428,5 +443,19 @@ mod tests {
         let mut buffers = PyramidBuffers::new();
         let pyramid = build_pyramid(img.as_view(), &params, &mut buffers);
         assert_eq!(pyramid.levels.len(), 2); // 64 -> 32, stops before 16
+    }
+
+    #[test]
+    fn build_pyramid_min_size_only_stops_additional_levels() {
+        let img = ImageBuffer::new(64, 64);
+        let params = PyramidParams {
+            num_levels: 4,
+            min_size: 128,
+        };
+        let mut buffers = PyramidBuffers::new();
+        let pyramid = build_pyramid(img.as_view(), &params, &mut buffers);
+        assert_eq!(pyramid.levels.len(), 1);
+        assert_eq!(pyramid.levels[0].img.width, 64);
+        assert_eq!(pyramid.levels[0].img.height, 64);
     }
 }

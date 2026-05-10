@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ```rust
 use chess_corners::{
-    ChessConfig, DescriptorMode, DetectorMode, RefinementMethod, ThresholdMode,
+    ChessConfig, DescriptorMode, DetectorMode, OrientationMethod, RefinementMethod, ThresholdMode,
 };
 
 let mut cfg = ChessConfig::single_scale();
@@ -52,6 +52,7 @@ cfg.pyramid_levels = 1;
 cfg.pyramid_min_size = 128;
 cfg.refinement_radius = 3;
 cfg.merge_radius = 3.0;
+cfg.orientation_method = OrientationMethod::RingFit;
 cfg.refiner.kind = RefinementMethod::CenterOfMass;
 ```
 
@@ -62,6 +63,9 @@ Use `ChessConfig::single_scale()` for the default one-level detector and
 `DescriptorMode` can either follow the detector or override the descriptor
 ring radius explicitly (each descriptor is built by fitting a two-axis tanh
 model to the ring samples — see the book's Part III, §3.4).
+`OrientationMethod::DiskFit` can improve axes under strong projective warp.
+For descriptor batches above 80 candidates, only the strongest candidates run
+the full-disk pass and lower-ranked candidates fall back to `RingFit`.
 
 ## Descriptor output
 

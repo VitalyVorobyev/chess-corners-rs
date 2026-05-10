@@ -154,7 +154,10 @@ impl CornerDescriptor {
 /// Convert raw corner candidates into full descriptors by sampling the source image.
 ///
 /// Orientation and polarity follow the conventions documented on [`CornerDescriptor`].
-/// The default [`OrientationMethod::RingFit`] is used for all corners.
+/// The default [`OrientationMethod::RingFit`] is used for all corners. When
+/// [`OrientationMethod::DiskFit`] is requested for more than 80 candidates,
+/// only the 80 strongest candidates run the full-disk pass; lower-ranked
+/// candidates use the cheaper [`OrientationMethod::RingFit`] fallback.
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -509,5 +512,37 @@ mod tests {
         assert!(noisy_fit.sigma_theta1.is_finite());
         assert!(noisy_fit.sigma_theta2.is_finite());
         assert!(noisy_fit.rms > clean_fit.rms);
+    }
+
+    #[test]
+    fn disk_fit_mask_selects_only_top_response_budget() {
+        let corners: Vec<Corner> = (0..(FULL_DISK_MAX_FULL_IMAGE_CORNERS + 3))
+            .map(|i| Corner {
+                x: i as f32,
+                y: i as f32,
+                strength: i as f32,
+            })
+            .collect();
+
+        let mask = full_disk_top_response_mask(&corners, OrientationMethod::DiskFit)
+            .expect("large DiskFit descriptor batch should be budgeted");
+
+        assert_eq!(
+            mask.iter().filter(|&&enabled| enabled).count(),
+            FULL_DISK_MAX_FULL_IMAGE_CORNERS
+        );
+        assert!(!mask[0], "weakest candidate should fall back to RingFit");
+        assert!(
+            !mask[1],
+            "second-weakest candidate should fall back to RingFit"
+        );
+        assert!(
+            !mask[2],
+            "third-weakest candidate should fall back to RingFit"
+        );
+        assert!(
+            mask[FULL_DISK_MAX_FULL_IMAGE_CORNERS + 2],
+            "strongest candidate should run DiskFit"
+        );
     }
 }

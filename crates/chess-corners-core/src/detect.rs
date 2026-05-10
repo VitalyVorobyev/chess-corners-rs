@@ -1,7 +1,6 @@
 //! Corner detection utilities built on top of the dense ChESS response map.
 use crate::descriptor::{corners_to_descriptors_with_method, Corner, CornerDescriptor};
 use crate::imageview::ImageView;
-use crate::orientation::OrientationMethod;
 use crate::refine::{CornerRefiner, RefineContext, RefineStatus, Refiner};
 use crate::response::chess_response_u8;
 use crate::{ChessParams, ResponseMap};
@@ -33,12 +32,13 @@ pub fn find_corners_u8_with_refiner(
     params: &ChessParams,
     refiner: &mut dyn CornerRefiner,
 ) -> Vec<CornerDescriptor> {
+    let Some(image) = ImageView::from_u8_slice(w, h, img) else {
+        return Vec::new();
+    };
     let resp = chess_response_u8(img, w, h, params);
-    let image =
-        ImageView::from_u8_slice(w, h, img).expect("image dimensions must match buffer length");
     let corners = detect_corners_from_response_with_refiner(&resp, params, Some(image), refiner);
     let desc_radius = params.descriptor_ring_radius();
-    corners_to_descriptors_with_method(img, w, h, desc_radius, corners, OrientationMethod::RingFit)
+    corners_to_descriptors_with_method(img, w, h, desc_radius, corners, params.orientation_method)
 }
 
 /// Core detector: run NMS + refinement on an existing response map.
@@ -376,9 +376,11 @@ fn merge_corners_naive(corners: &mut Vec<Corner>, r2: f32) -> Vec<Corner> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::orientation::OrientationMethod;
     use crate::refine::{
         CenterOfMassConfig, CenterOfMassRefiner, RefineContext, RefineStatus, RefinerKind,
     };
+    use core::f32::consts::PI;
     use image::{GrayImage, Luma};
 
     fn make_quadrant_corner(size: u32, dark: u8, bright: u8) -> GrayImage {
@@ -396,9 +398,47 @@ mod tests {
         img
     }
 
+    fn make_skew_corner(size: usize, theta0: f32, theta1: f32, width: f32) -> Vec<u8> {
+        let cx = (size / 2) as f32;
+        let cy = cx;
+        let (s0, c0) = theta0.sin_cos();
+        let (s1, c1) = theta1.sin_cos();
+        let mut img = vec![0u8; size * size];
+
+        for y in 0..size {
+            for x in 0..size {
+                let dx = x as f32 - cx;
+                let dy = y as f32 - cy;
+                let d0 = -s0 * dx + c0 * dy;
+                let d1 = -s1 * dx + c1 * dy;
+                let q = (d0 / width).tanh() * (d1 / width).tanh();
+                let val = 128.0 + 80.0 * q;
+                img[y * size + x] = val.round().clamp(0.0, 255.0) as u8;
+            }
+        }
+
+        img
+    }
+
+    fn line_delta(a: f32, b: f32) -> f32 {
+        ((a - b + PI * 0.5).rem_euclid(PI) - PI * 0.5).abs()
+    }
+
+    fn pair_err(a0: f32, a1: f32, b0: f32, b1: f32) -> f32 {
+        let direct = line_delta(a0, b0).max(line_delta(a1, b1));
+        let swapped = line_delta(a0, b1).max(line_delta(a1, b0));
+        direct.min(swapped)
+    }
+
+    fn best_descriptor(desc: &[CornerDescriptor]) -> &CornerDescriptor {
+        desc.iter()
+            .max_by(|a, b| a.response.total_cmp(&b.response))
+            .expect("expected at least one descriptor")
+    }
+
     #[test]
     fn descriptors_report_two_axes_stable() {
-        use core::f32::consts::{FRAC_PI_2, PI};
+        use core::f32::consts::FRAC_PI_2;
 
         let size = 32u32;
         let params = ChessParams {
@@ -463,6 +503,78 @@ mod tests {
         let da1 = near_line(best.axes[1].angle, best_brighter.axes[1].angle);
         assert!(da0 < 0.35, "axis0 delta after brightness shift: {da0}");
         assert!(da1 < 0.35, "axis1 delta after brightness shift: {da1}");
+    }
+
+    #[test]
+    fn convenience_detection_honors_orientation_method() {
+        let size = 41usize;
+        let target0 = 30.0_f32.to_radians();
+        let target1 = 150.0_f32.to_radians();
+        let img = make_skew_corner(size, target0, target1, 0.7);
+
+        let base = ChessParams {
+            threshold_abs: Some(0.0),
+            threshold_rel: 0.0,
+            min_cluster_size: 1,
+            ..Default::default()
+        };
+
+        let ring = find_corners_u8(
+            &img,
+            size,
+            size,
+            &ChessParams {
+                orientation_method: OrientationMethod::RingFit,
+                ..base.clone()
+            },
+        );
+        let disk = find_corners_u8(
+            &img,
+            size,
+            size,
+            &ChessParams {
+                orientation_method: OrientationMethod::DiskFit,
+                ..base
+            },
+        );
+
+        assert!(
+            !ring.is_empty(),
+            "RingFit convenience path found no corners"
+        );
+        assert!(
+            !disk.is_empty(),
+            "DiskFit convenience path found no corners"
+        );
+
+        let ring_best = best_descriptor(&ring);
+        let disk_best = best_descriptor(&disk);
+        let ring_err = pair_err(
+            ring_best.axes[0].angle,
+            ring_best.axes[1].angle,
+            target0,
+            target1,
+        );
+        let disk_err = pair_err(
+            disk_best.axes[0].angle,
+            disk_best.axes[1].angle,
+            target0,
+            target1,
+        );
+        let method_delta = pair_err(
+            ring_best.axes[0].angle,
+            ring_best.axes[1].angle,
+            disk_best.axes[0].angle,
+            disk_best.axes[1].angle,
+        );
+
+        assert!(
+            disk_err < ring_err && method_delta > 0.25_f32.to_radians(),
+            "DiskFit should affect the skewed descriptor through find_corners_u8: ring={}°, disk={}°, delta={}°",
+            ring_err.to_degrees(),
+            disk_err.to_degrees(),
+            method_delta.to_degrees()
+        );
     }
 
     #[test]

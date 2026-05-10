@@ -69,6 +69,11 @@ cfg.refinement_radius = 3
 cfg.merge_radius = 3.0
 ```
 
+`ChessConfig()` follows the Rust defaults: single-scale detection with
+`ThresholdMode.ABSOLUTE` and `threshold_value = 0.0`. Set
+`ThresholdMode.RELATIVE` explicitly when you want fraction-of-maximum
+thresholding.
+
 All nested objects are default-initialized, so you can always do:
 
 ```python

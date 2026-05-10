@@ -75,6 +75,44 @@ fn ring_from_params(params: &ChessParams) -> (RingOffsets, &'static [(i32, i32);
     (ring, ring.offsets())
 }
 
+#[inline]
+fn empty_response() -> ResponseMap {
+    ResponseMap {
+        w: 0,
+        h: 0,
+        data: Vec::new(),
+    }
+}
+
+#[inline]
+fn zero_response(w: usize, h: usize) -> ResponseMap {
+    let Some(len) = w.checked_mul(h) else {
+        return empty_response();
+    };
+    ResponseMap {
+        w,
+        h,
+        data: vec![0.0; len],
+    }
+}
+
+#[inline]
+fn response_guard(img: &[u8], w: usize, h: usize, ring_radius: usize) -> Option<ResponseMap> {
+    let Some(len) = w.checked_mul(h) else {
+        return Some(empty_response());
+    };
+    if len != img.len() {
+        return Some(empty_response());
+    }
+
+    let ring_diameter = ring_radius.saturating_mul(2);
+    if w <= ring_diameter || h <= ring_diameter {
+        return Some(zero_response(w, h));
+    }
+
+    None
+}
+
 /// Compute the dense ChESS response for an 8-bit grayscale image.
 ///
 /// The response at each valid pixel center is computed from a 16‑sample ring
@@ -130,6 +168,9 @@ fn ring_from_params(params: &ChessParams) -> (RingOffsets, &'static [(i32, i32);
 /// Internally the image is processed row‑by‑row, but only pixels whose
 /// full ring lies inside the image bounds are evaluated; border pixels
 /// are left at zero in the returned [`ResponseMap`].
+/// If the dimensions do not match the buffer length or overflow, an
+/// empty response map is returned. If the image is smaller than the
+/// selected ring support, a same-sized zero-filled map is returned.
 ///
 /// - Without any features, `chess_response_u8` uses a straightforward
 ///   nested `for y { for x { ... } }` scalar loop and relies on the
@@ -152,6 +193,10 @@ fn ring_from_params(params: &ChessParams) -> (RingOffsets, &'static [(i32, i32);
     instrument(level = "info", skip(img, params), fields(w, h))
 )]
 pub fn chess_response_u8(img: &[u8], w: usize, h: usize, params: &ChessParams) -> ResponseMap {
+    if let Some(resp) = response_guard(img, w, h, params.ring_radius() as usize) {
+        return resp;
+    }
+
     // rayon path compiled only when feature is enabled
     #[cfg(feature = "rayon")]
     {
@@ -171,6 +216,10 @@ pub fn chess_response_u8_scalar(
     h: usize,
     params: &ChessParams,
 ) -> ResponseMap {
+    if let Some(resp) = response_guard(img, w, h, params.ring_radius() as usize) {
+        return resp;
+    }
+
     compute_response_sequential_scalar(img, w, h, params)
 }
 
@@ -185,7 +234,8 @@ pub fn chess_response_u8_scalar(
 /// lie inside the border margin. Internally this reuses the same scalar,
 /// SIMD, and optional `rayon` row kernels as [`chess_response_u8`], so ROI
 /// refinement benefits from the same feature combinations as the full-frame
-/// response path.
+/// response path. If the full-image dimensions do not match the buffer length
+/// or overflow, an empty response map is returned.
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -201,6 +251,10 @@ pub fn chess_response_u8_patch(
     params: &ChessParams,
     roi: Roi,
 ) -> ResponseMap {
+    if img_w.checked_mul(img_h) != Some(img.len()) {
+        return empty_response();
+    }
+
     let Roi { x0, y0, x1, y1 } = roi;
 
     // Clamp ROI to the image bounds
@@ -210,25 +264,34 @@ pub fn chess_response_u8_patch(
     let y1 = y1.min(img_h);
 
     if x1 <= x0 || y1 <= y0 {
-        return ResponseMap {
-            w: 0,
-            h: 0,
-            data: Vec::new(),
-        };
+        return empty_response();
     }
 
     let patch_w = x1 - x0;
     let patch_h = y1 - y0;
-    let mut data = vec![0.0f32; patch_w * patch_h];
+    let Some(patch_len) = patch_w.checked_mul(patch_h) else {
+        return empty_response();
+    };
+    let mut data = vec![0.0f32; patch_len];
 
     let (ring_kind, ring) = ring_from_params(params);
     let r = ring_kind.radius() as i32;
+    let r_usize = r as usize;
+    let ring_diameter = r_usize.saturating_mul(2);
+
+    if img_w <= ring_diameter || img_h <= ring_diameter {
+        return ResponseMap {
+            w: patch_w,
+            h: patch_h,
+            data,
+        };
+    }
 
     // Safe region for ring centers in *global* image coordinates
-    let gx0 = r as usize;
-    let gy0 = r as usize;
-    let gx1 = img_w - r as usize;
-    let gy1 = img_h - r as usize;
+    let gx0 = r_usize;
+    let gy0 = r_usize;
+    let gx1 = img_w - r_usize;
+    let gy1 = img_h - r_usize;
 
     for py in 0..patch_h {
         let gy = y0 + py;
@@ -273,6 +336,10 @@ fn compute_response_sequential(
     h: usize,
     params: &ChessParams,
 ) -> ResponseMap {
+    if let Some(resp) = response_guard(img, w, h, params.ring_radius() as usize) {
+        return resp;
+    }
+
     let (ring_kind, ring) = ring_from_params(params);
     let r = ring_kind.radius() as i32;
 
@@ -308,6 +375,10 @@ fn compute_response_sequential_scalar(
     h: usize,
     params: &ChessParams,
 ) -> ResponseMap {
+    if let Some(resp) = response_guard(img, w, h, params.ring_radius() as usize) {
+        return resp;
+    }
+
     let (ring_kind, ring) = ring_from_params(params);
     let r = ring_kind.radius() as i32;
 
@@ -330,6 +401,10 @@ fn compute_response_sequential_scalar(
 
 #[cfg(feature = "rayon")]
 fn compute_response_parallel(img: &[u8], w: usize, h: usize, params: &ChessParams) -> ResponseMap {
+    if let Some(resp) = response_guard(img, w, h, params.ring_radius() as usize) {
+        return resp;
+    }
+
     let (ring_kind, ring) = ring_from_params(params);
     let r = ring_kind.radius() as i32;
     let mut data = vec![0.0f32; w * h];
@@ -532,5 +607,69 @@ fn compute_row_range_simd(
         let resp = chess_response_at_u8(img, w, x as i32, y, ring);
         dst_row[px] = resp;
         x += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn response_tiny_image_returns_zero_filled_map() {
+        let params = ChessParams::default();
+        let img = vec![128u8; 3 * 3];
+
+        let resp = chess_response_u8(&img, 3, 3, &params);
+        assert_eq!(resp.width(), 3);
+        assert_eq!(resp.height(), 3);
+        assert_eq!(resp.data().len(), 9);
+        assert!(resp.data().iter().all(|&v| v == 0.0));
+
+        let scalar = chess_response_u8_scalar(&img, 3, 3, &params);
+        assert_eq!(scalar.width(), 3);
+        assert_eq!(scalar.height(), 3);
+        assert_eq!(scalar.data().len(), 9);
+        assert!(scalar.data().iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn response_invalid_dimensions_returns_empty_map() {
+        let params = ChessParams::default();
+        let img = vec![128u8; 8];
+
+        let resp = chess_response_u8(&img, 3, 3, &params);
+        assert_eq!(resp.width(), 0);
+        assert_eq!(resp.height(), 0);
+        assert!(resp.data().is_empty());
+
+        let scalar = chess_response_u8_scalar(&img, 3, 3, &params);
+        assert_eq!(scalar.width(), 0);
+        assert_eq!(scalar.height(), 0);
+        assert!(scalar.data().is_empty());
+    }
+
+    #[test]
+    fn response_patch_tiny_image_returns_zero_filled_patch() {
+        let params = ChessParams::default();
+        let img = vec![128u8; 3 * 3];
+        let roi = Roi::new(0, 0, 3, 3).unwrap();
+
+        let resp = chess_response_u8_patch(&img, 3, 3, &params, roi);
+        assert_eq!(resp.width(), 3);
+        assert_eq!(resp.height(), 3);
+        assert_eq!(resp.data().len(), 9);
+        assert!(resp.data().iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn response_patch_invalid_dimensions_returns_empty_map() {
+        let params = ChessParams::default();
+        let img = vec![128u8; 8];
+        let roi = Roi::new(0, 0, 3, 3).unwrap();
+
+        let resp = chess_response_u8_patch(&img, 3, 3, &params, roi);
+        assert_eq!(resp.width(), 0);
+        assert_eq!(resp.height(), 0);
+        assert!(resp.data().is_empty());
     }
 }

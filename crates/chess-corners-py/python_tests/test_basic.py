@@ -64,6 +64,8 @@ def test_public_signature_and_defaults():
     assert isinstance(cfg.refiner, chess_corners.RefinerConfig)
     assert isinstance(cfg.refiner.forstner, chess_corners.ForstnerConfig)
     assert isinstance(cfg.refiner.saddle_point, chess_corners.SaddlePointConfig)
+    assert cfg.threshold_mode is chess_corners.ThresholdMode.ABSOLUTE
+    assert cfg.threshold_value == pytest.approx(0.0)
 
 
 def test_ml_refiner_api():
@@ -99,6 +101,15 @@ def test_radon_heatmap_default_config():
     assert heatmap.ndim == 2
     assert heatmap.shape[0] >= img.shape[0]
     assert heatmap.shape[1] >= img.shape[1]
+
+
+def test_none_config_matches_explicit_default_config():
+    img = _checkerboard(square_size=16, squares=8)
+
+    implicit = chess_corners.find_chess_corners(img)
+    explicit = chess_corners.find_chess_corners(img, chess_corners.ChessConfig())
+
+    np.testing.assert_allclose(implicit, explicit, rtol=0.0, atol=0.0)
 
 
 def test_typed_config_passes_through_ffi_directly():

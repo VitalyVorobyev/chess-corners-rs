@@ -26,9 +26,6 @@ fn quadrant_corner(size: u32, dark: u8, bright: u8) -> Vec<u8> {
 fn low_res_cfg() -> ChessConfig {
     let mut cfg = ChessConfig::default();
     cfg.threshold_value = 0.01;
-    // Small images — drop the pyramid-min-size gate so the single-scale
-    // path actually runs.
-    cfg.pyramid_min_size = 16;
     cfg
 }
 

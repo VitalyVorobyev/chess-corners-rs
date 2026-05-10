@@ -79,11 +79,12 @@ fn resolve_config(
     py: Python<'_>,
     cfg: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<chess_corners_rs::ChessConfig> {
+    let default_config = || ChessConfig::build(py).map(|cfg| cfg.to_inner(py));
     let Some(cfg) = cfg else {
-        return Ok(chess_corners_rs::ChessConfig::default());
+        return default_config();
     };
     if cfg.is_none() {
-        return Ok(chess_corners_rs::ChessConfig::default());
+        return default_config();
     }
     if let Ok(typed) = cfg.cast::<ChessConfig>() {
         return Ok(typed.borrow().to_inner(py));

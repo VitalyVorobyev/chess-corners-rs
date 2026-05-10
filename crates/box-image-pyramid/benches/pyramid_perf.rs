@@ -65,7 +65,7 @@ fn make_deterministic_gray(width: usize, height: usize) -> Vec<u8> {
 }
 
 fn pyramid_dims(width: usize, height: usize, params: &PyramidParams) -> Vec<LevelDim> {
-    if params.num_levels == 0 || width < params.min_size || height < params.min_size {
+    if params.num_levels == 0 {
         return Vec::new();
     }
 

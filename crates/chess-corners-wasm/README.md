@@ -134,7 +134,8 @@ const detector = new ChessDetector();
 // Or start with the multiscale preset:
 // const detector = ChessDetector.multiscale();
 
-// Threshold (fraction of max response, default 0.2).
+// Threshold as a fraction of max response. This switches the detector
+// from the absolute-threshold default to relative thresholding.
 detector.set_threshold(0.15);
 
 // Non-maximum suppression radius (default 2).
@@ -228,7 +229,7 @@ will.
 | `set_broad_mode(v)` | Toggle broad detector mode |
 | `set_min_cluster_size(v)` | Set min cluster size |
 | `set_pyramid_levels(n)` | Set pyramid depth |
-| `set_pyramid_min_size(v)` | Set min pyramid level size |
+| `set_pyramid_min_size(v)` | Set min downsampled pyramid level size |
 | `set_refiner(name)` | Set subpixel refiner |
 
 ### Output format

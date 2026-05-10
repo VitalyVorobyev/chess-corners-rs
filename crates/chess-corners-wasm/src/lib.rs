@@ -163,7 +163,7 @@ impl ChessDetector {
     // between modes at runtime get their tuning applied on both paths
     // without having to re-invoke each setter after every mode switch.
 
-    /// Set the relative threshold (fraction of max response, default 0.2).
+    /// Set the relative threshold (fraction of max response).
     ///
     /// Applied to both detectors. For ChESS this switches
     /// `threshold_mode` to `Relative`; for Radon this sets

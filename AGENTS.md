@@ -1,10 +1,11 @@
 # AGENTS.md — chess-corners
 
-This repository contains **three published crates**:
+This repository contains **four published crates**:
 
 * **`chess-corners`** — the *public*, user-facing API crate (stable surface, ergonomic types).
 * **`chess-corners-core`** — a *low-level*, performance-oriented core crate (almost internal; minimal deps; sharper edges).
 * **`box-image-pyramid`** — a small standalone crate for fixed 2x grayscale pyramid construction with reusable buffers.
+* **`chess-corners-ml`** — optional ONNX-backed refinement support used behind the `ml-refiner` feature.
 
 The codebase prioritizes:
 

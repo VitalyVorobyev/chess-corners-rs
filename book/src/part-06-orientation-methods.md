@@ -20,7 +20,7 @@ The `orientation_method` field on `ChessConfig` (and the
 | Method     | JSON key      | Notes                                                                        |
 |------------|---------------|------------------------------------------------------------------------------|
 | `RingFit`  | `"ring_fit"`  | **Default.** 16-sample ring Gauss-Newton fit with calibrated σ.              |
-| `DiskFit`  | `"disk_fit"`  | Full-disk crossing-line estimator. Falls back to `RingFit` on weak evidence. |
+| `DiskFit`  | `"disk_fit"`  | Full-disk crossing-line estimator. Falls back to `RingFit` on weak evidence and lower-ranked candidates outside the descriptor budget. |
 
 Both methods produce the same `AxisFitResult` shape:
 `(theta1, theta2, sigma_theta1, sigma_theta2, amp, rms)`. They differ
@@ -177,7 +177,10 @@ case (~131 µs vs ~15 µs on typical hardware), but the lazy gate
 short-circuits clean inputs so the average cost is much closer to
 `RingFit` on real chessboard imagery. Switch to `DiskFit` when working
 with images that have known projective warp; otherwise leave the
-default in place.
+default in place. The descriptor pipeline currently bounds the full-disk
+work to the top 80 candidates by response and uses `RingFit` for the
+rest. This keeps behavior deterministic while leaving the deeper DiskFit
+performance redesign for a separate change.
 
 For the per-method precision/cost trade-off on the synthetic bench,
 see the orientation bench `REPORT.md` in `tools/orientation_bench/`.

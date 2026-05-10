@@ -934,6 +934,9 @@ impl ChessConfig {
 impl ChessConfig {
     /// Construct a `ChessConfig` with library defaults
     /// (single-scale, absolute threshold = 0.0).
+    ///
+    /// The base image is always processed when `pyramidLevels >= 1`;
+    /// `pyramidMinSize` only limits additional downsampled levels.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self::from_value(RsChessConfig::default())

@@ -1408,16 +1408,13 @@ pub struct ChessConfig {
 }
 
 impl ChessConfig {
-    fn build(py: Python<'_>) -> PyResult<Self> {
+    pub(crate) fn build(py: Python<'_>) -> PyResult<Self> {
         let defaults = RsChessConfig::default();
         Ok(Self {
             detector_mode: defaults.detector_mode,
             descriptor_mode: defaults.descriptor_mode,
-            // Match the prior Python dataclass defaults (Relative/0.2)
-            // rather than the Rust default (Absolute/0.0). Existing
-            // Python tests assume the relative-fraction default.
-            threshold_mode: RsThresholdMode::Relative,
-            threshold_value: 0.2,
+            threshold_mode: defaults.threshold_mode,
+            threshold_value: defaults.threshold_value,
             nms_radius: defaults.nms_radius,
             min_cluster_size: defaults.min_cluster_size,
             refiner: Py::new(py, RefinerConfig::build(py)?)?,

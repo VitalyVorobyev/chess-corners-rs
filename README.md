@@ -54,7 +54,7 @@ and every optional dependency is feature-gated. See `AGENTS.md` and
 
 ```toml
 [dependencies]
-chess-corners = "0.7"
+chess-corners = "0.9"
 image = "0.25"
 ```
 
@@ -225,7 +225,10 @@ detected corner. Two values are available:
 - `disk_fit` — full-disk crossing-line estimator. Samples all image pixels
   in a disk around the corner center and fits two possibly non-orthogonal
   axes. Falls back to `ring_fit` on clean orthogonal corners and near image
-  borders. Use when corners are imaged under strong projective warp.
+  borders. For large descriptor batches, the current implementation runs
+  the full-disk pass only on the top 80 candidates by response and uses
+  `ring_fit` for lower-ranked candidates. Use when corners are imaged under
+  strong projective warp.
 
 `detector_mode` picks a detector:
 

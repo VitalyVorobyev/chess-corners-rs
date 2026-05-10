@@ -51,9 +51,12 @@ pub enum OrientationMethod {
     /// falls back to [`Self::RingFit`] output transparently.
     ///
     /// Use this when standard chessboards are imaged under strong
-    /// projective warp (axis separation far from 90°). Higher per-corner
-    /// cost than `RingFit` (~5–10× on typical hardware), but the lazy-gate
-    /// short-circuits on clean inputs so the average cost is much lower.
+    /// projective warp (axis separation far from 90°). In descriptor
+    /// batches larger than 80 candidates, only the strongest candidates
+    /// run the bounded full-disk pass; lower-ranked candidates fall back
+    /// to [`Self::RingFit`]. Higher per-corner cost than `RingFit`, but
+    /// the lazy-gate short-circuits on clean inputs so the average cost
+    /// is lower than running the full disk model on every candidate.
     DiskFit,
 }
 

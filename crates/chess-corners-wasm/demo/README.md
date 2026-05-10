@@ -83,7 +83,7 @@ crates/chess-corners-wasm/demo/
 | Control        | WASM setter                 | Notes                                                        |
 |----------------|-----------------------------|--------------------------------------------------------------|
 | Levels         | `set_pyramid_levels(n: u8)` | `1` = single-scale; `≥2` = coarse-to-fine                    |
-| Min size       | `set_pyramid_min_size`      | Stop the pyramid when either dim drops below this            |
+| Min size       | `set_pyramid_min_size`      | Stop extra downsampled levels when either dim drops below this |
 | Upscale factor | `set_upscale_factor`        | `0`/`1` = off; `2`/`3`/`4` = bilinear upscale before detect  |
 
 Upscaling runs **ahead of the pyramid**. Output coordinates are always

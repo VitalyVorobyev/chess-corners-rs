@@ -412,16 +412,20 @@ fn run_condition(
         }
     }
 
-    let mut rows = vec![
+    let rows = vec![
         ("CenterOfMass", b_center.stats()),
         ("Forstner", b_forstner.stats()),
         ("SaddlePoint", b_saddle.stats()),
         ("RadonPeak", b_radon.stats()),
     ];
     #[cfg(feature = "ml-refiner")]
-    if ml_refiner.is_some() {
-        rows.push(("ML", b_ml.stats()));
-    }
+    let rows = {
+        let mut rows = rows;
+        if ml_refiner.is_some() {
+            rows.push(("ML", b_ml.stats()));
+        }
+        rows
+    };
     let _ = ITERS_SLOW;
     rows
 }
