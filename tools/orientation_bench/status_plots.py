@@ -34,11 +34,8 @@ from .sweep import ChessSample, PatchSample, iter_synth_chess_cells, iter_synth_
 
 
 METHOD_COLORS = {
-    "baseline": "#2457a6",
-    "sigma_correction_lut": "#1b8a5a",
-    "disk_sector_py": "#7a4fb3",
-    "disk_sector_rust": "#a05fbf",
-    "adaptive_beta": "#bd3f32",
+    "ring_fit": "#1b8a5a",
+    "disk_fit": "#a05fbf",
 }
 GT_AXIS_COLORS = ("#00d0ff", "#ffd54a")
 PRED_AXIS_COLORS = ("#ff334e", "#ff9f1c")
@@ -156,9 +153,9 @@ def plot_comparison_lines(
     plots_dir = out_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
     for sweep, by_method in sorted(metrics_by_sweep.items()):
-        if "baseline" not in by_method:
+        if "ring_fit" not in by_method:
             continue
-        base_cells = by_method["baseline"].get("cells", [])
+        base_cells = by_method["ring_fit"].get("cells", [])
         if not base_cells:
             continue
         xs, labels, numeric = _x_values(base_cells)
@@ -197,7 +194,7 @@ def plot_comparison_lines(
                 ax.set_xticks(xs)
                 ax.set_xticklabels(labels, rotation=25, ha="right")
             ax.set_title(f"{sweep}: {ylabel}")
-            ax.set_xlabel(by_method["baseline"].get("param", sweep))
+            ax.set_xlabel(by_method["ring_fit"].get("param", sweep))
             ax.set_ylabel(ylabel)
             ax.grid(True, alpha=0.28)
             ax.legend(loc="best")
@@ -336,10 +333,8 @@ def _nearest_row(sample: PatchSample, method: str) -> np.ndarray | None:
 
 
 def _overlay_methods(methods: list[str]) -> list[str]:
-    preferred = ["baseline", "disk_sector_rust", "disk_sector_py", "adaptive_beta"]
+    preferred = ["ring_fit", "disk_fit"]
     out = [m for m in preferred if m in methods]
-    if not out:
-        out = [m for m in methods if m != "sigma_correction_lut"]
     return out or list(methods)
 
 
@@ -365,7 +360,7 @@ def select_patch_sample(
         if not _cell_matches(case.value, params, sweep):
             continue
         for sample in samples[:limit]:
-            row = _nearest_row(sample, "baseline")
+            row = _nearest_row(sample, "ring_fit")
             if row is None:
                 continue
             chosen.append((_patch_error(sample, row), sample, row))
@@ -377,9 +372,9 @@ def select_patch_sample(
         _, sample, base_row = chosen[-1]
     else:
         _, sample, base_row = chosen[len(chosen) // 2]
-    rows = {"baseline": base_row}
-    for method in dict.fromkeys([*methods, "sigma_correction_lut"]):
-        if method == "baseline":
+    rows = {"ring_fit": base_row}
+    for method in dict.fromkeys(methods):
+        if method == "ring_fit":
             continue
         rows[method] = _nearest_row(sample, method)
     errors = {
@@ -424,9 +419,9 @@ def _patch_title(
     err = _patch_error(sample, row)
     sig = 0.5 * (float(row[6]) + float(row[8])) * 180.0 / math.pi
     text = f"{case.title}\n{method}: err={err:.1f} deg, sigma={sig:.1f} deg"
-    if method == "baseline" and sigma_row is not None:
+    if method == "ring_fit" and sigma_row is not None:
         sig_lut = 0.5 * (float(sigma_row[6]) + float(sigma_row[8])) * 180.0 / math.pi
-        text += f"\nlut sigma={sig_lut:.1f} deg"
+        text += f"\nring_fit sigma={sig_lut:.1f} deg"
     return text
 
 
@@ -555,7 +550,7 @@ def generate_overlays(
                 method,
                 sample,
                 rows.get(method),
-                rows.get("sigma_correction_lut"),
+                rows.get("ring_fit"),
             )
             overlay_index["patch"].append(
                 {
@@ -635,48 +630,29 @@ def write_markdown_report(
     lines.append("## Practical Readout")
     lines.append("")
     lines.append(
-        "- `baseline` is already practical for the normal synthetic envelope, including moderate projective "
-        "axis skew. It is not a solved estimator for extreme apparent axis angles."
+        "- `ring_fit` is the default method: Gauss-Newton on 16 ring samples with calibrated σ-LUT. "
+        "Suitable for the full range of standard chessboard images, including moderate projective axis skew."
     )
-    lines.append(
-        "- `sigma_correction_lut` is the practical opt-in for precision reporting: it preserves the baseline "
-        "axes and improves z calibration, so it is useful for weighting and filtering downstream."
-    )
-    if "disk_sector_py" in methods:
+    if "disk_fit" in methods:
         lines.append(
-            "- `disk_sector_py` is a benchmark-only full-disk prototype. It may replace the baseline angles "
-            "only when its disk/edge confidence gate accepts the local evidence."
-        )
-    if "disk_sector_rust" in methods:
-        lines.append(
-            "- `disk_sector_rust` is the opt-in Rust port of the full-disk estimator. It should match the "
-            "Python prototype on accuracy while removing Python post-processing cost."
-        )
-    if "adaptive_beta" in methods:
-        lines.append(
-            "- `adaptive_beta` is diagnostic only in this run. It improves a few cells but regresses blur, low "
-            "contrast, noise, projective skew, and chess-pose cases badly enough that it should not be used."
+            "- `disk_fit` is the opt-in full-disk estimator. It fits two possibly non-orthogonal axes "
+            "from all image pixels in a disk around the corner. Falls back to `ring_fit` on clean "
+            "orthogonal corners (lazy gate)."
         )
     lines.append("")
     lines.append("## Current Fail Conditions")
     lines.append("")
-    disk = summary.get("disk_sector_rust") or summary.get("disk_sector_py")
+    disk = summary.get("disk_fit")
     if disk:
-        disk_name = "disk_sector_rust" if "disk_sector_rust" in summary else "disk_sector_py"
         worst = disk.get("worst_rmse_cell") or {}
         lines.append(
-            f"- The previous baseline extreme-skew failure is resolved in this gate by `{disk_name}`: "
+            f"- Extreme-skew recovery is provided by `disk_fit`: "
             f"worst cell is {worst.get('sweep')} / {worst.get('param')} "
             f"at {worst.get('rmse_deg'):.2f} deg RMSE."
         )
-        if disk_name == "disk_sector_py":
-            lines.append(
-                "- Remaining risk is operational, not the synthetic accuracy gate: this is a Python prototype "
-                "and is too slow to ship as-is. Full-frame runs refine only top-response rows."
-            )
         lines.append(
-            "- Weak/low-SNR local evidence still falls back to sigma-LUT baseline; real-image validation remains "
-            "required before making this the default orientation method."
+            "- Weak/low-SNR local evidence still falls back to ring-fit; real-image validation remains "
+            "required before making disk_fit the default orientation method."
         )
     else:
         lines.append(
@@ -733,7 +709,7 @@ def main() -> int:
     parser.add_argument(
         "--methods",
         nargs="+",
-        default=["baseline", "sigma_correction_lut", "adaptive_beta"],
+        default=["ring_fit", "disk_fit"],
     )
     parser.add_argument("--overlay-selection-limit", type=int, default=120)
     args = parser.parse_args()

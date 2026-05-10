@@ -23,7 +23,7 @@ Smoke (≤30 s, useful for CI):
 ```bash
 python -m orientation_bench sweep \
   --config tools/orientation_bench/configs/bench_smoke.yaml \
-  --methods baseline disk_sector_rust disk_sector_py \
+  --methods ring_fit disk_fit \
   --out out/orientation_bench
 ```
 
@@ -32,7 +32,7 @@ Full grid (≈10 min CPU on a laptop):
 ```bash
 python -m orientation_bench sweep \
   --config tools/orientation_bench/configs/bench_default.yaml \
-  --methods baseline sigma_correction_lut disk_sector_rust disk_sector_py adaptive_beta
+  --methods ring_fit disk_fit
 ```
 
 Render the Markdown report:
@@ -67,15 +67,13 @@ review).
 
 ## Methods
 
-- `baseline`: legacy 16-ring Gauss-Newton fit.
-- `sigma_correction_lut`: baseline angles with calibrated reported
-  sigmas.
-- `adaptive_beta`: failed diagnostic branch kept only for comparison.
+- `ring_fit`: 16-sample ring Gauss-Newton fit with calibrated σ
+  (the workspace default).
+- `disk_fit`: full-disk crossing-line estimator with `ring_fit`
+  fallback when the disk model is weak or invalid.
 - `disk_sector_py`: benchmark-only Python post-processor. It first
-  runs `sigma_correction_lut` for centers/fallback sigmas, then
-  conditionally replaces angles using a full-disk crossing-line score.
-- `disk_sector_rust`: opt-in Rust port of the full-disk estimator. It
-  uses the same conservative acceptance idea with sigma-LUT fallback.
+  runs `ring_fit` for centers/fallback sigmas, then conditionally
+  replaces angles using a full-disk crossing-line score.
 
 ## Adding a new method
 
@@ -86,15 +84,15 @@ should keep their extra logic in `runner.py` or a helper module under
 
 ```python
 def _build_my_variant():
-    cfg = _build_baseline()
-    cfg.orientation_method = chess_corners.OrientationMethod.AdaptiveBeta
+    cfg = _build_permissive_cfg()
+    cfg.orientation_method = chess_corners.OrientationMethod.RING_FIT
     return cfg
 
 VARIANTS["my_variant"] = _build_my_variant
 ```
 
-Then run with `--methods baseline my_variant`. Phase 1 only ships the
-baseline; non-registered names raise `KeyError`.
+Then run with `--methods ring_fit my_variant`. Non-registered names
+raise `KeyError`.
 
 ## Tests
 

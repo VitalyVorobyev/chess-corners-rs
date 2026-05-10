@@ -14,7 +14,6 @@ from .variants import build_config
 __all__ = [
     "DetectionRow",
     "detect_with_method",
-    "detect_baseline",
     "ensure_available",
 ]
 
@@ -68,7 +67,7 @@ def detect_with_method(img_u8: np.ndarray, method: str) -> np.ndarray:
     if method == "disk_sector_py":
         from .disk_sector import refine_detection_rows
 
-        cfg = build_config("sigma_correction_lut")
+        cfg = build_config("ring_fit")
         img = np.ascontiguousarray(img_u8, dtype=np.uint8)
         rows = chess_corners.find_chess_corners(img, cfg)
         return refine_detection_rows(img, rows)
@@ -78,6 +77,3 @@ def detect_with_method(img_u8: np.ndarray, method: str) -> np.ndarray:
     return chess_corners.find_chess_corners(img, cfg)
 
 
-def detect_baseline(img_u8: np.ndarray) -> np.ndarray:
-    """Convenience wrapper for the baseline method."""
-    return detect_with_method(img_u8, "baseline")

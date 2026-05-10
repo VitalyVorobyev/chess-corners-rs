@@ -1,10 +1,4 @@
-"""Method-name → ChessConfig mapping.
-
-Phase 1 only shipped ``"baseline"``. Phase 3 variants register here
-once the corresponding ``OrientationMethod`` value is plumbed through
-to ``ChessConfig``. Benchmark-only Python post-processors can also
-register a base config here; ``runner.py`` owns their extra work.
-"""
+"""Method-name → ChessConfig mapping for the orientation benchmark."""
 
 from __future__ import annotations
 
@@ -34,63 +28,27 @@ def _build_permissive_cfg():
     return cfg
 
 
-def _build_baseline():
-    """Baseline 2nd-harmonic-seeded Gauss-Newton fit (legacy default)."""
+def _build_ring_fit():
+    """Ring-fit: Gauss-Newton on 16 ring samples with calibrated σ-LUT."""
     import chess_corners
 
     cfg = _build_permissive_cfg()
-    cfg.orientation_method = chess_corners.OrientationMethod.BASELINE
+    cfg.orientation_method = chess_corners.OrientationMethod.RING_FIT
     return cfg
 
 
-def _build_sigma_correction_lut():
-    """V6b — baseline fit with a fit_rms-keyed σ-multiplier LUT applied."""
+def _build_disk_fit():
+    """Disk-fit: full-disk crossing-line estimator with ring-fit fallback."""
     import chess_corners
 
     cfg = _build_permissive_cfg()
-    cfg.orientation_method = chess_corners.OrientationMethod.SIGMA_CORRECTION_LUT
-    return cfg
-
-
-def _build_adaptive_beta():
-    """V1 — promote the tanh slope β to a 5th GN parameter so the fit
-    adapts to the local edge sharpness across the blur sweep.
-    """
-    import chess_corners
-
-    cfg = _build_permissive_cfg()
-    cfg.orientation_method = chess_corners.OrientationMethod.ADAPTIVE_BETA
-    return cfg
-
-
-def _build_disk_sector_py():
-    """Benchmark-only full-disk post-processor.
-
-    The runner first executes the sigma-LUT baseline to obtain centers
-    and calibrated fallback sigmas, then recomputes axes in Python.
-    Returning the sigma-LUT config here keeps config construction
-    available to generic callers while preserving the no-public-API
-    prototype boundary.
-    """
-
-    return _build_sigma_correction_lut()
-
-
-def _build_disk_sector_rust():
-    """Rust full-disk estimator with sigma-LUT fallback."""
-    import chess_corners
-
-    cfg = _build_permissive_cfg()
-    cfg.orientation_method = chess_corners.OrientationMethod.FULL_DISK_SECTOR
+    cfg.orientation_method = chess_corners.OrientationMethod.DISK_FIT
     return cfg
 
 
 VARIANTS: dict[str, Callable[[], object]] = {
-    "baseline": _build_baseline,
-    "sigma_correction_lut": _build_sigma_correction_lut,
-    "adaptive_beta": _build_adaptive_beta,
-    "disk_sector_py": _build_disk_sector_py,
-    "disk_sector_rust": _build_disk_sector_rust,
+    "ring_fit": _build_ring_fit,
+    "disk_fit": _build_disk_fit,
 }
 
 

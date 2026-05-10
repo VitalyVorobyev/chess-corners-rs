@@ -160,8 +160,8 @@ pub struct ChessConfig {
     /// [`DetectorMode::Radon`]; otherwise left at its default.
     pub radon_detector: RadonDetectorParams,
     /// Orientation-fit method used when building corner descriptors.
-    /// Default [`OrientationMethod::Baseline`] preserves the legacy
-    /// 16-sample Gauss-Newton fit bit-identically.
+    /// Defaults to [`OrientationMethod::RingFit`] (Gauss-Newton with
+    /// calibrated σ-LUT).
     #[serde(default)]
     pub orientation_method: OrientationMethod,
 }

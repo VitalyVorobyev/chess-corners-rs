@@ -5,9 +5,10 @@
 //! contrast, and two-axis orientation with per-axis precision.
 //!
 //! The detector in [`crate::detect`] produces intermediate [`Corner`]
-//! values; [`corners_to_descriptors`] then samples the original image
-//! on a ChESS ring around each corner and fits a parametric two-axis
-//! intensity model to estimate the local grid geometry.
+//! values; [`corners_to_descriptors_with_method`] then samples the
+//! original image on a ChESS ring around each corner and fits a
+//! parametric two-axis intensity model to estimate the local grid
+//! geometry.
 //!
 //! The orientation fit body lives in [`crate::orientation`]; this
 //! module is a thin sampling and assembly shim. Future algorithm
@@ -15,6 +16,8 @@
 //! without touching this file.
 use crate::orientation::{self, OrientationMethod, TwoAxisFit};
 use crate::ring::ring_offsets;
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
@@ -29,7 +32,7 @@ const TANH_BETA: f32 = 4.0;
 /// Full-frame ChESS runs can produce thousands of positive-response
 /// candidates under permissive thresholds. The full-disk estimator is
 /// intentionally local and expensive, so only the strongest candidates
-/// get the disk pass; the rest keep the sigma-LUT fallback.
+/// get the disk pass; the rest keep the ring-fit fallback.
 const FULL_DISK_MAX_FULL_IMAGE_CORNERS: usize = 80;
 
 /// A detected ChESS corner (subpixel).
@@ -151,31 +154,7 @@ impl CornerDescriptor {
 /// Convert raw corner candidates into full descriptors by sampling the source image.
 ///
 /// Orientation and polarity follow the conventions documented on [`CornerDescriptor`].
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(img, corners),
-        fields(corners = corners.len())
-    )
-)]
-pub fn corners_to_descriptors(
-    img: &[u8],
-    w: usize,
-    h: usize,
-    radius: u32,
-    corners: Vec<Corner>,
-) -> Vec<CornerDescriptor> {
-    corners_to_descriptors_with_method(img, w, h, radius, corners, OrientationMethod::Baseline)
-}
-
-/// Variant of [`corners_to_descriptors`] that lets callers pick the
-/// orientation-fit [`OrientationMethod`] used to populate
-/// [`CornerDescriptor::axes`]. The default
-/// [`OrientationMethod::Baseline`] reproduces the legacy
-/// 16-sample Gauss-Newton fit bit-identically; future variants will
-/// trade extra image-side work for better accuracy on non-orthogonal
-/// corners.
+/// The default [`OrientationMethod::RingFit`] is used for all corners.
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -194,12 +173,15 @@ pub fn corners_to_descriptors_with_method(
 ) -> Vec<CornerDescriptor> {
     let ring = ring_offsets(radius);
     let ring_phi = ring_angles(ring);
-    let mut out = Vec::with_capacity(corners.len());
     let full_disk_mask = full_disk_top_response_mask(&corners, method);
-    for (idx, c) in corners.into_iter().enumerate() {
+
+    // Closure that computes one CornerDescriptor given its index and Corner.
+    // Captures all shared read-only state; img/ring/ring_phi/full_disk_mask are
+    // all Sync, so both the rayon and serial paths compile cleanly.
+    let describe = |(idx, c): (usize, Corner)| -> CornerDescriptor {
         let samples = sample_ring(img, w, h, c.x, c.y, ring);
         let orientation_method = match &full_disk_mask {
-            Some(mask) if !mask[idx] => OrientationMethod::SigmaCorrectionLut,
+            Some(mask) if !mask[idx] => OrientationMethod::RingFit,
             _ => method,
         };
         let fit = fit_two_axes_with_method(
@@ -213,8 +195,7 @@ pub fn corners_to_descriptors_with_method(
             radius,
             orientation_method,
         );
-
-        out.push(CornerDescriptor {
+        CornerDescriptor {
             x: c.x,
             y: c.y,
             response: c.strength,
@@ -230,13 +211,22 @@ pub fn corners_to_descriptors_with_method(
                     sigma: fit.sigma_theta2,
                 },
             ],
-        });
+        }
+    };
+
+    // Rayon path: into_par_iter().enumerate().map().collect() preserves order.
+    #[cfg(feature = "rayon")]
+    {
+        corners.into_par_iter().enumerate().map(describe).collect()
     }
-    out
+    #[cfg(not(feature = "rayon"))]
+    {
+        corners.into_iter().enumerate().map(describe).collect()
+    }
 }
 
 fn full_disk_top_response_mask(corners: &[Corner], method: OrientationMethod) -> Option<Vec<bool>> {
-    if !matches!(method, OrientationMethod::FullDiskSector)
+    if !matches!(method, OrientationMethod::DiskFit)
         || corners.len() <= FULL_DISK_MAX_FULL_IMAGE_CORNERS
     {
         return None;
@@ -286,22 +276,16 @@ pub(crate) fn ring_angles(ring: &[(i32, i32); 16]) -> [f32; 16] {
 }
 
 /// Crate-internal entry point preserved for the existing in-file
-/// test suite. Delegates to the baseline orientation fit in
-/// [`crate::orientation`]. Production code should use
-/// [`corners_to_descriptors_with_method`] (or the
-/// [`OrientationMethod`]-aware [`crate::orientation::fit_axes_at_point`]
-/// helper).
+/// test suite. Delegates to the ring-fit orientation in
+/// [`crate::orientation`].
 #[cfg(test)]
 #[inline]
 pub(crate) fn fit_two_axes(samples: &[f32; 16], ring_phi: &[f32; 16]) -> TwoAxisFit {
-    orientation::baseline_fit_for_descriptor(samples, ring_phi)
+    orientation::ring_fit_for_descriptor(samples, ring_phi)
 }
 
 /// Crate-internal dispatcher used by
-/// [`corners_to_descriptors_with_method`]. The baseline path matches
-/// [`fit_two_axes`] bit-identically; other variants forward to the
-/// appropriate entry in [`crate::orientation`]. Called once per
-/// detected corner so it is deliberately monomorphic.
+/// [`corners_to_descriptors_with_method`].
 #[allow(clippy::too_many_arguments)]
 #[inline]
 fn fit_two_axes_with_method(
@@ -316,29 +300,20 @@ fn fit_two_axes_with_method(
     method: OrientationMethod,
 ) -> TwoAxisFit {
     match method {
-        OrientationMethod::Baseline => orientation::baseline_fit_for_descriptor(samples, ring_phi),
-        OrientationMethod::SigmaCorrectionConst { multiplier } => {
-            orientation::sigma_correction_const_fit_for_descriptor(samples, ring_phi, multiplier)
+        OrientationMethod::RingFit => orientation::ring_fit_for_descriptor(samples, ring_phi),
+        OrientationMethod::DiskFit => {
+            orientation::disk_fit_for_descriptor(img, w, h, cx, cy, radius, samples, ring_phi)
         }
-        OrientationMethod::SigmaCorrectionLut => {
-            orientation::sigma_correction_lut_fit_for_descriptor(samples, ring_phi)
-        }
-        OrientationMethod::AdaptiveBeta => {
-            orientation::adaptive_beta_fit_for_descriptor(samples, ring_phi)
-        }
-        OrientationMethod::FullDiskSector => orientation::full_disk_sector_fit_for_descriptor(
-            img, w, h, cx, cy, radius, samples, ring_phi,
-        ),
     }
 }
 
 /// Test-only canonicalization shim. Re-exposes the implementation
 /// that lives in [`crate::orientation`] under the name the
-/// in-file tests use, so they keep compiling unchanged.
+/// in-file tests use.
 #[cfg(test)]
 #[inline]
 fn canonicalize(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32) {
-    orientation::baseline_canonicalize_for_test(theta1, theta2, amp)
+    orientation::ring_fit_canonicalize_for_test(theta1, theta2, amp)
 }
 
 fn sample_bilinear(img: &[u8], w: usize, h: usize, x: f32, y: f32) -> f32 {

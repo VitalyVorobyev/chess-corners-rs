@@ -33,6 +33,7 @@ use chess_corners_core::{ImageView, Refiner, RefinerKind, ResponseMap};
 
 /// Bridge from `chess_corners_core::ImageView` to `box_image_pyramid::ImageView`.
 fn to_pyramid_view(v: ImageView<'_>) -> box_image_pyramid::ImageView<'_> {
+    // invariant: v was already validated as a coherent ImageView, so the pyramid view cannot fail.
     box_image_pyramid::ImageView::new(v.width, v.height, v.data).unwrap()
 }
 #[cfg(feature = "rayon")]
@@ -295,6 +296,7 @@ where
 
     // --- Coarse-to-fine path ---
 
+    // invariant: pyramid was built from a validated input image, so at least one level exists.
     let coarse_lvl = pyramid.levels.last().unwrap();
     let coarse_w = coarse_lvl.img.width;
     let coarse_h = coarse_lvl.img.height;
@@ -302,6 +304,7 @@ where
     #[cfg(feature = "tracing")]
     let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
     let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, &params);
+    // invariant: coarse level dimensions come from the pyramid which already validated them.
     let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
     let coarse_corners =
         detect_with_refiner_kind(&coarse_resp, &params, Some(coarse_view), coarse_detect);
@@ -407,6 +410,7 @@ pub fn find_chess_corners_buff_with_refiner(
 
     // --- Coarse-to-fine path (with optional rayon parallelism) ---
 
+    // invariant: pyramid was built from a validated input image, so at least one level exists.
     let coarse_lvl = pyramid.levels.last().unwrap();
     let coarse_w = coarse_lvl.img.width;
     let coarse_h = coarse_lvl.img.height;
@@ -414,6 +418,7 @@ pub fn find_chess_corners_buff_with_refiner(
     #[cfg(feature = "tracing")]
     let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
     let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, &params);
+    // invariant: coarse level dimensions come from the pyramid which already validated them.
     let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
     let coarse_corners =
         detect_with_refiner_kind(&coarse_resp, &params, Some(coarse_view), refiner);

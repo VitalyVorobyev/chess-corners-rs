@@ -4,21 +4,21 @@
 //!
 //! - [`fit_axes_at_point`] samples the 16-point ChESS ring around an
 //!   image point and dispatches to the chosen [`OrientationMethod`].
-//!   This is the workhorse used by the descriptor pipeline (when
-//!   eventually wired in) and by the orientation benchmark.
+//!   This is the workhorse used by the descriptor pipeline and by the
+//!   orientation benchmark.
 //! - [`fit_axes_from_samples`] takes pre-sampled ring values directly,
 //!   which is convenient for unit tests that don't want to construct a
 //!   real image. Both routes converge on the same dispatcher.
 
-use super::{adaptive_beta, baseline, disk_sector, sigma_correction, OrientationMethod};
+use super::{disk_sector, ring_fit, OrientationMethod};
 use crate::descriptor::{ring_angles, sample_ring};
 use crate::ring::ring_offsets;
 
 /// Result of a two-axis orientation fit at a single corner.
 ///
 /// This is the public mirror of the (crate-private) `TwoAxisFit` used
-/// by the legacy descriptor path. Future variants of
-/// [`OrientationMethod`] populate the same fields.
+/// by the descriptor path. All [`OrientationMethod`] variants populate
+/// the same fields.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct AxisFitResult {
@@ -38,9 +38,9 @@ pub struct AxisFitResult {
     pub rms: f32,
 }
 
-impl From<baseline::TwoAxisFit> for AxisFitResult {
+impl From<ring_fit::TwoAxisFit> for AxisFitResult {
     #[inline]
-    fn from(v: baseline::TwoAxisFit) -> Self {
+    fn from(v: ring_fit::TwoAxisFit) -> Self {
         Self {
             amp: v.amp,
             theta1: v.theta1,
@@ -70,15 +70,8 @@ pub fn fit_axes_at_point(
     let ring_phi = ring_angles(ring);
     let samples = sample_ring(img, w, h, cx, cy, ring);
     match method {
-        OrientationMethod::Baseline => baseline::fit(&samples, &ring_phi).into(),
-        OrientationMethod::SigmaCorrectionConst { multiplier } => {
-            sigma_correction::fit_const(&samples, &ring_phi, multiplier).into()
-        }
-        OrientationMethod::SigmaCorrectionLut => {
-            sigma_correction::fit_lut(&samples, &ring_phi).into()
-        }
-        OrientationMethod::AdaptiveBeta => adaptive_beta::fit(&samples, &ring_phi).into(),
-        OrientationMethod::FullDiskSector => {
+        OrientationMethod::RingFit => ring_fit::fit_ring(&samples, &ring_phi).into(),
+        OrientationMethod::DiskFit => {
             disk_sector::fit(img, w, h, cx, cy, radius, &samples, &ring_phi).into()
         }
     }
@@ -89,7 +82,7 @@ pub fn fit_axes_at_point(
 /// Use this when you already have the 16 ring samples in hand (e.g.
 /// from a custom sampler or a synthetic test) and only need the fit.
 /// Image-dependent variants will fall back to the ring-only
-/// [`OrientationMethod::SigmaCorrectionLut`] when invoked through this
+/// [`OrientationMethod::RingFit`] result when invoked through this
 /// helper.
 pub fn fit_axes_from_samples(
     samples: &[f32; 16],
@@ -97,14 +90,8 @@ pub fn fit_axes_from_samples(
     method: OrientationMethod,
 ) -> AxisFitResult {
     match method {
-        OrientationMethod::Baseline => baseline::fit(samples, ring_phi).into(),
-        OrientationMethod::SigmaCorrectionConst { multiplier } => {
-            sigma_correction::fit_const(samples, ring_phi, multiplier).into()
-        }
-        OrientationMethod::SigmaCorrectionLut => {
-            sigma_correction::fit_lut(samples, ring_phi).into()
-        }
-        OrientationMethod::AdaptiveBeta => adaptive_beta::fit(samples, ring_phi).into(),
-        OrientationMethod::FullDiskSector => sigma_correction::fit_lut(samples, ring_phi).into(),
+        OrientationMethod::RingFit => ring_fit::fit_ring(samples, ring_phi).into(),
+        // DiskFit needs image data; fall back to RingFit when not available.
+        OrientationMethod::DiskFit => ring_fit::fit_ring(samples, ring_phi).into(),
     }
 }

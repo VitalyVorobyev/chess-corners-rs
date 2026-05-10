@@ -39,11 +39,12 @@ use std::rc::Rc;
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
     DescriptorMode as RsDescriptorMode, DetectorMode as RsDetectorMode,
-    ForstnerConfig as RsForstnerConfig, PeakFitMode as RsPeakFitMode,
-    RadonDetectorParams as RsRadonDetectorParams, RadonPeakConfig as RsRadonPeakConfig,
-    RefinementMethod as RsRefinementMethod, RefinerConfig as RsRefinerConfig,
-    SaddlePointConfig as RsSaddlePointConfig, ThresholdMode as RsThresholdMode,
-    UpscaleConfig as RsUpscaleConfig, UpscaleMode as RsUpscaleMode,
+    ForstnerConfig as RsForstnerConfig, OrientationMethod as RsOrientationMethod,
+    PeakFitMode as RsPeakFitMode, RadonDetectorParams as RsRadonDetectorParams,
+    RadonPeakConfig as RsRadonPeakConfig, RefinementMethod as RsRefinementMethod,
+    RefinerConfig as RsRefinerConfig, SaddlePointConfig as RsSaddlePointConfig,
+    ThresholdMode as RsThresholdMode, UpscaleConfig as RsUpscaleConfig,
+    UpscaleMode as RsUpscaleMode,
 };
 use wasm_bindgen::prelude::*;
 
@@ -234,6 +235,44 @@ impl From<RsUpscaleMode> for UpscaleMode {
             RsUpscaleMode::Disabled => UpscaleMode::Disabled,
             RsUpscaleMode::Fixed => UpscaleMode::Fixed,
             _ => UpscaleMode::Disabled,
+        }
+    }
+}
+
+/// Two-axis orientation-fit method. Mirrors [`chess_corners::OrientationMethod`].
+///
+/// `RingFit` *(default, = 0)* — fits the parametric two-axis chessboard
+/// intensity model to the 16-sample ring via Gauss-Newton, with calibrated
+/// per-axis 1σ uncertainties. Suitable for the full range of standard
+/// chessboard images.
+///
+/// `DiskFit` *(= 1)* — full-disk crossing-line estimator. Samples all image
+/// pixels in a disk around the corner center and fits two possibly
+/// non-orthogonal axes. Use when corners are imaged under strong projective
+/// warp. Falls back to `RingFit` on clean orthogonal corners.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OrientationMethod {
+    RingFit = 0,
+    DiskFit = 1,
+}
+
+impl From<OrientationMethod> for RsOrientationMethod {
+    fn from(v: OrientationMethod) -> Self {
+        match v {
+            OrientationMethod::RingFit => RsOrientationMethod::RingFit,
+            OrientationMethod::DiskFit => RsOrientationMethod::DiskFit,
+        }
+    }
+}
+
+impl From<RsOrientationMethod> for OrientationMethod {
+    fn from(v: RsOrientationMethod) -> Self {
+        match v {
+            RsOrientationMethod::RingFit => OrientationMethod::RingFit,
+            RsOrientationMethod::DiskFit => OrientationMethod::DiskFit,
+            // Any future variants map to the default.
+            _ => OrientationMethod::RingFit,
         }
     }
 }
@@ -842,6 +881,7 @@ pub struct ChessConfig {
     refiner: RefinerConfig,
     upscale: Cell<RsUpscaleConfig>,
     radon_detector: Cell<RsRadonDetectorParams>,
+    orientation_method: Cell<RsOrientationMethod>,
 }
 
 impl ChessConfig {
@@ -864,6 +904,7 @@ impl ChessConfig {
             refiner: RefinerConfig::from_value(value.refiner),
             upscale: cell(value.upscale),
             radon_detector: cell(value.radon_detector),
+            orientation_method: cell(value.orientation_method),
         }
     }
 
@@ -884,6 +925,7 @@ impl ChessConfig {
         cfg.refiner = self.refiner.snapshot();
         cfg.upscale = *self.upscale.borrow();
         cfg.radon_detector = *self.radon_detector.borrow();
+        cfg.orientation_method = *self.orientation_method.borrow();
         cfg
     }
 }
@@ -1040,6 +1082,15 @@ impl ChessConfig {
     pub fn set_radon_detector(&mut self, v: &RadonDetectorParams) {
         self.radon_detector = v.share_cell();
     }
+
+    #[wasm_bindgen(getter, js_name = orientationMethod)]
+    pub fn orientation_method(&self) -> OrientationMethod {
+        (*self.orientation_method.borrow()).into()
+    }
+    #[wasm_bindgen(setter, js_name = orientationMethod)]
+    pub fn set_orientation_method(&mut self, v: OrientationMethod) {
+        *self.orientation_method.borrow_mut() = v.into();
+    }
 }
 
 impl Default for ChessConfig {
@@ -1143,5 +1194,28 @@ mod tests {
         let snap = cfg.snapshot();
         cfg.set_threshold_value(0.9);
         assert!((snap.threshold_value - 0.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn orientation_method_round_trips_all_variants() {
+        use chess_corners::OrientationMethod as RsOrientationMethod;
+
+        let cases = [
+            (OrientationMethod::RingFit, RsOrientationMethod::RingFit),
+            (OrientationMethod::DiskFit, RsOrientationMethod::DiskFit),
+        ];
+
+        for (wasm_variant, rs_variant) in cases {
+            let mut cfg = ChessConfig::new();
+            cfg.set_orientation_method(wasm_variant);
+            // Getter round-trip.
+            assert_eq!(cfg.orientation_method(), wasm_variant);
+            // snapshot() propagates to the Rust facade.
+            let snap = cfg.snapshot();
+            assert_eq!(
+                snap.orientation_method, rs_variant,
+                "snapshot mismatch for {wasm_variant:?}"
+            );
+        }
     }
 }

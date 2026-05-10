@@ -39,7 +39,7 @@ This report is auto-rendered. Replace the placeholders by re-running
 | Sweep | Param | n/cell |
 | --- | --- | --- |
 
-## Baseline results (current `fit_two_axes`)
+## Method results
 ### Per-sweep summary
 | Sweep | Param | Bias_a0 deg | RMSE_a0 deg | Bias_a1 deg | RMSE_a1 deg | z_std_a0 | z_std_a1 | failure% | detection% |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -217,7 +217,7 @@ def _build_auto_block(run_dir: Path, payload: dict[str, Any]) -> str:
         "",
         _sweeps_table(metadata, sweeps),
         "",
-        "## Baseline results (current `fit_two_axes`)",
+        "## Method results",
         _per_sweep_summary(sweeps),
         "",
         _sigma_summary(sweeps),

@@ -64,7 +64,7 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::descriptor::{AxisEstimate, CornerDescriptor};
 pub use crate::orientation::{
-    fit_axes_at_point, fit_axes_from_samples, AxisFitResult, OrientationMethod, OrientationSolver,
+    fit_axes_at_point, fit_axes_from_samples, AxisFitResult, OrientationMethod,
 };
 pub use crate::radon::{fit_peak_frac, PeakFitMode};
 pub use crate::radon_detector::{
@@ -101,9 +101,9 @@ pub struct ChessParams {
     /// center-of-mass refiner on the response map.
     pub refiner: RefinerKind,
     /// Orientation-fit method used to estimate the two grid axes at
-    /// each detected corner. Default
-    /// [`OrientationMethod::Baseline`] reproduces the legacy 16-ring
-    /// Gauss-Newton fit bit-identically.
+    /// each detected corner. Default [`OrientationMethod::RingFit`]
+    /// fits the parametric two-axis model with calibrated per-axis
+    /// uncertainties.
     #[serde(default)]
     pub orientation_method: OrientationMethod,
 }

@@ -32,6 +32,8 @@ from ._native import (
     RefinerConfig,
     SaddlePointConfig,
     ThresholdMode,
+    UpscaleConfig,
+    UpscaleMode,
 )
 
 
@@ -70,6 +72,7 @@ for _cls in (
     RadonPeakConfig,
     RadonDetectorParams,
     RefinerConfig,
+    UpscaleConfig,
     ChessConfig,
 ):
     _cls.print = _print  # type: ignore[attr-defined]
@@ -127,6 +130,8 @@ __all__ = [
     "RefinementMethod",
     "SaddlePointConfig",
     "ThresholdMode",
+    "UpscaleConfig",
+    "UpscaleMode",
     "find_chess_corners",
     "radon_heatmap",
 ]

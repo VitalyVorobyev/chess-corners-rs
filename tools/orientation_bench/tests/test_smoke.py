@@ -40,7 +40,7 @@ def test_smoke_sweep_then_report(tmp_path: Path) -> None:
         "--config",
         str(SMOKE_CONFIG),
         "--methods",
-        "baseline",
+        "ring_fit",
         "--max-cells",
         "2",
         "--out",
@@ -64,7 +64,7 @@ def test_smoke_sweep_then_report(tmp_path: Path) -> None:
     with metadata_path.open("r", encoding="utf-8") as f:
         metadata = json.load(f)
     assert metadata["seed"] == 1
-    assert "baseline" in metadata["methods"]
+    assert "ring_fit" in metadata["methods"]
 
     # At least one sweep should have produced metrics.json
     metrics_files = list(out_dir.rglob("metrics.json"))

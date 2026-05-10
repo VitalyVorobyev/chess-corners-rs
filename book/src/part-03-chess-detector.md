@@ -412,7 +412,7 @@ optimisation or topology reasoning at this stage.
 You get `CornerDescriptor` values when you use the high‑level APIs:
 
 - `chess-corners-core` users can run the response and detector
-  stages manually and then call `corners_to_descriptors`.
+  stages manually and then call `corners_to_descriptors_with_method`.
 - `chess-corners` users get `Vec<CornerDescriptor>` directly from
   helpers such as `find_chess_corners_image`,
   `find_chess_corners_u8`, or the multiscale APIs.
@@ -422,6 +422,25 @@ more insight into local structure — grid fitting, lens‑distortion
 modelling, calibration with per‑corner weights, or outlier rejection
 before bundle adjustment — `axes`, `sigma`, `contrast`, and `fit_rms`
 are the extra handles you get "for free" with each detection.
+
+### 3.4.7 Orientation methods
+
+The `orientation_method` field on `ChessConfig` (and the `OrientationMethod`
+enum in the API) controls how the two grid axes and their per-axis 1σ
+uncertainties are computed at each detected corner. Two variants are available:
+
+| Method | JSON key | Notes |
+|---|---|---|
+| `RingFit` | `"ring_fit"` | **Default.** Fits the parametric two-axis chessboard intensity model `I(φ) = μ + A·tanh(β·sin(φ−θ₁))·tanh(β·sin(φ−θ₂))` to 16 ring samples via Gauss-Newton seeded from the 2nd-harmonic orientation. Per-axis 1σ uncertainties are calibrated by a piecewise-linear LUT keyed on the contrast-relative residual. Suitable for the full range of standard chessboard images. |
+| `DiskFit` | `"disk_fit"` | Full-disk crossing-line estimator. Samples all image pixels in a disk around the corner center and fits two possibly non-orthogonal axes from the gradient field. Falls back to `RingFit` when local evidence is weak or when the ring fit already indicates a clean orthogonal corner (lazy-disk gate). Best precision/cost trade-off under extreme projective skew. |
+
+A lazy-disk gate short-circuits `DiskFit` on clean, near-orthogonal
+corners (those with `rel_rms < 0.04` and axis separation in [70°, 110°]),
+so average cost is much lower than the worst case of ~131 µs per corner.
+
+For the per-method precision/cost trade-off on the synthetic bench, see the
+orientation bench `REPORT.md` in `tools/orientation_bench/`. Most users should
+leave the default (`RingFit`) unchanged.
 
 ---
 

@@ -337,7 +337,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
 
     methods = list(args.methods)
     if not methods:
-        methods = ["baseline"]
+        methods = ["ring_fit"]
 
     metadata = {
         "config_name": cfg.name,
@@ -421,8 +421,8 @@ def build_parser() -> argparse.ArgumentParser:
     sweep.add_argument(
         "--methods",
         nargs="+",
-        default=["baseline"],
-        help="Methods to run, e.g. baseline sigma_correction_lut disk_sector_rust disk_sector_py",
+        default=["ring_fit"],
+        help="Methods to run, e.g. ring_fit disk_fit disk_sector_py",
     )
     sweep.add_argument(
         "--max-cells", type=int, default=None, help="Cap cells per sweep for fast runs"

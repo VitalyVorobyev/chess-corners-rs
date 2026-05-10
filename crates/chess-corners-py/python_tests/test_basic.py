@@ -102,8 +102,7 @@ def test_radon_heatmap_default_config():
 
 
 def test_typed_config_passes_through_ffi_directly():
-    """Native typed `ChessConfig` should reach the detector without
-    JSON serialization (string fallback retained for legacy callers)."""
+    """Native typed `ChessConfig` reaches the detector without JSON serialization."""
 
     img = _checkerboard(square_size=16, squares=8)
     cfg = chess_corners.ChessConfig()
@@ -111,13 +110,10 @@ def test_typed_config_passes_through_ffi_directly():
     cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
     cfg.refiner.forstner.max_offset = 1.75
 
-    typed_corners = chess_corners.find_chess_corners(img, cfg)
-    json_corners = chess_corners.find_chess_corners(img, cfg.to_json())
-
-    # Both paths must produce bit-identical output (same backing
-    # algorithm, same configuration).
-    assert typed_corners.shape == json_corners.shape
-    assert np.array_equal(typed_corners, json_corners)
+    corners = chess_corners.find_chess_corners(img, cfg)
+    assert corners.dtype == np.float32
+    assert corners.ndim == 2
+    assert corners.shape[1] == 9
 
 
 def test_invalid_cfg_type_raises_type_error():

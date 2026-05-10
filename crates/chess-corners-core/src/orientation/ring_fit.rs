@@ -1,16 +1,19 @@
-//! Baseline two-axis orientation fit.
+//! Ring-fit two-axis orientation fit for [`super::OrientationMethod::RingFit`].
 //!
-//! Verbatim move of the legacy `fit_two_axes` body and helpers from
-//! `descriptor.rs`. Renamed to [`fit`] so the dispatcher in
-//! [`super::api`] can call it; otherwise constants, math, ordering of
-//! operations, and field names are unchanged. Behaviour must remain
-//! bit-identical to the pre-refactor `fit_two_axes`.
+//! Fits the parametric two-axis chessboard-corner intensity model
+//! `I(φ) = μ + A·tanh(β·sin(φ−θ₁))·tanh(β·sin(φ−θ₂))` to the 16
+//! ring samples around a detected corner, solving for μ, A, θ₁, θ₂
+//! via Gauss-Newton seeded from the 2nd-harmonic orientation.
 //!
-//! The Gauss-Newton body is factored into [`fit_with_seed`] so future
-//! variants (e.g. structure-tensor seeding) can reuse the exact same
-//! solver while supplying their own initial parameters. The default
-//! [`fit`] entry point computes the legacy 2nd-harmonic seed and
-//! delegates: behaviour for the baseline path is unchanged.
+//! After the Gauss-Newton solve, the raw CRLB per-axis 1σ uncertainties
+//! are rescaled by a piecewise-linear LUT keyed on the contrast-relative
+//! residual `fit_rms / max(|amp|, ε)`, calibrating the reported sigmas
+//! closer to the empirical RMSE. Recovered angles, amplitude, and
+//! `fit_rms` are bit-identical to the raw Gauss-Newton output.
+//!
+//! The Gauss-Newton body is factored into [`fit_with_seed`] so the disk
+//! estimator can supply its own initial parameters and reuse the same
+//! numerical machinery.
 
 use core::f32::consts::{PI, TAU};
 
@@ -103,6 +106,22 @@ pub(crate) fn fit_with_seed(
         return degenerate_fit(centered_var);
     }
 
+    // Trig hoist: ring-phi sin/cos depend only on the (fixed) ring
+    // geometry, not on the iterating GN parameters. Compute once here
+    // and use the angle-difference identities inside the GN loop:
+    //   sin(φ − θ) = sinφ·cosθ − cosφ·sinθ
+    //   cos(φ − θ) = cosφ·cosθ + sinφ·sinθ
+    // Trades 4 trig calls per pixel per iteration (≈ 384 per fit) for
+    // 32 trig calls total + 4 trig calls per iteration, leaving the
+    // recovered angles within a few ULP of the direct evaluation.
+    let mut sphi = [0.0f32; 16];
+    let mut cphi = [0.0f32; 16];
+    for i in 0..16 {
+        let (s, c) = ring_phi[i].sin_cos();
+        sphi[i] = s;
+        cphi[i] = c;
+    }
+
     let mut jtj: [[f32; 4]; 4];
     let mut ssr: f32;
     let mut iter = 0usize;
@@ -113,12 +132,14 @@ pub(crate) fn fit_with_seed(
         let mut jtr = [0f32; 4];
         ssr = 0.0;
 
+        let (s_t1, c_t1) = theta1.sin_cos();
+        let (s_t2, c_t2) = theta2.sin_cos();
+
         for i in 0..16 {
-            let phi = ring_phi[i];
-            let s1a = (phi - theta1).sin();
-            let s2a = (phi - theta2).sin();
-            let c1a = (phi - theta1).cos();
-            let c2a = (phi - theta2).cos();
+            let s1a = sphi[i] * c_t1 - cphi[i] * s_t1;
+            let c1a = cphi[i] * c_t1 + sphi[i] * s_t1;
+            let s2a = sphi[i] * c_t2 - cphi[i] * s_t2;
+            let c2a = cphi[i] * c_t2 + sphi[i] * s_t2;
 
             let h1 = (TANH_BETA * s1a).tanh();
             let h2 = (TANH_BETA * s2a).tanh();
@@ -330,4 +351,130 @@ fn invert_4x4(a: &[[f32; 4]; 4]) -> Option<[[f32; 4]; 4]> {
         }
     }
     Some(inv)
+}
+
+// ---------------------------------------------------------------------------
+// Sigma-LUT post-processing (folded from the former sigma_correction module)
+// ---------------------------------------------------------------------------
+
+/// Run the Gauss-Newton ring fit and apply a piecewise-linear σ-correction
+/// LUT to the raw CRLB per-axis uncertainties. Recovered angles, amplitude,
+/// and `fit_rms` are bit-identical to the raw [`fit`] output; only
+/// `sigma_theta1` and `sigma_theta2` are rescaled.
+///
+/// This is the implementation of [`super::OrientationMethod::RingFit`].
+#[inline]
+pub(crate) fn fit_ring(samples: &[f32; 16], ring_phi: &[f32; 16]) -> TwoAxisFit {
+    let mut result = fit(samples, ring_phi);
+    let m = lut_multiplier(result.rms, result.amp);
+    result.sigma_theta1 = (result.sigma_theta1 * m).min(PI);
+    result.sigma_theta2 = (result.sigma_theta2 * m).min(PI);
+    result
+}
+
+/// Piecewise-linear LUT of `(rel_rms_threshold, multiplier)` breakpoints,
+/// where `rel_rms = fit_rms / max(|amp|, AMP_FLOOR)`.
+///
+/// Cells with small relative residual (clean, sharp inputs) need a larger
+/// correction than cells with large relative residual (heavy noise / model
+/// mismatch) where the CRLB σ is already approximately correct.
+/// The first and last entries pin the function for clamping; intermediate
+/// entries linearly interpolate.
+const LUT: &[(f32, f32)] = &[
+    (0.0, 1.25),
+    (0.05, 1.25),
+    (0.20, 1.20),
+    (1.0, 1.10),
+    (5.0, 1.00),
+    (f32::INFINITY, 1.00),
+];
+
+/// Floor on `|amp|` used when forming the relative residual. Below this
+/// the fit is essentially degenerate (σ already π); the relative
+/// residual saturates the LUT and the multiplier becomes 1.0.
+const AMP_FLOOR: f32 = 1.0;
+
+/// Return the σ-correction multiplier for a given fit by piecewise-linear
+/// interpolation of [`LUT`] keyed on `fit_rms / max(|amp|, AMP_FLOOR)`.
+/// Non-finite inputs clamp to the first LUT entry (the "clean fit"
+/// multiplier). The trailing `(INFINITY, 1.0)` entry signals "flat to the
+/// right" past the last finite breakpoint.
+pub(crate) fn lut_multiplier(rms: f32, amp: f32) -> f32 {
+    let denom = if amp.is_finite() {
+        amp.abs().max(AMP_FLOOR)
+    } else {
+        AMP_FLOOR
+    };
+    let raw = if rms.is_finite() {
+        rms.max(0.0) / denom
+    } else {
+        0.0
+    };
+    let r = if raw.is_finite() { raw } else { 0.0 };
+    for window in LUT.windows(2) {
+        let (a, b) = (window[0], window[1]);
+        if r <= b.0 {
+            if a.0 == b.0 {
+                return a.1;
+            }
+            if !b.0.is_finite() {
+                return b.1;
+            }
+            let t = ((r - a.0) / (b.0 - a.0)).clamp(0.0, 1.0);
+            return a.1 + (b.1 - a.1) * t;
+        }
+    }
+    LUT.last().expect("LUT is non-empty by construction").1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Tests use `amp = 1.0` so the relative residual equals the raw
+    // `rms` argument and the existing LUT-vs-rel_rms expectations hold.
+
+    #[test]
+    fn lut_breakpoint_values() {
+        assert!((lut_multiplier(0.0, 1.0) - 1.25).abs() < 1e-6);
+        assert!((lut_multiplier(0.05, 1.0) - 1.25).abs() < 1e-6);
+        assert!((lut_multiplier(0.20, 1.0) - 1.20).abs() < 1e-6);
+        assert!((lut_multiplier(1.0, 1.0) - 1.10).abs() < 1e-6);
+        assert!((lut_multiplier(5.0, 1.0) - 1.00).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lut_linear_interpolation_midpoint() {
+        let m = lut_multiplier(0.125, 1.0);
+        assert!((m - 1.225).abs() < 1e-6, "got {m}");
+    }
+
+    #[test]
+    fn lut_clamps_below_first_breakpoint() {
+        assert!((lut_multiplier(-0.1, 1.0) - 1.25).abs() < 1e-6);
+        assert!((lut_multiplier(-1e6, 1.0) - 1.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lut_plateaus_above_last_finite_breakpoint() {
+        assert!((lut_multiplier(100.0, 1.0) - 1.0).abs() < 1e-6);
+        assert!((lut_multiplier(1e9, 1.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lut_handles_nan_as_zero() {
+        assert!((lut_multiplier(f32::NAN, 1.0) - 1.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lut_uses_relative_residual_with_amp() {
+        assert!((lut_multiplier(16.0, 80.0) - 1.20).abs() < 1e-6);
+        assert!((lut_multiplier(16.0, 40.0) - 1.175).abs() < 1e-6);
+    }
+
+    #[test]
+    fn lut_amp_floor_for_degenerate_fits() {
+        assert!((lut_multiplier(50.0, 0.0) - 1.0).abs() < 1e-6);
+        assert!((lut_multiplier(50.0, f32::NAN) - 1.0).abs() < 1e-6);
+    }
 }

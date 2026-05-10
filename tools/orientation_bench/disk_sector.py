@@ -222,8 +222,9 @@ def _histogram_candidates(data: _DiskData, base0: float, base1: float) -> list[f
                 candidates.append(angle)
                 picked += 1
 
-    # Baseline axes and small offsets keep the method conservative near
-    # already-good fits and provide deterministic fallback seeds.
+    # Seed axes from the upstream ring fit, plus small offsets, keep the
+    # method conservative near already-good fits and provide deterministic
+    # fallback seeds.
     for seed in (base0, base1):
         for off_deg in (-8.0, -4.0, 0.0, 4.0, 8.0):
             candidates.append(_wrap_pi(float(seed) + math.radians(off_deg)))

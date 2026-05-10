@@ -134,7 +134,73 @@ keep the main context clean. The pattern:
 4. Decision gates hand back to the user with the data; the user picks the
    next variant.
 
-See `tools/orientation_bench/README.md` once it exists.
+See `tools/orientation_bench/README.md` for the current bench surface.
+
+### Context-management discipline
+
+The main agent's context window is the scarcest resource in any non-trivial
+session. Treat it like a hot-path budget — every chunk of verbose tool
+output (build logs, `cargo test` outputs > 100 lines, parameter sweeps,
+`metrics.json` dumps) eats into the budget you need for reasoning. Rules:
+
+- **Delegate verbose-output work.** Anything that produces > ~200 lines
+  of output and needs only a verdict back (build verification, `maturin
+  develop`, full `cargo test` runs, the orientation Python sweep, ONNX
+  parity checks) goes to a subagent that summarises in < 400 words.
+  Don't read raw `metrics.json` or build logs in the main thread.
+- **Background mode for long-running, non-blocking tasks.** A 10–15 min
+  Python sweep, an ONNX export, or a `wasm-pack` build that doesn't
+  gate the next step should be `run_in_background: true`. You'll be
+  notified when it completes; in the meantime, do other work in the
+  main thread or kick off a parallel implementation subagent.
+- **Foreground for results you need now.** Implementation subagents
+  whose output you want to integrate before the next step (e.g. a
+  perf optimization where the next phase depends on the new numbers)
+  are foreground.
+- **Multiple agents in one message run in parallel.** Three independent
+  tasks → one tool message with three `Agent` calls. Don't serialize
+  unless there's a real dependency.
+- **Model selection.** Default to `sonnet` for mechanical work
+  (parallelize a loop with rayon, port a function across modules,
+  run a bench, produce a metrics summary, follow a clear plan).
+  Reach for `opus` when the task requires nuanced threshold/heuristic
+  judgement, contested architectural calls, or holding many trade-offs
+  in working memory at once (algorithmic gating decisions, API surface
+  design, ambiguous root-cause investigations). The `opus` budget is
+  worth it when "wrong answer" costs another full subagent round.
+- **Worktree isolation when changes might conflict.** Use
+  `isolation: "worktree"` if you spawn two agents that could touch the
+  same files. Two agents working on different files in the same repo
+  do *not* need worktrees — `cargo` will serialize on the target lock,
+  but that's a few seconds of extra wall time, not correctness.
+- **Avoid duplicating subagent work.** If a subagent is auditing the
+  bench, do not also `grep` through `metrics.json` yourself. If a
+  subagent is rewriting `disk_sector.rs`, don't open it in parallel.
+  Wait for the summary, then verify lightly (run gates, spot-check
+  the diff) — don't re-do the analysis.
+- **Subagent prompts must stand alone.** The agent has zero context
+  from your conversation. Include file paths, current state, hard
+  constraints, validation steps, and the report format you want back.
+  Terse prompts produce terse, generic work.
+- **Cap report length.** Always tell the subagent "report under N
+  words" — 250 for routine work, 400 for nuanced work. Without a cap
+  agents tend toward overlong narration.
+
+### Typical bench/perf cadence in this repo
+
+For a 4-phase perf optimization (e.g. the 2026-05 disk-sector work):
+
+1. Main agent does the analysis + Phase 1 (lowest-risk, bit-near-identical
+   change) inline so the perf shape is clear.
+2. Subsequent phases are delegated:
+   - Algorithmic gates / threshold work → `opus` foreground subagent.
+   - Mechanical wiring (rayon, feature flags, API surface) → `sonnet`
+     foreground subagent.
+   - Synthetic accuracy validation (`maturin develop` + `python -m
+     orientation_bench sweep`) → `sonnet` background subagent.
+3. Main agent integrates, runs the four mandatory gates one final time,
+   summarises end-to-end speedup and accuracy verdict, asks the user
+   for the next decision.
 
 ## Key Design Constraints (from AGENTS.md)
 

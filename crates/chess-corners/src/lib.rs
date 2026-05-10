@@ -123,7 +123,7 @@
 //! low-level primitives are re-exported here:
 //! [`chess_response_u8`], [`chess_response_u8_patch`], [`Roi`],
 //! [`detect_corners_from_response_with_refiner`], [`Corner`], and
-//! [`corners_to_descriptors`]. For deeper internals (ring offsets,
+//! [`corners_to_descriptors_with_method`]. For deeper internals (ring offsets,
 //! SAT views, scalar reference paths) depend on `chess-corners-core`
 //! directly.
 //!
@@ -178,16 +178,14 @@ pub use crate::upscale::{
 };
 pub use chess_corners_core::{
     AxisEstimate, AxisFitResult, CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner,
-    ForstnerConfig, ImageView, OrientationMethod, OrientationSolver, PeakFitMode, RadonBuffers,
-    RadonDetectorParams, RadonPeakConfig, RefineResult, RefineStatus, Refiner, RefinerKind,
-    ResponseMap, SaddlePointConfig,
+    ForstnerConfig, ImageView, OrientationMethod, PeakFitMode, RadonBuffers, RadonDetectorParams,
+    RadonPeakConfig, RefineResult, RefineStatus, Refiner, RefinerKind, ResponseMap,
+    SaddlePointConfig,
 };
 
 // Low-level building blocks for callers composing custom pipelines:
 // response → detect → describe. Surfaced from core's submodules.
-pub use chess_corners_core::descriptor::{
-    corners_to_descriptors, corners_to_descriptors_with_method, Corner,
-};
+pub use chess_corners_core::descriptor::{corners_to_descriptors_with_method, Corner};
 pub use chess_corners_core::detect::{
     detect_corners_from_response, detect_corners_from_response_with_refiner,
 };
