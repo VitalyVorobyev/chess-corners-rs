@@ -46,7 +46,48 @@ bringing reported sigmas closer to the empirical RMSE.
 It is the default and should be left in place unless you have a
 specific reason to switch.
 
-## 6.3 DiskFit
+## 6.3 When the ring fit isn't enough
+
+Three synthetic-patch cases motivate `DiskFit` and explain the
+lazy-gate logic. In each figure, ground truth is dashed white, the
+ring fit is red, and the disk fit is green.
+
+### Clean orthogonal corner
+
+![Clean orthogonal corner](img/orientation_clean.png)
+
+The 16-sample ring sits squarely on the four sectors of a canonical
+chessboard crossing. Both methods recover the axes within ~0.1°. The
+disk fit's **lazy gate** detects this case from the ring's
+contrast-relative residual (\\(\text{rel\_rms} < 0.04\\)) and short-circuits
+to the ring fit, so you pay no extra cost on the easy corners.
+
+### Narrow projective skew
+
+![Narrow projective skew](img/orientation_skew.png)
+
+When projective warp pulls the two axes close together (here only 30°
+between them), the ring loses discriminative power: most ring samples
+sit in the two wide sectors and only a few sit in the narrow band
+between the lines. The 2nd-harmonic seed pulls the ring fit toward
+near-orthogonal axes, so it spreads the recovered angles outward
+(8.8° error). The disk fit looks at every pixel in the support disk —
+including the narrow-sector evidence the ring barely touches — and
+recovers both axes within 1°.
+
+### Sharp transition
+
+![Sharp transition with low blur](img/orientation_sharp.png)
+
+The ring fit's parametric model fixes the tanh slope \\(\beta = 4\\),
+which matches a moderate edge width. On a sharp transition
+(\\(w = 0.35\\) px) the model cannot make its predicted intensity drop
+fast enough at the edge: the residual inflates and the angle estimate
+biases (5.2° error). The disk fit sweeps four widths
+\\(\{0.35, 0.70, 1.40, 2.80\}\\) px and picks the one that minimises
+the relative residual, recovering both axes within 1.6°.
+
+## 6.4 DiskFit, step by step
 
 `DiskFit` models a corner as two crossing transition lines through the
 detected center. The intensity at every pixel \\(p\\) in a support disk
@@ -129,24 +170,19 @@ The pipeline runs in seven steps:
    by more than 12°, the ring fit's sigma is inflated to at least 10°
    to flag the ambiguity.
 
-A lazy-disk gate short-circuits `DiskFit` on clean, near-orthogonal
-corners (those with \\(\text{rel\_rms} < 0.04\\) and axis separation in
-[70°, 110°]), so average cost is much lower than the worst case of
-~131 µs per corner.
+## 6.5 Choosing a method
 
-`DiskFit` is the right choice when standard chessboards are imaged
-under strong projective warp (axis separation far from 90°). The
-per-corner cost is higher than `RingFit` (~5–10× on typical hardware),
-but the lazy gate short-circuits clean inputs so the average cost is
-much lower.
+`DiskFit` costs ~5–10× more per corner than `RingFit` in the worst
+case (~131 µs vs ~15 µs on typical hardware), but the lazy gate
+short-circuits clean inputs so the average cost is much closer to
+`RingFit` on real chessboard imagery. Switch to `DiskFit` when working
+with images that have known projective warp; otherwise leave the
+default in place.
 
-## 6.4 Choosing a method
-
-For the per-method precision/cost trade-off on the synthetic bench, see
-the orientation bench `REPORT.md` in `tools/orientation_bench/`. Most
-users should leave the default (`RingFit`) unchanged; switch to
-`DiskFit` only when working with imagery that has known projective
-warp.
+For the per-method precision/cost trade-off on the synthetic bench,
+see the orientation bench `REPORT.md` in `tools/orientation_bench/`.
+The patch overlays in §6.3 are reproducible via
+`tools/render_orientation_overlays.py`.
 
 ---
 
