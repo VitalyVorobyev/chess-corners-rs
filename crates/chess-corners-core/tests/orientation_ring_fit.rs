@@ -7,15 +7,14 @@
 //! - Degenerate (flat-ring) sentinel behaviour.
 //! - Image-input path matches pre-sampled path (up to u8 quantisation).
 //! - σ-LUT: RingFit scales both axis sigmas via the piecewise-linear LUT
-//!   while leaving angles, amp, and rms bit-identical to the raw
-//!   Gauss-Newton output.
+//!   while leaving angles, amp, and rms unchanged from the raw robust fit.
 //! - σ-LUT degenerate propagation: a flat ring remains degenerate under
 //!   RingFit.
 
+use chess_corners_core::detect::chess::ring::ring_offsets;
 use chess_corners_core::orientation::{
     fit_axes_at_point, fit_axes_from_samples, OrientationMethod,
 };
-use chess_corners_core::ring::ring_offsets;
 use core::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
 const TANH_BETA: f32 = 4.0;
@@ -98,6 +97,49 @@ fn ring_fit_non_orthogonal_corner() {
     let err2 = fold(fit.theta2, t2);
     assert!(err1 < 0.05, "theta1 {} vs {t1}, err {err1}", fit.theta1);
     assert!(err2 < 0.05, "theta2 {} vs {t2}, err {err2}", fit.theta2);
+}
+
+#[test]
+fn ring_fit_robust_seed_recovers_extreme_skew_trace() {
+    // Deterministic synthetic fixture from orientation_bench:
+    // bench_default axis_skew=30°, seed=1, cell sample 8, sampled at the
+    // detected image-frame center (21.815319, 20.875401). The legacy
+    // 2nd-harmonic-only seed converged to the wrong basin by ~62° on
+    // this trace even though the 16 bilinear samples contain the correct
+    // two-axis model.
+    let ring = ring_offsets(5);
+    let phi = ring_angles(ring);
+    let samples = [
+        0.485009_f32,
+        0.230703,
+        0.0,
+        0.203177,
+        11.4078,
+        139.206,
+        230.952,
+        128.866,
+        14.6169,
+        0.32334,
+        1.58913,
+        0.713731,
+        10.256,
+        129.307,
+        107.935,
+        8.76894,
+    ];
+    let gt_t1 = 20.765984_f32.to_radians();
+    let gt_t2 = 57.899868_f32.to_radians();
+
+    let fit = fit_axes_from_samples(&samples, &phi, OrientationMethod::RingFit);
+
+    let err = axis_pair_err(fit.theta1, fit.theta2, gt_t1, gt_t2);
+    assert!(
+        err < 8.0_f32.to_radians(),
+        "axis err {} deg for fit {:?}",
+        err.to_degrees(),
+        fit
+    );
+    assert!(fit.rms < 35.0, "rms {}", fit.rms);
 }
 
 #[test]
@@ -204,6 +246,62 @@ fn ring_fit_image_input_matches_sample_input() {
     assert!((from_samples.theta1 - from_image.theta1).abs() < 1e-2);
     assert!((from_samples.theta2 - from_image.theta2).abs() < 1e-2);
     assert!(from_image.amp > 0.0);
+}
+
+#[test]
+fn ring_fit_radius10_uses_radius5_safety_when_outer_ring_is_suspicious() {
+    let w = 41usize;
+    let h = 41usize;
+    let cx = 20i32;
+    let cy = 20i32;
+    let mut img = vec![128u8; w * h];
+
+    // Deliberately make the radius-10 trace a high-contrast, nearly
+    // parallel-axis pattern. That outer trace is a valid local model but
+    // suspicious as a chess-grid orientation. The canonical radius-5
+    // trace carries the intended local axes and should be used instead.
+    let outer_ring = ring_offsets(10);
+    let outer_phi = ring_angles(outer_ring);
+    for (i, &(dx, dy)) in outer_ring.iter().enumerate() {
+        let q = eval_model(
+            outer_phi[i],
+            128.0,
+            80.0,
+            0.0_f32.to_radians(),
+            25.0_f32.to_radians(),
+        )
+        .round()
+        .clamp(0.0, 255.0) as u8;
+        img[(cy + dy) as usize * w + (cx + dx) as usize] = q;
+    }
+
+    let inner_t1 = 25.0_f32.to_radians();
+    let inner_t2 = 115.0_f32.to_radians();
+    let inner_ring = ring_offsets(5);
+    let inner_phi = ring_angles(inner_ring);
+    for (i, &(dx, dy)) in inner_ring.iter().enumerate() {
+        let q = eval_model(inner_phi[i], 128.0, 80.0, inner_t1, inner_t2)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+        img[(cy + dy) as usize * w + (cx + dx) as usize] = q;
+    }
+
+    let fit = fit_axes_at_point(
+        &img,
+        w,
+        h,
+        cx as f32,
+        cy as f32,
+        10,
+        OrientationMethod::RingFit,
+    );
+    let err = axis_pair_err(fit.theta1, fit.theta2, inner_t1, inner_t2);
+    assert!(
+        err < 2.0_f32.to_radians(),
+        "radius-10 safety err {} deg for fit {:?}",
+        err.to_degrees(),
+        fit
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -339,8 +437,8 @@ fn parity_degenerate_flat_input() {
 #[test]
 fn lut_applies_to_sigmas_only() {
     // Clean fit → fit_rms ≈ 0 → LUT multiplier 1.25 (first breakpoint).
-    // Angles, amp, rms must be bit-identical between the pre-LUT GN
-    // result (no way to get that directly, so we just verify sigmas > 0).
+    // Angles, amp, rms are not exposed before the LUT, so we verify the
+    // clean-fit regime and that finite sigmas were scaled.
     let (samples, phi) = synthetic_ring(128.0, 80.0, PI * 0.25, PI * 0.75);
     let fit = fit_axes_from_samples(&samples, &phi, OrientationMethod::RingFit);
 

@@ -36,6 +36,8 @@ from .sweep import ChessSample, PatchSample, iter_synth_chess_cells, iter_synth_
 METHOD_COLORS = {
     "ring_fit": "#1b8a5a",
     "disk_fit": "#a05fbf",
+    "disk_sector_py": "#d17a22",
+    "polar_fit_py": "#2b70c9",
 }
 GT_AXIS_COLORS = ("#00d0ff", "#ffd54a")
 PRED_AXIS_COLORS = ("#ff334e", "#ff9f1c")
@@ -333,7 +335,7 @@ def _nearest_row(sample: PatchSample, method: str) -> np.ndarray | None:
 
 
 def _overlay_methods(methods: list[str]) -> list[str]:
-    preferred = ["ring_fit", "disk_fit"]
+    preferred = ["ring_fit", "disk_fit", "disk_sector_py", "polar_fit_py"]
     out = [m for m in preferred if m in methods]
     return out or list(methods)
 
@@ -638,6 +640,12 @@ def write_markdown_report(
             "- `disk_fit` is the opt-in full-disk estimator. It fits two possibly non-orthogonal axes "
             "from all image pixels in a disk around the corner. Falls back to `ring_fit` on clean "
             "orthogonal corners (lazy gate)."
+        )
+    if "polar_fit_py" in methods:
+        lines.append(
+            "- `polar_fit_py` is a benchmark-only prototype. It samples several polar rings around "
+            "the `ring_fit` center and replaces only accepted axis angles after correlation and "
+            "radial-consistency gates."
         )
     lines.append("")
     lines.append("## Current Fail Conditions")

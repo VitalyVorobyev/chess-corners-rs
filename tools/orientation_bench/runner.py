@@ -60,7 +60,7 @@ class DetectionRow:
 
 
 def detect_with_method(img_u8: np.ndarray, method: str) -> np.ndarray:
-    """Run chess_corners.find_chess_corners with the given method's config."""
+    """Run a `chess_corners.Detector` with the given method's config."""
     ensure_available()
     import chess_corners
 
@@ -69,11 +69,18 @@ def detect_with_method(img_u8: np.ndarray, method: str) -> np.ndarray:
 
         cfg = build_config("ring_fit")
         img = np.ascontiguousarray(img_u8, dtype=np.uint8)
-        rows = chess_corners.find_chess_corners(img, cfg)
+        rows = chess_corners.Detector(cfg).detect(img)
+        return refine_detection_rows(img, rows)
+
+    if method == "polar_fit_py":
+        from .polar_fit import refine_detection_rows
+
+        cfg = build_config("ring_fit")
+        img = np.ascontiguousarray(img_u8, dtype=np.uint8)
+        rows = chess_corners.Detector(cfg).detect(img)
         return refine_detection_rows(img, rows)
 
     cfg = build_config(method)
     img = np.ascontiguousarray(img_u8, dtype=np.uint8)
-    return chess_corners.find_chess_corners(img, cfg)
-
+    return chess_corners.Detector(cfg).detect(img)
 

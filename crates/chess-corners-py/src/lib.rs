@@ -2,9 +2,8 @@
 //!
 //! Exposes a typed [`config::ChessConfig`] (with nested
 //! [`config::RefinerConfig`], [`config::RadonDetectorParams`], and
-//! per-variant refiner configs) plus thin wrappers over the facade's
-//! detection entry points. The FFI accepts the typed config directly —
-//! no JSON serialization across the boundary.
+//! per-variant refiner configs) plus a [`Detector`] PyClass that
+//! wraps the facade's reusable buffers.
 
 mod config;
 
@@ -15,9 +14,10 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
 
 use crate::config::{
-    CenterOfMassConfig, ChessConfig, ConfigError, DescriptorMode, DetectorMode, ForstnerConfig,
-    OrientationMethod, PeakFitMode, RadonDetectorParams, RadonPeakConfig, RefinementMethod,
-    RefinerConfig, SaddlePointConfig, ThresholdMode, UpscaleConfig, UpscaleMode,
+    CenterOfMassConfig, ChessConfig, ChessRing, ChessStrategy, ConfigError, DescriptorMode,
+    DetectionStrategy, ForstnerConfig, MultiscaleParams, OrientationMethod, PeakFitMode,
+    RadonPeakConfig, RadonStrategy, RefinementMethod, RefinerConfig, SaddlePointConfig, Threshold,
+    UpscaleConfig, UpscaleMode,
 };
 
 fn extract_image<'py>(
@@ -91,91 +91,83 @@ fn resolve_config(
     Err(PyTypeError::new_err("cfg must be a ChessConfig"))
 }
 
-#[pyfunction(signature = (image, cfg=None))]
-fn find_chess_corners<'py>(
-    py: Python<'py>,
-    image: &Bound<'py, PyAny>,
-    cfg: Option<&Bound<'py, PyAny>>,
-) -> PyResult<Py<PyAny>> {
-    let (array, height, width) = extract_image(image)?;
-    let view = array.as_array();
-    let slice = view.as_slice().ok_or_else(|| {
-        PyValueError::new_err("image must be a C-contiguous uint8 array of shape (H, W)")
-    })?;
-
-    let width_u32 =
-        u32::try_from(width).map_err(|_| PyValueError::new_err("image width exceeds u32::MAX"))?;
-    let height_u32 = u32::try_from(height)
-        .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
-
-    let cfg = resolve_config(py, cfg)?;
-    let corners = py
-        .detach(|| chess_corners_rs::find_chess_corners_u8(slice, width_u32, height_u32, &cfg))
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    corners_to_array(py, corners)
+/// Stateful chessboard-corner detector with reusable scratch buffers.
+///
+/// Mirrors the Rust [`chess_corners::Detector`]. Build once, then call
+/// [`Self::detect`] in a loop to amortise pyramid / upscale buffer
+/// allocations across frames.
+#[pyclass]
+pub struct Detector {
+    inner: chess_corners_rs::Detector,
 }
 
-#[cfg(feature = "ml-refiner")]
-#[pyfunction(signature = (image, cfg=None))]
-fn find_chess_corners_with_ml<'py>(
-    py: Python<'py>,
-    image: &Bound<'py, PyAny>,
-    cfg: Option<&Bound<'py, PyAny>>,
-) -> PyResult<Py<PyAny>> {
-    let (array, height, width) = extract_image(image)?;
-    let view = array.as_array();
-    let slice = view.as_slice().ok_or_else(|| {
-        PyValueError::new_err("image must be a C-contiguous uint8 array of shape (H, W)")
-    })?;
+#[pymethods]
+impl Detector {
+    /// Build a detector. `cfg` may be `None` (use defaults) or a
+    /// typed [`ChessConfig`].
+    #[new]
+    #[pyo3(signature = (cfg=None))]
+    fn new(py: Python<'_>, cfg: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        let cfg = resolve_config(py, cfg)?;
+        let inner = chess_corners_rs::Detector::new(cfg)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
 
-    let width_u32 =
-        u32::try_from(width).map_err(|_| PyValueError::new_err("image width exceeds u32::MAX"))?;
-    let height_u32 = u32::try_from(height)
-        .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
+    /// Detect chessboard corners. `image` must be a C-contiguous
+    /// `uint8` array of shape `(H, W)`. Returns an `(N, 9)` `float32`
+    /// NumPy array — see module docs for column layout.
+    fn detect<'py>(&mut self, py: Python<'py>, image: &Bound<'py, PyAny>) -> PyResult<Py<PyAny>> {
+        let (array, height, width) = extract_image(image)?;
+        let view = array.as_array();
+        let slice = view.as_slice().ok_or_else(|| {
+            PyValueError::new_err("image must be a C-contiguous uint8 array of shape (H, W)")
+        })?;
 
-    let cfg = resolve_config(py, cfg)?;
-    let corners = py
-        .detach(|| {
-            chess_corners_rs::find_chess_corners_u8_with_ml(slice, width_u32, height_u32, &cfg)
-        })
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    corners_to_array(py, corners)
-}
+        let width_u32 = u32::try_from(width)
+            .map_err(|_| PyValueError::new_err("image width exceeds u32::MAX"))?;
+        let height_u32 = u32::try_from(height)
+            .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
 
-#[pyfunction(signature = (image, cfg=None))]
-fn radon_heatmap<'py>(
-    py: Python<'py>,
-    image: &Bound<'py, PyAny>,
-    cfg: Option<&Bound<'py, PyAny>>,
-) -> PyResult<Py<PyAny>> {
-    let (array, height, width) = extract_image(image)?;
-    let view = array.as_array();
-    let slice = view.as_slice().ok_or_else(|| {
-        PyValueError::new_err("image must be a C-contiguous uint8 array of shape (H, W)")
-    })?;
+        let corners = py
+            .detach(|| self.inner.detect_u8(slice, width_u32, height_u32))
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        corners_to_array(py, corners)
+    }
 
-    let width_u32 =
-        u32::try_from(width).map_err(|_| PyValueError::new_err("image width exceeds u32::MAX"))?;
-    let height_u32 = u32::try_from(height)
-        .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
+    /// Compute the dense Radon response heatmap.
+    fn radon_heatmap<'py>(
+        &mut self,
+        py: Python<'py>,
+        image: &Bound<'py, PyAny>,
+    ) -> PyResult<Py<PyAny>> {
+        let (array, height, width) = extract_image(image)?;
+        let view = array.as_array();
+        let slice = view.as_slice().ok_or_else(|| {
+            PyValueError::new_err("image must be a C-contiguous uint8 array of shape (H, W)")
+        })?;
 
-    let cfg = resolve_config(py, cfg)?;
-    let map = py
-        .detach(|| chess_corners_rs::radon_heatmap_u8(slice, width_u32, height_u32, &cfg))
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let width_u32 = u32::try_from(width)
+            .map_err(|_| PyValueError::new_err("image width exceeds u32::MAX"))?;
+        let height_u32 = u32::try_from(height)
+            .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
 
-    let arr = Array2::from_shape_vec((map.height(), map.width()), map.data().to_vec())
-        .map_err(|_| PyValueError::new_err("failed to build heatmap array"))?;
-    Ok(arr.into_pyarray(py).into_any().unbind())
+        let map = py
+            .detach(|| self.inner.radon_heatmap_u8(slice, width_u32, height_u32))
+            .map_err(|e: chess_corners_rs::ChessError| PyValueError::new_err(e.to_string()))?;
+
+        let arr = Array2::from_shape_vec((map.height(), map.width()), map.data().to_vec())
+            .map_err(|_| PyValueError::new_err("failed to build heatmap array"))?;
+        Ok(arr.into_pyarray(py).into_any().unbind())
+    }
 }
 
 #[pymodule(name = "_native")]
 fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ConfigError", py.get_type::<ConfigError>())?;
 
-    m.add_class::<DetectorMode>()?;
+    m.add_class::<ChessRing>()?;
     m.add_class::<DescriptorMode>()?;
-    m.add_class::<ThresholdMode>()?;
     m.add_class::<RefinementMethod>()?;
     m.add_class::<PeakFitMode>()?;
     m.add_class::<OrientationMethod>()?;
@@ -185,16 +177,15 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ForstnerConfig>()?;
     m.add_class::<SaddlePointConfig>()?;
     m.add_class::<RadonPeakConfig>()?;
-    m.add_class::<RadonDetectorParams>()?;
+    m.add_class::<Threshold>()?;
+    m.add_class::<MultiscaleParams>()?;
+    m.add_class::<ChessStrategy>()?;
+    m.add_class::<RadonStrategy>()?;
+    m.add_class::<DetectionStrategy>()?;
     m.add_class::<RefinerConfig>()?;
     m.add_class::<UpscaleConfig>()?;
     m.add_class::<ChessConfig>()?;
+    m.add_class::<Detector>()?;
 
-    m.add_function(wrap_pyfunction!(find_chess_corners, m)?)?;
-    m.add_function(wrap_pyfunction!(radon_heatmap, m)?)?;
-    #[cfg(feature = "ml-refiner")]
-    {
-        m.add_function(wrap_pyfunction!(find_chess_corners_with_ml, m)?)?;
-    }
     Ok(())
 }

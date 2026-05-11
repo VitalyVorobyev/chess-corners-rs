@@ -10,9 +10,9 @@
 //!   which is convenient for unit tests that don't want to construct a
 //!   real image. Both routes converge on the same dispatcher.
 
-use super::{disk_sector, ring_fit, OrientationMethod};
-use crate::descriptor::{ring_angles, sample_ring};
-use crate::ring::ring_offsets;
+use super::descriptor::{ring_angles, sample_ring};
+use super::{disk_sector, ring_fit, ring_fit_for_image, OrientationMethod};
+use crate::detect::chess::ring::ring_offsets;
 
 /// Result of a two-axis orientation fit at a single corner.
 ///
@@ -26,7 +26,7 @@ pub struct AxisFitResult {
     /// are gray levels.
     pub amp: f32,
     /// First axis direction, radians in `[0, π)` (line-direction
-    /// representative — see [`crate::descriptor::CornerDescriptor`]).
+    /// representative — see [`crate::detect::CornerDescriptor`]).
     pub theta1: f32,
     /// Second axis direction, radians in `(theta1, theta1 + π) ⊂ [0, 2π)`.
     pub theta2: f32,
@@ -70,7 +70,9 @@ pub fn fit_axes_at_point(
     let ring_phi = ring_angles(ring);
     let samples = sample_ring(img, w, h, cx, cy, ring);
     match method {
-        OrientationMethod::RingFit => ring_fit::fit_ring(&samples, &ring_phi).into(),
+        OrientationMethod::RingFit => {
+            ring_fit_for_image(img, w, h, cx, cy, radius, &samples, &ring_phi).into()
+        }
         OrientationMethod::DiskFit => {
             disk_sector::fit(img, w, h, cx, cy, radius, &samples, &ring_phi).into()
         }

@@ -1,36 +1,45 @@
 # chess-corners-core
 
-Core primitives for computing ChESS responses and extracting subpixel chessboard corners.
+Core primitives for computing ChESS / Radon responses and extracting
+subpixel chessboard corners.
 
-This crate implements:
+The crate is organised along the three orthogonal axes the detector
+pipeline composes:
 
-- 16-sample ChESS rings (`ring` module) at radii 5 and 10.
-- Dense response computation on 8-bit grayscale images
-  (`response` module). The score is the raw, unnormalized
-  `R = SR − DR − 16·MR` from the paper — `R > 0` is the default
-  corner-acceptance criterion; `threshold_rel` / `threshold_abs` are
-  opt-in adaptive policies layered on top.
-- Thresholding, non-maximum suppression, and pluggable subpixel
-  refinement (`detect` + `refine` modules).
-- Rich corner descriptors (`descriptor` module) built from a
-  4-parameter Gauss–Newton fit of the two-axis tanh model
-  `μ + A · tanh(β·sin(φ − θ₁)) · tanh(β·sin(φ − θ₂))` to the 16 ring
-  samples. Each descriptor carries both local grid axes with
-  per-axis 1σ angular uncertainty (from the Gauss–Newton covariance
-  `σ̂² · (JᵀJ)⁻¹` with `σ̂² = SSR / 12`), the fitted bright/dark
-  amplitude, and the RMS fit residual.
+- **Detection** (`detect` module) — two independent feature-detector
+  families share a common output type:
+  - [`detect::chess`] — ChESS response (16-sample ring) at radii 5 and 10,
+    NMS, cluster filtering.
+  - [`detect::radon`] — whole-image Duda-Frese localized Radon detector
+    with summed-area-table ray sums.
+- **Refinement** (`refine` module) — pluggable subpixel-refinement
+  backends: center-of-mass, Förstner, saddle-point, and Radon-peak.
+- **Orientation** (`orientation` module) — two-axis orientation fit at
+  each detected corner: ring-fit (parametric tanh model with robust
+  seeding and σ-LUT) and disk-sector full-disk crossing-line
+  estimator.
+
+Rich corner descriptors carry both local grid axes with per-axis 1σ
+angular uncertainty (from the Gauss–Newton covariance
+`σ̂² · (JᵀJ)⁻¹` with `σ̂² = SSR / 12`), the fitted bright/dark
+amplitude, and the RMS fit residual.
 
 Feature flags:
 
-- `std` *(default)* – use the Rust standard library; disabling this yields `no_std` + `alloc`.
+- `std` *(default)* – use the Rust standard library; disabling this
+  yields `no_std` + `alloc`.
 - `rayon` – parallelize response computation over image rows.
-- `simd` – enable portable-SIMD acceleration of the response kernel (nightly only).
-- `tracing` – emit structured spans around response and detector code for profiling.
+- `simd` – portable-SIMD acceleration of the response kernel
+  (nightly only).
+- `tracing` – emit structured spans around response and detector code
+  for profiling.
 
 Basic usage:
 
 ```rust
-use chess_corners_core::{detect::find_corners_u8, ChessParams, RefinerKind};
+use chess_corners_core::{
+    detect::find_corners_u8, ChessParams, RefinerKind,
+};
 
 fn detect(img: &[u8], w: usize, h: usize) {
     let mut params = ChessParams::default();
@@ -45,5 +54,6 @@ fn detect(img: &[u8], w: usize, h: usize) {
 }
 ```
 
-For a higher-level, image-friendly API (including multiscale detection and an optional CLI),
-see the `chess-corners` crate in this workspace.
+For a higher-level, image-friendly API (including multiscale detection
+through a `Detector` struct, an optional CLI, and bindings to Python
+and WebAssembly), see the `chess-corners` crate in this workspace.

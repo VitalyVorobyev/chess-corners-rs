@@ -41,11 +41,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::detect::radon::primitives::{box_blur_inplace, fit_peak_frac, ANGLES, DIR_COS, DIR_SIN};
 use crate::imageview::ImageView;
-use crate::radon::{box_blur_inplace, fit_peak_frac, ANGLES, DIR_COS, DIR_SIN};
 use crate::refine::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
 
-pub use crate::radon::PeakFitMode;
+pub use crate::detect::radon::primitives::PeakFitMode;
 
 /// Configuration for [`RadonPeakRefiner`].
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

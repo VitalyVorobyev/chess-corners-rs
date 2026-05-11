@@ -1,5 +1,5 @@
 //! Dense ChESS response computation for 8-bit grayscale inputs.
-use crate::ring::RingOffsets;
+use super::ring::RingOffsets;
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "rayon")]

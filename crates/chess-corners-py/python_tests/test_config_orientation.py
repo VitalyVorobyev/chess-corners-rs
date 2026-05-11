@@ -18,6 +18,7 @@ chess_corners = pytest.importorskip("chess_corners")
 OrientationMethod = chess_corners.OrientationMethod
 ChessConfig = chess_corners.ChessConfig
 ConfigError = chess_corners.ConfigError
+Threshold = chess_corners.Threshold
 
 
 # ---------------------------------------------------------------------------
@@ -107,11 +108,11 @@ def test_orientation_method_survives_other_field_mutations():
     """orientation_method must not be reset when other config fields are mutated."""
     cfg = ChessConfig()
     cfg.orientation_method = OrientationMethod.DISK_FIT
-    cfg.threshold_value = 0.25  # mutate unrelated field
+    cfg.threshold = Threshold.relative(0.25)  # mutate unrelated field
 
     d = cfg.to_dict()
     assert d["orientation_method"] == "disk_fit"
-    assert abs(d["threshold_value"] - 0.25) < 1e-6
+    assert d["threshold"] == {"relative": pytest.approx(0.25)}
 
 
 # ---------------------------------------------------------------------------

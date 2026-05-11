@@ -6,7 +6,7 @@
 //!
 //! 1. Renders a deterministic anti-aliased chessboard with a known
 //!    grid of interior corners.
-//! 2. Runs `find_chess_corners_u8` with the preset.
+//! 2. Runs `Detector::detect_u8` with the preset.
 //! 3. Greedily matches each detected corner to the nearest ground-truth
 //!    corner within `MATCH_THRESHOLD_PX`.
 //! 4. Asserts that recall, precision, and p95 subpixel error stay
@@ -17,7 +17,7 @@
 //! is to catch *regressions*, not to replace the per-refiner accuracy
 //! sweep in `refiner_benchmark.rs`.
 
-use chess_corners::{find_chess_corners_u8, ChessConfig, CornerDescriptor};
+use chess_corners::{ChessConfig, CornerDescriptor, Detector};
 
 const SUPER: usize = 8;
 const MATCH_THRESHOLD_PX: f32 = 1.5;
@@ -146,7 +146,8 @@ fn match_detections(detected: &[CornerDescriptor], gt: &[(f32, f32)]) -> MatchSt
 }
 
 fn check(label: &str, cfg: &ChessConfig, img: &[u8], side: usize, gt: &[(f32, f32)], b: &Bounds) {
-    let detected = find_chess_corners_u8(img, side as u32, side as u32, cfg).unwrap();
+    let mut detector = Detector::new(cfg.clone()).unwrap();
+    let detected = detector.detect_u8(img, side as u32, side as u32).unwrap();
     let stats = match_detections(&detected, gt);
     eprintln!(
         "[{label}] det={}, gt={}, tp={}, fp={}, fn={}, recall={:.3}, precision={:.3}, p95_err={:.3}px",

@@ -8,24 +8,21 @@
 //!   level, and refine each seed in the base image (coarse-to-fine)
 //!   before merging duplicates.
 //!
-//! The main entry points are:
-//!
-//! - [`find_chess_corners`] – convenience wrapper that allocates
-//!   pyramid buffers internally and returns [`CornerDescriptor`]
-//!   values in base-image coordinates.
-//! - [`find_chess_corners_buff`] – lower-level helper that accepts a
-//!   caller-provided [`PyramidBuffers`] so you can reuse allocations
-//!   across frames in a tight loop.
-//! - ML-backed refinement variants (feature `ml-refiner`):
-//!   `find_chess_corners_with_ml` / `find_chess_corners_buff_with_ml`.
+//! The crate-internal entry points exposed here are
+//! [`detect_with_buffers`] (classic ChESS / Radon paths) and
+//! [`detect_with_ml`] (ML-refiner path, feature `ml-refiner`). End
+//! users should reach these through [`crate::Detector`].
 
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
-use crate::{ChessConfig, ChessParams, DetectorMode};
+use crate::{ChessConfig, ChessParams, DetectionStrategy};
 use box_image_pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
-use chess_corners_core::descriptor::{corners_to_descriptors_with_method, Corner};
+use chess_corners_core::detect::chess::response::{
+    chess_response_u8, chess_response_u8_patch, Roi,
+};
+use chess_corners_core::detect::Corner;
 use chess_corners_core::detect::{detect_corners_from_response_with_refiner, merge_corners_simple};
-use chess_corners_core::response::{chess_response_u8, chess_response_u8_patch, Roi};
+use chess_corners_core::orientation::describe_corners;
 use chess_corners_core::{
     detect_corners_from_radon, radon_response_u8, CornerDescriptor, CornerRefiner, RadonBuffers,
 };
@@ -39,7 +36,7 @@ fn to_pyramid_view(v: ImageView<'_>) -> box_image_pyramid::ImageView<'_> {
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 #[cfg(feature = "tracing")]
-use tracing::{info_span, instrument};
+use tracing::info_span;
 
 /// Parameters controlling the coarse-to-fine multiscale detector.
 ///
@@ -225,7 +222,7 @@ fn merge_and_describe(
     #[cfg(feature = "tracing")]
     drop(merge_span);
 
-    corners_to_descriptors_with_method(
+    describe_corners(
         base.data,
         base.width,
         base.height,
@@ -245,7 +242,7 @@ fn merge_and_describe(
 #[cfg(feature = "ml-refiner")]
 ///
 /// Used by the ML path (and non-rayon builds). The classic path with rayon
-/// parallelism is inlined in [`find_chess_corners_buff_with_refiner`] to avoid
+/// parallelism is inlined in [`detect_with_buffers_and_refiner`] to avoid
 /// ownership conflicts from splitting `detect_fn` across two closures.
 ///
 /// Callers supply:
@@ -269,7 +266,23 @@ where
     R: FnMut(&ResponseMap, &ChessParams, Option<ImageView<'_>>) -> Vec<Corner>,
 {
     let params = cfg.to_chess_params();
-    let cf = cfg.to_coarse_to_fine_params();
+
+    // When the ChESS strategy has no multiscale params, run single-scale directly.
+    let Some(cf) = cfg.to_coarse_to_fine_params() else {
+        let resp = chess_response_u8(base.data, base.width, base.height, &params);
+        let view = ImageView::from_u8_slice(base.width, base.height, base.data)
+            .expect("image dimensions must match buffer length");
+        let mut raw = detect_fn(&resp, &params, Some(view));
+        let merged = merge_corners_simple(&mut raw, cfg.merge_radius);
+        return describe_corners(
+            base.data,
+            base.width,
+            base.height,
+            params.descriptor_ring_radius(),
+            merged,
+            params.orientation_method,
+        );
+    };
 
     let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
@@ -284,7 +297,7 @@ where
             .expect("image dimensions must match buffer length");
         let mut raw = detect_fn(&resp, &params, Some(view));
         let merged = merge_corners_simple(&mut raw, cf.merge_radius);
-        return corners_to_descriptors_with_method(
+        return describe_corners(
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
@@ -353,22 +366,22 @@ where
 ///   base-image ROI, merges near-duplicate corners, and finally
 ///   converts them into [`CornerDescriptor`] values sampled at the
 ///   full resolution.
-pub fn find_chess_corners_buff(
+pub(crate) fn detect_with_buffers(
     base: ImageView<'_>,
     cfg: &ChessConfig,
     buffers: &mut PyramidBuffers,
 ) -> Vec<CornerDescriptor> {
     let refiner = cfg.refiner.to_refiner_kind();
-    find_chess_corners_buff_with_refiner(base, cfg, buffers, &refiner)
+    detect_with_buffers_and_refiner(base, cfg, buffers, &refiner)
 }
 
-/// Variant of [`find_chess_corners_buff`] that accepts an explicit refiner selection.
+/// Variant of [`detect_with_buffers`] that accepts an explicit refiner selection.
 ///
 /// When the `rayon` feature is enabled, per-seed ROI refinement in the
 /// coarse-to-fine path runs in parallel. The ML path uses
-/// [`find_chess_corners_buff_with_ml`] instead, which is always sequential
-/// due to mutable ML state.
-pub fn find_chess_corners_buff_with_refiner(
+/// [`detect_with_ml`] instead, which is always sequential due to
+/// mutable ML state.
+fn detect_with_buffers_and_refiner(
     base: ImageView<'_>,
     cfg: &ChessConfig,
     buffers: &mut PyramidBuffers,
@@ -377,20 +390,37 @@ pub fn find_chess_corners_buff_with_refiner(
     // Radon detector has its own response + NMS + peak-fit pipeline
     // and does not use the ChESS response map or `refiner`. Dispatch
     // early so the ChESS path below can assume Canonical/Broad mode.
-    if matches!(cfg.detector_mode, DetectorMode::Radon) {
+    if matches!(&cfg.strategy, DetectionStrategy::Radon(_)) {
         return detect_with_radon(base, cfg);
     }
 
     let params = cfg.to_chess_params();
-    let cf = cfg.to_coarse_to_fine_params();
     let border = refiner_radius(refiner);
+
+    // When the ChESS strategy has no multiscale params, run single-scale
+    // directly without building a pyramid.
+    let Some(cf) = cfg.to_coarse_to_fine_params() else {
+        let resp = chess_response_u8(base.data, base.width, base.height, &params);
+        let view = ImageView::from_u8_slice(base.width, base.height, base.data)
+            .expect("image dimensions must match buffer length");
+        let mut raw = detect_with_refiner_kind(&resp, &params, Some(view), refiner);
+        let merged = merge_corners_simple(&mut raw, cfg.merge_radius);
+        return describe_corners(
+            base.data,
+            base.width,
+            base.height,
+            params.descriptor_ring_radius(),
+            merged,
+            params.orientation_method,
+        );
+    };
 
     let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
     if pyramid.levels.is_empty() {
         return Vec::new();
     }
 
-    // Single-scale fallback.
+    // Single-scale fallback (pyramid built with num_levels == 1).
     if pyramid.levels.len() == 1 {
         let lvl = &pyramid.levels[0];
         let resp = chess_response_u8(lvl.img.data, lvl.img.width, lvl.img.height, &params);
@@ -398,7 +428,7 @@ pub fn find_chess_corners_buff_with_refiner(
             .expect("image dimensions must match buffer length");
         let mut raw = detect_with_refiner_kind(&resp, &params, Some(refine_view), refiner);
         let merged = merge_corners_simple(&mut raw, cf.merge_radius);
-        return corners_to_descriptors_with_method(
+        return describe_corners(
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
@@ -473,23 +503,23 @@ pub fn find_chess_corners_buff_with_refiner(
 /// Run the whole-image Duda-Frese Radon detector on `base` and
 /// produce [`CornerDescriptor`] values in base-image coordinates.
 ///
-/// Single-scale only — the Radon pipeline is already fast enough at
-/// base resolution (SAT-based O(1) ray sums) that building a pyramid
-/// for coarse-to-fine is not net faster on calibration frames. If
-/// `cfg.pyramid_levels > 1` that field is ignored and the detector
-/// runs on `base`.
+/// Single-scale only today. Multiscale-Radon is planned (see
+/// `DetectionStrategy::Radon`; the slot for `multiscale:
+/// Option<MultiscaleParams>` is reserved for that work).
 ///
 /// The Radon detector applies its own threshold / NMS / 3-point
 /// Gaussian peak-fit internally, so `cfg.refiner` is not consulted.
 /// Descriptor sampling still honours
 /// [`ChessConfig::descriptor_mode`](crate::ChessConfig::descriptor_mode).
 fn detect_with_radon(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescriptor> {
+    let radon_params = cfg.to_radon_detector_params();
+
     #[cfg(feature = "tracing")]
     let span = info_span!(
         "radon_detect",
         w = base.width,
         h = base.height,
-        upsample = cfg.radon_detector.image_upsample,
+        upsample = radon_params.image_upsample,
     )
     .entered();
 
@@ -498,14 +528,8 @@ fn detect_with_radon(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescri
     // callers who need zero-alloc framing can call the core-level
     // `radon_response_u8` / `detect_corners_from_radon` directly.
     let mut rb = RadonBuffers::new();
-    let resp = radon_response_u8(
-        base.data,
-        base.width,
-        base.height,
-        &cfg.radon_detector,
-        &mut rb,
-    );
-    let corners = detect_corners_from_radon(&resp, &cfg.radon_detector);
+    let resp = radon_response_u8(base.data, base.width, base.height, &radon_params, &mut rb);
+    let corners = detect_corners_from_radon(&resp, &radon_params);
 
     if corners.is_empty() {
         #[cfg(feature = "tracing")]
@@ -519,7 +543,7 @@ fn detect_with_radon(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescri
     let params = cfg.to_chess_params();
     let mut merged = corners;
     let merged = merge_corners_simple(&mut merged, cfg.merge_radius);
-    let out = corners_to_descriptors_with_method(
+    let out = describe_corners(
         base.data,
         base.width,
         base.height,
@@ -536,21 +560,9 @@ fn detect_with_radon(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescri
 // ML refiner path
 // ---------------------------------------------------------------------------
 
-/// Variant of [`find_chess_corners_buff`] that uses the ML refiner pipeline.
+/// Variant of [`detect_with_buffers`] that uses the ML refiner pipeline.
 #[cfg(feature = "ml-refiner")]
-pub fn find_chess_corners_buff_with_ml(
-    base: ImageView<'_>,
-    cfg: &ChessConfig,
-    buffers: &mut PyramidBuffers,
-) -> Vec<CornerDescriptor> {
-    let ml_params = ml_refiner::MlRefinerParams::default();
-    let fallback_refiner = cfg.refiner.to_refiner_kind();
-    let mut ml_state = ml_refiner::MlRefinerState::new(&ml_params, &fallback_refiner);
-    find_chess_corners_buff_with_ml_state(base, cfg, buffers, &ml_params, &mut ml_state)
-}
-
-#[cfg(feature = "ml-refiner")]
-fn find_chess_corners_buff_with_ml_state(
+pub(crate) fn detect_with_ml(
     base: ImageView<'_>,
     cfg: &ChessConfig,
     buffers: &mut PyramidBuffers,
@@ -561,9 +573,8 @@ fn find_chess_corners_buff_with_ml_state(
     // peak-fit and does not emit ChESS-response seeds, so pairing it
     // with the ML refiner is a category error. Fall back to the
     // Radon detector's native output in that case — the user can
-    // still pick the ML refiner by switching `detector_mode` back to
-    // `Canonical` or `Broad`.
-    if matches!(cfg.detector_mode, DetectorMode::Radon) {
+    // still pick the ML refiner by switching to a ChESS strategy.
+    if matches!(&cfg.strategy, DetectionStrategy::Radon(_)) {
         return detect_with_radon(base, cfg);
     }
 
@@ -611,51 +622,6 @@ fn make_roi_context(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Convenience wrappers (allocate pyramid buffers internally)
-// ---------------------------------------------------------------------------
-
-/// Detect corners from a base-level grayscale view, allocating
-/// pyramid storage internally.
-///
-/// This is the high-level entry point used by
-/// [`crate::find_chess_corners_u8`] and the `image` helpers. For
-/// repeated calls on successive frames, prefer
-/// [`find_chess_corners_buff`] with a reusable [`PyramidBuffers`] to
-/// avoid repeated allocations.
-#[must_use]
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(base, cfg),
-        fields(levels = cfg.pyramid_levels, min_size = cfg.pyramid_min_size)
-    )
-)]
-pub fn find_chess_corners(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescriptor> {
-    let refiner = cfg.refiner.to_refiner_kind();
-    find_chess_corners_with_refiner(base, cfg, &refiner)
-}
-
-/// Single-call helper that lets callers pick the refiner.
-#[must_use]
-pub fn find_chess_corners_with_refiner(
-    base: ImageView<'_>,
-    cfg: &ChessConfig,
-    refiner: &RefinerKind,
-) -> Vec<CornerDescriptor> {
-    let mut buffers = PyramidBuffers::with_capacity(cfg.pyramid_levels);
-    find_chess_corners_buff_with_refiner(base, cfg, &mut buffers, refiner)
-}
-
-/// Single-call helper that runs the ML refiner pipeline.
-#[cfg(feature = "ml-refiner")]
-#[must_use]
-pub fn find_chess_corners_with_ml(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescriptor> {
-    let mut buffers = PyramidBuffers::with_capacity(cfg.pyramid_levels);
-    find_chess_corners_buff_with_ml(base, cfg, &mut buffers)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -673,10 +639,13 @@ mod tests {
     #[test]
     fn chess_config_multiscale_preset_has_expected_pyramid() {
         let cfg = ChessConfig::multiscale();
-        assert_eq!(cfg.pyramid_levels, 3);
-        assert_eq!(cfg.pyramid_min_size, 128);
-        assert_eq!(cfg.refinement_radius, 3);
-        assert_eq!(cfg.merge_radius, 3.0);
+        let cf = cfg
+            .to_coarse_to_fine_params()
+            .expect("multiscale preset must produce CoarseToFineParams");
+        assert_eq!(cf.pyramid.num_levels, 3);
+        assert_eq!(cf.pyramid.min_size, 128);
+        assert_eq!(cf.refinement_radius, 3);
+        assert_eq!(cf.merge_radius, 3.0);
     }
 
     #[test]
@@ -685,7 +654,8 @@ mod tests {
         let view = ImageView::from_u8_slice(buf.width, buf.height, &buf.data)
             .expect("dimensions must match");
         let cfg = ChessConfig::default();
-        let corners = find_chess_corners(view, &cfg);
+        let mut buffers = PyramidBuffers::default();
+        let corners = detect_with_buffers(view, &cfg, &mut buffers);
         assert!(corners.is_empty());
     }
 }

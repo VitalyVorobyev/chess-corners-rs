@@ -5,7 +5,8 @@
 //!
 //! Each wrapper stores its inner Rust value in a shared
 //! `Rc<RefCell<T>>` cell, and compound wrappers (`RefinerConfig`,
-//! `ChessConfig`) hold `Rc` handles to their children's cells. A
+//! `ChessConfig`, `DetectionStrategy`, `ChessStrategy`, `RadonStrategy`,
+//! `MultiscaleParams`) hold `Rc` handles to their children's cells. A
 //! getter returns a wrapper backed by the same cell as the parent,
 //! so chained mutation propagates without a round-trip:
 //!
@@ -13,7 +14,8 @@
 //! const cfg = ChessConfig.multiscale();
 //! cfg.refiner.kind = RefinementMethod.RadonPeak;        // works
 //! cfg.refiner.forstner.maxOffset = 2.0;                  // works
-//! cfg.radonDetector.rayRadius = 5;                       // works
+//! cfg.strategy.chess.nmsRadius = 3;                      // works
+//! cfg.strategy.chess.multiscale.pyramidLevels = 4;       // works
 //! ```
 //!
 //! Setters that take a nested wrapper (e.g. `cfg.refiner = newCfg`)
@@ -22,6 +24,17 @@
 //! JS reference held to the *previous* nested wrapper still
 //! observes the previous cell — matching natural attribute-
 //! reassignment semantics in JS.
+//!
+//! ## Strategy discriminants
+//!
+//! [`DetectionStrategy`] is a tagged wrapper carrying both a
+//! [`ChessStrategy`] and a [`RadonStrategy`] cell plus an internal
+//! `kind` discriminant. Only the cell matching the active `kind` is
+//! snapshotted into the Rust `RsDetectionStrategy`. Field edits to
+//! the *inactive* variant are kept in their cell and become visible
+//! again as soon as the discriminant flips back — this mirrors what
+//! a JS developer expects when they pre-populate both branches
+//! before choosing one.
 //!
 //! Single-threaded `Rc<RefCell<T>>` is sound on
 //! `wasm32-unknown-unknown`; wasm-bindgen modules are not shared
@@ -38,13 +51,13 @@ use std::rc::Rc;
 
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
-    DescriptorMode as RsDescriptorMode, DetectorMode as RsDetectorMode,
-    ForstnerConfig as RsForstnerConfig, OrientationMethod as RsOrientationMethod,
-    PeakFitMode as RsPeakFitMode, RadonDetectorParams as RsRadonDetectorParams,
-    RadonPeakConfig as RsRadonPeakConfig, RefinementMethod as RsRefinementMethod,
+    ChessRing as RsChessRing, ChessStrategy as RsChessStrategy, DescriptorMode as RsDescriptorMode,
+    DetectionStrategy as RsDetectionStrategy, ForstnerConfig as RsForstnerConfig,
+    MultiscaleParams as RsMultiscaleParams, OrientationMethod as RsOrientationMethod,
+    PeakFitMode as RsPeakFitMode, RadonPeakConfig as RsRadonPeakConfig,
+    RadonStrategy as RsRadonStrategy, RefinementMethod as RsRefinementMethod,
     RefinerConfig as RsRefinerConfig, SaddlePointConfig as RsSaddlePointConfig,
-    ThresholdMode as RsThresholdMode, UpscaleConfig as RsUpscaleConfig,
-    UpscaleMode as RsUpscaleMode,
+    Threshold as RsThreshold, UpscaleConfig as RsUpscaleConfig, UpscaleMode as RsUpscaleMode,
 };
 use wasm_bindgen::prelude::*;
 
@@ -57,35 +70,36 @@ fn cell<T>(value: T) -> Cell<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Enums
+// Plain enums
 // ---------------------------------------------------------------------------
 
-/// Detector kernel selection. Mirrors [`chess_corners::DetectorMode`].
+/// ChESS sampling ring radius. Mirrors [`chess_corners::ChessRing`].
+///
+/// `Canonical` (= 0): paper-default radius-5 ring (16 samples).
+/// `Broad` (= 1): radius-10 ring; useful for low-resolution / heavily
+/// blurred imagery where the canonical ring under-samples.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DetectorMode {
+pub enum ChessRing {
     Canonical = 0,
     Broad = 1,
-    Radon = 2,
 }
 
-impl From<DetectorMode> for RsDetectorMode {
-    fn from(v: DetectorMode) -> Self {
+impl From<ChessRing> for RsChessRing {
+    fn from(v: ChessRing) -> Self {
         match v {
-            DetectorMode::Canonical => RsDetectorMode::Canonical,
-            DetectorMode::Broad => RsDetectorMode::Broad,
-            DetectorMode::Radon => RsDetectorMode::Radon,
+            ChessRing::Canonical => RsChessRing::Canonical,
+            ChessRing::Broad => RsChessRing::Broad,
         }
     }
 }
 
-impl From<RsDetectorMode> for DetectorMode {
-    fn from(v: RsDetectorMode) -> Self {
+impl From<RsChessRing> for ChessRing {
+    fn from(v: RsChessRing) -> Self {
         match v {
-            RsDetectorMode::Canonical => DetectorMode::Canonical,
-            RsDetectorMode::Broad => DetectorMode::Broad,
-            RsDetectorMode::Radon => DetectorMode::Radon,
-            _ => DetectorMode::Canonical,
+            RsChessRing::Canonical => ChessRing::Canonical,
+            RsChessRing::Broad => ChessRing::Broad,
+            _ => ChessRing::Canonical,
         }
     }
 }
@@ -116,33 +130,6 @@ impl From<RsDescriptorMode> for DescriptorMode {
             RsDescriptorMode::Canonical => DescriptorMode::Canonical,
             RsDescriptorMode::Broad => DescriptorMode::Broad,
             _ => DescriptorMode::FollowDetector,
-        }
-    }
-}
-
-/// Threshold interpretation. Mirrors [`chess_corners::ThresholdMode`].
-#[wasm_bindgen]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ThresholdMode {
-    Relative = 0,
-    Absolute = 1,
-}
-
-impl From<ThresholdMode> for RsThresholdMode {
-    fn from(v: ThresholdMode) -> Self {
-        match v {
-            ThresholdMode::Relative => RsThresholdMode::Relative,
-            ThresholdMode::Absolute => RsThresholdMode::Absolute,
-        }
-    }
-}
-
-impl From<RsThresholdMode> for ThresholdMode {
-    fn from(v: RsThresholdMode) -> Self {
-        match v {
-            RsThresholdMode::Relative => ThresholdMode::Relative,
-            RsThresholdMode::Absolute => ThresholdMode::Absolute,
-            _ => ThresholdMode::Absolute,
         }
     }
 }
@@ -274,6 +261,117 @@ impl From<RsOrientationMethod> for OrientationMethod {
             // Any future variants map to the default.
             _ => OrientationMethod::RingFit,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Strategy discriminant (internal)
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StrategyKind {
+    Chess,
+    Radon,
+}
+
+impl StrategyKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            StrategyKind::Chess => "chess",
+            StrategyKind::Radon => "radon",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Threshold (tagged-class pattern, enum-with-payload)
+// ---------------------------------------------------------------------------
+
+/// Acceptance threshold for the corner detector.
+///
+/// Constructed via [`Threshold::absolute`] or [`Threshold::relative`].
+/// Mirrors the [`chess_corners::Threshold`] payload-carrying enum.
+///
+/// - `Threshold.absolute(value)` accepts responses `≥ value` in the
+///   detector's native score units.
+/// - `Threshold.relative(frac)` accepts responses `≥ frac · max(response)`
+///   in the current frame, with `frac ∈ [0.0, 1.0]`.
+///
+/// The `kind` getter returns `"absolute"` or `"relative"`; the `value`
+/// getter returns the carried payload.
+#[wasm_bindgen]
+#[derive(Clone, Debug)]
+pub struct Threshold {
+    cell: Cell<RsThreshold>,
+}
+
+#[wasm_bindgen]
+impl Threshold {
+    /// Construct an `Absolute(value)` threshold (the library default).
+    pub fn absolute(value: f32) -> Self {
+        Self {
+            cell: cell(RsThreshold::Absolute(value)),
+        }
+    }
+
+    /// Construct a `Relative(frac)` threshold. `frac` should lie in
+    /// `[0.0, 1.0]`.
+    pub fn relative(frac: f32) -> Self {
+        Self {
+            cell: cell(RsThreshold::Relative(frac)),
+        }
+    }
+
+    /// Discriminant tag: `"absolute"` or `"relative"`.
+    #[wasm_bindgen(getter)]
+    pub fn kind(&self) -> String {
+        match *self.cell.borrow() {
+            RsThreshold::Absolute(_) => "absolute".into(),
+            RsThreshold::Relative(_) => "relative".into(),
+            // Any future variant maps to the safe default.
+            _ => "absolute".into(),
+        }
+    }
+
+    /// Numeric payload (absolute value or relative fraction).
+    #[wasm_bindgen(getter)]
+    pub fn value(&self) -> f32 {
+        match *self.cell.borrow() {
+            RsThreshold::Absolute(v) => v,
+            RsThreshold::Relative(f) => f,
+            _ => 0.0,
+        }
+    }
+
+    /// In-place setter for the carried payload, preserving the kind.
+    #[wasm_bindgen(setter)]
+    pub fn set_value(&mut self, v: f32) {
+        let mut slot = self.cell.borrow_mut();
+        *slot = match *slot {
+            RsThreshold::Absolute(_) => RsThreshold::Absolute(v),
+            RsThreshold::Relative(_) => RsThreshold::Relative(v),
+            _ => RsThreshold::Absolute(v),
+        };
+    }
+}
+
+impl Default for Threshold {
+    fn default() -> Self {
+        Self {
+            cell: cell(RsThreshold::default()),
+        }
+    }
+}
+
+impl Threshold {
+    pub(crate) fn share_cell(&self) -> Cell<RsThreshold> {
+        Rc::clone(&self.cell)
+    }
+    pub(crate) fn from_cell(cell: Cell<RsThreshold>) -> Self {
+        Self { cell }
+    }
+    pub(crate) fn from_value(value: RsThreshold) -> Self {
+        Self { cell: cell(value) }
     }
 }
 
@@ -678,111 +776,463 @@ impl RefinerConfig {
 }
 
 // ---------------------------------------------------------------------------
-// RadonDetectorParams
+// MultiscaleParams
 // ---------------------------------------------------------------------------
 
+/// Multiscale pipeline parameters, attached to a [`ChessStrategy`] when
+/// the user opts into pyramid detection. Mirrors
+/// [`chess_corners::MultiscaleParams`].
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
-pub struct RadonDetectorParams {
-    cell: Cell<RsRadonDetectorParams>,
+pub struct MultiscaleParams {
+    cell: Cell<RsMultiscaleParams>,
 }
 
 #[wasm_bindgen]
-impl RadonDetectorParams {
+impl MultiscaleParams {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
-            cell: cell(RsRadonDetectorParams::default()),
+            cell: cell(RsMultiscaleParams::default()),
         }
     }
 
-    #[wasm_bindgen(getter, js_name = rayRadius)]
-    pub fn ray_radius(&self) -> u32 {
-        self.cell.borrow().ray_radius
+    #[wasm_bindgen(getter, js_name = pyramidLevels)]
+    pub fn pyramid_levels(&self) -> u8 {
+        self.cell.borrow().pyramid_levels
     }
-    #[wasm_bindgen(setter, js_name = rayRadius)]
-    pub fn set_ray_radius(&mut self, v: u32) {
-        self.cell.borrow_mut().ray_radius = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = imageUpsample)]
-    pub fn image_upsample(&self) -> u32 {
-        self.cell.borrow().image_upsample
-    }
-    #[wasm_bindgen(setter, js_name = imageUpsample)]
-    pub fn set_image_upsample(&mut self, v: u32) {
-        self.cell.borrow_mut().image_upsample = v;
+    #[wasm_bindgen(setter, js_name = pyramidLevels)]
+    pub fn set_pyramid_levels(&mut self, v: u8) {
+        self.cell.borrow_mut().pyramid_levels = v;
     }
 
-    #[wasm_bindgen(getter, js_name = responseBlurRadius)]
-    pub fn response_blur_radius(&self) -> u32 {
-        self.cell.borrow().response_blur_radius
+    #[wasm_bindgen(getter, js_name = pyramidMinSize)]
+    pub fn pyramid_min_size(&self) -> u32 {
+        self.cell.borrow().pyramid_min_size as u32
     }
-    #[wasm_bindgen(setter, js_name = responseBlurRadius)]
-    pub fn set_response_blur_radius(&mut self, v: u32) {
-        self.cell.borrow_mut().response_blur_radius = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = peakFit)]
-    pub fn peak_fit(&self) -> PeakFitMode {
-        self.cell.borrow().peak_fit.into()
-    }
-    #[wasm_bindgen(setter, js_name = peakFit)]
-    pub fn set_peak_fit(&mut self, v: PeakFitMode) {
-        self.cell.borrow_mut().peak_fit = v.into();
+    #[wasm_bindgen(setter, js_name = pyramidMinSize)]
+    pub fn set_pyramid_min_size(&mut self, v: u32) {
+        self.cell.borrow_mut().pyramid_min_size = v as usize;
     }
 
-    #[wasm_bindgen(getter, js_name = thresholdRel)]
-    pub fn threshold_rel(&self) -> f32 {
-        self.cell.borrow().threshold_rel
+    #[wasm_bindgen(getter, js_name = refinementRadius)]
+    pub fn refinement_radius(&self) -> u32 {
+        self.cell.borrow().refinement_radius
     }
-    #[wasm_bindgen(setter, js_name = thresholdRel)]
-    pub fn set_threshold_rel(&mut self, v: f32) {
-        self.cell.borrow_mut().threshold_rel = v;
-    }
-
-    /// Absolute response floor; `None` to clear and let the relative
-    /// threshold decide. Pass a finite number to override.
-    #[wasm_bindgen(getter, js_name = thresholdAbs)]
-    pub fn threshold_abs(&self) -> Option<f32> {
-        self.cell.borrow().threshold_abs
-    }
-    #[wasm_bindgen(setter, js_name = thresholdAbs)]
-    pub fn set_threshold_abs(&mut self, v: Option<f32>) {
-        self.cell.borrow_mut().threshold_abs = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = nmsRadius)]
-    pub fn nms_radius(&self) -> u32 {
-        self.cell.borrow().nms_radius
-    }
-    #[wasm_bindgen(setter, js_name = nmsRadius)]
-    pub fn set_nms_radius(&mut self, v: u32) {
-        self.cell.borrow_mut().nms_radius = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = minClusterSize)]
-    pub fn min_cluster_size(&self) -> u32 {
-        self.cell.borrow().min_cluster_size
-    }
-    #[wasm_bindgen(setter, js_name = minClusterSize)]
-    pub fn set_min_cluster_size(&mut self, v: u32) {
-        self.cell.borrow_mut().min_cluster_size = v;
+    #[wasm_bindgen(setter, js_name = refinementRadius)]
+    pub fn set_refinement_radius(&mut self, v: u32) {
+        self.cell.borrow_mut().refinement_radius = v;
     }
 }
 
-impl Default for RadonDetectorParams {
+impl Default for MultiscaleParams {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RadonDetectorParams {
-    pub(crate) fn share_cell(&self) -> Cell<RsRadonDetectorParams> {
+impl MultiscaleParams {
+    pub(crate) fn share_cell(&self) -> Cell<RsMultiscaleParams> {
         Rc::clone(&self.cell)
     }
-    pub(crate) fn from_cell(cell: Cell<RsRadonDetectorParams>) -> Self {
+    pub(crate) fn from_cell(cell: Cell<RsMultiscaleParams>) -> Self {
         Self { cell }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ChessStrategy
+// ---------------------------------------------------------------------------
+
+/// ChESS-detector branch of [`DetectionStrategy`]. Mirrors
+/// [`chess_corners::ChessStrategy`].
+///
+/// `multiscale` is an optional handle: `null` means single-scale.
+/// Use `enableMultiscale()` to attach a defaulted [`MultiscaleParams`]
+/// or assign a custom one via the setter; `clearMultiscale()` returns
+/// the strategy to single-scale.
+#[wasm_bindgen]
+#[derive(Clone, Debug)]
+pub struct ChessStrategy {
+    ring: Cell<RsChessRing>,
+    nms_radius: Cell<u32>,
+    min_cluster_size: Cell<u32>,
+    /// `None` cell means single-scale. Switching to multiscale stores
+    /// `Some(cell)` where `cell` is the shared inner cell of a
+    /// [`MultiscaleParams`] wrapper; the wrapper returned from
+    /// `multiscale` getters reuses that cell so edits propagate.
+    multiscale: Cell<Option<Cell<RsMultiscaleParams>>>,
+}
+
+#[wasm_bindgen]
+impl ChessStrategy {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        let defaults = RsChessStrategy::default();
+        Self {
+            ring: cell(defaults.ring),
+            nms_radius: cell(defaults.nms_radius),
+            min_cluster_size: cell(defaults.min_cluster_size),
+            multiscale: cell(defaults.multiscale.map(cell)),
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn ring(&self) -> ChessRing {
+        (*self.ring.borrow()).into()
+    }
+    #[wasm_bindgen(setter)]
+    pub fn set_ring(&mut self, v: ChessRing) {
+        *self.ring.borrow_mut() = v.into();
+    }
+
+    #[wasm_bindgen(getter, js_name = nmsRadius)]
+    pub fn nms_radius(&self) -> u32 {
+        *self.nms_radius.borrow()
+    }
+    #[wasm_bindgen(setter, js_name = nmsRadius)]
+    pub fn set_nms_radius(&mut self, v: u32) {
+        *self.nms_radius.borrow_mut() = v;
+    }
+
+    #[wasm_bindgen(getter, js_name = minClusterSize)]
+    pub fn min_cluster_size(&self) -> u32 {
+        *self.min_cluster_size.borrow()
+    }
+    #[wasm_bindgen(setter, js_name = minClusterSize)]
+    pub fn set_min_cluster_size(&mut self, v: u32) {
+        *self.min_cluster_size.borrow_mut() = v;
+    }
+
+    /// Returns the attached multiscale params, or `null` for single-scale.
+    /// Edits through the returned wrapper propagate into this strategy.
+    #[wasm_bindgen(getter)]
+    pub fn multiscale(&self) -> Option<MultiscaleParams> {
+        self.multiscale
+            .borrow()
+            .as_ref()
+            .map(|c| MultiscaleParams::from_cell(Rc::clone(c)))
+    }
+    #[wasm_bindgen(setter)]
+    pub fn set_multiscale(&mut self, v: Option<MultiscaleParams>) {
+        *self.multiscale.borrow_mut() = v.map(|w| w.share_cell());
+    }
+
+    /// Detach multiscale settings; the strategy reverts to single-scale.
+    #[wasm_bindgen(js_name = clearMultiscale)]
+    pub fn clear_multiscale(&mut self) {
+        *self.multiscale.borrow_mut() = None;
+    }
+
+    /// Attach a defaulted [`MultiscaleParams`] and return a handle to
+    /// it so the caller can immediately tweak fields. Idempotent: if
+    /// multiscale is already attached, returns the existing handle.
+    #[wasm_bindgen(js_name = enableMultiscale)]
+    pub fn enable_multiscale(&mut self) -> MultiscaleParams {
+        {
+            let mut slot = self.multiscale.borrow_mut();
+            if slot.is_none() {
+                *slot = Some(cell(RsMultiscaleParams::default()));
+            }
+        }
+        // Cannot hold the borrow_mut() across the second borrow().
+        let c = self
+            .multiscale
+            .borrow()
+            .as_ref()
+            .map(Rc::clone)
+            .expect("multiscale just initialized");
+        MultiscaleParams::from_cell(c)
+    }
+}
+
+impl Default for ChessStrategy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ChessStrategy {
+    fn from_value(value: RsChessStrategy) -> Self {
+        Self {
+            ring: cell(value.ring),
+            nms_radius: cell(value.nms_radius),
+            min_cluster_size: cell(value.min_cluster_size),
+            multiscale: cell(value.multiscale.map(cell)),
+        }
+    }
+
+    fn snapshot(&self) -> RsChessStrategy {
+        let mut s = RsChessStrategy::default();
+        s.ring = *self.ring.borrow();
+        s.nms_radius = *self.nms_radius.borrow();
+        s.min_cluster_size = *self.min_cluster_size.borrow();
+        s.multiscale = self.multiscale.borrow().as_ref().map(|c| *c.borrow());
+        s
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RadonStrategy
+// ---------------------------------------------------------------------------
+
+/// Radon-detector branch of [`DetectionStrategy`]. Mirrors
+/// [`chess_corners::RadonStrategy`]. All radii / counts are in
+/// **working-resolution** pixels (i.e. after `imageUpsample`).
+#[wasm_bindgen]
+#[derive(Clone, Debug)]
+pub struct RadonStrategy {
+    ray_radius: Cell<u32>,
+    image_upsample: Cell<u32>,
+    response_blur_radius: Cell<u32>,
+    peak_fit: Cell<RsPeakFitMode>,
+    nms_radius: Cell<u32>,
+    min_cluster_size: Cell<u32>,
+}
+
+#[wasm_bindgen]
+impl RadonStrategy {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        let d = RsRadonStrategy::default();
+        Self {
+            ray_radius: cell(d.ray_radius),
+            image_upsample: cell(d.image_upsample),
+            response_blur_radius: cell(d.response_blur_radius),
+            peak_fit: cell(d.peak_fit),
+            nms_radius: cell(d.nms_radius),
+            min_cluster_size: cell(d.min_cluster_size),
+        }
+    }
+
+    #[wasm_bindgen(getter, js_name = rayRadius)]
+    pub fn ray_radius(&self) -> u32 {
+        *self.ray_radius.borrow()
+    }
+    #[wasm_bindgen(setter, js_name = rayRadius)]
+    pub fn set_ray_radius(&mut self, v: u32) {
+        *self.ray_radius.borrow_mut() = v;
+    }
+
+    #[wasm_bindgen(getter, js_name = imageUpsample)]
+    pub fn image_upsample(&self) -> u32 {
+        *self.image_upsample.borrow()
+    }
+    #[wasm_bindgen(setter, js_name = imageUpsample)]
+    pub fn set_image_upsample(&mut self, v: u32) {
+        *self.image_upsample.borrow_mut() = v;
+    }
+
+    #[wasm_bindgen(getter, js_name = responseBlurRadius)]
+    pub fn response_blur_radius(&self) -> u32 {
+        *self.response_blur_radius.borrow()
+    }
+    #[wasm_bindgen(setter, js_name = responseBlurRadius)]
+    pub fn set_response_blur_radius(&mut self, v: u32) {
+        *self.response_blur_radius.borrow_mut() = v;
+    }
+
+    #[wasm_bindgen(getter, js_name = peakFit)]
+    pub fn peak_fit(&self) -> PeakFitMode {
+        (*self.peak_fit.borrow()).into()
+    }
+    #[wasm_bindgen(setter, js_name = peakFit)]
+    pub fn set_peak_fit(&mut self, v: PeakFitMode) {
+        *self.peak_fit.borrow_mut() = v.into();
+    }
+
+    #[wasm_bindgen(getter, js_name = nmsRadius)]
+    pub fn nms_radius(&self) -> u32 {
+        *self.nms_radius.borrow()
+    }
+    #[wasm_bindgen(setter, js_name = nmsRadius)]
+    pub fn set_nms_radius(&mut self, v: u32) {
+        *self.nms_radius.borrow_mut() = v;
+    }
+
+    #[wasm_bindgen(getter, js_name = minClusterSize)]
+    pub fn min_cluster_size(&self) -> u32 {
+        *self.min_cluster_size.borrow()
+    }
+    #[wasm_bindgen(setter, js_name = minClusterSize)]
+    pub fn set_min_cluster_size(&mut self, v: u32) {
+        *self.min_cluster_size.borrow_mut() = v;
+    }
+}
+
+impl Default for RadonStrategy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RadonStrategy {
+    fn from_value(value: RsRadonStrategy) -> Self {
+        Self {
+            ray_radius: cell(value.ray_radius),
+            image_upsample: cell(value.image_upsample),
+            response_blur_radius: cell(value.response_blur_radius),
+            peak_fit: cell(value.peak_fit),
+            nms_radius: cell(value.nms_radius),
+            min_cluster_size: cell(value.min_cluster_size),
+        }
+    }
+
+    fn snapshot(&self) -> RsRadonStrategy {
+        let mut s = RsRadonStrategy::default();
+        s.ray_radius = *self.ray_radius.borrow();
+        s.image_upsample = *self.image_upsample.borrow();
+        s.response_blur_radius = *self.response_blur_radius.borrow();
+        s.peak_fit = *self.peak_fit.borrow();
+        s.nms_radius = *self.nms_radius.borrow();
+        s.min_cluster_size = *self.min_cluster_size.borrow();
+        s
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DetectionStrategy (tagged wrapper, mirrors RsDetectionStrategy)
+// ---------------------------------------------------------------------------
+
+/// Top-level detector dispatch. Mirrors
+/// [`chess_corners::DetectionStrategy`].
+///
+/// The wrapper carries both a [`ChessStrategy`] and a [`RadonStrategy`]
+/// cell internally. The `kind` discriminant selects which one is
+/// snapshotted into the Rust value. Field edits on the inactive
+/// variant are preserved in its cell — they become live again when
+/// the discriminant flips.
+#[wasm_bindgen]
+#[derive(Clone, Debug)]
+pub struct DetectionStrategy {
+    kind: Cell<StrategyKind>,
+    chess: ChessStrategy,
+    radon: RadonStrategy,
+}
+
+#[wasm_bindgen]
+impl DetectionStrategy {
+    /// Construct a [`DetectionStrategy`] in the ChESS branch from a
+    /// given [`ChessStrategy`]. JS: `DetectionStrategy.fromChess(s)`.
+    #[wasm_bindgen(js_name = fromChess)]
+    pub fn from_chess(strategy: &ChessStrategy) -> Self {
+        Self {
+            kind: cell(StrategyKind::Chess),
+            chess: strategy.clone(),
+            radon: RadonStrategy::default(),
+        }
+    }
+
+    /// Construct a [`DetectionStrategy`] in the Radon branch from a
+    /// given [`RadonStrategy`]. JS: `DetectionStrategy.fromRadon(s)`.
+    #[wasm_bindgen(js_name = fromRadon)]
+    pub fn from_radon(strategy: &RadonStrategy) -> Self {
+        Self {
+            kind: cell(StrategyKind::Radon),
+            chess: ChessStrategy::default(),
+            radon: strategy.clone(),
+        }
+    }
+
+    /// Default ChESS-branch strategy. Equivalent to
+    /// `DetectionStrategy.fromChess(new ChessStrategy())`.
+    #[wasm_bindgen(js_name = defaultChess)]
+    pub fn default_chess() -> Self {
+        Self {
+            kind: cell(StrategyKind::Chess),
+            chess: ChessStrategy::default(),
+            radon: RadonStrategy::default(),
+        }
+    }
+
+    /// Default Radon-branch strategy. Equivalent to
+    /// `DetectionStrategy.fromRadon(new RadonStrategy())`.
+    #[wasm_bindgen(js_name = defaultRadon)]
+    pub fn default_radon() -> Self {
+        Self {
+            kind: cell(StrategyKind::Radon),
+            chess: ChessStrategy::default(),
+            radon: RadonStrategy::default(),
+        }
+    }
+
+    /// Discriminant tag: `"chess"` or `"radon"`.
+    #[wasm_bindgen(getter)]
+    pub fn kind(&self) -> String {
+        self.kind.borrow().as_str().into()
+    }
+
+    /// ChESS branch wrapper. Edits propagate even when the active kind
+    /// is Radon (the cell is preserved for when the user flips back).
+    #[wasm_bindgen(getter)]
+    pub fn chess(&self) -> ChessStrategy {
+        self.chess.clone()
+    }
+    #[wasm_bindgen(setter)]
+    pub fn set_chess(&mut self, v: &ChessStrategy) {
+        self.chess = v.clone();
+        // Setting a chess strategy implies that branch is now active.
+        *self.kind.borrow_mut() = StrategyKind::Chess;
+    }
+
+    /// Radon branch wrapper. Edits propagate even when the active kind
+    /// is ChESS.
+    #[wasm_bindgen(getter)]
+    pub fn radon(&self) -> RadonStrategy {
+        self.radon.clone()
+    }
+    #[wasm_bindgen(setter)]
+    pub fn set_radon(&mut self, v: &RadonStrategy) {
+        self.radon = v.clone();
+        // Setting a radon strategy implies that branch is now active.
+        *self.kind.borrow_mut() = StrategyKind::Radon;
+    }
+
+    /// Switch the discriminant to ChESS without otherwise mutating
+    /// the wrapper. The previously stored [`ChessStrategy`] cell
+    /// becomes the live source again.
+    #[wasm_bindgen(js_name = useChess)]
+    pub fn use_chess(&mut self) {
+        *self.kind.borrow_mut() = StrategyKind::Chess;
+    }
+
+    /// Switch the discriminant to Radon without otherwise mutating
+    /// the wrapper. The previously stored [`RadonStrategy`] cell
+    /// becomes the live source again.
+    #[wasm_bindgen(js_name = useRadon)]
+    pub fn use_radon(&mut self) {
+        *self.kind.borrow_mut() = StrategyKind::Radon;
+    }
+}
+
+impl Default for DetectionStrategy {
+    fn default() -> Self {
+        Self::default_chess()
+    }
+}
+
+impl DetectionStrategy {
+    pub(crate) fn from_value(value: RsDetectionStrategy) -> Self {
+        match value {
+            RsDetectionStrategy::Chess(c) => Self {
+                kind: cell(StrategyKind::Chess),
+                chess: ChessStrategy::from_value(c),
+                radon: RadonStrategy::default(),
+            },
+            RsDetectionStrategy::Radon(r) => Self {
+                kind: cell(StrategyKind::Radon),
+                chess: ChessStrategy::default(),
+                radon: RadonStrategy::from_value(r),
+            },
+            _ => Self::default_chess(),
+        }
+    }
+
+    pub(crate) fn snapshot(&self) -> RsDetectionStrategy {
+        match *self.kind.borrow() {
+            StrategyKind::Chess => RsDetectionStrategy::Chess(self.chess.snapshot()),
+            StrategyKind::Radon => RsDetectionStrategy::Radon(self.radon.snapshot()),
+        }
     }
 }
 
@@ -859,29 +1309,21 @@ impl UpscaleConfig {
 
 /// High-level detector configuration. Mirrors
 /// [`chess_corners::ChessConfig`].
+///
+/// Build one with [`ChessConfig::single_scale`],
+/// [`ChessConfig::multiscale`], or [`ChessConfig::radon`] and tweak
+/// only the fields you need.
 #[non_exhaustive]
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
 pub struct ChessConfig {
-    // Scalar fields are stored in their own single-purpose cells.
-    // The wrapper-level `Clone` returns a shallow copy that shares
-    // these cells with the original — `cfg.refiner.kind = X` after
-    // `let cfg2 = cfg.clone()` (Rust-side) would also affect cfg2,
-    // intentionally, because the cells are shared.
-    detector_mode: Cell<RsDetectorMode>,
-    descriptor_mode: Cell<RsDescriptorMode>,
-    threshold_mode: Cell<RsThresholdMode>,
-    threshold_value: Cell<f32>,
-    nms_radius: Cell<u32>,
-    min_cluster_size: Cell<u32>,
-    pyramid_levels: Cell<u8>,
-    pyramid_min_size: Cell<usize>,
-    refinement_radius: Cell<u32>,
-    merge_radius: Cell<f32>,
+    strategy: DetectionStrategy,
+    threshold: Threshold,
     refiner: RefinerConfig,
-    upscale: Cell<RsUpscaleConfig>,
-    radon_detector: Cell<RsRadonDetectorParams>,
     orientation_method: Cell<RsOrientationMethod>,
+    descriptor_mode: Cell<RsDescriptorMode>,
+    upscale: Cell<RsUpscaleConfig>,
+    merge_radius: Cell<f32>,
 }
 
 impl ChessConfig {
@@ -891,41 +1333,27 @@ impl ChessConfig {
 
     fn from_value(value: RsChessConfig) -> Self {
         Self {
-            detector_mode: cell(value.detector_mode),
-            descriptor_mode: cell(value.descriptor_mode),
-            threshold_mode: cell(value.threshold_mode),
-            threshold_value: cell(value.threshold_value),
-            nms_radius: cell(value.nms_radius),
-            min_cluster_size: cell(value.min_cluster_size),
-            pyramid_levels: cell(value.pyramid_levels),
-            pyramid_min_size: cell(value.pyramid_min_size),
-            refinement_radius: cell(value.refinement_radius),
-            merge_radius: cell(value.merge_radius),
+            strategy: DetectionStrategy::from_value(value.strategy),
+            threshold: Threshold::from_value(value.threshold),
             refiner: RefinerConfig::from_value(value.refiner),
-            upscale: cell(value.upscale),
-            radon_detector: cell(value.radon_detector),
             orientation_method: cell(value.orientation_method),
+            descriptor_mode: cell(value.descriptor_mode),
+            upscale: cell(value.upscale),
+            merge_radius: cell(value.merge_radius),
         }
     }
 
     /// Snapshot the current state into the Rust facade
-    /// `ChessConfig` for hand-off to the detector.
+    /// [`RsChessConfig`] for hand-off to the detector.
     pub(crate) fn snapshot(&self) -> RsChessConfig {
         let mut cfg = RsChessConfig::default();
-        cfg.detector_mode = *self.detector_mode.borrow();
-        cfg.descriptor_mode = *self.descriptor_mode.borrow();
-        cfg.threshold_mode = *self.threshold_mode.borrow();
-        cfg.threshold_value = *self.threshold_value.borrow();
-        cfg.nms_radius = *self.nms_radius.borrow();
-        cfg.min_cluster_size = *self.min_cluster_size.borrow();
-        cfg.pyramid_levels = *self.pyramid_levels.borrow();
-        cfg.pyramid_min_size = *self.pyramid_min_size.borrow();
-        cfg.refinement_radius = *self.refinement_radius.borrow();
-        cfg.merge_radius = *self.merge_radius.borrow();
+        cfg.strategy = self.strategy.snapshot();
+        cfg.threshold = *self.threshold.share_cell().borrow();
         cfg.refiner = self.refiner.snapshot();
-        cfg.upscale = *self.upscale.borrow();
-        cfg.radon_detector = *self.radon_detector.borrow();
         cfg.orientation_method = *self.orientation_method.borrow();
+        cfg.descriptor_mode = *self.descriptor_mode.borrow();
+        cfg.upscale = *self.upscale.borrow();
+        cfg.merge_radius = *self.merge_radius.borrow();
         cfg
     }
 }
@@ -933,40 +1361,48 @@ impl ChessConfig {
 #[wasm_bindgen]
 impl ChessConfig {
     /// Construct a `ChessConfig` with library defaults
-    /// (single-scale, absolute threshold = 0.0).
+    /// (single-scale ChESS, absolute threshold = 0.0).
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self::from_value(RsChessConfig::default())
     }
 
-    /// Single-scale preset (alias for [`Self::new`]).
+    /// Single-scale ChESS preset (alias for [`Self::new`]).
     #[wasm_bindgen(js_name = singleScale)]
     pub fn single_scale() -> Self {
         Self::from_value(RsChessConfig::single_scale())
     }
 
-    /// Recommended 3-level multiscale preset.
+    /// Recommended 3-level multiscale ChESS preset.
     pub fn multiscale() -> Self {
         Self::from_value(RsChessConfig::multiscale())
     }
 
-    /// Whole-image Radon detector preset.
+    /// Whole-image Radon detector preset (relative threshold 0.01).
     pub fn radon() -> Self {
         Self::from_value(RsChessConfig::radon())
     }
 
-    // ---- Top-level scalar fields ----
-    // Note: `Default for ChessConfig` is provided below outside the
-    // `#[wasm_bindgen]` impl so that wasm-bindgen doesn't try to
-    // expose it as a JS method.
+    // ---- Top-level fields ----
 
-    #[wasm_bindgen(getter, js_name = detectorMode)]
-    pub fn detector_mode(&self) -> DetectorMode {
-        (*self.detector_mode.borrow()).into()
+    #[wasm_bindgen(getter)]
+    pub fn strategy(&self) -> DetectionStrategy {
+        self.strategy.clone()
     }
-    #[wasm_bindgen(setter, js_name = detectorMode)]
-    pub fn set_detector_mode(&mut self, v: DetectorMode) {
-        *self.detector_mode.borrow_mut() = v.into();
+    #[wasm_bindgen(setter)]
+    pub fn set_strategy(&mut self, v: &DetectionStrategy) {
+        self.strategy = v.clone();
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn threshold(&self) -> Threshold {
+        self.threshold.clone()
+    }
+    #[wasm_bindgen(setter)]
+    pub fn set_threshold(&mut self, v: &Threshold) {
+        // Reseat the threshold cell so both the parent and any
+        // downstream getter call observe `v`'s state.
+        self.threshold = Threshold::from_cell(v.share_cell());
     }
 
     #[wasm_bindgen(getter, js_name = descriptorMode)]
@@ -978,67 +1414,13 @@ impl ChessConfig {
         *self.descriptor_mode.borrow_mut() = v.into();
     }
 
-    #[wasm_bindgen(getter, js_name = thresholdMode)]
-    pub fn threshold_mode(&self) -> ThresholdMode {
-        (*self.threshold_mode.borrow()).into()
+    #[wasm_bindgen(getter, js_name = orientationMethod)]
+    pub fn orientation_method(&self) -> OrientationMethod {
+        (*self.orientation_method.borrow()).into()
     }
-    #[wasm_bindgen(setter, js_name = thresholdMode)]
-    pub fn set_threshold_mode(&mut self, v: ThresholdMode) {
-        *self.threshold_mode.borrow_mut() = v.into();
-    }
-
-    #[wasm_bindgen(getter, js_name = thresholdValue)]
-    pub fn threshold_value(&self) -> f32 {
-        *self.threshold_value.borrow()
-    }
-    #[wasm_bindgen(setter, js_name = thresholdValue)]
-    pub fn set_threshold_value(&mut self, v: f32) {
-        *self.threshold_value.borrow_mut() = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = nmsRadius)]
-    pub fn nms_radius(&self) -> u32 {
-        *self.nms_radius.borrow()
-    }
-    #[wasm_bindgen(setter, js_name = nmsRadius)]
-    pub fn set_nms_radius(&mut self, v: u32) {
-        *self.nms_radius.borrow_mut() = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = minClusterSize)]
-    pub fn min_cluster_size(&self) -> u32 {
-        *self.min_cluster_size.borrow()
-    }
-    #[wasm_bindgen(setter, js_name = minClusterSize)]
-    pub fn set_min_cluster_size(&mut self, v: u32) {
-        *self.min_cluster_size.borrow_mut() = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = pyramidLevels)]
-    pub fn pyramid_levels(&self) -> u8 {
-        *self.pyramid_levels.borrow()
-    }
-    #[wasm_bindgen(setter, js_name = pyramidLevels)]
-    pub fn set_pyramid_levels(&mut self, v: u8) {
-        *self.pyramid_levels.borrow_mut() = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = pyramidMinSize)]
-    pub fn pyramid_min_size(&self) -> u32 {
-        *self.pyramid_min_size.borrow() as u32
-    }
-    #[wasm_bindgen(setter, js_name = pyramidMinSize)]
-    pub fn set_pyramid_min_size(&mut self, v: u32) {
-        *self.pyramid_min_size.borrow_mut() = v as usize;
-    }
-
-    #[wasm_bindgen(getter, js_name = refinementRadius)]
-    pub fn refinement_radius(&self) -> u32 {
-        *self.refinement_radius.borrow()
-    }
-    #[wasm_bindgen(setter, js_name = refinementRadius)]
-    pub fn set_refinement_radius(&mut self, v: u32) {
-        *self.refinement_radius.borrow_mut() = v;
+    #[wasm_bindgen(setter, js_name = orientationMethod)]
+    pub fn set_orientation_method(&mut self, v: OrientationMethod) {
+        *self.orientation_method.borrow_mut() = v.into();
     }
 
     #[wasm_bindgen(getter, js_name = mergeRadius)]
@@ -1073,24 +1455,6 @@ impl ChessConfig {
     pub fn set_upscale(&mut self, v: &UpscaleConfig) {
         self.upscale = v.share_cell();
     }
-
-    #[wasm_bindgen(getter, js_name = radonDetector)]
-    pub fn radon_detector(&self) -> RadonDetectorParams {
-        RadonDetectorParams::from_cell(Rc::clone(&self.radon_detector))
-    }
-    #[wasm_bindgen(setter, js_name = radonDetector)]
-    pub fn set_radon_detector(&mut self, v: &RadonDetectorParams) {
-        self.radon_detector = v.share_cell();
-    }
-
-    #[wasm_bindgen(getter, js_name = orientationMethod)]
-    pub fn orientation_method(&self) -> OrientationMethod {
-        (*self.orientation_method.borrow()).into()
-    }
-    #[wasm_bindgen(setter, js_name = orientationMethod)]
-    pub fn set_orientation_method(&mut self, v: OrientationMethod) {
-        *self.orientation_method.borrow_mut() = v.into();
-    }
 }
 
 impl Default for ChessConfig {
@@ -1109,37 +1473,133 @@ mod tests {
     //! identical on host and on wasm32.
 
     use super::*;
-    use chess_corners::{DetectorMode as RsDetectorMode, RefinementMethod as RsRefinementMethod};
+    use chess_corners::{
+        DetectionStrategy as RsDetectionStrategy, RefinementMethod as RsRefinementMethod,
+        Threshold as RsThreshold,
+    };
 
     #[test]
     fn nested_edits_propagate_through_chess_config() {
         let cfg = ChessConfig::new();
-        // `cfg.refiner` returns a wrapper sharing cells with `cfg`.
         let mut r = cfg.refiner();
         r.set_kind(RefinementMethod::Forstner);
 
-        // The mutation must be visible on a fresh getter call.
         assert_eq!(
             cfg.snapshot().refiner.kind,
             RsRefinementMethod::Forstner,
             "cfg.refiner.kind = X must propagate without round-trip"
         );
 
-        // Per-variant edits also propagate.
         let mut f = cfg.refiner().forstner();
         f.set_max_offset(2.5);
         assert_eq!(cfg.snapshot().refiner.forstner.max_offset, 2.5);
     }
 
     #[test]
-    fn radon_detector_edits_propagate() {
-        let cfg = ChessConfig::new();
-        let mut radon = cfg.radon_detector();
+    fn chess_strategy_field_edits_propagate() {
+        let cfg = ChessConfig::single_scale();
+        let mut chess = cfg.strategy().chess();
+        chess.set_nms_radius(7);
+        chess.set_ring(ChessRing::Broad);
+
+        let snap = cfg.snapshot();
+        let RsDetectionStrategy::Chess(s) = snap.strategy else {
+            panic!("expected chess strategy")
+        };
+        assert_eq!(s.nms_radius, 7);
+        assert_eq!(s.ring, chess_corners::ChessRing::Broad);
+    }
+
+    #[test]
+    fn enable_multiscale_attaches_and_edits_propagate() {
+        let cfg = ChessConfig::single_scale();
+        let mut chess = cfg.strategy().chess();
+        let mut ms = chess.enable_multiscale();
+        ms.set_pyramid_levels(5);
+        ms.set_pyramid_min_size(64);
+
+        let snap = cfg.snapshot();
+        let RsDetectionStrategy::Chess(s) = snap.strategy else {
+            panic!("expected chess strategy")
+        };
+        let attached = s.multiscale.expect("multiscale should be attached");
+        assert_eq!(attached.pyramid_levels, 5);
+        assert_eq!(attached.pyramid_min_size, 64);
+    }
+
+    #[test]
+    fn clear_multiscale_returns_to_single_scale() {
+        let cfg = ChessConfig::multiscale();
+        let mut chess = cfg.strategy().chess();
+        assert!(chess.multiscale().is_some());
+        chess.clear_multiscale();
+
+        let snap = cfg.snapshot();
+        let RsDetectionStrategy::Chess(s) = snap.strategy else {
+            panic!("expected chess strategy")
+        };
+        assert!(s.multiscale.is_none());
+    }
+
+    #[test]
+    fn radon_strategy_field_edits_propagate() {
+        let cfg = ChessConfig::radon();
+        let mut radon = cfg.strategy().radon();
         radon.set_ray_radius(7);
         radon.set_image_upsample(2);
         let snap = cfg.snapshot();
-        assert_eq!(snap.radon_detector.ray_radius, 7);
-        assert_eq!(snap.radon_detector.image_upsample, 2);
+        let RsDetectionStrategy::Radon(s) = snap.strategy else {
+            panic!("expected radon strategy")
+        };
+        assert_eq!(s.ray_radius, 7);
+        assert_eq!(s.image_upsample, 2);
+    }
+
+    #[test]
+    fn threshold_kind_and_value_round_trip() {
+        let abs = Threshold::absolute(3.5);
+        assert_eq!(abs.kind(), "absolute");
+        assert!((abs.value() - 3.5).abs() < f32::EPSILON);
+
+        let rel = Threshold::relative(0.42);
+        assert_eq!(rel.kind(), "relative");
+        assert!((rel.value() - 0.42).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn cfg_threshold_propagates() {
+        let mut cfg = ChessConfig::new();
+        let t = Threshold::relative(0.15);
+        cfg.set_threshold(&t);
+        let snap = cfg.snapshot();
+        assert!(
+            matches!(snap.threshold, RsThreshold::Relative(f) if (f - 0.15).abs() < f32::EPSILON)
+        );
+
+        // Mutating the wrapper via setter also propagates.
+        let live = cfg.threshold();
+        let mut live_mut = live;
+        live_mut.set_value(0.25);
+        let snap2 = cfg.snapshot();
+        assert!(
+            matches!(snap2.threshold, RsThreshold::Relative(f) if (f - 0.25).abs() < f32::EPSILON)
+        );
+    }
+
+    #[test]
+    fn detection_strategy_switch_preserves_inactive_branch_state() {
+        let mut ds = DetectionStrategy::default_chess();
+        // Pre-populate the radon branch while chess is active.
+        let mut radon = ds.radon();
+        radon.set_ray_radius(11);
+        radon.set_image_upsample(2);
+        // Flip discriminant to radon — branch state must survive.
+        ds.use_radon();
+        assert_eq!(ds.kind(), "radon");
+        match ds.snapshot() {
+            RsDetectionStrategy::Radon(r) => assert_eq!(r.ray_radius, 11),
+            other => panic!("expected radon, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1156,50 +1616,36 @@ mod tests {
     #[test]
     fn assigning_nested_wrapper_reseats_cells() {
         let mut cfg = ChessConfig::new();
-        // Build a freestanding refiner with a custom kind.
         let mut new_refiner = RefinerConfig::new();
         new_refiner.set_kind(RefinementMethod::SaddlePoint);
         new_refiner.forstner().set_max_offset(3.5);
 
         cfg.set_refiner(&new_refiner);
 
-        // Reseating must take effect for future getter calls.
         let snap = cfg.snapshot();
         assert_eq!(snap.refiner.kind, RsRefinementMethod::SaddlePoint);
         assert_eq!(snap.refiner.forstner.max_offset, 3.5);
 
-        // And `cfg.refiner.*` is now backed by `new_refiner`'s cells:
-        // mutating `new_refiner` afterwards must propagate.
+        // Reseating must take effect for future getter calls.
         new_refiner.forstner().set_max_offset(4.5);
         assert_eq!(cfg.snapshot().refiner.forstner.max_offset, 4.5);
     }
 
     #[test]
-    fn top_level_scalar_setters_match_facade_defaults() {
-        let mut cfg = ChessConfig::new();
-        cfg.set_detector_mode(DetectorMode::Radon);
-        cfg.set_threshold_value(0.42);
-        let snap = cfg.snapshot();
-        assert_eq!(snap.detector_mode, RsDetectorMode::Radon);
-        assert!((snap.threshold_value - 0.42).abs() < 1e-6);
-    }
-
-    #[test]
     fn snapshot_returns_independent_state() {
-        // After capturing a snapshot, further edits to the wrapper
-        // must NOT leak into the snapshot — the snapshot's
-        // `RsChessConfig` value is plain Rust (no Rc).
-        let mut cfg = ChessConfig::new();
-        cfg.set_threshold_value(0.1);
-        let snap = cfg.snapshot();
-        cfg.set_threshold_value(0.9);
-        assert!((snap.threshold_value - 0.1).abs() < 1e-6);
+        let cfg = ChessConfig::new();
+        let t = Threshold::absolute(0.1);
+        let mut cfg_mut = cfg;
+        cfg_mut.set_threshold(&t);
+        let snap = cfg_mut.snapshot();
+        // Replace the threshold after snapshotting — snapshot must not move.
+        let t2 = Threshold::absolute(0.9);
+        cfg_mut.set_threshold(&t2);
+        assert!(matches!(snap.threshold, RsThreshold::Absolute(v) if (v - 0.1).abs() < 1e-6));
     }
 
     #[test]
     fn orientation_method_round_trips_all_variants() {
-        use chess_corners::OrientationMethod as RsOrientationMethod;
-
         let cases = [
             (OrientationMethod::RingFit, RsOrientationMethod::RingFit),
             (OrientationMethod::DiskFit, RsOrientationMethod::DiskFit),
@@ -1208,9 +1654,7 @@ mod tests {
         for (wasm_variant, rs_variant) in cases {
             let mut cfg = ChessConfig::new();
             cfg.set_orientation_method(wasm_variant);
-            // Getter round-trip.
             assert_eq!(cfg.orientation_method(), wasm_variant);
-            // snapshot() propagates to the Rust facade.
             let snap = cfg.snapshot();
             assert_eq!(
                 snap.orientation_method, rs_variant,

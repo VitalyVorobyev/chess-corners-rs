@@ -81,12 +81,26 @@ linkRange(arrowLen, arrowLenVal);
 linkRange(dotRadius, dotRadiusVal);
 
 function configureDetector(det) {
+  // Map the legacy `canonical | broad | radon` dropdown to the new
+  // two-way `chess | radon` strategy + a separate `broad` ring flag.
+  const modeValue = detectorMode.value;
+  const isRadon = modeValue === "radon";
+  det.set_detector_mode(isRadon ? "radon" : "chess");
+  if (!isRadon) {
+    det.set_broad_mode(modeValue === "broad");
+  }
+
   det.set_threshold(parseFloat(threshold.value));
   det.set_nms_radius(parseInt(nmsRadius.value, 10));
   det.set_min_cluster_size(parseInt(minCluster.value, 10));
-  det.set_detector_mode(detectorMode.value);
-  det.set_pyramid_levels(parseInt(pyrLevels.value, 10));
-  det.set_pyramid_min_size(parseInt(pyrMinSize.value, 10));
+
+  // Pyramid setters are only valid on the chess strategy. The Radon
+  // detector is single-scale today, so we just skip them.
+  if (!isRadon) {
+    det.set_pyramid_levels(parseInt(pyrLevels.value, 10));
+    det.set_pyramid_min_size(parseInt(pyrMinSize.value, 10));
+  }
+
   det.set_upscale_factor(parseInt(upscaleFactor.value, 10));
   det.set_refiner(refiner.value);
 }

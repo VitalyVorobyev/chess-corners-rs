@@ -16,15 +16,16 @@ import chess_corners
 img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.ChessConfig.multiscale()
-cfg.threshold_value = 0.15
+cfg.threshold = chess_corners.Threshold.relative(0.15)
 cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
 
-corners = chess_corners.find_chess_corners(img, cfg)
+detector = chess_corners.Detector(cfg)
+corners = detector.detect(img)
 print(corners.shape, corners.dtype)
 print(cfg)
 ```
 
-`find_chess_corners(image, cfg=None)` returns a NumPy `float32` array of shape
+`Detector(cfg).detect(image)` returns a NumPy `float32` array of shape
 `(N, 9)` with columns:
 
 1. `x` — subpixel corner x in input pixels
@@ -52,21 +53,29 @@ The rows are sorted deterministically by `response` descending, then `x`, then `
 
 ## Public config API
 
-The public config shape is intentionally flat. There is no `params` section and
-no nested `pyramid` object.
+`ChessConfig` is strategy-typed: detector-specific tuning lives inside
+a [`DetectionStrategy`] variant, while threshold, refiner, descriptor
+mode, upscaling, and merge radius sit at the top level.
 
 ```python
-cfg = chess_corners.ChessConfig()
-cfg.detector_mode = chess_corners.DetectorMode.BROAD
+cfg = chess_corners.ChessConfig.single_scale()  # ChESS, multiscale = None
 cfg.descriptor_mode = chess_corners.DescriptorMode.FOLLOW_DETECTOR
-cfg.threshold_mode = chess_corners.ThresholdMode.RELATIVE
-cfg.threshold_value = 0.2
-cfg.nms_radius = 2
-cfg.min_cluster_size = 2
-cfg.pyramid_levels = 3
-cfg.pyramid_min_size = 128
-cfg.refinement_radius = 3
+cfg.threshold = chess_corners.Threshold.relative(0.2)
 cfg.merge_radius = 3.0
+
+# Detector-specific knobs live inside the strategy:
+chess = cfg.strategy.chess      # None unless strategy.kind == "chess"
+chess.ring = chess_corners.ChessRing.BROAD
+chess.nms_radius = 2
+chess.min_cluster_size = 2
+chess.multiscale = chess_corners.MultiscaleParams(
+    pyramid_levels=3, pyramid_min_size=128, refinement_radius=3,
+)
+
+# Or switch to the Radon strategy:
+cfg.strategy = chess_corners.DetectionStrategy.from_radon(
+    chess_corners.RadonStrategy()
+)
 ```
 
 All nested objects are default-initialized, so you can always do:
@@ -77,16 +86,21 @@ cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
 cfg.refiner.forstner.max_offset = 2.0
 ```
 
-Supported enums:
+Supported enums and tagged classes:
 
-- `DetectorMode`: `canonical`, `broad`
-- `DescriptorMode`: `follow_detector`, `canonical`, `broad`
-- `ThresholdMode`: `relative`, `absolute`
-- `RefinementMethod`: `center_of_mass`, `forstner`, `saddle_point`
+- `Threshold`: `Threshold.absolute(value)` / `Threshold.relative(frac)`
+- `ChessRing`: `CANONICAL`, `BROAD`
+- `DescriptorMode`: `FOLLOW_DETECTOR`, `CANONICAL`, `BROAD`
+- `DetectionStrategy`: `DetectionStrategy.from_chess(ChessStrategy)` /
+  `DetectionStrategy.from_radon(RadonStrategy)`; read the active
+  variant via `strategy.kind` (`"chess"` or `"radon"`) and the typed
+  payload via `strategy.chess` / `strategy.radon`.
+- `RefinementMethod`: `CENTER_OF_MASS`, `FORSTNER`, `SADDLE_POINT`,
+  `RADON_PEAK`
 
-`broad` uses the wider, blur-tolerant detector sampling pattern. Leave
-`descriptor_mode` at `follow_detector` unless you have a reason to override
-descriptor or orientation sampling separately.
+`ChessRing.BROAD` uses the wider, blur-tolerant detector sampling
+pattern. Leave `descriptor_mode` at `FOLLOW_DETECTOR` unless you have
+a reason to override descriptor or orientation sampling separately.
 
 ## Refiner configuration
 
@@ -136,17 +150,23 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
 
 ```json
 {
-  "detector_mode": "broad",
+  "strategy": {
+    "chess": {
+      "ring": "broad",
+      "nms_radius": 3,
+      "min_cluster_size": 1,
+      "multiscale": {
+        "pyramid_levels": 3,
+        "pyramid_min_size": 96,
+        "refinement_radius": 4
+      }
+    }
+  },
+  "threshold": { "absolute": 0.5 },
   "descriptor_mode": "canonical",
-  "threshold_mode": "absolute",
-  "threshold_value": 0.5,
-  "nms_radius": 3,
-  "min_cluster_size": 1,
   "refiner": {
     "kind": "forstner",
-    "center_of_mass": {
-      "radius": 2
-    },
+    "center_of_mass": { "radius": 2 },
     "forstner": {
       "radius": 3,
       "min_trace": 20.0,
@@ -161,10 +181,22 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
       "min_abs_det": 0.0002
     }
   },
-  "pyramid_levels": 3,
-  "pyramid_min_size": 96,
-  "refinement_radius": 4,
   "merge_radius": 2.5
+}
+```
+
+Switch to the Radon strategy by replacing the `strategy` object:
+
+```json
+"strategy": {
+  "radon": {
+    "ray_radius": 4,
+    "image_upsample": 2,
+    "response_blur_radius": 1,
+    "peak_fit": "gaussian",
+    "nms_radius": 4,
+    "min_cluster_size": 2
+  }
 }
 ```
 
@@ -196,11 +228,9 @@ uv pip install --python .venv/bin/python Pillow
 
 ## ML refiner
 
-If the bindings are built with the `ml-refiner` feature, the package also exports:
-
-```python
-corners = chess_corners.find_chess_corners_with_ml(img, cfg)
-```
-
-That toggles the separate ML-backed refinement path. It does not change the
-canonical `ChessConfig` schema.
+If the bindings are built with the `ml-refiner` feature, you can route
+through the ML pipeline by setting the refiner kind on the typed
+config — the binding currently surfaces only the four classic refiners
+through `RefinementMethod`, so ML is reached via the Rust facade or by
+constructing a typed ChessConfig with the `ml` kind from a JSON / dict
+input. This is the same `Detector` instance, no second entry point.

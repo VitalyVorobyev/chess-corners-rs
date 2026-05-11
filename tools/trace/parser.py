@@ -48,11 +48,7 @@ def parse_trace(stdout: str) -> Dict[str, float]:
             continue
 
         if target == "chess_corners::multiscale":
-            if name == "find_chess_corners":
-                metrics["levels"] = span.get("levels")
-                metrics["min_size"] = span.get("min_size")
-                metrics["total_ms"] = ms
-            elif name in {"coarse", "coarse_detect", "refine", "merge", "single_scale"}:
+            if name in {"coarse", "coarse_detect", "refine", "merge", "single_scale"}:
                 metrics[f"{name}_ms"] = ms
                 # capture seeds when present on refine span
                 if name == "refine":
@@ -62,8 +58,8 @@ def parse_trace(stdout: str) -> Dict[str, float]:
         elif target == "chess_corners::pyramid" and name == "build_pyramid":
             metrics["pyramid_ms"] = ms
         elif (
-            target == "chess_corners_core::descriptor"
-            and name == "corners_to_descriptors"
+            target == "chess_corners_core::orientation::descriptor"
+            and name == "describe_corners"
         ):
             metrics["descriptor_ms"] = ms
 

@@ -65,16 +65,17 @@ def test_nested_forstner_max_offset_survives_roundtrip():
     )
 
 
-def test_nested_radon_detector_survives_roundtrip():
-    """Radon detector params must survive a full dict roundtrip."""
-    cfg = chess_corners.ChessConfig()
-    cfg.radon_detector.image_upsample = 2
+def test_radon_strategy_survives_roundtrip():
+    """Radon strategy params must survive a full dict roundtrip."""
+    cfg = chess_corners.ChessConfig.radon()
+    cfg.strategy.radon.image_upsample = 2
 
     d = cfg.to_dict()
     cfg2 = chess_corners.ChessConfig.from_dict(d)
 
-    assert cfg2.radon_detector.image_upsample == 2, (
-        f"image_upsample not preserved: got {cfg2.radon_detector.image_upsample}"
+    assert cfg2.strategy.kind == "radon"
+    assert cfg2.strategy.radon.image_upsample == 2, (
+        f"image_upsample not preserved: got {cfg2.strategy.radon.image_upsample}"
     )
 
 
@@ -104,7 +105,7 @@ def test_from_dict_rejects_unknown_top_level_key():
 def test_json_and_dict_produce_equivalent_configs():
     """Configs constructed from JSON and from an equivalent dict must be identical."""
     cfg = chess_corners.ChessConfig()
-    cfg.threshold_value = 0.17
+    cfg.threshold = chess_corners.Threshold.relative(0.17)
     cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
 
     json_cfg = chess_corners.ChessConfig.from_json(cfg.to_json())

@@ -1,6 +1,6 @@
 //! Full ChESS multiscale pipeline benchmark.
 //!
-//! Measures end-to-end `find_chess_corners_u8` latency under
+//! Measures end-to-end `Detector::detect_u8` latency under
 //! `ChessConfig::multiscale()` and `ChessConfig::single_scale()` —
 //! i.e. the multi-pyramid coarse-to-fine path and the single-scale
 //! reference. Complements `chess-corners-core/benches/radon_response.rs`,
@@ -12,7 +12,7 @@
 //! - **Real test images** (`testimages/{small,mid,large}.png`).
 //!   Skipped with a stderr note if the file is missing.
 
-use chess_corners::{find_chess_corners_u8, ChessConfig};
+use chess_corners::{ChessConfig, Detector};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use image::ImageReader;
 use std::hint::black_box;
@@ -58,12 +58,13 @@ fn bench_chess_pipeline_synth(c: &mut Criterion) {
         group.throughput(Throughput::Elements((w * h) as u64));
         for &(label, mk) in presets {
             let cfg = mk();
+            let mut detector = Detector::new(cfg.clone()).unwrap();
             group.bench_with_input(
                 BenchmarkId::new(label, format!("{w}x{h}")),
                 &cfg,
-                |b, cfg| {
+                |b, _cfg| {
                     b.iter(|| {
-                        let corners = find_chess_corners_u8(&img, w as u32, h as u32, cfg).unwrap();
+                        let corners = detector.detect_u8(&img, w as u32, h as u32).unwrap();
                         black_box(corners.len())
                     });
                 },
@@ -87,9 +88,10 @@ fn bench_chess_pipeline_real(c: &mut Criterion) {
         group.throughput(Throughput::Elements((w as u64) * (h as u64)));
         for &(label, mk) in presets {
             let cfg = mk();
-            group.bench_with_input(BenchmarkId::new(label, name), &cfg, |b, cfg| {
+            let mut detector = Detector::new(cfg.clone()).unwrap();
+            group.bench_with_input(BenchmarkId::new(label, name), &cfg, |b, _cfg| {
                 b.iter(|| {
-                    let corners = find_chess_corners_u8(&data, w, h, cfg).unwrap();
+                    let corners = detector.detect_u8(&data, w, h).unwrap();
                     black_box(corners.len())
                 });
             });
