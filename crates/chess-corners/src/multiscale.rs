@@ -242,7 +242,18 @@ fn detect_multiscale<D: DenseDetector>(
     let base_view = ImageView::from_u8_slice(base.width, base.height, base.data)
         .expect("base image dimensions must match buffer length");
 
-    let refine_border = refiner_radius(shape.refiner_kind);
+    // The refiner only contributes to the ROI margin when the
+    // detector actually consumes it. Detectors whose
+    // `refine_peaks_on_image` is a no-op (today: Radon) declare
+    // `refines_on_image() == false` so that switching
+    // `cfg.refiner` between e.g. `CenterOfMass` and `SaddlePoint`
+    // doesn't silently shrink Radon's valid seed area near the
+    // image border.
+    let refine_border = if detector.refines_on_image() {
+        refiner_radius(shape.refiner_kind)
+    } else {
+        0
+    };
 
     // Single-scale path: no pyramid, run detector once on the full
     // base view, refine through the detector's image-domain step,

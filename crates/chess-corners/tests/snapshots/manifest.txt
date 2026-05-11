@@ -2,7 +2,7 @@
 # Refresh with UPDATE_SNAPSHOTS=1 cargo test -p chess-corners --test snapshot_regression --all-features
 large-multiscale count=359 hash=cd4b667e36090aa6
 large-radon count=21007 hash=50aa23373cc09be5
-large-radon_multiscale count=15011 hash=0ff0f7abcacd8900
+large-radon_multiscale count=15012 hash=f659b613a13fbfab
 large-single_scale count=2142 hash=c8f57a3d5f88e784
 mid-multiscale count=81 hash=8819f41a82603f96
 mid-radon count=1021 hash=31ec38ac50eb0a45

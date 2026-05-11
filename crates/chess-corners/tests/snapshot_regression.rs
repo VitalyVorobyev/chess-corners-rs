@@ -35,16 +35,36 @@
 //!
 //! Cross-platform determinism: FNV-1a is byte-for-byte the same on any
 //! platform; the corner ordering is stable (sort by `(x, y)` with
-//! `partial_cmp`); the underlying detector math is f32-deterministic.
+//! `partial_cmp`); the underlying detector math is f32-deterministic
+//! *given a fixed reduction order*. To remove the rayon-induced
+//! reduction-order dependency that otherwise drifts `radon_multiscale`
+//! corner counts by ~ε across CI runners, every detector call runs
+//! inside a pinned single-threaded rayon pool.
 
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use chess_corners::{CornerDescriptor, Detector, DetectorConfig};
 use image::ImageReader;
+use rayon::ThreadPool;
 use serde::Serialize;
+
+/// One-thread rayon pool, lazily initialised. Used to make Radon SAT
+/// summation order deterministic regardless of the host's logical
+/// CPU count — without forcing the whole crate's runtime to
+/// single-thread.
+fn pinned_pool() -> &'static ThreadPool {
+    static POOL: OnceLock<ThreadPool> = OnceLock::new();
+    POOL.get_or_init(|| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("build single-threaded rayon pool")
+    })
+}
 
 const SNAPSHOT_DIR: &str = "tests/snapshots";
 const MANIFEST_FILE: &str = "manifest.txt";
@@ -135,7 +155,7 @@ fn render_snapshot(image: &str, preset: &Preset) -> (usize, String) {
 
     let cfg = (preset.build)();
     let mut detector = Detector::new(cfg).expect("build detector");
-    let mut corners = detector.detect(&img).expect("detect");
+    let mut corners = pinned_pool().install(|| detector.detect(&img).expect("detect"));
 
     // Stable order across runs: sort by (x, y) — both are subpixel f32
     // so use total ordering. We do not expect ties on real imagery.

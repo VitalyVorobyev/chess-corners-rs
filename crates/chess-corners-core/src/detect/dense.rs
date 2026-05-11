@@ -159,6 +159,20 @@ pub trait DenseDetector {
         response: &Self::Response<'_>,
         refiner: &mut dyn CornerRefiner,
     ) -> Vec<Corner>;
+
+    /// Whether [`Self::refine_peaks_on_image`] actually consumes the
+    /// orchestrator-supplied refiner. When `false`, the orchestrator
+    /// must not include the refiner's patch radius in the per-seed
+    /// ROI margin — otherwise a no-op refiner choice would still
+    /// shrink the valid seed area near the image border (a tunable
+    /// silently coupling to an unused setting).
+    ///
+    /// Default `true` matches the ChESS-style "refine on image"
+    /// contract; the Radon impl returns `false` because its
+    /// [`Self::refine_peaks_on_image`] is a no-op.
+    fn refines_on_image(&self) -> bool {
+        true
+    }
 }
 
 /// Reusable scratch for [`ChessDetector`]. Wraps an owned
@@ -371,6 +385,14 @@ impl DenseDetector for RadonDetector {
         // pass `None`) or silently sample the wrong frame. We keep
         // the peaks as the detector emitted them.
         corners
+    }
+
+    fn refines_on_image(&self) -> bool {
+        // Paired with the no-op `refine_peaks_on_image` above: the
+        // orchestrator must not pad the per-seed ROI with the
+        // refiner's patch radius, since the refiner is never
+        // consulted on the Radon path.
+        false
     }
 }
 
