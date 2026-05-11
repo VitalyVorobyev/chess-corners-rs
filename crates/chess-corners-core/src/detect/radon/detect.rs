@@ -13,9 +13,16 @@ use crate::detect::{count_positive_neighbors, is_local_max, Corner};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
-/// Detect corners from the working-resolution response map produced by
-/// [`super::response::radon_response_u8`].
-pub fn detect_corners_from_radon(
+/// Stage 1 of Radon detection: threshold + NMS + cluster-filter +
+/// 3-point Gaussian peak-fit on the response map.
+///
+/// The 3-point Gaussian peak-fit is a **response-map** subpixel
+/// operation (not image-domain refinement), so it stays inside this
+/// stage. The output is already subpixel in the input-image frame
+/// (positions are divided by `image_upsample`). Image-domain
+/// refinement against the input pixels is the caller's choice and
+/// lives in [`crate::detect::refine_corners_on_image`].
+pub fn detect_peaks_from_radon(
     resp: &RadonResponseView<'_>,
     params: &RadonDetectorParams,
 ) -> Vec<Corner> {
@@ -137,7 +144,7 @@ mod tests {
         };
         let mut buffers = RadonBuffers::new();
         let resp = radon_response_u8(&img, SIZE, SIZE, &params, &mut buffers);
-        let corners = detect_corners_from_radon(&resp, &params);
+        let corners = detect_peaks_from_radon(&resp, &params);
 
         assert!(
             !corners.is_empty(),
@@ -184,7 +191,7 @@ mod tests {
         };
         let mut buffers = RadonBuffers::new();
         let resp = radon_response_u8(&img, SIZE, SIZE, &params, &mut buffers);
-        let corners = detect_corners_from_radon(&resp, &params);
+        let corners = detect_peaks_from_radon(&resp, &params);
         assert!(!corners.is_empty(), "upsample=1 produced no corners");
     }
 }

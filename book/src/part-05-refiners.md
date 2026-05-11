@@ -289,7 +289,7 @@ The measurement-driven comparison lives in Part VIII. In short:
 - SaddlePoint is a blur- and condition-robust default when you don't
   know the scene in advance.
 
-The refiner is selected via `ChessConfig.refiner.kind`, which is a
+The refiner is selected via `DetectorConfig.refiner.kind`, which is a
 simple enum — switching between them is a single-line change, and
 the comparison numbers in Part VIII come from running all five on the
 same fixture at a single build.

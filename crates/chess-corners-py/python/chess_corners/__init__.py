@@ -1,9 +1,9 @@
 """Python-first public API for the chess_corners detector.
 
-The config classes (`ChessConfig`, `RefinerConfig`, …) and enums
+The config classes (`DetectorConfig`, `RefinerConfig`, …) and enums
 (`ChessRing`, `RefinementMethod`, …) are native PyO3 types defined
 in the compiled `_native` extension. They expose attribute access,
-classmethod factories (`ChessConfig.multiscale()`,
+classmethod factories (`DetectorConfig.multiscale()`,
 `Threshold.relative(...)`, `DetectionStrategy.radon(...)`), and
 `to_dict` / `from_dict` / `to_json` / `from_json` helpers.
 
@@ -20,7 +20,7 @@ from typing import Any, TextIO
 from . import _native
 from ._native import (
     CenterOfMassConfig,
-    ChessConfig,
+    DetectorConfig,
     ChessRing,
     ChessStrategy,
     ConfigError,
@@ -40,6 +40,9 @@ from ._native import (
     UpscaleConfig,
     UpscaleMode,
 )
+
+# Backwards-compat alias for callers on 0.9.x. Will be removed in 0.11.0.
+ChessConfig = DetectorConfig
 
 
 def _print(self: Any, *, file: TextIO | None = None, indent: int = 2, sort_keys: bool = True) -> None:
@@ -82,7 +85,7 @@ for _cls in (
     DetectionStrategy,
     RefinerConfig,
     UpscaleConfig,
-    ChessConfig,
+    DetectorConfig,
 ):
     _cls.print = _print  # type: ignore[attr-defined]
     _cls.__rich_console__ = _rich_console  # type: ignore[attr-defined]
@@ -96,6 +99,7 @@ __all__ = [
     "ConfigError",
     "DescriptorMode",
     "DetectionStrategy",
+    "DetectorConfig",
     "Detector",
     "ForstnerConfig",
     "MultiscaleParams",

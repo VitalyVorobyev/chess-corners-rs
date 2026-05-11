@@ -10,18 +10,74 @@ pyramids.
 
 This part describes:
 
+- the `DenseDetector` trait that abstracts over the two detectors,
 - how the pyramid utilities work,
 - how the coarse-to-fine detector uses them,
 - how to pick a multiscale configuration.
 
-The multiscale path is currently wired to the ChESS detector. The
-Radon detector handles scale internally via its `image_upsample`
-parameter (see [Part IV §4.3](part-04-radon-detector.md#43-working-resolution-and-image-upsampling))
-and does not route through this pyramid.
+The multiscale path is available for **both** the ChESS and Radon
+detectors. The `multiscale: Option<MultiscaleParams>` field sits at the
+top level of `DetectorConfig` and is honoured symmetrically by both.
+See [Part IV §4.7](part-04-radon-detector.md#47-coarse-to-fine-radon) for the
+Radon-specific preset and when to prefer it over single-scale Radon.
 
 ---
 
-## 4.1 Image pyramids
+## 7.0 The `DenseDetector` trait
+
+The multiscale orchestrator in `crates/chess-corners/src/multiscale.rs`
+is generic over a `DenseDetector` implementor. Two zero-sized marker
+types in `chess-corners-core` satisfy the trait:
+
+- `ChessDetector` — drives the ChESS ring-based response.
+- `RadonDetector` — drives the whole-image Duda-Frese Radon response.
+
+```rust
+// chess-corners-core public API (simplified)
+pub trait DenseDetector {
+    type Params;
+    type Buffers: Default;
+    type Response<'a> where Self: 'a, Self::Buffers: 'a;
+
+    fn compute_response<'a>(
+        &self,
+        view: ImageView<'_>,
+        params: &Self::Params,
+        buffers: &'a mut Self::Buffers,
+    ) -> Self::Response<'a>;
+
+    fn detect_corners(
+        &self,
+        response: &Self::Response<'_>,
+        params: &Self::Params,
+        refine_border: i32,
+    ) -> Vec<Corner>;
+
+    fn compute_response_patch<'a>(
+        &self,
+        base: ImageView<'_>,
+        roi: (usize, usize, usize, usize),
+        params: &Self::Params,
+        buffers: &'a mut Self::Buffers,
+    ) -> Self::Response<'a>;
+}
+```
+
+`DenseDetector` and its two implementors are public re-exports of
+`chess-corners-core`, so the trait is available to downstream crates
+that want to extend the pipeline with a custom response kernel.
+Subpixel image-domain refinement (Förstner, saddle-point, …) is
+**not** part of the trait — it runs detector-agnostically via
+`chess_corners_core::detect::refine_corners_on_image`.
+
+The `chess-corners` facade routes the active `DetectorConfig::strategy`
+variant to the corresponding `DenseDetector` implementor at the start of
+each `detect` call; neither the user nor the multiscale code needs to
+branch on the strategy explicitly.
+
+---
+
+## 7.1 Image pyramids
 
 The pyramid builder itself lives in the standalone
 `crates/box-image-pyramid` crate. The `chess-corners` facade depends on
@@ -33,7 +89,7 @@ The builder is intentionally narrow: no color, no arbitrary scaling;
 just fixed 2x downsampling on `u8` grayscale images, with optional
 SIMD/`rayon` acceleration when `par_pyramid` is enabled.
 
-### 4.1.1 Image views and buffers
+### 7.1.1 Image views and buffers
 
 Two basic types represent images:
 
@@ -68,7 +124,7 @@ crate. When you call `Detector::detect` on an `image::GrayImage`, the
 `chess-corners` facade converts from `image::GrayImage` to the
 raw-slice pyramid API internally.
 
-### 4.1.2 Pyramid structures and parameters
+### 7.1.2 Pyramid structures and parameters
 
 An image pyramid is represented as:
 
@@ -111,7 +167,7 @@ The default is `num_levels = 1`, `min_size = 128`. If you need more
 coarse-to-fine help on small or blurred boards, `num_levels = 2` or
 `num_levels = 3` is a common starting point.
 
-### 4.1.3 Reusable buffers
+### 7.1.3 Reusable buffers
 
 To avoid frequent allocations, `PyramidBuffers` holds the owned
 buffers for non‑base levels:
@@ -135,7 +191,7 @@ The [`Detector`](https://docs.rs/chess-corners) struct in the
 once and calling `detect`/`detect_u8` repeatedly reuses the same
 buffers across frames.
 
-### 4.1.4 Building the pyramid
+### 7.1.4 Building the pyramid
 
 The core builder is:
 
@@ -157,7 +213,7 @@ It always includes the base image as level 0, then repeatedly:
 If `num_levels == 0` or the base image is already smaller than
 `min_size`, the function returns an empty pyramid.
 
-### 4.1.5 Downsampling and feature combinations
+### 7.1.5 Downsampling and feature combinations
 
 The downsampling kernel is a simple 2×2 **box filter**:
 
@@ -184,56 +240,55 @@ differ in performance.
 
 ---
 
-## 4.2 Coarse-to-fine detection
+## 7.2 Coarse-to-fine detection
 
 The multiscale detector is implemented in
 `crates/chess-corners/src/multiscale.rs`. Its job is to:
 
 - optionally build a pyramid from the base image,
-- run the ChESS detector on the **smallest** level to find coarse
-  corner candidates,
+- run the active `DenseDetector` on the **smallest** level to find
+  coarse corner candidates,
 - refine each coarse corner back in the base image using small ROIs,
 - merge near‑duplicate refined corners,
 - convert them into `CornerDescriptor` values in base‑image
   coordinates.
 
-### 4.2.1 Coarse-to-fine parameters
+### 7.2.1 Coarse-to-fine parameters
 
-The main configuration structure is:
+Multiscale settings are expressed through `MultiscaleParams`, which is
+the `Option<MultiscaleParams>` value at `DetectorConfig.multiscale`:
 
 ```rust
-pub struct CoarseToFineParams {
-    pub pyramid: PyramidParams,
-    /// ROI radius at the coarse level (ignored when num_levels <= 1).
+pub struct MultiscaleParams {
+    pub pyramid_levels: u8,
+    pub pyramid_min_size: usize,
+    /// ROI radius at the coarse level (ignored when pyramid_levels <= 1).
     pub refinement_radius: u32,
-    pub merge_radius: f32,
 }
 ```
 
-- `pyramid` – controls how many levels are built and how small the
-  smallest level is allowed to be.
-- `refinement_radius` – radius of the ROI around each coarse corner in the
-  **coarse‑level** pixels; internally converted to a base‑level radius
-  using the pyramid scale.
-- `merge_radius` – radius in base‑image coordinates used to merge
-  near‑duplicate refined corners (i.e., corners that end up within a
-  small distance of each other).
+- `pyramid_levels` – maximum number of levels (including base).
+- `pyramid_min_size` – smallest allowed dimension; stops halving once
+  a level would fall below this size.
+- `refinement_radius` – radius of the ROI around each coarse corner in
+  **coarse-level** pixels; converted to base-level pixels internally.
 
-`CoarseToFineParams::default()` provides a reasonable starting point:
+The top-level `DetectorConfig.merge_radius` (in base-image pixels)
+controls duplicate suppression after refinement.
+
+`MultiscaleParams::default()` provides a reasonable starting point:
 
 - 3 pyramid levels with minimum size 128,
-- ROI radius 3 at the coarse level (scaled up at the base; with 3 levels this is ≈12 px at full resolution),
-- merge radius 3.0 pixels.
+- ROI radius 3 at the coarse level (scaled up at the base; with 3 levels this is ≈12 px at full resolution).
 
-### 4.2.2 Multiscale workflow under `Detector::detect`
+### 7.2.2 Multiscale workflow under `Detector::detect`
 
 The [`Detector`](https://docs.rs/chess-corners) struct in
 `chess-corners` owns a `PyramidBuffers` internally. The multiscale
-pipeline is opt-in via `ChessConfig.strategy = DetectionStrategy::
-Chess(ChessStrategy { multiscale: Some(MultiscaleParams { … }), … })`;
+pipeline is opt-in via `DetectorConfig.multiscale = Some(MultiscaleParams { … })`;
 when `multiscale` is `None` the detector takes the single-scale path.
-The Radon strategy currently runs single-scale only; the
-multiscale-Radon variant is a planned follow-up. The multiscale ChESS
+Both the ChESS and Radon strategies are routed through the same
+coarse-to-fine orchestrator via the `DenseDetector` trait. The
 pipeline on each `detect` / `detect_u8` call is:
 
 1. **Build the pyramid** using the multiscale settings and the
@@ -247,8 +302,8 @@ pipeline on each `detect` / `detect_u8` call is:
    - return descriptors directly.
 3. **Coarse detection**:
    - take the smallest level in the pyramid (`pyramid.levels.last()`),
-   - run `chess_response_u8` and the detector to get coarse `Corner`
-     candidates at the coarse scale.
+   - run `DenseDetector::compute_response` and `DenseDetector::detect_corners`
+     to get coarse `Corner` candidates at the coarse scale.
    - if no coarse corners are found, return an empty set.
 4. **ROI definition and refinement**:
    - compute the inverse scale `inv_scale = 1.0 / coarse_lvl.scale`,
@@ -260,9 +315,9 @@ pipeline on each `detect` / `detect_u8` call is:
        pixels, enforcing a minimum based on the detector's border
        requirements,
      - clamp the ROI to keep it entirely within safe bounds,
-     - compute `chess_response_u8_patch` inside this ROI,
-     - rerun the detector on the patch response to get finer `Corner`
-       candidates,
+     - compute `DenseDetector::compute_response_patch` inside this ROI,
+     - rerun `DenseDetector::detect_corners` on the patch response to
+       get finer `Corner` candidates,
      - shift patch coordinates back into base‑image coordinates.
    - gather all refined corners.
 5. **Merging and describing**:
@@ -275,7 +330,7 @@ pipeline on each `detect` / `detect_u8` call is:
 When the `rayon` feature is enabled, the refinement step processes
 coarse corners in parallel; otherwise it uses a straightforward loop.
 
-### 4.2.3 Buffer reuse across frames
+### 7.2.3 Buffer reuse across frames
 
 `Detector` owns the pyramid and upscale scratch buffers, so calling
 `detector.detect(&img)` (or `detector.detect_u8(...)`) repeatedly does
@@ -284,19 +339,21 @@ successive frames to it.
 
 ---
 
-## 4.3 Choosing multiscale configs
+## 7.3 Choosing multiscale configs
 
 The behavior of the multiscale detector is driven primarily by
-`CoarseToFineParams`:
+`MultiscaleParams` (exposed as `DetectorConfig.multiscale`) plus the
+top-level `DetectorConfig.merge_radius`:
 
-- `pyramid.num_levels`,
-- `pyramid.min_size`,
+- `pyramid_levels`,
+- `pyramid_min_size`,
 - `refinement_radius`,
-- `merge_radius`.
+- `merge_radius` (top-level field).
 
-Here are some practical guidelines and starting points.
+Here are some practical guidelines and starting points. These apply
+equally to both detectors.
 
-### 4.3.1 Single-scale vs multiscale
+### 7.3.1 Single-scale vs multiscale
 
 - **Single-scale**:
   - Set `pyramid.num_levels = 1`.
@@ -319,7 +376,7 @@ Here are some practical guidelines and starting points.
 As a rule of thumb, start with `num_levels = 3` and adjust only if you
 have specific performance or robustness requirements.
 
-### 4.3.2 `min_size` and pyramid coverage
+### 7.3.2 `min_size` and pyramid coverage
 
 `pyramid.min_size` limits how small the smallest level can be. If the
 base image is small (e.g., smaller than `min_size`), the pyramid may
@@ -335,13 +392,13 @@ Recommendations:
 - For high‑resolution inputs (e.g., 4K), a `min_size` around 128 or
   256 usually works well.
 
-### 4.3.3 ROI radius
+### 7.3.3 ROI radius
 
-`refinement_radius` is specified in **coarse‑level pixels** and converted to
-base‑level pixels using the pyramid scale. Internally, the code also
-enforces a minimum ROI radius that respects:
+`MultiscaleParams.refinement_radius` is specified in **coarse-level pixels**
+and converted to base-level pixels using the pyramid scale. Internally,
+the code also enforces a minimum ROI radius that respects:
 
-- the ChESS ring radius,
+- the detector's own support radius (ChESS ring or Radon ray length),
 - the NMS radius,
 - the 5×5 refinement window.
 
@@ -361,7 +418,7 @@ if you see coarse corners that consistently refine to the wrong
 locations; decrease it if performance is tight and coarse positions
 are already good.
 
-### 4.3.4 Merge radius
+### 7.3.4 Merge radius
 
 `merge_radius` controls the distance (in base pixels) used to merge
 refined corners. If two corners fall within this radius of each other,
@@ -377,33 +434,33 @@ Guidelines:
 - If you need to preserve nearby but distinct corners (e.g., very
   fine grids), consider decreasing it slightly.
 
-### 4.3.5 Putting it together
+### 7.3.5 Putting it together
 
 Some example presets:
 
-- **Default multiscale** (good starting point):
+- **Default multiscale** (good starting point, ChESS):
 
-  - `num_levels = 3`
-  - `min_size = 128`–`256`
-  - `refinement_radius = 3`
-  - `merge_radius = 3.0`
+  - `DetectorConfig::multiscale()` — 3 levels, `min_size = 128`,
+    `refinement_radius = 3`, `merge_radius = 3.0`.
 
-- **Fast single-scale**:
+- **Coarse-to-fine Radon** (blurry / low-contrast large frames):
 
-  - `num_levels = 1`
-  - `min_size` ignored (no pyramid)
-  - `refinement_radius` / `merge_radius` unused
+  - `DetectorConfig::radon_multiscale()` — same pyramid shape,
+    Radon response kernel.
+  - See [Part IV §4.7](part-04-radon-detector.md#47-coarse-to-fine-radon).
 
-- **Robust small‑board detection**:
+- **Fast single-scale** (ChESS, sharp calibration boards):
 
-  - `num_levels = 3`–`4`
-  - `min_size` tuned so the smallest level still has a handful of
-    pixels per square (e.g., 64–128)
-  - `refinement_radius` slightly larger (e.g., 4–5)
-  - `merge_radius` around 2.0–3.0
+  - `DetectorConfig::single_scale()` — no pyramid, minimal memory.
+
+- **Robust small-board detection**:
+
+  - `pyramid_levels = 3–4`, `pyramid_min_size` tuned to a handful of
+    pixels per square (e.g., 64–128), `refinement_radius = 4–5`,
+    `merge_radius = 2.0–3.0`.
 
 Once you’ve chosen parameters that work well for your dataset, you can
-encode them in your `ChessConfig` for library use or in a CLI config
+encode them in your `DetectorConfig` for library use or in a CLI config
 JSON for batch experiments.
 
 ---

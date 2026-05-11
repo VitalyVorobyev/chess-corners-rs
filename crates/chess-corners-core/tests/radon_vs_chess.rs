@@ -15,7 +15,7 @@
 
 use chess_corners_core::{
     detect::chess::response::chess_response_u8, detect::detect_corners_from_response,
-    detect_corners_from_radon, radon_response_u8, ChessParams, RadonBuffers, RadonDetectorParams,
+    detect_peaks_from_radon, radon_response_u8, ChessParams, RadonBuffers, RadonDetectorParams,
 };
 
 /// Render a chessboard, then simulate a hostile capture: heavy
@@ -146,7 +146,7 @@ fn radon_beats_chess_on_blurred_low_contrast_board() {
     };
     let mut buffers = RadonBuffers::new();
     let resp = radon_response_u8(&img, SIZE, SIZE, &radon_params, &mut buffers);
-    let radon_corners = detect_corners_from_radon(&resp, &radon_params);
+    let radon_corners = detect_peaks_from_radon(&resp, &radon_params);
 
     let expected = expected_corner_count(SIZE, CELL, offset, 20);
     eprintln!(
@@ -198,7 +198,7 @@ fn both_paths_agree_on_clean_fixture() {
     };
     let mut buffers = RadonBuffers::new();
     let resp = radon_response_u8(&img, SIZE, SIZE, &radon_params, &mut buffers);
-    let radon_corners = detect_corners_from_radon(&resp, &radon_params);
+    let radon_corners = detect_peaks_from_radon(&resp, &radon_params);
 
     let expected = expected_corner_count(SIZE, CELL, offset, 20);
     eprintln!(

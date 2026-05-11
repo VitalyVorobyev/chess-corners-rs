@@ -29,7 +29,7 @@ pub enum UpscaleMode {
     Fixed,
 }
 
-/// Upscaling configuration exposed through [`crate::ChessConfig`].
+/// Upscaling configuration exposed through [`crate::DetectorConfig`].
 ///
 /// JSON shape: `{ "mode": "disabled" }` or `{ "mode": "fixed", "factor": 2 }`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

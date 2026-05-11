@@ -1,8 +1,8 @@
 """Tests for OrientationMethod Python bindings.
 
 Covers:
-- Both variants round-trip through ChessConfig.to_dict / from_dict.
-- Both variants round-trip through ChessConfig.to_json / from_json.
+- Both variants round-trip through DetectorConfig.to_dict / from_dict.
+- Both variants round-trip through DetectorConfig.to_json / from_json.
 - Setting orientation_method changes the serialised value.
 - Default orientation_method is RING_FIT.
 - Unknown orientation_method string is rejected with ConfigError.
@@ -16,7 +16,7 @@ import pytest
 chess_corners = pytest.importorskip("chess_corners")
 
 OrientationMethod = chess_corners.OrientationMethod
-ChessConfig = chess_corners.ChessConfig
+ChessConfig = chess_corners.DetectorConfig
 ConfigError = chess_corners.ConfigError
 Threshold = chess_corners.Threshold
 

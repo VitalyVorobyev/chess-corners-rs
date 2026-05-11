@@ -14,13 +14,16 @@
 //! [`crate::orientation`].
 
 pub mod chess;
+pub mod dense;
 pub mod radon;
 
 pub(crate) use chess::detect::{count_positive_neighbors, is_local_max};
 pub use chess::detect::{
-    detect_corners_from_response, detect_corners_from_response_with_refiner, find_corners_u8,
-    find_corners_u8_with_refiner, merge_corners_simple,
+    detect_corners_from_response, detect_corners_from_response_with_refiner,
+    detect_peaks_from_response, find_corners_u8, find_corners_u8_with_refiner,
+    merge_corners_simple, refine_corners_on_image,
 };
+pub use dense::{ChessBuffers, ChessDetector, DenseDetector, RadonDetector};
 
 /// A detected corner candidate (subpixel position with raw response strength).
 #[derive(Clone, Debug)]

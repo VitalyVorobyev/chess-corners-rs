@@ -201,14 +201,13 @@ Observations:
 
 ### 7.7.1 Whole-image Radon detector
 
-The Duda–Frese Radon path (`ChessConfig::radon()`) is an alternative
+The Duda–Frese Radon path (`DetectorConfig::radon()`) is an alternative
 detector for frames where ChESS's 16-sample ring fails — heavy
-defocus, motion blur, or low-contrast scenes. It is **single-scale
-today**: the symmetric coarse-to-fine extension for Radon has not been
-written yet, even though the SAT-based response is asymptotically O(1)
-per pixel. In practice the Radon pipeline is several times slower than
-the ChESS pipeline at the same resolution on this workload — pick it
-for **robustness on hostile imagery**, not for throughput.
+defocus, motion blur, or low-contrast scenes. In practice the Radon
+pipeline is several times slower than the ChESS pipeline at the same
+resolution on this workload — pick it for **robustness on hostile
+imagery**, not for throughput. For large frames, `DetectorConfig::radon_multiscale()`
+reduces cost by coarse-seeding before the base-level response.
 
 Wall times on the same three test images, release build, averaged
 over 10 runs (milliseconds), 8-core M-class CPU:
@@ -324,12 +323,12 @@ When a frame returns fewer corners than expected:
 
 1. Check the `coarse_detect` span's candidate count. If it is zero
    or very low, the detector failed to seed and no refinement ran.
-   Consider switching `ChessConfig::strategy` (ChESS ↔ Radon) or
+   Consider switching `DetectorConfig::strategy` (ChESS ↔ Radon) or
    lowering the threshold (`cfg.threshold = Threshold::Relative(_)` or
    `Threshold::Absolute(_)`).
 2. If seeds are present but most `refine` results are rejected,
    the refiner's thresholds are firing. Swap via
-   `ChessConfig.refiner.kind` or relax the specific rejection
+   `DetectorConfig.refiner.kind` or relax the specific rejection
    (e.g. raise `SaddlePointConfig.max_offset`).
 3. If accuracy is fine but wall time is large, `refine` almost
    always dominates — switch RadonPeak / ML to a structure-tensor
@@ -340,9 +339,9 @@ When a frame returns fewer corners than expected:
 ### Real-time loop, 30+ fps
 
 ```rust
-use chess_corners::{ChessConfig, Detector, RefinementMethod};
+use chess_corners::{DetectorConfig, Detector, RefinementMethod};
 
-let mut cfg = ChessConfig::multiscale();
+let mut cfg = DetectorConfig::multiscale();
 cfg.refiner.kind = RefinementMethod::SaddlePoint;  // stable and fast
 let mut detector = Detector::new(cfg)?;
 
@@ -359,9 +358,9 @@ loop {
 ### Offline calibration, maximum accuracy
 
 ```rust
-use chess_corners::{ChessConfig, Detector, RefinementMethod};
+use chess_corners::{DetectorConfig, Detector, RefinementMethod};
 
-let mut cfg = ChessConfig::multiscale();
+let mut cfg = DetectorConfig::multiscale();
 cfg.refiner.kind = RefinementMethod::RadonPeak;
 cfg.merge_radius = 2.0;
 
@@ -376,9 +375,9 @@ The extra 5–15 ms per frame is invisible in an offline run.
 ```rust
 # #[cfg(feature = "ml-refiner")]
 # {
-use chess_corners::{ChessConfig, Detector, RefinementMethod};
+use chess_corners::{DetectorConfig, Detector, RefinementMethod};
 
-let mut cfg = ChessConfig::multiscale();
+let mut cfg = DetectorConfig::multiscale();
 cfg.refiner.kind = RefinementMethod::Ml;
 let mut detector = Detector::new(cfg).unwrap();
 let corners = detector.detect(&image).unwrap();
@@ -391,9 +390,9 @@ internally; effective cost on a 100-corner frame is ~30 ms.
 ### Small cells or heavy defocus — switch detector
 
 ```rust
-use chess_corners::{ChessConfig, Detector};
+use chess_corners::{DetectorConfig, Detector};
 
-let cfg = ChessConfig::radon();  // Radon detector with paper defaults
+let cfg = DetectorConfig::radon();  // Radon detector with paper defaults
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&image)?;
 ```
@@ -401,6 +400,20 @@ let corners = detector.detect(&image)?;
 The Radon detector remains selective on cells down to ~4 physical
 pixels and on Gaussian blurs up to `σ ≈ 2.5 px`, where the ChESS
 ring begins to fail (see [Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)).
+
+### Blurry / low-contrast imagery on large frames — Radon multiscale
+
+```rust
+use chess_corners::{DetectorConfig, Detector};
+
+let cfg = DetectorConfig::radon_multiscale();
+let mut detector = Detector::new(cfg)?;
+let corners = detector.detect(&image)?;
+```
+
+Combines the Radon response kernel with the coarse-to-fine pyramid.
+Prefer this over single-scale `radon` when the frame is ≥ 1280×960
+and latency matters.
 
 ## 7.11 Reproducing every plot
 

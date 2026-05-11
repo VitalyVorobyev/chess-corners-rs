@@ -15,3 +15,4 @@ tools/ml_refiner/runs/**/*.npz
 *.so
 REVIEW.md
 out
+crates/chess-corners/tests/snapshots/actual/

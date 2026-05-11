@@ -1,7 +1,7 @@
 //! Full ChESS multiscale pipeline benchmark.
 //!
 //! Measures end-to-end `Detector::detect_u8` latency under
-//! `ChessConfig::multiscale()` and `ChessConfig::single_scale()` —
+//! `DetectorConfig::multiscale()` and `DetectorConfig::single_scale()` —
 //! i.e. the multi-pyramid coarse-to-fine path and the single-scale
 //! reference. Complements `chess-corners-core/benches/radon_response.rs`,
 //! which benches only the dense response stage.
@@ -12,13 +12,13 @@
 //! - **Real test images** (`testimages/{small,mid,large}.png`).
 //!   Skipped with a stderr note if the file is missing.
 
-use chess_corners::{ChessConfig, Detector};
+use chess_corners::{Detector, DetectorConfig};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use image::ImageReader;
 use std::hint::black_box;
 use std::path::{Path, PathBuf};
 
-type ConfigCtor = fn() -> ChessConfig;
+type ConfigCtor = fn() -> DetectorConfig;
 
 fn synth_chessboard(w: usize, h: usize) -> Vec<u8> {
     let cell = (h.min(w) / 25).max(8) as i32;
@@ -49,8 +49,8 @@ fn load_test_image(name: &str) -> Option<(Vec<u8>, u32, u32)> {
 fn bench_chess_pipeline_synth(c: &mut Criterion) {
     let dims: &[(usize, usize)] = &[(640, 480), (1280, 720), (1920, 1080)];
     let presets: &[(&str, ConfigCtor)] = &[
-        ("multiscale", ChessConfig::multiscale),
-        ("single", ChessConfig::single_scale),
+        ("multiscale", DetectorConfig::multiscale),
+        ("single", DetectorConfig::single_scale),
     ];
     let mut group = c.benchmark_group("chess_pipeline_synth");
     for &(w, h) in dims {
@@ -76,8 +76,8 @@ fn bench_chess_pipeline_synth(c: &mut Criterion) {
 
 fn bench_chess_pipeline_real(c: &mut Criterion) {
     let presets: &[(&str, ConfigCtor)] = &[
-        ("multiscale", ChessConfig::multiscale),
-        ("single", ChessConfig::single_scale),
+        ("multiscale", DetectorConfig::multiscale),
+        ("single", DetectorConfig::single_scale),
     ];
     let mut group = c.benchmark_group("chess_pipeline_real");
     for name in ["small.png", "mid.png", "large.png"] {

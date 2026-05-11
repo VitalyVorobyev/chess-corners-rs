@@ -12,7 +12,7 @@ def _checkerboard(square_size: int = 16, squares: int = 8) -> np.ndarray:
 
 def test_detector_basic():
     img = _checkerboard(square_size=16, squares=8)
-    cfg = chess_corners.ChessConfig()
+    cfg = chess_corners.DetectorConfig()
     cfg.threshold = chess_corners.Threshold.relative(0.1)
     cfg.strategy.chess.min_cluster_size = 1
 
@@ -32,7 +32,7 @@ def test_detector_rejects_wrong_dtype():
 
 
 def test_nested_config_objects():
-    cfg = chess_corners.ChessConfig()
+    cfg = chess_corners.DetectorConfig()
     cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
     cfg.refiner.forstner.max_offset = 2.0
     assert cfg.refiner.kind is chess_corners.RefinementMethod.FORSTNER
@@ -40,7 +40,7 @@ def test_nested_config_objects():
 
 
 def test_config_roundtrip_and_print_helpers():
-    cfg = chess_corners.ChessConfig.multiscale()
+    cfg = chess_corners.DetectorConfig.multiscale_preset()
     cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
     cfg.descriptor_mode = chess_corners.DescriptorMode.CANONICAL
     cfg.threshold = chess_corners.Threshold.absolute(4.5)
@@ -48,7 +48,7 @@ def test_config_roundtrip_and_print_helpers():
     cfg.refiner.saddle_point.max_offset = 2.0
 
     encoded = cfg.to_json()
-    decoded = chess_corners.ChessConfig.from_json(encoded)
+    decoded = chess_corners.DetectorConfig.from_json(encoded)
 
     assert decoded.to_dict() == cfg.to_dict()
     assert "threshold" in str(cfg)
@@ -61,7 +61,7 @@ def test_detector_constructor_signature():
     sig = inspect.signature(chess_corners.Detector)
     assert "cfg" in sig.parameters
 
-    cfg = chess_corners.ChessConfig()
+    cfg = chess_corners.DetectorConfig()
     assert isinstance(cfg.refiner, chess_corners.RefinerConfig)
     assert isinstance(cfg.refiner.forstner, chess_corners.ForstnerConfig)
     assert isinstance(cfg.refiner.saddle_point, chess_corners.SaddlePointConfig)
@@ -69,7 +69,7 @@ def test_detector_constructor_signature():
 
 def test_radon_heatmap_shape_and_dtype():
     img = _checkerboard(square_size=16, squares=8)
-    cfg = chess_corners.ChessConfig.radon()
+    cfg = chess_corners.DetectorConfig.radon()
 
     detector = chess_corners.Detector(cfg)
     heatmap = detector.radon_heatmap(img)
@@ -94,10 +94,10 @@ def test_radon_heatmap_default_config():
 
 
 def test_typed_config_passes_through_ffi_directly():
-    """Native typed `ChessConfig` reaches the detector without JSON serialization."""
+    """Native typed `DetectorConfig` reaches the detector without JSON serialization."""
 
     img = _checkerboard(square_size=16, squares=8)
-    cfg = chess_corners.ChessConfig()
+    cfg = chess_corners.DetectorConfig()
     cfg.threshold = chess_corners.Threshold.relative(0.1)
     cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
     cfg.refiner.forstner.max_offset = 1.75
@@ -117,13 +117,13 @@ def test_invalid_cfg_type_raises_type_error():
 
 def test_unknown_top_level_keys_rejected():
     with pytest.raises(chess_corners.ConfigError, match="unknown keys"):
-        chess_corners.ChessConfig.from_dict({"unexpected": 1})
+        chess_corners.DetectorConfig.from_dict({"unexpected": 1})
 
 
 def test_detection_strategy_factory_and_accessor():
     """`from_radon` factory builds a radon-variant strategy with the right tag."""
 
-    cfg = chess_corners.ChessConfig()
+    cfg = chess_corners.DetectorConfig()
     cfg.strategy = chess_corners.DetectionStrategy.from_radon(
         chess_corners.RadonStrategy()
     )
@@ -134,15 +134,42 @@ def test_detection_strategy_factory_and_accessor():
     assert isinstance(cfg.strategy.radon, chess_corners.RadonStrategy)
 
 
-def test_multiscale_params_attached_to_chess_strategy():
-    """Multiscale settings live on `cfg.strategy.chess.multiscale`."""
+def test_multiscale_params_on_top_level_config():
+    """Multiscale settings live on top-level `cfg.multiscale`."""
 
-    cfg = chess_corners.ChessConfig.multiscale()
-    ms = cfg.strategy.chess.multiscale
+    cfg = chess_corners.DetectorConfig.multiscale_preset()
+    ms = cfg.multiscale
     assert ms is not None
     assert ms.pyramid_levels == 3
     assert ms.pyramid_min_size == 128
 
     # `single_scale` should leave multiscale=None.
-    single = chess_corners.ChessConfig.single_scale()
-    assert single.strategy.chess.multiscale is None
+    single = chess_corners.DetectorConfig.single_scale()
+    assert single.multiscale is None  # type: ignore[union-attr]
+
+
+def test_chess_config_alias_is_detector_config():
+    """ChessConfig is a backwards-compat alias for DetectorConfig."""
+
+    assert chess_corners.ChessConfig is chess_corners.DetectorConfig
+    cfg = chess_corners.ChessConfig()
+    assert isinstance(cfg, chess_corners.DetectorConfig)
+
+
+def test_radon_multiscale_classmethod():
+    """DetectorConfig.radon_multiscale() builds a valid radon+multiscale config."""
+
+    img = _checkerboard(square_size=16, squares=8)
+    cfg = chess_corners.DetectorConfig.radon_multiscale()
+
+    # Config shape checks.
+    assert cfg.strategy.kind == "radon"
+    assert cfg.multiscale is not None
+
+    # End-to-end: detector must produce at least some corners.
+    cfg.threshold = chess_corners.Threshold.relative(0.05)
+    corners = chess_corners.Detector(cfg).detect(img)
+    assert corners.dtype == np.float32
+    assert corners.ndim == 2
+    assert corners.shape[1] == 9
+    assert corners.shape[0] > 0, "radon_multiscale detector returned no corners"

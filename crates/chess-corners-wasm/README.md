@@ -160,7 +160,7 @@ detector.set_refiner("forstner");
 
 For deeper tuning — refiner subconfig, Radon detector parameters,
 descriptor mode, coarse-to-fine radii — construct a typed
-`ChessConfig` and seed the detector with `ChessDetector.withConfig`.
+`DetectorConfig` and seed the detector with `ChessDetector.withConfig`.
 Every public Rust facade field is reachable through the typed
 classes and exposed with TypeScript types in the generated
 `.d.ts`.
@@ -171,7 +171,7 @@ mutation works without a round-trip:
 
 ```ts
 import init, {
-  ChessConfig,
+  DetectorConfig,
   ChessDetector,
   DetectorMode,
   PeakFitMode,
@@ -180,7 +180,7 @@ import init, {
 
 await init();
 
-const cfg = ChessConfig.multiscale();
+const cfg = DetectorConfig.multiscale();
 cfg.detectorMode = DetectorMode.Radon;
 cfg.thresholdValue = 0.15;
 cfg.refiner.kind = RefinementMethod.RadonPeak;
@@ -192,8 +192,8 @@ cfg.radonDetector.peakFit = PeakFitMode.Gaussian;
 const detector = ChessDetector.withConfig(cfg);
 
 // `getConfig()` returns a *snapshot* — its cells are independent of
-// the detector's live state. Use `applyConfig()` to commit changes
-// made on the snapshot.
+// the detector's live state (type: `DetectorConfig`). Use
+// `applyConfig()` to commit changes made on the snapshot.
 const snapshot = detector.getConfig();
 snapshot.nmsRadius = 4;
 detector.applyConfig(snapshot);

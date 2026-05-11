@@ -16,14 +16,15 @@
 //!   shared with [`crate::refine::radon_peak`].
 //! - [`response`] — `radon_response_u8` and the SAT / response-map
 //!   buffers and types.
-//! - [`detect`] — `detect_corners_from_radon` (peak detection on the
-//!   response map).
+//! - [`detect`] — `detect_peaks_from_radon` (peak detection on the
+//!   response map, including the response-map 3-point Gaussian
+//!   subpixel fit).
 
 pub mod detect;
 pub mod primitives;
 pub mod response;
 
-pub use detect::detect_corners_from_radon;
+pub use detect::detect_peaks_from_radon;
 pub use response::{
     radon_response_u8, RadonBuffers, RadonDetectorParams, RadonResponseView, SatElem,
     MAX_IMAGE_UPSAMPLE,

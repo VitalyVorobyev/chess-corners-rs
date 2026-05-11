@@ -52,9 +52,10 @@ pub mod refine;
 use crate::detect::chess::ring::RingOffsets;
 use serde::{Deserialize, Serialize};
 
+pub use crate::detect::dense::{ChessBuffers, ChessDetector, DenseDetector, RadonDetector};
 pub use crate::detect::radon::primitives::{fit_peak_frac, PeakFitMode};
 pub use crate::detect::radon::{
-    detect_corners_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
+    detect_peaks_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
     RadonResponseView, SatElem,
 };
 pub use crate::detect::{AxisEstimate, Corner, CornerDescriptor};
@@ -149,7 +150,7 @@ impl ChessParams {
 }
 
 /// Dense response map in row-major layout.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ResponseMap {
     pub(crate) w: usize,
     pub(crate) h: usize,

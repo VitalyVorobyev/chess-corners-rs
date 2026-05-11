@@ -104,12 +104,12 @@ impl RadonDetectorParams {
     /// Values outside that range are silently clamped — callers can
     /// detect truncation by comparing against [`MAX_IMAGE_UPSAMPLE`].
     #[inline]
-    pub(super) fn image_upsample_clamped(&self) -> u32 {
+    pub(crate) fn image_upsample_clamped(&self) -> u32 {
         self.image_upsample.clamp(1, MAX_IMAGE_UPSAMPLE)
     }
 
     #[inline]
-    pub(super) fn ray_radius_clamped(&self) -> u32 {
+    pub(crate) fn ray_radius_clamped(&self) -> u32 {
         self.ray_radius.max(1)
     }
 }

@@ -5,8 +5,8 @@
 
 use anyhow::{Context, Result};
 use chess_corners::{
-    AxisEstimate, ChessConfig, ChessRing, ChessStrategy, CornerDescriptor, DescriptorMode,
-    DetectionStrategy, Detector, MultiscaleParams, RefinementMethod, Threshold,
+    AxisEstimate, ChessRing, ChessStrategy, CornerDescriptor, DescriptorMode, DetectionStrategy,
+    Detector, DetectorConfig, MultiscaleParams, RefinementMethod, Threshold,
 };
 use image::{ImageBuffer, ImageReader, Luma};
 use log::info;
@@ -22,7 +22,7 @@ pub struct DetectionConfig {
     /// Enable the ML refiner pipeline (requires the `ml-refiner` feature).
     pub ml: Option<bool>,
     #[serde(flatten, default)]
-    pub algorithm: ChessConfig,
+    pub algorithm: DetectorConfig,
 }
 
 /// CLI overrides applied on top of the JSON config. Each `Option`
@@ -74,7 +74,7 @@ pub struct DetectionDump {
     pub image: String,
     pub width: u32,
     pub height: u32,
-    pub algorithm: ChessConfig,
+    pub algorithm: DetectorConfig,
     pub corners: Vec<CornerOut>,
 }
 
@@ -144,7 +144,7 @@ impl From<&CornerDescriptor> for CornerOut {
     }
 }
 
-pub fn validate_algorithm_config(cfg: &ChessConfig) -> Result<()> {
+pub fn validate_algorithm_config(cfg: &DetectorConfig) -> Result<()> {
     if let Some(ms) = chess_multiscale(cfg) {
         if ms.pyramid_levels == 0 {
             anyhow::bail!("strategy.chess.multiscale.pyramid_levels must be >= 1");
@@ -174,14 +174,11 @@ pub fn validate_algorithm_config(cfg: &ChessConfig) -> Result<()> {
     Ok(())
 }
 
-fn chess_multiscale(cfg: &ChessConfig) -> Option<MultiscaleParams> {
-    match &cfg.strategy {
-        DetectionStrategy::Chess(c) => c.multiscale,
-        _ => None,
-    }
+fn chess_multiscale(cfg: &DetectorConfig) -> Option<MultiscaleParams> {
+    cfg.multiscale
 }
 
-fn chess_strategy_mut(cfg: &mut ChessConfig) -> Option<&mut ChessStrategy> {
+fn chess_strategy_mut(cfg: &mut DetectorConfig) -> Option<&mut ChessStrategy> {
     match &mut cfg.strategy {
         DetectionStrategy::Chess(c) => Some(c),
         _ => None,
@@ -192,7 +189,7 @@ fn chess_strategy_mut(cfg: &mut ChessConfig) -> Option<&mut ChessStrategy> {
 /// active. `nms_radius` and `min_cluster_size` are advertised by the
 /// CLI as generic detection overrides; both ChESS and Radon expose
 /// the same field names in their respective strategy payloads.
-fn apply_nms_radius(cfg: &mut ChessConfig, v: u32) {
+fn apply_nms_radius(cfg: &mut DetectorConfig, v: u32) {
     match &mut cfg.strategy {
         DetectionStrategy::Chess(chess) => chess.nms_radius = v,
         DetectionStrategy::Radon(radon) => radon.nms_radius = v,
@@ -200,7 +197,7 @@ fn apply_nms_radius(cfg: &mut ChessConfig, v: u32) {
     }
 }
 
-fn apply_min_cluster_size(cfg: &mut ChessConfig, v: u32) {
+fn apply_min_cluster_size(cfg: &mut DetectorConfig, v: u32) {
     match &mut cfg.strategy {
         DetectionStrategy::Chess(chess) => chess.min_cluster_size = v,
         DetectionStrategy::Radon(radon) => radon.min_cluster_size = v,
@@ -224,25 +221,23 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
         refiner_kind,
     } = overrides;
 
-    // Multiscale overrides apply only to the ChESS strategy. If the
-    // config is currently Radon, multiscale-shaped flags are ignored
-    // (Radon is single-scale today). For ChESS, any single multiscale
-    // override coerces `multiscale` from `None` → `Some(default)` so
-    // subsequent fields land somewhere visible.
+    // Multiscale overrides apply to the top-level multiscale field,
+    // which is honoured by both ChESS and Radon strategies. Any single
+    // multiscale override coerces `multiscale` from `None` →
+    // `Some(default)` so subsequent fields land somewhere visible.
     if pyramid_levels.is_some() || pyramid_min_size.is_some() || refinement_radius.is_some() {
-        if let Some(chess) = chess_strategy_mut(&mut cfg.algorithm) {
-            let ms = chess
-                .multiscale
-                .get_or_insert_with(MultiscaleParams::default);
-            if let Some(v) = pyramid_levels {
-                ms.pyramid_levels = v;
-            }
-            if let Some(v) = pyramid_min_size {
-                ms.pyramid_min_size = v as usize;
-            }
-            if let Some(v) = refinement_radius {
-                ms.refinement_radius = v;
-            }
+        let ms = cfg
+            .algorithm
+            .multiscale
+            .get_or_insert_with(MultiscaleParams::default);
+        if let Some(v) = pyramid_levels {
+            ms.pyramid_levels = v;
+        }
+        if let Some(v) = pyramid_min_size {
+            ms.pyramid_min_size = v as usize;
+        }
+        if let Some(v) = refinement_radius {
+            ms.refinement_radius = v;
         }
     }
     if let Some(v) = merge_radius {
@@ -321,8 +316,8 @@ mod tests {
     }
 
     fn radon_detection_config() -> DetectionConfig {
-        let mut algorithm = ChessConfig::radon();
-        // Sanity: confirm `ChessConfig::radon()` actually selects the
+        let mut algorithm = DetectorConfig::radon();
+        // Sanity: confirm `DetectorConfig::radon()` actually selects the
         // Radon strategy, so the regression below tests the intended
         // dispatch path.
         assert!(matches!(algorithm.strategy, DetectionStrategy::Radon(_)));
@@ -382,7 +377,7 @@ mod tests {
             output_png: None,
             log_level: None,
             ml: None,
-            algorithm: ChessConfig::single_scale(),
+            algorithm: DetectorConfig::single_scale(),
         };
         apply_overrides(
             &mut cfg,
@@ -407,8 +402,10 @@ mod tests {
     // CLI override returns to being a no-op for one strategy variant.
     #[test]
     fn nms_and_cluster_fields_exist_on_both_strategies() {
-        let _chess_nms: u32 = ChessConfig::single_scale().to_chess_params().nms_radius;
-        let _radon_nms: u32 = ChessConfig::radon().to_radon_detector_params().nms_radius;
+        let _chess_nms: u32 = DetectorConfig::single_scale().to_chess_params().nms_radius;
+        let _radon_nms: u32 = DetectorConfig::radon()
+            .to_radon_detector_params()
+            .nms_radius;
         let _radon_cluster = RadonStrategy::default().min_cluster_size;
     }
 }

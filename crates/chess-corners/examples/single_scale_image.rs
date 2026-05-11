@@ -3,7 +3,7 @@
 //! Usage:
 //!   cargo run -p chess-corners --example single_scale_image -- path/to/image.png
 
-use chess_corners::{ChessConfig, CornerDescriptor, Detector};
+use chess_corners::{CornerDescriptor, Detector, DetectorConfig};
 use image::ImageReader;
 use std::env;
 use std::error::Error;
@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let img = ImageReader::open(&img_path)?.decode()?.to_luma8();
 
-    let cfg = ChessConfig::single_scale();
+    let cfg = DetectorConfig::single_scale();
 
     let mut detector = Detector::new(cfg)?;
     let corners = detector.detect(&img)?;

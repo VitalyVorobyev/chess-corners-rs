@@ -27,8 +27,8 @@ def load_grayscale_image(path: Path) -> np.ndarray:
     return np.ascontiguousarray(array)
 
 
-def build_chess_config() -> chess_corners.ChessConfig:
-    cfg = chess_corners.ChessConfig.multiscale()
+def build_chess_config() -> chess_corners.DetectorConfig:
+    cfg = chess_corners.DetectorConfig.multiscale_preset()
 
     cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
     cfg.strategy.chess.nms_radius = 3
@@ -41,7 +41,7 @@ def build_chess_config() -> chess_corners.ChessConfig:
     ms.pyramid_levels = 3
     ms.pyramid_min_size = 96
     ms.refinement_radius = 4
-    cfg.strategy.chess.multiscale = ms
+    cfg.multiscale = ms
 
     cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
 

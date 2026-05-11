@@ -8,33 +8,40 @@
 //!   level, and refine each seed in the base image (coarse-to-fine)
 //!   before merging duplicates.
 //!
-//! The crate-internal entry points exposed here are
-//! [`detect_with_buffers`] (classic ChESS / Radon paths) and
-//! [`detect_with_ml`] (ML-refiner path, feature `ml-refiner`). End
-//! users should reach these through [`crate::Detector`].
+//! The generic driver [`detect_multiscale`] is parameterised over
+//! [`DenseDetector`], so both the ChESS and Radon detectors flow
+//! through the same orchestrator. The dispatch in
+//! [`crate::Detector::detect_view`] selects the detector ZST per
+//! [`crate::DetectionStrategy`]. End users should reach detection
+//! through [`crate::Detector`].
 
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
-use crate::{ChessConfig, ChessParams, DetectionStrategy};
+#[cfg(feature = "ml-refiner")]
+use crate::ChessParams;
+use crate::{DetectionStrategy, DetectorConfig};
 use box_image_pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
+#[cfg(feature = "ml-refiner")]
 use chess_corners_core::detect::chess::response::{
     chess_response_u8, chess_response_u8_patch, Roi,
 };
+#[cfg(feature = "ml-refiner")]
+use chess_corners_core::detect::detect_corners_from_response_with_refiner;
+use chess_corners_core::detect::merge_corners_simple;
 use chess_corners_core::detect::Corner;
-use chess_corners_core::detect::{detect_corners_from_response_with_refiner, merge_corners_simple};
 use chess_corners_core::orientation::describe_corners;
+#[cfg(feature = "ml-refiner")]
+use chess_corners_core::ResponseMap;
+use chess_corners_core::{ChessBuffers, ChessDetector, CornerDescriptor, DenseDetector};
 use chess_corners_core::{
-    detect_corners_from_radon, radon_response_u8, CornerDescriptor, CornerRefiner, RadonBuffers,
+    CornerRefiner, ImageView, OrientationMethod, RadonBuffers, RadonDetector, Refiner, RefinerKind,
 };
-use chess_corners_core::{ImageView, Refiner, RefinerKind, ResponseMap};
 
 /// Bridge from `chess_corners_core::ImageView` to `box_image_pyramid::ImageView`.
 fn to_pyramid_view(v: ImageView<'_>) -> box_image_pyramid::ImageView<'_> {
     // invariant: v was already validated as a coherent ImageView, so the pyramid view cannot fail.
     box_image_pyramid::ImageView::new(v.width, v.height, v.data).unwrap()
 }
-#[cfg(feature = "rayon")]
-use rayon::prelude::*;
 #[cfg(feature = "tracing")]
 use tracing::info_span;
 
@@ -77,8 +84,8 @@ impl CoarseToFineParams {
 }
 
 // ---------------------------------------------------------------------------
-// Detector helpers: thin wrappers that adapt the classic and ML detectors
-// to a common call signature.
+// ML-refiner adapter: kept as a closure-driven specialisation because it
+// is ChESS-only and threads mutable state through the per-seed loop.
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "ml-refiner")]
@@ -91,6 +98,7 @@ fn detect_with_ml_refiner(
     ml_refiner::detect_corners_with_ml(resp, params, image, ml_state)
 }
 
+#[cfg(feature = "ml-refiner")]
 fn detect_with_refiner_kind(
     resp: &ResponseMap,
     params: &ChessParams,
@@ -165,449 +173,14 @@ impl RoiContext {
     }
 }
 
-/// Compute the response patch for a seed ROI and return offset corners.
-///
-/// This is the shared "inner loop" body for both the classic and ML refine
-/// paths. It computes the ChESS response inside the ROI, runs the provided
-/// `detect` closure, and shifts patch-local coordinates back into base-image
-/// space.
-fn refine_seed_in_roi(
-    base: ImageView<'_>,
-    params: &ChessParams,
-    roi_bounds: (i32, i32, i32, i32),
-    mut detect: impl FnMut(&ResponseMap, &ChessParams, Option<ImageView<'_>>) -> Vec<Corner>,
-) -> Option<Vec<Corner>> {
-    let (x0, y0, x1, y1) = roi_bounds;
-    let base_w = base.width;
-    let base_h = base.height;
-
-    let roi = Roi::new(x0 as usize, y0 as usize, x1 as usize, y1 as usize)?;
-    let patch_resp = chess_response_u8_patch(base.data, base_w, base_h, params, roi);
-
-    if patch_resp.width() == 0 || patch_resp.height() == 0 {
-        return None;
-    }
-
-    let refine_view = ImageView::with_origin(base_w, base_h, base.data, [x0, y0])
-        .expect("base image dimensions must match buffer length");
-    let mut patch_corners = detect(&patch_resp, params, Some(refine_view));
-
-    for pc in &mut patch_corners {
-        pc.x += x0 as f32;
-        pc.y += y0 as f32;
-    }
-
-    if patch_corners.is_empty() {
-        None
-    } else {
-        Some(patch_corners)
-    }
-}
-
-/// Merge refined corners and convert to descriptors.
-fn merge_and_describe(
-    base: ImageView<'_>,
-    params: &ChessParams,
-    merge_radius: f32,
-    refined: &mut Vec<Corner>,
-) -> Vec<CornerDescriptor> {
-    #[cfg(feature = "tracing")]
-    let merge_span = info_span!(
-        "merge",
-        merge_radius = merge_radius,
-        candidates = refined.len()
-    )
-    .entered();
-    let merged = merge_corners_simple(refined, merge_radius);
-    #[cfg(feature = "tracing")]
-    drop(merge_span);
-
-    describe_corners(
-        base.data,
-        base.width,
-        base.height,
-        params.descriptor_ring_radius(),
-        merged,
-        params.orientation_method,
-    )
-}
-
-// ---------------------------------------------------------------------------
-// Shared coarse-to-fine driver
-// ---------------------------------------------------------------------------
-
-/// Sequential coarse-to-fine driver parameterised over per-seed refinement.
-// Only called from the ML path; gate it so the compiler sees no dead code when
-// the `ml-refiner` feature is not enabled.
-#[cfg(feature = "ml-refiner")]
-///
-/// Used by the ML path (and non-rayon builds). The classic path with rayon
-/// parallelism is inlined in [`detect_with_buffers_and_refiner`] to avoid
-/// ownership conflicts from splitting `detect_fn` across two closures.
-///
-/// Callers supply:
-/// - `coarse_detect` — [`RefinerKind`] for coarse-level detection. The ML path
-///   passes `params.refiner` because the ML model is not reliable at coarse
-///   resolution.
-/// - `detect_fn` — called for the single-scale fallback and for each base-level
-///   ROI in the coarse-to-fine path (same closure, called in mutually exclusive
-///   code paths so no aliasing).
-/// - `refine_border` — pixel border the refiner requires; influences the ROI
-///   context built from the coarse scale.
-fn coarse_to_fine_with<R>(
-    base: ImageView<'_>,
-    cfg: &ChessConfig,
-    buffers: &mut PyramidBuffers,
-    coarse_detect: &RefinerKind,
-    refine_border: i32,
-    detect_fn: &mut R,
-) -> Vec<CornerDescriptor>
-where
-    R: FnMut(&ResponseMap, &ChessParams, Option<ImageView<'_>>) -> Vec<Corner>,
-{
-    let params = cfg.to_chess_params();
-
-    // When the ChESS strategy has no multiscale params, run single-scale directly.
-    let Some(cf) = cfg.to_coarse_to_fine_params() else {
-        let resp = chess_response_u8(base.data, base.width, base.height, &params);
-        let view = ImageView::from_u8_slice(base.width, base.height, base.data)
-            .expect("image dimensions must match buffer length");
-        let mut raw = detect_fn(&resp, &params, Some(view));
-        let merged = merge_corners_simple(&mut raw, cfg.merge_radius);
-        return describe_corners(
-            base.data,
-            base.width,
-            base.height,
-            params.descriptor_ring_radius(),
-            merged,
-            params.orientation_method,
-        );
-    };
-
-    let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
-    if pyramid.levels.is_empty() {
-        return Vec::new();
-    }
-
-    // Single-scale fallback: run directly on the sole pyramid level.
-    if pyramid.levels.len() == 1 {
-        let lvl = &pyramid.levels[0];
-        let resp = chess_response_u8(lvl.img.data, lvl.img.width, lvl.img.height, &params);
-        let view = ImageView::from_u8_slice(lvl.img.width, lvl.img.height, lvl.img.data)
-            .expect("image dimensions must match buffer length");
-        let mut raw = detect_fn(&resp, &params, Some(view));
-        let merged = merge_corners_simple(&mut raw, cf.merge_radius);
-        return describe_corners(
-            lvl.img.data,
-            lvl.img.width,
-            lvl.img.height,
-            params.descriptor_ring_radius(),
-            merged,
-            params.orientation_method,
-        );
-    }
-
-    // --- Coarse-to-fine path ---
-
-    // invariant: pyramid was built from a validated input image, so at least one level exists.
-    let coarse_lvl = pyramid.levels.last().unwrap();
-    let coarse_w = coarse_lvl.img.width;
-    let coarse_h = coarse_lvl.img.height;
-
-    #[cfg(feature = "tracing")]
-    let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
-    let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, &params);
-    // invariant: coarse level dimensions come from the pyramid which already validated them.
-    let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
-    let coarse_corners =
-        detect_with_refiner_kind(&coarse_resp, &params, Some(coarse_view), coarse_detect);
-    #[cfg(feature = "tracing")]
-    drop(coarse_span);
-
-    if coarse_corners.is_empty() {
-        return Vec::new();
-    }
-
-    let roi_ctx = make_roi_context(base, coarse_lvl.scale, &params, refine_border, &cf);
-
-    #[cfg(feature = "tracing")]
-    let refine_span = info_span!(
-        "refine",
-        seeds = coarse_corners.len(),
-        roi_r = roi_ctx.roi_r
-    )
-    .entered();
-
-    let mut refined: Vec<Corner> = coarse_corners
-        .into_iter()
-        .filter_map(|c| {
-            let roi_bounds = roi_ctx.compute_roi(&c)?;
-            refine_seed_in_roi(base, &params, roi_bounds, &mut *detect_fn)
-        })
-        .flatten()
-        .collect();
-
-    #[cfg(feature = "tracing")]
-    drop(refine_span);
-
-    merge_and_describe(base, &params, cf.merge_radius, &mut refined)
-}
-
-// ---------------------------------------------------------------------------
-// Classic (RefinerKind) path
-// ---------------------------------------------------------------------------
-
-/// Detect corners using a caller-provided pyramid buffer.
-///
-/// - When `cfg.pyramid_levels <= 1`, this behaves as a
-///   single-scale detector on `base`.
-/// - Otherwise, it builds a pyramid into `buffers`, runs a coarse
-///   detector on the smallest level, refines each coarse seed inside a
-///   base-image ROI, merges near-duplicate corners, and finally
-///   converts them into [`CornerDescriptor`] values sampled at the
-///   full resolution.
-pub(crate) fn detect_with_buffers(
-    base: ImageView<'_>,
-    cfg: &ChessConfig,
-    buffers: &mut PyramidBuffers,
-) -> Vec<CornerDescriptor> {
-    let refiner = cfg.refiner.to_refiner_kind();
-    detect_with_buffers_and_refiner(base, cfg, buffers, &refiner)
-}
-
-/// Variant of [`detect_with_buffers`] that accepts an explicit refiner selection.
-///
-/// When the `rayon` feature is enabled, per-seed ROI refinement in the
-/// coarse-to-fine path runs in parallel. The ML path uses
-/// [`detect_with_ml`] instead, which is always sequential due to
-/// mutable ML state.
-fn detect_with_buffers_and_refiner(
-    base: ImageView<'_>,
-    cfg: &ChessConfig,
-    buffers: &mut PyramidBuffers,
-    refiner: &RefinerKind,
-) -> Vec<CornerDescriptor> {
-    // Radon detector has its own response + NMS + peak-fit pipeline
-    // and does not use the ChESS response map or `refiner`. Dispatch
-    // early so the ChESS path below can assume Canonical/Broad mode.
-    if matches!(&cfg.strategy, DetectionStrategy::Radon(_)) {
-        return detect_with_radon(base, cfg);
-    }
-
-    let params = cfg.to_chess_params();
-    let border = refiner_radius(refiner);
-
-    // When the ChESS strategy has no multiscale params, run single-scale
-    // directly without building a pyramid.
-    let Some(cf) = cfg.to_coarse_to_fine_params() else {
-        let resp = chess_response_u8(base.data, base.width, base.height, &params);
-        let view = ImageView::from_u8_slice(base.width, base.height, base.data)
-            .expect("image dimensions must match buffer length");
-        let mut raw = detect_with_refiner_kind(&resp, &params, Some(view), refiner);
-        let merged = merge_corners_simple(&mut raw, cfg.merge_radius);
-        return describe_corners(
-            base.data,
-            base.width,
-            base.height,
-            params.descriptor_ring_radius(),
-            merged,
-            params.orientation_method,
-        );
-    };
-
-    let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, buffers);
-    if pyramid.levels.is_empty() {
-        return Vec::new();
-    }
-
-    // Single-scale fallback (pyramid built with num_levels == 1).
-    if pyramid.levels.len() == 1 {
-        let lvl = &pyramid.levels[0];
-        let resp = chess_response_u8(lvl.img.data, lvl.img.width, lvl.img.height, &params);
-        let refine_view = ImageView::from_u8_slice(lvl.img.width, lvl.img.height, lvl.img.data)
-            .expect("image dimensions must match buffer length");
-        let mut raw = detect_with_refiner_kind(&resp, &params, Some(refine_view), refiner);
-        let merged = merge_corners_simple(&mut raw, cf.merge_radius);
-        return describe_corners(
-            lvl.img.data,
-            lvl.img.width,
-            lvl.img.height,
-            params.descriptor_ring_radius(),
-            merged,
-            params.orientation_method,
-        );
-    }
-
-    // --- Coarse-to-fine path (with optional rayon parallelism) ---
-
-    // invariant: pyramid was built from a validated input image, so at least one level exists.
-    let coarse_lvl = pyramid.levels.last().unwrap();
-    let coarse_w = coarse_lvl.img.width;
-    let coarse_h = coarse_lvl.img.height;
-
-    #[cfg(feature = "tracing")]
-    let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
-    let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, &params);
-    // invariant: coarse level dimensions come from the pyramid which already validated them.
-    let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
-    let coarse_corners =
-        detect_with_refiner_kind(&coarse_resp, &params, Some(coarse_view), refiner);
-    #[cfg(feature = "tracing")]
-    drop(coarse_span);
-
-    if coarse_corners.is_empty() {
-        return Vec::new();
-    }
-
-    let roi_ctx = make_roi_context(base, coarse_lvl.scale, &params, border, &cf);
-
-    #[cfg(feature = "tracing")]
-    let refine_span = info_span!(
-        "refine",
-        seeds = coarse_corners.len(),
-        roi_r = roi_ctx.roi_r
-    )
-    .entered();
-
-    let refine_one = |c: Corner| -> Option<Vec<Corner>> {
-        let roi_bounds = roi_ctx.compute_roi(&c)?;
-        refine_seed_in_roi(base, &params, roi_bounds, |resp, p, image| {
-            detect_with_refiner_kind(resp, p, image, refiner)
-        })
-    };
-
-    #[cfg(feature = "rayon")]
-    let mut refined: Vec<Corner> = coarse_corners
-        .into_par_iter()
-        .filter_map(refine_one)
-        .flatten()
-        .collect();
-
-    #[cfg(not(feature = "rayon"))]
-    let mut refined: Vec<Corner> = coarse_corners
-        .into_iter()
-        .filter_map(refine_one)
-        .flatten()
-        .collect();
-
-    #[cfg(feature = "tracing")]
-    drop(refine_span);
-
-    merge_and_describe(base, &params, cf.merge_radius, &mut refined)
-}
-
-// ---------------------------------------------------------------------------
-// Radon detector path
-// ---------------------------------------------------------------------------
-
-/// Run the whole-image Duda-Frese Radon detector on `base` and
-/// produce [`CornerDescriptor`] values in base-image coordinates.
-///
-/// Single-scale only today. Multiscale-Radon is planned (see
-/// `DetectionStrategy::Radon`; the slot for `multiscale:
-/// Option<MultiscaleParams>` is reserved for that work).
-///
-/// The Radon detector applies its own threshold / NMS / 3-point
-/// Gaussian peak-fit internally, so `cfg.refiner` is not consulted.
-/// Descriptor sampling still honours
-/// [`ChessConfig::descriptor_mode`](crate::ChessConfig::descriptor_mode).
-fn detect_with_radon(base: ImageView<'_>, cfg: &ChessConfig) -> Vec<CornerDescriptor> {
-    let radon_params = cfg.to_radon_detector_params();
-
-    #[cfg(feature = "tracing")]
-    let span = info_span!(
-        "radon_detect",
-        w = base.width,
-        h = base.height,
-        upsample = radon_params.image_upsample,
-    )
-    .entered();
-
-    // Allocate RadonBuffers on the stack of this call. The detector
-    // buffers reuse pattern (mirroring PyramidBuffers) is deferred —
-    // callers who need zero-alloc framing can call the core-level
-    // `radon_response_u8` / `detect_corners_from_radon` directly.
-    let mut rb = RadonBuffers::new();
-    let resp = radon_response_u8(base.data, base.width, base.height, &radon_params, &mut rb);
-    let corners = detect_corners_from_radon(&resp, &radon_params);
-
-    if corners.is_empty() {
-        #[cfg(feature = "tracing")]
-        drop(span);
-        return Vec::new();
-    }
-
-    // Descriptor sampling uses the ChESS ring at the resolution
-    // configured by `descriptor_mode`. Corners are already in
-    // base-image coordinates.
-    let params = cfg.to_chess_params();
-    let mut merged = corners;
-    let merged = merge_corners_simple(&mut merged, cfg.merge_radius);
-    let out = describe_corners(
-        base.data,
-        base.width,
-        base.height,
-        params.descriptor_ring_radius(),
-        merged,
-        params.orientation_method,
-    );
-    #[cfg(feature = "tracing")]
-    drop(span);
-    out
-}
-
-// ---------------------------------------------------------------------------
-// ML refiner path
-// ---------------------------------------------------------------------------
-
-/// Variant of [`detect_with_buffers`] that uses the ML refiner pipeline.
-#[cfg(feature = "ml-refiner")]
-pub(crate) fn detect_with_ml(
-    base: ImageView<'_>,
-    cfg: &ChessConfig,
-    buffers: &mut PyramidBuffers,
-    ml: &ml_refiner::MlRefinerParams,
-    ml_state: &mut ml_refiner::MlRefinerState,
-) -> Vec<CornerDescriptor> {
-    // The Radon detector produces corners through its own internal
-    // peak-fit and does not emit ChESS-response seeds, so pairing it
-    // with the ML refiner is a category error. Fall back to the
-    // Radon detector's native output in that case — the user can
-    // still pick the ML refiner by switching to a ChESS strategy.
-    if matches!(&cfg.strategy, DetectionStrategy::Radon(_)) {
-        return detect_with_radon(base, cfg);
-    }
-
-    let params = cfg.to_chess_params();
-    let ml_border = ml_refiner::patch_radius(ml);
-    // Coarse detection always uses the classic refiner (ML model is not
-    // reliable at coarse resolution). ROI refinement uses the ML path.
-    // `ml_state` is mutable but used in a single closure; `coarse_to_fine_with`
-    // runs sequentially so there is no aliasing.
-    coarse_to_fine_with(
-        base,
-        cfg,
-        buffers,
-        &params.refiner.clone(),
-        ml_border,
-        &mut |resp, p, image| detect_with_ml_refiner(resp, p, image, ml_state),
-    )
-}
-
-// ---------------------------------------------------------------------------
-// Shared helpers
-// ---------------------------------------------------------------------------
-
 fn make_roi_context(
     base: ImageView<'_>,
     coarse_scale: f32,
-    params: &ChessParams,
+    detector_border: i32,
     refine_border: i32,
     cf: &CoarseToFineParams,
 ) -> RoiContext {
-    let ring_r = params.ring_radius() as i32;
-    let nms_r = params.nms_radius as i32;
-    let border = (ring_r + nms_r + refine_border).max(0);
+    let border = (detector_border + refine_border).max(0);
     let safe_margin = border + 1;
     let roi_r_base = (cf.refinement_radius as f32 / coarse_scale).ceil() as i32;
     let min_roi_r = border + 2;
@@ -620,6 +193,437 @@ fn make_roi_context(
         base_w_i: base.width as i32,
         base_h_i: base.height as i32,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Generic multiscale orchestrator (driven by DenseDetector)
+// ---------------------------------------------------------------------------
+
+/// Pixel-shape arguments common to every detector path (descriptor
+/// sampling + orientation + post-detection merge). Lets the generic
+/// orchestrator stay parameter-symmetric over [`DenseDetector`].
+struct DetectorShape<'r> {
+    refiner_kind: &'r RefinerKind,
+    descriptor_ring_radius: u32,
+    orientation_method: OrientationMethod,
+    merge_radius: f32,
+}
+
+/// Generic multiscale corner detection driver.
+///
+/// Runs a single-scale detection when `multiscale` is `None` or
+/// resolves to a 1-level pyramid; otherwise builds the pyramid,
+/// detects seeds on the coarsest level, and refines each seed inside
+/// a base-image ROI before merging duplicates and producing
+/// descriptors.
+///
+/// The detector is selected through the [`DenseDetector`] trait, so
+/// both ChESS and Radon share the same control flow. Detector-domain
+/// peak extraction stays inside [`DenseDetector::detect_corners`]
+/// (which returns peaks with the response-map subpixel position only
+/// — e.g. the ChESS quadratic / Radon 3-point Gaussian); image-domain
+/// refinement (`CenterOfMassRefiner`, `ForstnerRefiner`, …) runs as a
+/// separate post-detection stage via
+/// [`refine_corners_on_image`](chess_corners_core::detect::refine_corners_on_image).
+///
+/// `descriptor_ring_radius` and `orientation_method` are sourced from
+/// the ChESS-derived params even when the active detector is Radon —
+/// descriptor sampling and orientation are detector-agnostic stages
+/// downstream of peak extraction.
+fn detect_multiscale<D: DenseDetector>(
+    base: ImageView<'_>,
+    detector: &D,
+    params: &D::Params,
+    detector_buffers: &mut D::Buffers,
+    pyramid_buffers: &mut PyramidBuffers,
+    multiscale: Option<&CoarseToFineParams>,
+    shape: &DetectorShape<'_>,
+) -> Vec<CornerDescriptor> {
+    let base_view = ImageView::from_u8_slice(base.width, base.height, base.data)
+        .expect("base image dimensions must match buffer length");
+
+    let refine_border = refiner_radius(shape.refiner_kind);
+
+    // Single-scale path: no pyramid, run detector once on the full
+    // base view, refine through the detector's image-domain step,
+    // merge, describe.
+    let Some(cf) = multiscale else {
+        let resp = detector.compute_response(base, params, detector_buffers);
+        let peaks = detector.detect_corners(&resp, params, refine_border);
+        let mut refiner = Refiner::from_kind(shape.refiner_kind.clone());
+        let mut corners = detector.refine_peaks_on_image(peaks, base_view, &resp, &mut refiner);
+        let merged = merge_corners_simple(&mut corners, shape.merge_radius);
+        return describe_corners(
+            base.data,
+            base.width,
+            base.height,
+            shape.descriptor_ring_radius,
+            merged,
+            shape.orientation_method,
+        );
+    };
+
+    let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, pyramid_buffers);
+    if pyramid.levels.is_empty() {
+        return Vec::new();
+    }
+
+    // Single-level pyramid: same as single-scale but on the pyramid
+    // level's data (which equals the base for num_levels==1 / no
+    // downsampling).
+    if pyramid.levels.len() == 1 {
+        let lvl = &pyramid.levels[0];
+        let lvl_view = ImageView::from_u8_slice(lvl.img.width, lvl.img.height, lvl.img.data)
+            .expect("pyramid level dimensions must match buffer length");
+        let resp = detector.compute_response(lvl_view, params, detector_buffers);
+        let peaks = detector.detect_corners(&resp, params, refine_border);
+        let mut refiner = Refiner::from_kind(shape.refiner_kind.clone());
+        let mut corners = detector.refine_peaks_on_image(peaks, lvl_view, &resp, &mut refiner);
+        let merged = merge_corners_simple(&mut corners, cf.merge_radius);
+        return describe_corners(
+            lvl.img.data,
+            lvl.img.width,
+            lvl.img.height,
+            shape.descriptor_ring_radius,
+            merged,
+            shape.orientation_method,
+        );
+    }
+
+    // --- Coarse-to-fine path ---
+
+    // invariant: pyramid was built from a validated input image, so at least one level exists.
+    let coarse_lvl = pyramid.levels.last().unwrap();
+    let coarse_w = coarse_lvl.img.width;
+    let coarse_h = coarse_lvl.img.height;
+
+    #[cfg(feature = "tracing")]
+    let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
+    // invariant: coarse level dimensions come from the pyramid which already validated them.
+    let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
+    let coarse_resp = detector.compute_response(coarse_view, params, detector_buffers);
+    let coarse_peaks = detector.detect_corners(&coarse_resp, params, refine_border);
+    let mut refiner = Refiner::from_kind(shape.refiner_kind.clone());
+    let coarse_corners =
+        detector.refine_peaks_on_image(coarse_peaks, coarse_view, &coarse_resp, &mut refiner);
+    // Drop the response borrow before reusing detector_buffers for the
+    // per-seed patch path.
+    drop(coarse_resp);
+    #[cfg(feature = "tracing")]
+    drop(coarse_span);
+
+    if coarse_corners.is_empty() {
+        return Vec::new();
+    }
+
+    let detector_border = detector.roi_border(params);
+    let roi_ctx = make_roi_context(base, coarse_lvl.scale, detector_border, refine_border, cf);
+
+    #[cfg(feature = "tracing")]
+    let refine_span = info_span!(
+        "refine",
+        seeds = coarse_corners.len(),
+        roi_r = roi_ctx.roi_r
+    )
+    .entered();
+
+    // Per-seed refinement runs sequentially in the generic path: the
+    // detector's `compute_response_patch` mutates `detector_buffers`,
+    // and rayon parallelism over seeds would require cloning the
+    // buffers per worker. The cost-benefit here flips toward
+    // simplicity — the heavy per-seed work for ChESS is a small ROI
+    // and parallelism gained little; for Radon, the SAT build inside
+    // each patch dominates.
+    let mut refined: Vec<Corner> = Vec::new();
+    for c in coarse_corners {
+        let Some(roi_bounds) = roi_ctx.compute_roi(&c) else {
+            continue;
+        };
+        let (x0, y0, _x1, _y1) = roi_bounds;
+        let patch_resp =
+            detector.compute_response_patch(base, roi_bounds, params, detector_buffers);
+        // Width/height inferred from the response's shape: ChESS
+        // emits a ResponseMap sized to the ROI (with reach-outside
+        // border math); Radon emits a working-resolution
+        // RadonResponseView whose pixels are in the *patch* coord
+        // frame. detector.detect_corners returns corners in the same
+        // patch-local frame.
+        let patch_peaks = detector.detect_corners(&patch_resp, params, refine_border);
+        if patch_peaks.is_empty() {
+            continue;
+        }
+
+        // Image-domain refinement over the base image, with origin
+        // [x0, y0]: the refiner sees patch-local seed coords and
+        // samples base pixels at (cx + x0, cy + y0). The detector
+        // decides whether its response is forwardable to the refiner
+        // (ChESS → yes, ResponseMap; Radon → no, returns peaks as-is).
+        let patch_image = ImageView::with_origin(base.width, base.height, base.data, [x0, y0])
+            .expect("base image dimensions must match buffer length");
+        let mut patch_refined =
+            detector.refine_peaks_on_image(patch_peaks, patch_image, &patch_resp, &mut refiner);
+
+        // Drop the patch_resp borrow so detector_buffers is free for
+        // the next iteration.
+        drop(patch_resp);
+
+        // Shift patch-local refined positions to base coords.
+        for pc in &mut patch_refined {
+            pc.x += x0 as f32;
+            pc.y += y0 as f32;
+        }
+        refined.extend(patch_refined);
+    }
+
+    #[cfg(feature = "tracing")]
+    drop(refine_span);
+
+    #[cfg(feature = "tracing")]
+    let merge_span = info_span!(
+        "merge",
+        merge_radius = cf.merge_radius,
+        candidates = refined.len()
+    )
+    .entered();
+    let merged = merge_corners_simple(&mut refined, cf.merge_radius);
+    #[cfg(feature = "tracing")]
+    drop(merge_span);
+
+    describe_corners(
+        base.data,
+        base.width,
+        base.height,
+        shape.descriptor_ring_radius,
+        merged,
+        shape.orientation_method,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Detector-typed entry points (called by the facade Detector dispatch)
+// ---------------------------------------------------------------------------
+
+/// Detect corners through the generic orchestrator. The `cfg.strategy`
+/// selects between [`ChessDetector`] and [`RadonDetector`]; both
+/// flow through the same control flow.
+pub(crate) fn detect_with_buffers(
+    base: ImageView<'_>,
+    cfg: &DetectorConfig,
+    pyramid_buffers: &mut PyramidBuffers,
+    chess_buffers: &mut ChessBuffers,
+    radon_buffers: &mut RadonBuffers,
+) -> Vec<CornerDescriptor> {
+    let refiner_kind = cfg.refiner.to_refiner_kind();
+    let chess_params = cfg.to_chess_params();
+    let shape = DetectorShape {
+        refiner_kind: &refiner_kind,
+        descriptor_ring_radius: chess_params.descriptor_ring_radius(),
+        orientation_method: chess_params.orientation_method,
+        merge_radius: cfg.merge_radius,
+    };
+    let multiscale = cfg.to_coarse_to_fine_params();
+
+    match &cfg.strategy {
+        DetectionStrategy::Chess(_) => detect_multiscale(
+            base,
+            &ChessDetector,
+            &chess_params,
+            chess_buffers,
+            pyramid_buffers,
+            multiscale.as_ref(),
+            &shape,
+        ),
+        DetectionStrategy::Radon(_) => {
+            let radon_params = cfg.to_radon_detector_params();
+            detect_multiscale(
+                base,
+                &RadonDetector,
+                &radon_params,
+                radon_buffers,
+                pyramid_buffers,
+                multiscale.as_ref(),
+                &shape,
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ML refiner path (ChESS-only specialisation)
+// ---------------------------------------------------------------------------
+
+/// ML-refiner detection path. ChESS-only: the ML model expects
+/// ChESS-shaped intensity patches, so Radon+ML is a category error
+/// and falls back to the generic Radon path.
+///
+/// Kept as a separate specialisation because the ML refiner threads
+/// per-frame mutable state (`MlRefinerState`) through the per-seed
+/// loop, which the generic [`detect_multiscale`] driver intentionally
+/// does not.
+#[cfg(feature = "ml-refiner")]
+pub(crate) fn detect_with_ml(
+    base: ImageView<'_>,
+    cfg: &DetectorConfig,
+    pyramid_buffers: &mut PyramidBuffers,
+    chess_buffers: &mut ChessBuffers,
+    radon_buffers: &mut RadonBuffers,
+    ml: &ml_refiner::MlRefinerParams,
+    ml_state: &mut ml_refiner::MlRefinerState,
+) -> Vec<CornerDescriptor> {
+    // ML pairs only with ChESS-style patches; fall back to the
+    // generic Radon path otherwise.
+    if matches!(&cfg.strategy, DetectionStrategy::Radon(_)) {
+        return detect_with_buffers(base, cfg, pyramid_buffers, chess_buffers, radon_buffers);
+    }
+
+    let _ = (radon_buffers,); // unused on the ChESS branch but kept in the signature for symmetry.
+
+    let params = cfg.to_chess_params();
+    let ml_border = ml_refiner::patch_radius(ml);
+    coarse_to_fine_with_ml(
+        base,
+        cfg,
+        pyramid_buffers,
+        chess_buffers,
+        &params,
+        ml_border,
+        &mut |resp, p, image| detect_with_ml_refiner(resp, p, image, ml_state),
+    )
+}
+
+/// Sequential coarse-to-fine driver for the ChESS+ML path. Threads a
+/// `&mut FnMut(...)` so the caller can hold mutable ML state without
+/// the borrow-checker conflict that would arise from splitting the
+/// closure across coarse and per-seed call sites.
+#[cfg(feature = "ml-refiner")]
+fn coarse_to_fine_with_ml<R>(
+    base: ImageView<'_>,
+    cfg: &DetectorConfig,
+    pyramid_buffers: &mut PyramidBuffers,
+    chess_buffers: &mut ChessBuffers,
+    params: &ChessParams,
+    refine_border: i32,
+    detect_fn: &mut R,
+) -> Vec<CornerDescriptor>
+where
+    R: FnMut(&ResponseMap, &ChessParams, Option<ImageView<'_>>) -> Vec<Corner>,
+{
+    // Single-scale ChESS+ML.
+    let Some(cf) = cfg.to_coarse_to_fine_params() else {
+        let detector = ChessDetector;
+        let resp = detector.compute_response(base, params, chess_buffers);
+        let view = ImageView::from_u8_slice(base.width, base.height, base.data)
+            .expect("image dimensions must match buffer length");
+        let mut raw = detect_fn(resp, params, Some(view));
+        let merged = merge_corners_simple(&mut raw, cfg.merge_radius);
+        return describe_corners(
+            base.data,
+            base.width,
+            base.height,
+            params.descriptor_ring_radius(),
+            merged,
+            params.orientation_method,
+        );
+    };
+
+    let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, pyramid_buffers);
+    if pyramid.levels.is_empty() {
+        return Vec::new();
+    }
+
+    // Single-scale fallback for ChESS+ML when num_levels=1.
+    if pyramid.levels.len() == 1 {
+        let lvl = &pyramid.levels[0];
+        let resp = chess_response_u8(lvl.img.data, lvl.img.width, lvl.img.height, params);
+        let view = ImageView::from_u8_slice(lvl.img.width, lvl.img.height, lvl.img.data)
+            .expect("image dimensions must match buffer length");
+        let mut raw = detect_fn(&resp, params, Some(view));
+        let merged = merge_corners_simple(&mut raw, cf.merge_radius);
+        return describe_corners(
+            lvl.img.data,
+            lvl.img.width,
+            lvl.img.height,
+            params.descriptor_ring_radius(),
+            merged,
+            params.orientation_method,
+        );
+    }
+
+    // Coarse-to-fine: coarse seeds via the classic ChESS refiner; ROI
+    // refinement via the ML pipeline.
+    let coarse_lvl = pyramid.levels.last().unwrap();
+    let coarse_w = coarse_lvl.img.width;
+    let coarse_h = coarse_lvl.img.height;
+
+    #[cfg(feature = "tracing")]
+    let coarse_span = info_span!("coarse_detect", w = coarse_w, h = coarse_h).entered();
+    let coarse_resp = chess_response_u8(coarse_lvl.img.data, coarse_w, coarse_h, params);
+    let coarse_view = ImageView::from_u8_slice(coarse_w, coarse_h, coarse_lvl.img.data).unwrap();
+    let coarse_corners =
+        detect_with_refiner_kind(&coarse_resp, params, Some(coarse_view), &params.refiner);
+    #[cfg(feature = "tracing")]
+    drop(coarse_span);
+
+    if coarse_corners.is_empty() {
+        return Vec::new();
+    }
+
+    let detector_border = ChessDetector.roi_border(params);
+    let roi_ctx = make_roi_context(base, coarse_lvl.scale, detector_border, refine_border, &cf);
+
+    #[cfg(feature = "tracing")]
+    let refine_span = info_span!(
+        "refine",
+        seeds = coarse_corners.len(),
+        roi_r = roi_ctx.roi_r
+    )
+    .entered();
+
+    let mut refined: Vec<Corner> = Vec::new();
+    for c in coarse_corners {
+        let Some((x0, y0, x1, y1)) = roi_ctx.compute_roi(&c) else {
+            continue;
+        };
+        let roi = match Roi::new(x0 as usize, y0 as usize, x1 as usize, y1 as usize) {
+            Some(r) => r,
+            None => continue,
+        };
+        let patch_resp = chess_response_u8_patch(base.data, base.width, base.height, params, roi);
+        if patch_resp.width() == 0 || patch_resp.height() == 0 {
+            continue;
+        }
+        let refine_view = ImageView::with_origin(base.width, base.height, base.data, [x0, y0])
+            .expect("base image dimensions must match buffer length");
+        let mut patch_corners = detect_fn(&patch_resp, params, Some(refine_view));
+        for pc in &mut patch_corners {
+            pc.x += x0 as f32;
+            pc.y += y0 as f32;
+        }
+        refined.extend(patch_corners);
+    }
+
+    #[cfg(feature = "tracing")]
+    drop(refine_span);
+
+    #[cfg(feature = "tracing")]
+    let merge_span = info_span!(
+        "merge",
+        merge_radius = cf.merge_radius,
+        candidates = refined.len()
+    )
+    .entered();
+    let merged = merge_corners_simple(&mut refined, cf.merge_radius);
+    #[cfg(feature = "tracing")]
+    drop(merge_span);
+
+    describe_corners(
+        base.data,
+        base.width,
+        base.height,
+        params.descriptor_ring_radius(),
+        merged,
+        params.orientation_method,
+    )
 }
 
 #[cfg(test)]
@@ -638,7 +642,7 @@ mod tests {
 
     #[test]
     fn chess_config_multiscale_preset_has_expected_pyramid() {
-        let cfg = ChessConfig::multiscale();
+        let cfg = DetectorConfig::multiscale();
         let cf = cfg
             .to_coarse_to_fine_params()
             .expect("multiscale preset must produce CoarseToFineParams");
@@ -653,9 +657,17 @@ mod tests {
         let buf = ImageBuffer::new(32, 32);
         let view = ImageView::from_u8_slice(buf.width, buf.height, &buf.data)
             .expect("dimensions must match");
-        let cfg = ChessConfig::default();
-        let mut buffers = PyramidBuffers::default();
-        let corners = detect_with_buffers(view, &cfg, &mut buffers);
+        let cfg = DetectorConfig::default();
+        let mut pyramid = PyramidBuffers::default();
+        let mut chess_buffers = ChessBuffers::default();
+        let mut radon_buffers = RadonBuffers::default();
+        let corners = detect_with_buffers(
+            view,
+            &cfg,
+            &mut pyramid,
+            &mut chess_buffers,
+            &mut radon_buffers,
+        );
         assert!(corners.is_empty());
     }
 }

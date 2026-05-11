@@ -12,7 +12,7 @@ calibration, pose estimation, or AR alignment pipeline.
 ![](book/src/img/mid_chess.png)
 
 Two independent detectors and five subpixel refiners sit behind one
-`ChessConfig` type:
+`DetectorConfig` type:
 
 | Stage                | Options                                                                              | Book                                                                    |
 |----------------------|--------------------------------------------------------------------------------------|-------------------------------------------------------------------------|
@@ -54,18 +54,18 @@ and every optional dependency is feature-gated. See `AGENTS.md` and
 
 ```toml
 [dependencies]
-chess-corners = "0.7"
+chess-corners = "0.10"
 image = "0.25"
 ```
 
 ```rust
-use chess_corners::{find_chess_corners_image, ChessConfig, RefinementMethod};
+use chess_corners::{find_chess_corners_image, DetectorConfig, RefinementMethod};
 use image::ImageReader;
 
 let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
 // Defaults: ChESS detector, multiscale pipeline, CenterOfMass refiner.
-let mut cfg = ChessConfig::multiscale();
+let mut cfg = DetectorConfig::multiscale();
 cfg.refiner.kind = RefinementMethod::Forstner;
 
 let corners = find_chess_corners_image(&img, &cfg);
@@ -74,10 +74,19 @@ for c in &corners {
 }
 ```
 
+Four presets cover the most common setups:
+
+| Preset                              | Detector | Scale          | Best for                                  |
+|-------------------------------------|----------|----------------|-------------------------------------------|
+| `DetectorConfig::single_scale()`    | ChESS    | Single-scale   | Sharp boards, large cells                 |
+| `DetectorConfig::multiscale()`      | ChESS    | 3-level pyramid | General-purpose (recommended default)    |
+| `DetectorConfig::radon()`           | Radon    | Single-scale   | Small cells, heavy blur, low contrast     |
+| `DetectorConfig::radon_multiscale()`| Radon    | 3-level pyramid | Radon on large / blurry frames           |
+
 Switching to the Radon detector is one line:
 
 ```rust
-let cfg = ChessConfig::radon();
+let cfg = DetectorConfig::radon();
 let corners = find_chess_corners_image(&img, &cfg);
 ```
 
@@ -102,7 +111,7 @@ import chess_corners
 
 img = np.zeros((128, 128), dtype=np.uint8)
 
-cfg = chess_corners.ChessConfig.multiscale()
+cfg = chess_corners.DetectorConfig.multiscale()
 cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
 
 corners = chess_corners.find_chess_corners(img, cfg)
@@ -159,7 +168,7 @@ writes a JSON summary and an overlay PNG. Example configs:
 - `config/chess_cli_config_example_ml.json` — ML refiner enabled;
   requires `--features ml-refiner` at build time.
 
-## `ChessConfig` schema
+## `DetectorConfig` schema
 
 Flat schema; the same field names appear in Rust, Python, CLI JSON,
 and WASM setters.
