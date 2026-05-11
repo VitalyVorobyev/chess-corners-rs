@@ -1,8 +1,8 @@
 //! Benchmark the per-corner descriptor fit (two-axis intensity model
 //! via Gauss-Newton, plus 1σ uncertainty extraction).
 
-use chess_corners_core::descriptor::{corners_to_descriptors_with_method, Corner};
 use chess_corners_core::orientation::OrientationMethod;
+use chess_corners_core::{detect::Corner, orientation::describe_corners};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use std::hint::black_box;
 
@@ -54,7 +54,7 @@ fn bench_descriptor_fit(c: &mut Criterion) {
             b.iter_batched(
                 || synth_corners(n, W, H),
                 |corners| {
-                    black_box(corners_to_descriptors_with_method(
+                    black_box(describe_corners(
                         &img,
                         W,
                         H,

@@ -64,9 +64,9 @@ Two basic types represent images:
   `as_view()` to obtain an `ImageView<'_>`.
 
 These types keep the pyramid crate decoupled from any particular image
-crate. When you call `find_chess_corners_image`, the `chess-corners`
-facade converts from `image::GrayImage` to the raw-slice pyramid API
-internally.
+crate. When you call `Detector::detect` on an `image::GrayImage`, the
+`chess-corners` facade converts from `image::GrayImage` to the
+raw-slice pyramid API internally.
 
 ### 4.1.2 Pyramid structures and parameters
 
@@ -130,10 +130,10 @@ Typical usage:
    and the same buffers. The code automatically resizes or reuses
    internal buffers as needed.
 
-The high‑level multiscale API (`find_chess_corners`) creates and
-manages its own `PyramidBuffers` internally, but the lower‑level
-`find_chess_corners_buff` entry point lets you supply your own
-buffers, which is useful in tight real‑time loops.
+The [`Detector`](https://docs.rs/chess-corners) struct in the
+`chess-corners` facade owns a `PyramidBuffers` internally; building it
+once and calling `detect`/`detect_u8` repeatedly reuses the same
+buffers across frames.
 
 ### 4.1.4 Building the pyramid
 
@@ -225,28 +225,25 @@ pub struct CoarseToFineParams {
 - ROI radius 3 at the coarse level (scaled up at the base; with 3 levels this is ≈12 px at full resolution),
 - merge radius 3.0 pixels.
 
-### 4.2.2 The `find_chess_corners_buff` workflow
+### 4.2.2 Multiscale workflow under `Detector::detect`
 
-The main multiscale function is:
+The [`Detector`](https://docs.rs/chess-corners) struct in
+`chess-corners` owns a `PyramidBuffers` internally. The multiscale
+pipeline is opt-in via `ChessConfig.strategy = DetectionStrategy::
+Chess(ChessStrategy { multiscale: Some(MultiscaleParams { … }), … })`;
+when `multiscale` is `None` the detector takes the single-scale path.
+The Radon strategy currently runs single-scale only; the
+multiscale-Radon variant is a planned follow-up. The multiscale ChESS
+pipeline on each `detect` / `detect_u8` call is:
 
-```rust
-pub fn find_chess_corners_buff(
-    base: ImageView<'_>,
-    cfg: &ChessConfig,
-    buffers: &mut PyramidBuffers,
-) -> Vec<CornerDescriptor>
-```
-
-It proceeds in several steps:
-
-1. **Build the pyramid** using `cfg.multiscale.pyramid` and the
-   provided `buffers`.
+1. **Build the pyramid** using the multiscale settings and the
+   detector's owned buffers.
    - If the resulting pyramid is empty (e.g., base too small), return
      an empty corner set.
 2. **Single‑scale special case** – if the pyramid has only one level:
    - run `chess_response_u8` on the base level,
    - run the detector on the response to get raw `Corner` values,
-   - convert them with `corners_to_descriptors`,
+   - convert them with `describe_corners`,
    - return descriptors directly.
 3. **Coarse detection**:
    - take the smallest level in the pyramid (`pyramid.levels.last()`),
@@ -259,8 +256,8 @@ It proceeds in several steps:
      - map its coordinates up to base image space,
      - skip corners too close to the base image border (to keep enough
        room for the ring and refinement window),
-     - convert `cfg.multiscale.refinement_radius` from coarse pixels to base
-       pixels, enforcing a minimum based on the detector’s border
+     - convert `cfg.refinement_radius` from coarse pixels to base
+       pixels, enforcing a minimum based on the detector's border
        requirements,
      - clamp the ROI to keep it entirely within safe bounds,
      - compute `chess_response_u8_patch` inside this ROI,
@@ -273,38 +270,17 @@ It proceeds in several steps:
      corners whose positions are within `merge_radius` of each other,
      keeping the stronger one.
    - convert merged `Corner` values into `CornerDescriptor`s using
-     `corners_to_descriptors` with `params.descriptor_ring_radius()`.
+     `describe_corners` with `params.descriptor_ring_radius()`.
 
-When the `rayon` feature is enabled, the refinement step can process
+When the `rayon` feature is enabled, the refinement step processes
 coarse corners in parallel; otherwise it uses a straightforward loop.
 
-### 4.2.3 Convenience wrapper: `find_chess_corners`
+### 4.2.3 Buffer reuse across frames
 
-For many applications it’s enough to let the library manage the
-pyramid buffers:
-
-```rust
-pub fn find_chess_corners(
-    base: ImageView<'_>,
-    cfg: &ChessConfig,
-) -> Vec<CornerDescriptor>
-```
-
-This helper:
-
-- constructs a `PyramidBuffers` with capacity for
-  `cfg.multiscale.pyramid.num_levels`,
-- calls `find_chess_corners_buff`,
-- returns the resulting descriptors.
-
-It is the internal entry point behind:
-
-- `find_chess_corners_image` (for `image::GrayImage`), and
-- `find_chess_corners_u8` (for raw `&[u8]` buffers).
-
-Use `find_chess_corners_buff` when you want to reuse buffers across
-frames; use the higher‑level helpers when you prefer simplicity over
-fine‑grained control.
+`Detector` owns the pyramid and upscale scratch buffers, so calling
+`detector.detect(&img)` (or `detector.detect_u8(...)`) repeatedly does
+not re-allocate. Build the detector once at start-up and feed
+successive frames to it.
 
 ---
 

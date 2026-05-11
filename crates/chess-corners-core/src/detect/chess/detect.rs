@@ -1,9 +1,9 @@
 //! Corner detection utilities built on top of the dense ChESS response map.
-use crate::descriptor::{corners_to_descriptors_with_method, Corner, CornerDescriptor};
+use super::response::chess_response_u8;
+use crate::detect::{Corner, CornerDescriptor};
 use crate::imageview::ImageView;
-use crate::orientation::OrientationMethod;
+use crate::orientation::{describe_corners, OrientationMethod};
 use crate::refine::{CornerRefiner, RefineContext, RefineStatus, Refiner};
-use crate::response::chess_response_u8;
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "tracing")]
@@ -38,7 +38,7 @@ pub fn find_corners_u8_with_refiner(
         ImageView::from_u8_slice(w, h, img).expect("image dimensions must match buffer length");
     let corners = detect_corners_from_response_with_refiner(&resp, params, Some(image), refiner);
     let desc_radius = params.descriptor_ring_radius();
-    corners_to_descriptors_with_method(img, w, h, desc_radius, corners, OrientationMethod::RingFit)
+    describe_corners(img, w, h, desc_radius, corners, OrientationMethod::RingFit)
 }
 
 /// Core detector: run NMS + refinement on an existing response map.

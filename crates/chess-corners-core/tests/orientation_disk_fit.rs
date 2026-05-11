@@ -133,6 +133,99 @@ fn disk_fit_lazy_gate_matches_ring_fit_on_clean_orthogonal() {
 // F8-3: Border fallback
 // ---------------------------------------------------------------------------
 
+/// Smallest signed angular distance between `a` and `b` modulo π,
+/// returned as an unsigned magnitude in `[0, π/2]`.
+fn line_err_mod_pi(a: f32, b: f32) -> f32 {
+    let d = (a - b).rem_euclid(PI);
+    d.min(PI - d)
+}
+
+// ---------------------------------------------------------------------------
+// F8-4: Canonical convention parity between RingFit and DiskFit.
+//
+// `OrientationMethod::DiskFit` and `OrientationMethod::RingFit` MUST place
+// `axes[0]` and `axes[1]` on the same canonical branch. Downstream
+// consumers (e.g. calibration-target BFS edge gates that compare slot
+// parity between cardinal grid neighbours) require this invariant: if
+// the two methods disagreed by an antipodal flip on the same corner,
+// the BFS would reject the corner spuriously.
+//
+// The test walks a representative sweep of corner orientations covering
+// the full directional cycle (axis-0 from 0° to 170° in 10° steps; axis
+// separation in {60°, 90°, 120°}) and asserts:
+//
+// 1. Both methods recover the same unordered axis set (mod π) within a
+//    coarse 0.20 rad tolerance — guards against either method failing
+//    catastrophically.
+// 2. `axes[0]` (mod π) agrees between methods within 0.10 rad — guards
+//    against the antipodal flip the regression test was added to catch.
+//
+// History: a previous canonicalisation in
+// `orientation/ring_fit/solver.rs::canonicalize` rotated `θ₁` by `π`
+// without flipping the amplitude when the input pair arrived in
+// descending order, silently re-labelling the dark sector and producing
+// `axes[0]/axes[1]` swaps relative to RingFit. The fix routes the
+// short-arc selection through a model-preserving swap.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn canonical_axes_match_across_methods() {
+    let size = 41usize;
+    let cx = 20.0f32;
+    let cy = 20.0f32;
+    let radius = 5u32;
+    let width = 0.7f32;
+
+    // Axis-0 sweeps the full directional cycle (mod π); a few separations
+    // probe the off-orthogonal regime where the disk fit is most active.
+    let mut violations: Vec<String> = Vec::new();
+    let mut total = 0usize;
+    for sep_deg in [60.0_f32, 90.0, 120.0] {
+        for axis0_deg in (0..180).step_by(10) {
+            let theta0 = (axis0_deg as f32).to_radians();
+            let theta1 = theta0 + sep_deg.to_radians();
+            let img = synthetic_corner(size, theta0, theta1, width);
+
+            let ring =
+                fit_axes_at_point(&img, size, size, cx, cy, radius, OrientationMethod::RingFit);
+            let disk =
+                fit_axes_at_point(&img, size, size, cx, cy, radius, OrientationMethod::DiskFit);
+
+            // (1) Same unordered axis set (mod π).
+            let set_err = pair_err(disk.theta1, disk.theta2, ring.theta1, ring.theta2);
+            if set_err > 0.20 {
+                violations.push(format!(
+                    "set: axis0={axis0_deg}° sep={sep_deg}° \
+                     ring=({:.3},{:.3}) disk=({:.3},{:.3}) err={:.3} rad",
+                    ring.theta1, ring.theta2, disk.theta1, disk.theta2, set_err
+                ));
+                total += 1;
+                continue;
+            }
+
+            // (2) axes[0] agrees mod π — the slot-parity invariant.
+            let axis0_err = line_err_mod_pi(ring.theta1, disk.theta1);
+            if axis0_err > 0.10 {
+                violations.push(format!(
+                    "axis0 flip: axis0={axis0_deg}° sep={sep_deg}° \
+                     ring.theta1={:.3} disk.theta1={:.3} err={:.3} rad",
+                    ring.theta1, disk.theta1, axis0_err
+                ));
+            }
+            total += 1;
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{} of {} corners had RingFit/DiskFit canonical convention \
+         disagreements:\n{}",
+        violations.len(),
+        total,
+        violations.join("\n"),
+    );
+}
+
 /// A corner placed near the image border (4, 4) prevents disk extraction
 /// (the support disk clips outside the image). `DiskFit` must fall
 /// back to `RingFit` output bit-identically.

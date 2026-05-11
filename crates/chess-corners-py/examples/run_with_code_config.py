@@ -28,18 +28,20 @@ def load_grayscale_image(path: Path) -> np.ndarray:
 
 
 def build_chess_config() -> chess_corners.ChessConfig:
-    cfg = chess_corners.ChessConfig()
+    cfg = chess_corners.ChessConfig.multiscale()
 
-    cfg.detector_mode = chess_corners.DetectorMode.BROAD
+    cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
+    cfg.strategy.chess.nms_radius = 3
+    cfg.strategy.chess.min_cluster_size = 1
     cfg.descriptor_mode = chess_corners.DescriptorMode.CANONICAL
-    cfg.threshold_mode = chess_corners.ThresholdMode.ABSOLUTE
-    cfg.threshold_value = 0.5
-    cfg.nms_radius = 3
-    cfg.min_cluster_size = 1
-    cfg.pyramid_levels = 3
-    cfg.pyramid_min_size = 96
-    cfg.refinement_radius = 4
+    cfg.threshold = chess_corners.Threshold.absolute(0.5)
     cfg.merge_radius = 2.5
+
+    ms = chess_corners.MultiscaleParams()
+    ms.pyramid_levels = 3
+    ms.pyramid_min_size = 96
+    ms.refinement_radius = 4
+    cfg.strategy.chess.multiscale = ms
 
     cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
 
@@ -80,7 +82,7 @@ def main() -> int:
     args = parse_args()
     cfg = build_chess_config()
     image = load_grayscale_image(args.image)
-    corners = chess_corners.find_chess_corners(image, cfg)
+    corners = chess_corners.Detector(cfg).detect(image)
 
     print(f"image: {args.image}")
     print(f"image shape: height={image.shape[0]}, width={image.shape[1]}")

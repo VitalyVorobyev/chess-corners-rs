@@ -19,14 +19,15 @@ image = "0.25"          # optional, for GrayImage integration
 ### 2.1.1 Single-scale ChESS detection from an image file
 
 ```rust
-use chess_corners::{find_chess_corners_image, ChessConfig};
+use chess_corners::{ChessConfig, Detector};
 use image::io::Reader as ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
     let cfg = ChessConfig::single_scale();  // ChESS detector, defaults
-    let corners = find_chess_corners_image(&img, &cfg);
+    let mut detector = Detector::new(cfg)?;
+    let corners = detector.detect(&img)?;
 
     println!("found {} corners", corners.len());
     Ok(())
@@ -39,15 +40,20 @@ per-corner intensity-fit metadata (Part I §1.4).
 ### 2.1.2 Radon detector instead of ChESS
 
 ```rust
-use chess_corners::{find_chess_corners_image, ChessConfig};
+use chess_corners::{ChessConfig, Detector};
 
 let cfg = ChessConfig::radon();           // Radon detector, paper defaults
-let corners = find_chess_corners_image(&img, &cfg);
+let mut detector = Detector::new(cfg)?;
+let corners = detector.detect(&img)?;
 ```
 
-`ChessConfig::radon()` sets `detector_mode = Radon` and populates
-`radon_detector: RadonDetectorParams` with the paper's published
-defaults. The output type is the same `Vec<CornerDescriptor>`.
+`ChessConfig::radon()` selects `DetectionStrategy::Radon` and populates
+`RadonStrategy` with the paper's published defaults. The output type is
+the same `Vec<CornerDescriptor>`.
+
+Pick Radon when ChESS's 16-sample ring fails — heavy motion blur, strong
+defocus, low contrast, or cells smaller than roughly `2·ring_radius`.
+For throughput, ChESS is faster; see [Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon).
 
 ### 2.1.3 Swapping the subpixel refiner
 
@@ -69,15 +75,16 @@ If your pixels come from a camera SDK, FFI, or GPU pipeline, skip
 the `image` crate and feed a packed `&[u8]`:
 
 ```rust
-use chess_corners::{find_chess_corners_u8, ChessConfig, ThresholdMode};
+use chess_corners::{ChessConfig, Detector, Threshold};
 
-fn detect(img: &[u8], width: u32, height: u32) {
+fn detect(img: &[u8], width: u32, height: u32) -> Result<(), chess_corners::ChessError> {
     let mut cfg = ChessConfig::single_scale();
-    cfg.threshold_mode = ThresholdMode::Relative;
-    cfg.threshold_value = 0.2;
+    cfg.threshold = Threshold::Relative(0.2);
 
-    let corners = find_chess_corners_u8(img, width, height, &cfg);
+    let mut detector = Detector::new(cfg)?;
+    let corners = detector.detect_u8(img, width, height)?;
     println!("found {} corners", corners.len());
+    Ok(())
 }
 ```
 
@@ -109,27 +116,28 @@ for the fit and the polarity convention.
 
 ### 2.1.6 Key `ChessConfig` fields
 
-The config is intentionally flat; all scalar knobs live at the top
-level, only the refiner is nested:
+`ChessConfig` groups detector-specific parameters under a `strategy`
+enum and shares common fields at the top level:
 
 | Field                 | Meaning                                                                                          |
 |-----------------------|--------------------------------------------------------------------------------------------------|
-| `detector_mode`       | `Canonical` / `Broad` / `Radon`. `Canonical` and `Broad` pick ChESS ring widths; `Radon` switches detector entirely. |
+| `strategy`            | `DetectionStrategy::Chess(ChessStrategy)` or `DetectionStrategy::Radon(RadonStrategy)`. Detector-specific parameters (ring width, NMS, multiscale) live inside the variant. |
+| `threshold`           | `Threshold::Absolute(f32)` or `Threshold::Relative(f32)`. `Absolute(0.0)` encodes the ChESS paper's `R > 0` contract; `Relative(0.01)` is the Radon preset default. |
 | `descriptor_mode`     | `FollowDetector`, `Canonical`, or `Broad`. Lets you run detection at one ring radius and descriptor sampling at another. |
-| `threshold_mode`      | `Absolute` or `Relative`. Applied to the detector response.                                       |
-| `threshold_value`     | Threshold number, interpreted per `threshold_mode`.                                              |
-| `nms_radius`          | Non-maximum-suppression window half-radius.                                                      |
-| `min_cluster_size`    | Minimum number of positive-response neighbors inside the NMS window.                             |
 | `refiner`             | Nested refiner selection + per-refiner configs (see Part V).                                      |
-| `pyramid_levels`      | `1` means single-scale; `> 1` enables the coarse-to-fine multiscale pipeline.                    |
-| `pyramid_min_size`    | Smallest pyramid level dimension allowed during construction.                                    |
-| `refinement_radius`   | ROI size (in coarse-level pixels) used when refining coarse seeds at base resolution.            |
-| `merge_radius`        | Duplicate-suppression distance (in base-level pixels) for the final merge step.                  |
-| `radon_detector`      | Full `RadonDetectorParams` struct, only consulted when `detector_mode = Radon`.                   |
+| `merge_radius`        | Duplicate-suppression distance (in base-level pixels) for the final merge step. Honoured by both detectors. |
+
+Inside `ChessStrategy`:
+
+| Field               | Meaning                                                                               |
+|---------------------|---------------------------------------------------------------------------------------|
+| `ring`              | `ChessRing::Canonical` or `ChessRing::Broad` — ring width used for ChESS response.   |
+| `nms_radius`        | Non-maximum-suppression window half-radius (input pixels).                            |
+| `min_cluster_size`  | Minimum positive-response neighbors inside the NMS window.                            |
+| `multiscale`        | `Some(MultiscaleParams { pyramid_levels, pyramid_min_size, refinement_radius })` to enable coarse-to-fine; `None` runs single-scale. |
 
 Presets: `ChessConfig::single_scale()`, `ChessConfig::multiscale()`,
-`ChessConfig::radon()`, `ChessConfig::radon_peak()` (multiscale +
-`RefinementMethod::RadonPeak`).
+`ChessConfig::radon()`.
 
 ## 2.2 Python
 
@@ -146,14 +154,16 @@ import chess_corners
 img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.ChessConfig.multiscale()
+cfg.threshold = chess_corners.Threshold.relative(0.15)
 cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
 
-corners = chess_corners.find_chess_corners(img, cfg)
+detector = chess_corners.Detector(cfg)
+corners = detector.detect(img)
 print(corners.shape)   # (N, 9)
 ```
 
-`find_chess_corners` accepts a 2D `uint8` array shaped `(H, W)` and
-returns a `float32` array with stride 9 per corner:
+`Detector(cfg).detect(image)` accepts a 2D `uint8` array shaped
+`(H, W)` and returns a `float32` array with stride 9 per corner:
 
 ```
 [x, y, response, contrast, fit_rms,
@@ -170,8 +180,9 @@ The Radon detector is selected the same way as in Rust:
 cfg = chess_corners.ChessConfig.radon()
 ```
 
-If the wheel was built with `ml-refiner`, the ML entry point is
-`chess_corners.find_chess_corners_with_ml(img, cfg)`.
+If the wheel was built with `ml-refiner`, the ML pipeline is reached
+through the same `Detector(cfg).detect(img)` call once
+`cfg.refiner.kind` is set to the `Ml` variant.
 
 ## 2.3 JavaScript / WebAssembly
 
@@ -188,8 +199,8 @@ from a web app:
 import init, { ChessDetector } from 'chess-corners-wasm';
 
 await init();
-const detector = new ChessDetector();
-detector.set_pyramid_levels(3);
+const detector = new ChessDetector();          // defaults to multiscale ChESS
+detector.set_pyramid_levels(3);               // sets ChessStrategy.multiscale levels
 
 // From a canvas (webcam frame, loaded image, etc.)
 const imageData = ctx.getImageData(0, 0, width, height);
@@ -204,9 +215,12 @@ for (let i = 0; i < corners.length; i += 9) {
 const response = detector.response_rgba(imageData.data, width, height);
 ```
 
-`ChessDetector` exposes setters for the same fields as `ChessConfig`,
-plus `set_detector_mode('canonical' | 'broad' | 'radon')` and
-tuning setters for each refiner. See
+`ChessDetector` exposes convenience setters for the most common
+`ChessConfig` fields. The strategy is switched with
+`detector.set_detector_mode("chess")` or `"radon"`, or by constructing
+a typed `ChessConfig` (via `ChessConfig.singleScale()` /
+`.multiscale()` / `.radon()`, or by editing the nested `strategy`
+object) and passing it to `ChessDetector.withConfig(cfg)`. See
 `crates/chess-corners-wasm/README.md` for the full setter list.
 
 ## 2.4 CLI
@@ -219,8 +233,8 @@ cargo run -p chess-corners --release --bin chess-corners -- \
 The CLI:
 
 - Loads the image at the config's `image` field.
-- Picks single-scale or multiscale from `pyramid_levels`.
-- Picks ChESS or Radon from `detector_mode`.
+- Picks single-scale or multiscale from `strategy.chess.multiscale`.
+- Picks ChESS or Radon from `strategy` (the top-level variant).
 - Picks the refiner from the nested `refiner` block.
 - Writes a JSON summary and a PNG overlay with one mark per corner.
 
@@ -245,14 +259,20 @@ Overlay examples on the sample images in `testdata/`:
 
 The ML refiner is a separate, optional code path. Enable it by
 building with `--features ml-refiner` (Rust) or by installing a
-wheel built with the same feature (Python), then call the ML
-entry points:
+wheel built with the same feature (Python), then pick the ML
+variant on the refiner config:
 
 ```rust
-use chess_corners::{find_chess_corners_image_with_ml, ChessConfig};
+# #[cfg(feature = "ml-refiner")]
+# {
+use chess_corners::{ChessConfig, Detector, RefinementMethod};
 
-let cfg = ChessConfig::multiscale();
-let corners = find_chess_corners_image_with_ml(&img, &cfg);
+let mut cfg = ChessConfig::multiscale();
+cfg.refiner.kind = RefinementMethod::Ml;
+
+let mut detector = Detector::new(cfg).unwrap();
+let corners = detector.detect(&img).unwrap();
+# }
 ```
 
 The ML path:
@@ -271,22 +291,22 @@ is not a direct replacement for RadonPeak: on clean and lightly
 blurred data RadonPeak is more accurate; ML wins on noise-heavy
 scenes.
 
-Pairing the ML refiner with `detector_mode = Radon` is not supported:
+Pairing the ML refiner with `DetectionStrategy::Radon` is not supported:
 the Radon detector does its own subpixel fit and does not emit the
 integer seeds the ML refiner expects, so the facade falls back to
 the Radon detector's native output in that case.
 
 ## 2.6 Radon heatmap (visualization)
 
-The whole-image Radon detector (`detector_mode = "radon"`) computes a
-dense `(max_α S_α − min_α S_α)²` response heatmap as an intermediate
-step. The heatmap is exposed across all wrappers for visualization,
-debugging, and downstream tooling — useful when tuning
-`ray_radius`, `image_upsample`, or the threshold floor.
+The Radon detector computes a dense `(max_α S_α − min_α S_α)²`
+response heatmap as an intermediate step. The heatmap is exposed
+across all wrappers for visualization, debugging, and downstream
+tooling — useful when tuning `ray_radius`, `image_upsample`, or the
+threshold floor.
 
 The heatmap is returned at *working resolution*: the input is
 optionally upscaled (`ChessConfig.upscale`) and then internally
-supersampled by the Radon detector (`radon_detector.image_upsample`,
+supersampled by the Radon detector (`RadonStrategy.image_upsample`,
 default 2). The working-to-input scale factor is therefore
 `upscale_factor * image_upsample`. Multiply input-pixel coordinates by
 this factor to land on heatmap pixels.
@@ -323,7 +343,7 @@ import init, { ChessDetector } from 'chess-corners-wasm';
 
 await init();
 const det = new ChessDetector();
-det.set_detector_mode('radon');
+det.use_radon();   // switch strategy to Radon
 
 const heatmap = det.radon_heatmap(grayPixels, width, height);
 const w = det.radon_heatmap_width();
@@ -333,8 +353,8 @@ console.log('heatmap', w, 'x', h, 'scale', scale);
 ```
 
 The heatmap is independent from corner detection: calling it does not
-require the detector mode to actually be `"radon"`, and it does not
-return corners.
+require the active strategy to be Radon, and it does not return
+corners.
 
 ---
 

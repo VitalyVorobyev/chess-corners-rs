@@ -19,8 +19,8 @@
 //! ```
 
 use chess_corners::{
-    find_chess_corners_u8, find_chess_corners_u8_with_refiner, CenterOfMassConfig, ChessConfig,
-    ForstnerConfig, RadonPeakConfig, RefinerKind, SaddlePointConfig,
+    CenterOfMassConfig, ChessConfig, Detector, ForstnerConfig, RadonPeakConfig, RefinementMethod,
+    RefinerConfig, SaddlePointConfig,
 };
 use image::ImageReader;
 use std::env;
@@ -62,13 +62,19 @@ fn parse_refiner(s: &str) -> Result<RefinerSel, String> {
     }
 }
 
-fn refiner_kind(sel: RefinerSel) -> RefinerKind {
-    match sel {
-        RefinerSel::CenterOfMass => RefinerKind::CenterOfMass(CenterOfMassConfig::default()),
-        RefinerSel::Forstner => RefinerKind::Forstner(ForstnerConfig::default()),
-        RefinerSel::Saddle => RefinerKind::SaddlePoint(SaddlePointConfig::default()),
-        RefinerSel::Radon => RefinerKind::RadonPeak(RadonPeakConfig::default()),
-    }
+fn refiner_config(sel: RefinerSel) -> RefinerConfig {
+    let mut cfg = RefinerConfig::default();
+    cfg.kind = match sel {
+        RefinerSel::CenterOfMass => RefinementMethod::CenterOfMass,
+        RefinerSel::Forstner => RefinementMethod::Forstner,
+        RefinerSel::Saddle => RefinementMethod::SaddlePoint,
+        RefinerSel::Radon => RefinementMethod::RadonPeak,
+    };
+    cfg.center_of_mass = CenterOfMassConfig::default();
+    cfg.forstner = ForstnerConfig::default();
+    cfg.saddle_point = SaddlePointConfig::default();
+    cfg.radon_peak = RadonPeakConfig::default();
+    cfg
 }
 
 struct Args {
@@ -129,17 +135,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (w, h) = (img.width(), img.height());
     let data = img.into_raw();
 
-    let cfg = match args.mode {
+    let mut cfg = match args.mode {
         Mode::Chess => ChessConfig::multiscale(),
         Mode::Radon => ChessConfig::radon(),
     };
-    let kind = refiner_kind(args.refiner);
+    if matches!(args.mode, Mode::Chess) {
+        cfg.refiner = refiner_config(args.refiner);
+    }
+    let mut detector = Detector::new(cfg).unwrap();
 
     // Warm up: pages, caches, and any one-time allocations.
-    let warm = match args.mode {
-        Mode::Chess => find_chess_corners_u8_with_refiner(&data, w, h, &cfg, &kind).unwrap(),
-        Mode::Radon => find_chess_corners_u8(&data, w, h, &cfg).unwrap(),
-    };
+    let warm = detector.detect_u8(&data, w, h).unwrap();
     println!(
         "warm: {} corners in {}x{} ({:?} mode, refiner={:?})",
         warm.len(),
@@ -152,10 +158,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let start = Instant::now();
     let mut total = 0usize;
     for _ in 0..args.iters {
-        let corners = match args.mode {
-            Mode::Chess => find_chess_corners_u8_with_refiner(&data, w, h, &cfg, &kind).unwrap(),
-            Mode::Radon => find_chess_corners_u8(&data, w, h, &cfg).unwrap(),
-        };
+        let corners = detector.detect_u8(&data, w, h).unwrap();
         total = total.wrapping_add(corners.len());
     }
     let elapsed = start.elapsed();

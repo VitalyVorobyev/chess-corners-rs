@@ -222,6 +222,24 @@ drop A — even if it has been there for a while. Diagnostic-only paths
 
 ## Subagent-driven workflow
 
+**Read [`docs/subagent-workflow.md`](docs/subagent-workflow.md)
+first.** It is the canonical guide for when and how to dispatch work
+in this workspace. Two named agents live under `.claude/agents/`:
+
+- **`quick-implementer`** (Sonnet) — specifiable mechanical work:
+  re-exports, CLI plumbing, applying a pre-described fix, running
+  `cargo fmt/clippy/test/doc`, `pytest`, `wasm-pack build`, bench
+  matrix orchestration, JSON-to-table aggregation.
+- **`deep-implementer`** (Opus) — work where numerical / geometric
+  reasoning is on the critical path, the fix is not specifiable in
+  advance, the diff has to be defended, or multiple files / crates
+  have to change in coordinated ways.
+
+When in doubt, default to `quick-implementer` if you can write the
+brief without phrases like "figure out", "diagnose", or "decide".
+Stay in main context only when the decision IS the work, the user is
+interactively steering, or the slice is two minutes of editing.
+
 **Benchmark and algorithm-tuning work** (e.g. orientation-fit studies,
 refiner comparisons, large parameter sweeps) is delegated to subagents to
 keep the main context clean. The pattern:

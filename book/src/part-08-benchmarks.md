@@ -203,9 +203,12 @@ Observations:
 
 The Duda–Frese Radon path (`ChessConfig::radon()`) is an alternative
 detector for frames where ChESS's 16-sample ring fails — heavy
-defocus, motion blur, or low-contrast scenes. It is single-scale by
-construction (the SAT-based response is already O(1) per pixel), so
-the multiscale columns in §7.7 do not apply.
+defocus, motion blur, or low-contrast scenes. It is **single-scale
+today**: the symmetric coarse-to-fine extension for Radon has not been
+written yet, even though the SAT-based response is asymptotically O(1)
+per pixel. In practice the Radon pipeline is several times slower than
+the ChESS pipeline at the same resolution on this workload — pick it
+for **robustness on hostile imagery**, not for throughput.
 
 Wall times on the same three test images, release build, averaged
 over 10 runs (milliseconds), 8-core M-class CPU:
@@ -304,7 +307,6 @@ per frame; our detector takes ~4 ms per frame — a ~30× speedup.
 Build with the `tracing` feature to emit JSON spans for each pipeline
 step. Named spans:
 
-- `find_chess_corners` — total detect-and-refine wall time.
 - `single_scale` — single-scale path body.
 - `coarse_detect` — response computation + candidate extraction.
 - `refine` — per-seed refinement (carries `seeds` count).
@@ -322,8 +324,9 @@ When a frame returns fewer corners than expected:
 
 1. Check the `coarse_detect` span's candidate count. If it is zero
    or very low, the detector failed to seed and no refinement ran.
-   Consider switching `detector_mode` (ChESS ↔ Radon) or lowering
-   `threshold_value`.
+   Consider switching `ChessConfig::strategy` (ChESS ↔ Radon) or
+   lowering the threshold (`cfg.threshold = Threshold::Relative(_)` or
+   `Threshold::Absolute(_)`).
 2. If seeds are present but most `refine` results are rejected,
    the refiner's thresholds are firing. Swap via
    `ChessConfig.refiner.kind` or relax the specific rejection
@@ -337,35 +340,33 @@ When a frame returns fewer corners than expected:
 ### Real-time loop, 30+ fps
 
 ```rust
-use chess_corners::{
-    find_chess_corners_buff_with_refiner, ChessConfig, PyramidBuffers, RefinementMethod,
-};
+use chess_corners::{ChessConfig, Detector, RefinementMethod};
 
-let mut buffers = PyramidBuffers::default();
 let mut cfg = ChessConfig::multiscale();
 cfg.refiner.kind = RefinementMethod::SaddlePoint;  // stable and fast
+let mut detector = Detector::new(cfg)?;
 
 loop {
     let frame = next_frame();  // your camera source
-    let corners = find_chess_corners_buff_with_refiner(
-        frame, &cfg, &mut buffers, &cfg.refiner.to_refiner_kind());
+    let corners = detector.detect(&frame)?;
     // ...
 }
 ```
 
-Reusing `PyramidBuffers` avoids per-frame allocation. With
+`Detector` reuses pyramid scratch buffers across frames; with
 `simd + rayon` this stays under 2 ms on 1080p.
 
 ### Offline calibration, maximum accuracy
 
 ```rust
-use chess_corners::{find_chess_corners_image, ChessConfig, RefinementMethod};
+use chess_corners::{ChessConfig, Detector, RefinementMethod};
 
 let mut cfg = ChessConfig::multiscale();
 cfg.refiner.kind = RefinementMethod::RadonPeak;
 cfg.merge_radius = 2.0;
 
-let corners = find_chess_corners_image(&image, &cfg);
+let mut detector = Detector::new(cfg)?;
+let corners = detector.detect(&image)?;
 ```
 
 The extra 5–15 ms per frame is invisible in an offline run.
@@ -373,10 +374,15 @@ The extra 5–15 ms per frame is invisible in an offline run.
 ### Low-light / noise-heavy imagery
 
 ```rust
-use chess_corners::{find_chess_corners_image_with_ml, ChessConfig};
+# #[cfg(feature = "ml-refiner")]
+# {
+use chess_corners::{ChessConfig, Detector, RefinementMethod};
 
-let cfg = ChessConfig::multiscale();
-let corners = find_chess_corners_image_with_ml(&image, &cfg);
+let mut cfg = ChessConfig::multiscale();
+cfg.refiner.kind = RefinementMethod::Ml;
+let mut detector = Detector::new(cfg).unwrap();
+let corners = detector.detect(&image).unwrap();
+# }
 ```
 
 Requires the `ml-refiner` feature. The ML path batches candidates
@@ -385,10 +391,11 @@ internally; effective cost on a 100-corner frame is ~30 ms.
 ### Small cells or heavy defocus — switch detector
 
 ```rust
-use chess_corners::{find_chess_corners_image, ChessConfig};
+use chess_corners::{ChessConfig, Detector};
 
 let cfg = ChessConfig::radon();  // Radon detector with paper defaults
-let corners = find_chess_corners_image(&image, &cfg);
+let mut detector = Detector::new(cfg)?;
+let corners = detector.detect(&image)?;
 ```
 
 The Radon detector remains selective on cells down to ~4 physical

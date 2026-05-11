@@ -2,18 +2,14 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 //! Core primitives for computing ChESS responses and extracting subpixel corners.
 //!
-//! # Modules
+//! The crate is organized along the three orthogonal axes the
+//! detector pipeline composes:
 //!
 //! | Module | Description |
 //! |--------|-------------|
-//! | [`response`] | Dense ChESS response computation on 8‑bit grayscale images using a 16‑sample ring. |
-//! | [`detect`] | Thresholding, non‑maximum suppression (NMS), cluster filtering, and corner-to-descriptor pipeline. |
-//! | [`refine`] | Pluggable subpixel refinement trait [`CornerRefiner`] with three built-in backends: center-of-mass, Förstner, and saddle-point. |
-//! | [`refine_radon`] | Radon-projection refiner [`RadonPeakRefiner`]: fits Radon peaks along candidate axes for robust subpixel correction under blur and low contrast. |
-//! | [`radon`] | Low-level Radon primitives: axial-sum accumulators, box-blur helpers, and parabolic / Gaussian peak-fit utilities used by both the refiner and the whole-image detector. |
-//! | [`radon_detector`] | Whole-image Radon-based corner detector using integral-image (SAT) ray sums; [`radon_response_u8`] and [`detect_corners_from_radon`] are the main entry points. |
-//! | [`descriptor`] | Corner descriptor [`CornerDescriptor`] with subpixel position, two-axis orientation, per-axis 1σ uncertainty, contrast, and fit residual. |
-//! | [`ring`] | Ring offset tables for the 16-point ChESS rings (r=5 canonical and r=10 broad). |
+//! | [`detect`] | Feature-detection pipelines. Two independent families share a common output type: [`detect::chess`] (ChESS response + NMS) and [`detect::radon`] (Radon SAT + peak detection). |
+//! | [`refine`] | Pluggable subpixel-refinement backends. The [`refine::CornerRefiner`] trait dispatches across center-of-mass, Förstner, saddle-point, and Radon-peak refiners. |
+//! | [`orientation`] | Two-axis orientation fit (`OrientationMethod::RingFit` ring fit, `OrientationMethod::DiskFit` full-disk crossing-line) shared between detectors. The [`orientation::describe_corners`] entry point produces [`CornerDescriptor`] values with subpixel position, two-axis orientation, per-axis 1σ uncertainty, contrast, and fit residual. |
 //! | [`imageview`] | Zero-copy [`ImageView`] into a borrowed grayscale buffer, with optional `origin` offset for pyramid/ROI support. |
 //!
 //! Most users should work through the `chess-corners` facade crate rather than
@@ -48,35 +44,28 @@
 //! The ChESS idea is proposed in Bennett, Lasenby, *ChESS: A Fast and
 //! Accurate Chessboard Corner Detector*, CVIU 2014.
 
-pub mod descriptor;
 pub mod detect;
 pub mod imageview;
 pub mod orientation;
-pub mod radon;
-pub mod radon_detector;
 pub mod refine;
-pub mod refine_radon;
-pub mod response;
-pub mod ring;
 
-use crate::ring::RingOffsets;
+use crate::detect::chess::ring::RingOffsets;
 use serde::{Deserialize, Serialize};
 
-pub use crate::descriptor::{AxisEstimate, CornerDescriptor};
-pub use crate::orientation::{
-    fit_axes_at_point, fit_axes_from_samples, AxisFitResult, OrientationMethod,
-};
-pub use crate::radon::{fit_peak_frac, PeakFitMode};
-pub use crate::radon_detector::{
+pub use crate::detect::radon::primitives::{fit_peak_frac, PeakFitMode};
+pub use crate::detect::radon::{
     detect_corners_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
     RadonResponseView, SatElem,
 };
+pub use crate::detect::{AxisEstimate, Corner, CornerDescriptor};
+pub use crate::orientation::{
+    fit_axes_at_point, fit_axes_from_samples, AxisFitResult, OrientationMethod,
+};
 pub use crate::refine::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
-    RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind, SaddlePointConfig,
-    SaddlePointRefiner,
+    RadonPeakConfig, RadonPeakRefiner, RefineContext, RefineResult, RefineStatus, Refiner,
+    RefinerKind, SaddlePointConfig, SaddlePointRefiner,
 };
-pub use crate::refine_radon::{RadonPeakConfig, RadonPeakRefiner};
 pub use imageview::ImageView;
 /// Tunable parameters for the ChESS response computation and corner detection.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -102,8 +91,8 @@ pub struct ChessParams {
     pub refiner: RefinerKind,
     /// Orientation-fit method used to estimate the two grid axes at
     /// each detected corner. Default [`OrientationMethod::RingFit`]
-    /// fits the parametric two-axis model with calibrated per-axis
-    /// uncertainties.
+    /// fits the parametric two-axis model with robust seeding and
+    /// calibrated per-axis uncertainties.
     #[serde(default)]
     pub orientation_method: OrientationMethod,
 }

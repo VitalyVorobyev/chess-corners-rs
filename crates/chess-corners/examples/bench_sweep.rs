@@ -37,12 +37,12 @@ use std::time::Instant;
 
 use chess_corners::ImageView;
 use chess_corners_core::{
+    detect::chess::response::chess_response_u8,
     refine::{
         CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
-        RefineContext, RefineStatus, SaddlePointConfig, SaddlePointRefiner,
+        RadonPeakConfig, RadonPeakRefiner, RefineContext, RefineStatus, SaddlePointConfig,
+        SaddlePointRefiner,
     },
-    refine_radon::{RadonPeakConfig, RadonPeakRefiner},
-    response::chess_response_u8,
     ChessParams, ResponseMap,
 };
 
@@ -412,6 +412,7 @@ fn run_condition(
         }
     }
 
+    #[cfg_attr(not(feature = "ml-refiner"), allow(unused_mut))]
     let mut rows = vec![
         ("CenterOfMass", b_center.stats()),
         ("Forstner", b_forstner.stats()),

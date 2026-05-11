@@ -199,15 +199,15 @@ The main stages are:
 1. **Thresholding** – we reject responses that are too small to be
    meaningful. The paper's contract is "any strictly positive `R` is
    a corner candidate", which is what the default settings encode:
-   - The default is an absolute threshold at `0.0` combined with a
-     strict `R > thr` comparison, i.e. accept iff `R > 0`.
-   - Callers can opt into a relative threshold (`threshold_rel`,
-     expressed as a fraction of the maximum response in the image)
-     by setting `threshold_mode = "relative"` — useful as an
-     adaptive policy on high‑contrast scenes where the raw positive
-     response floor contains sensor noise.
-   - Or tune the absolute threshold upward directly to suppress
-     flat‑region noise without committing to a scene‑max policy.
+   - The default is `Threshold::Absolute(0.0)` combined with a strict
+     `R > thr` comparison, i.e. accept iff `R > 0`.
+   - Callers can opt into `Threshold::Relative(frac)` (a fraction of
+     the maximum response in the current frame) — useful as an adaptive
+     policy on high‑contrast scenes where the raw positive‑response
+     floor contains sensor noise.
+   - Or tune the absolute threshold upward directly with
+     `Threshold::Absolute(value)` to suppress flat‑region noise without
+     committing to a scene‑max policy.
 2. **Non‑maximum suppression (NMS)** – in a window of radius
    `nms_radius` around each pixel, we keep only local maxima and
    suppress weaker neighbors.
@@ -260,7 +260,7 @@ The fit yields both local grid axes **independently**, their per-axis
 fit residual — all in one pass.
 
 Both the ChESS detector and the Radon detector produce
-`CornerDescriptor` values via the same `corners_to_descriptors`
+`CornerDescriptor` values via the same `describe_corners`
 function, so everything in this section applies to both pipelines.
 
 ### 3.4.1 `CornerDescriptor`
@@ -386,12 +386,13 @@ Practically, `sigma` is useful for:
 The function:
 
 ```rust
-pub fn corners_to_descriptors(
+pub fn describe_corners(
     img: &[u8],
     w: usize,
     h: usize,
     radius: u32,
     corners: Vec<Corner>,
+    method: OrientationMethod,
 ) -> Vec<CornerDescriptor>
 ```
 
@@ -412,10 +413,10 @@ optimisation or topology reasoning at this stage.
 You get `CornerDescriptor` values when you use the high‑level APIs:
 
 - `chess-corners-core` users can run the response and detector
-  stages manually and then call `corners_to_descriptors_with_method`.
+  stages manually and then call `orientation::describe_corners`.
 - `chess-corners` users get `Vec<CornerDescriptor>` directly from
-  helpers such as `find_chess_corners_image`,
-  `find_chess_corners_u8`, or the multiscale APIs.
+  the [`Detector`](https://docs.rs/chess-corners) struct's `detect`,
+  `detect_u8`, or `detect_view` methods.
 
 For many tasks, `x`, `y`, and `response` are enough. When you need
 more insight into local structure — grid fitting, lens‑distortion

@@ -3,7 +3,7 @@
 //! Usage:
 //!   cargo run -p chess-corners --example multiscale_image -- path/to/image.png
 
-use chess_corners::ChessConfig;
+use chess_corners::{ChessConfig, ChessStrategy, DetectionStrategy, Detector, MultiscaleParams};
 use image::ImageReader;
 use std::env;
 use std::error::Error;
@@ -18,14 +18,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     let img = ImageReader::open(&img_path)?.decode()?.to_luma8();
 
     let mut cfg = ChessConfig::multiscale();
-    cfg.pyramid_min_size = 64;
+    if let DetectionStrategy::Chess(ChessStrategy {
+        multiscale: Some(ms),
+        ..
+    }) = &mut cfg.strategy
+    {
+        ms.pyramid_min_size = 64;
+    }
 
-    let corners = chess_corners::find_chess_corners_image(&img, &cfg)?;
+    let mut detector = Detector::new(cfg.clone())?;
+    let corners = detector.detect(&img)?;
     println!("image: {}", img_path.display());
-    println!(
-        "multiscale: levels={}, min_size={}, refinement_radius={}, merge_radius={}",
-        cfg.pyramid_levels, cfg.pyramid_min_size, cfg.refinement_radius, cfg.merge_radius
-    );
+    let ms = match &cfg.strategy {
+        DetectionStrategy::Chess(c) => c.multiscale,
+        _ => None,
+    };
+    if let Some(MultiscaleParams {
+        pyramid_levels,
+        pyramid_min_size,
+        refinement_radius,
+        ..
+    }) = ms
+    {
+        println!(
+            "multiscale: levels={pyramid_levels}, min_size={pyramid_min_size}, \
+             refinement_radius={refinement_radius}, merge_radius={}",
+            cfg.merge_radius
+        );
+    }
     println!("found {} corners", corners.len());
 
     Ok(())

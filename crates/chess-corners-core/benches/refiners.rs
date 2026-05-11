@@ -9,13 +9,13 @@
 //! resulting per-refiner numbers are directly comparable. Throughput
 //! is reported in seeds/second.
 
+use chess_corners_core::detect::chess::response::chess_response_u8;
 use chess_corners_core::detect::detect_corners_from_response;
 use chess_corners_core::imageview::ImageView;
+use chess_corners_core::refine::RadonPeakConfig;
 use chess_corners_core::refine::{
     CenterOfMassConfig, CornerRefiner, ForstnerConfig, RefineContext, SaddlePointConfig,
 };
-use chess_corners_core::refine_radon::RadonPeakConfig;
-use chess_corners_core::response::chess_response_u8;
 use chess_corners_core::{ChessParams, Refiner, RefinerKind, ResponseMap};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;

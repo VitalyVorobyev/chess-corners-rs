@@ -1,10 +1,10 @@
 //! Public Radon-detector convenience functions.
 //!
 //! The whole-image Duda-Frese Radon detector lives in
-//! [`chess_corners_core::radon_detector`]; the corner-detection path is
-//! exposed via [`crate::find_chess_corners_u8`] when
-//! [`ChessConfig::detector_mode`](crate::ChessConfig::detector_mode) is
-//! [`DetectorMode::Radon`](crate::DetectorMode::Radon). This module
+//! [`chess_corners_core::detect::radon`]; the corner-detection path is
+//! exposed via [`crate::Detector`] when the active
+//! [`ChessConfig::strategy`](crate::ChessConfig::strategy) is
+//! [`DetectionStrategy::Radon`](crate::DetectionStrategy::Radon). This module
 //! adds a thin wrapper that returns the dense Radon response heatmap
 //! (the intermediate `(max_α S_α − min_α S_α)²` image) for
 //! visualization and debugging.
@@ -14,7 +14,9 @@
 //! Use [`ResponseMap::width`] / [`ResponseMap::height`] for the actual
 //! dimensions; the working-to-input scale factor is
 //! `cfg.upscale.effective_factor() *
-//! cfg.radon_detector.image_upsample.clamp(1, 2)`.
+//! cfg.to_radon_detector_params().image_upsample.clamp(1, 2)` (the
+//! Radon-side factor lives in the [`RadonStrategy`](crate::RadonStrategy)
+//! payload of [`DetectionStrategy::Radon`](crate::DetectionStrategy)).
 
 use chess_corners_core::{radon_response_u8, ImageView, RadonBuffers, ResponseMap};
 
@@ -27,7 +29,7 @@ use crate::upscale::{self, UpscaleBuffers};
 ///
 /// `img` must be `width * height` bytes in row-major order. If
 /// `cfg.upscale` is enabled, the input is upscaled first (same path as
-/// [`crate::find_chess_corners_u8`]) and the heatmap is returned at the
+/// [`crate::Detector`]) and the heatmap is returned at the
 /// working resolution of the upscaled + radon-supersampled image.
 ///
 /// The heatmap data is row-major `f32`, length
@@ -57,16 +59,11 @@ pub fn radon_heatmap_u8(
     let view = ImageView::from_u8_slice(src_w, src_h, img).expect("dimensions were checked above");
 
     let factor = cfg.upscale.effective_factor();
+    let radon_params = cfg.to_radon_detector_params();
     let mut rb = RadonBuffers::new();
 
     if factor <= 1 {
-        let resp = radon_response_u8(
-            view.data,
-            view.width,
-            view.height,
-            &cfg.radon_detector,
-            &mut rb,
-        );
+        let resp = radon_response_u8(view.data, view.width, view.height, &radon_params, &mut rb);
         return Ok(resp.to_response_map());
     }
 
@@ -76,7 +73,7 @@ pub fn radon_heatmap_u8(
         upscaled.data,
         upscaled.width,
         upscaled.height,
-        &cfg.radon_detector,
+        &radon_params,
         &mut rb,
     );
     Ok(resp.to_response_map())
@@ -130,8 +127,9 @@ mod tests {
 
         let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
 
+        let radon_params = cfg.to_radon_detector_params();
         let mut rb = CoreRadonBuffers::new();
-        let view = core_radon(&img, w, h, &cfg.radon_detector, &mut rb);
+        let view = core_radon(&img, w, h, &radon_params, &mut rb);
         assert_eq!(map.width(), view.width());
         assert_eq!(map.height(), view.height());
         assert_eq!(map.data().len(), view.data().len());
@@ -144,7 +142,7 @@ mod tests {
         let (w, h) = (96usize, 72usize);
         let img = synthetic_board(w, h);
         let cfg = ChessConfig::radon();
-        let upsample = cfg.radon_detector.image_upsample.clamp(1, 2) as usize;
+        let upsample = cfg.to_radon_detector_params().image_upsample.clamp(1, 2) as usize;
 
         let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
         assert_eq!(map.width(), w * upsample);
@@ -170,7 +168,7 @@ mod tests {
         let img = synthetic_board(w, h);
         let mut cfg = ChessConfig::radon();
         cfg.upscale = UpscaleConfig::fixed(2);
-        let radon_upsample = cfg.radon_detector.image_upsample.clamp(1, 2) as usize;
+        let radon_upsample = cfg.to_radon_detector_params().image_upsample.clamp(1, 2) as usize;
 
         let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
         // Working resolution = input × upscale × radon_image_upsample.

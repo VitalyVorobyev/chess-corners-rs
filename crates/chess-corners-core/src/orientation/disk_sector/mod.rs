@@ -67,6 +67,19 @@ const LAZY_DISK_SEP_DEG_MIN: f32 = 70.0;
 const LAZY_DISK_SEP_DEG_MAX: f32 = 110.0;
 
 /// Full-disk estimator used by the public image-side dispatcher.
+///
+/// Returned axes follow the same canonical convention as
+/// [`crate::orientation::OrientationMethod::RingFit`]: `axes[0].angle ∈
+/// [0, π)`, `axes[1].angle ∈ (axes[0].angle, axes[0].angle + π)`, and
+/// the CCW arc `(axes[0], axes[1])` is a *dark* sector. The
+/// per-candidate scorers in [`score::score_pair`] and
+/// [`score::score_pair_cached`] route their raw `(theta, theta', amp)`
+/// through `ring_fit::canonicalize`, the single source of truth for the
+/// dark-sector / antipodal-pair selection rule. The OLS amplitude `A =
+/// dot / denom` carries the polarity information: a candidate pair
+/// rotated 90° relative to the true lines yields `A < 0`, which
+/// `canonicalize` resolves into the matching `axes[0]` slot of the
+/// ring fit.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn fit(
     img: &[u8],
@@ -163,8 +176,8 @@ fn lazy_disk_skip(fallback: &ring_fit::TwoAxisFit) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::descriptor::{ring_angles, sample_ring};
-    use crate::ring::ring_offsets;
+    use crate::detect::chess::ring::ring_offsets;
+    use crate::orientation::descriptor::{ring_angles, sample_ring};
 
     fn synthetic_corner(size: usize, theta0: f32, theta1: f32, width: f32) -> Vec<u8> {
         let cx = (size / 2) as f32;

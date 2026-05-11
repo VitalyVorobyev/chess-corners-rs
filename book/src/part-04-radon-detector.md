@@ -17,7 +17,8 @@ per pixel using summed-area tables.
 The Radon detector is a full alternative to ChESS — same input
 (`&[u8]` grayscale), same output
 ([`CornerDescriptor`](part-03-chess-detector.md#34-corner-descriptors)),
-same place in the pipeline. It is selected via `ChessConfig.detector_mode`.
+same place in the pipeline. It is selected via `ChessConfig.strategy`
+by setting it to `DetectionStrategy::Radon(RadonStrategy)`.
 
 ## 4.1 Ray response
 
@@ -65,8 +66,8 @@ independent of `r`:
 
 Each SAT is built in one pass over the image. A ray sum then costs two
 table lookups: `S = T[end] − T[one past start]`. See
-`chess_corners_core::radon_detector::build_cumsums` for the construction
-and `compute_response` for the lookup pattern.
+`chess_corners_core::detect::radon::response::build_cumsums` for the
+construction and `compute_response` for the lookup pattern.
 
 ### SAT element type
 
@@ -161,18 +162,18 @@ of ChESS's assumptions breaks: small cells, heavy blur, low contrast,
 or low light. Part VIII has the measured numbers.
 
 The two detectors are not meant to be stacked. They are peers, and
-`ChessConfig.detector_mode` picks one.
+the `ChessConfig.strategy` enum picks one.
 
 ## 4.6 Public API
 
 ### Core crate
 
-`chess_corners_core::radon_detector` exposes the pipeline at two levels.
+`chess_corners_core::detect::radon` exposes the pipeline at two levels.
 
 **Low-level** — response map only:
 
 ```rust
-use chess_corners_core::radon_detector::{
+use chess_corners_core::{
     RadonBuffers, RadonDetectorParams, radon_response_u8,
 };
 
@@ -190,7 +191,7 @@ to avoid per-frame allocations.
 **Full pipeline** — detect corners:
 
 ```rust
-use chess_corners_core::radon_detector::{
+use chess_corners_core::{
     detect_corners_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
 };
 
@@ -207,25 +208,34 @@ let corners = detect_corners_from_radon(&resp, &params);
 Radon detector and all its defaults:
 
 ```rust
-use chess_corners::{find_chess_corners_image, ChessConfig};
+use chess_corners::{ChessConfig, Detector};
 
-let cfg = ChessConfig::radon();         // detector_mode = Radon
-let corners = find_chess_corners_image(&gray_image, &cfg);
+let cfg = ChessConfig::radon();         // strategy = Radon(RadonStrategy)
+let mut detector = Detector::new(cfg)?;
+let corners = detector.detect(&gray_image)?;
 // corners: Vec<CornerDescriptor>
 ```
 
 The facade runs the Radon detector, feeds its output into
-`corners_to_descriptors` (the shared descriptor stage from Part III §3.4),
+`describe_corners` (the shared descriptor stage from Part III §3.4),
 and returns `CornerDescriptor` values in the input pixel frame. The
 orientation method that fills `axes` and `sigma_theta*` is shared with
-the ChESS pipeline; see [Part VI: Orientation methods](part-06-orientation-methods.md). Multiscale
-is not applied to the Radon path: the detector already handles scale via
-`image_upsample`, and the peak fit already emits subpixel positions.
+the ChESS pipeline; see [Part VI: Orientation methods](part-06-orientation-methods.md).
+
+The Radon strategy currently runs **single-scale**. The pipeline does
+not use the multiscale pyramid that the ChESS strategy can opt into —
+not because Radon is faster (it is, in practice, several times slower
+than ChESS at the same resolution), but because the symmetric coarse-
+to-fine variant for Radon has not been written yet. The
+[`DetectionStrategy::Radon`](https://docs.rs/chess-corners/) enum
+variant reserves the slot for a future `multiscale: Option<…>` field;
+extending it will be additive.
 
 ### Tuning
 
-`ChessConfig.radon_detector` is a `RadonDetectorParams`; every field
-in §4.4's defaults table is exposed. The most common tweaks:
+The active [`RadonStrategy`] inside
+[`DetectionStrategy::Radon`](https://docs.rs/chess-corners/) exposes
+every field in §4.4's defaults table. The most common tweaks:
 
 - Heavy blur or low contrast: raise `ray_radius` to 5–6 working pixels.
 - Small cells (3–4 physical pixels): keep `image_upsample = 2`;

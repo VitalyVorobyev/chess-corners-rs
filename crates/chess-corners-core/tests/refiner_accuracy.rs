@@ -16,10 +16,9 @@
 
 use chess_corners_core::{
     refine::{
-        CornerRefiner, ForstnerConfig, ForstnerRefiner, RefineContext, RefineStatus,
-        SaddlePointConfig, SaddlePointRefiner,
+        CornerRefiner, ForstnerConfig, ForstnerRefiner, RadonPeakConfig, RadonPeakRefiner,
+        RefineContext, RefineStatus, SaddlePointConfig, SaddlePointRefiner,
     },
-    refine_radon::{RadonPeakConfig, RadonPeakRefiner},
     ImageView,
 };
 

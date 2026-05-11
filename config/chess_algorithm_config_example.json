@@ -1,10 +1,19 @@
 {
-  "detector_mode": "broad",
-  "descriptor_mode": "canonical",
-  "threshold_mode": "absolute",
-  "threshold_value": 0.5,
-  "nms_radius": 3,
-  "min_cluster_size": 1,
+  "strategy": {
+    "chess": {
+      "ring": "broad",
+      "nms_radius": 3,
+      "min_cluster_size": 1,
+      "multiscale": {
+        "pyramid_levels": 3,
+        "pyramid_min_size": 96,
+        "refinement_radius": 4
+      }
+    }
+  },
+  "threshold": {
+    "absolute": 0.5
+  },
   "refiner": {
     "kind": "forstner",
     "center_of_mass": {
@@ -24,9 +33,11 @@
       "min_abs_det": 0.0002
     }
   },
-  "pyramid_levels": 3,
-  "pyramid_min_size": 96,
-  "refinement_radius": 4,
-  "merge_radius": 2.5,
-  "orientation_method": "ring_fit"
+  "orientation_method": "ring_fit",
+  "descriptor_mode": "canonical",
+  "upscale": {
+    "mode": "disabled",
+    "factor": 1
+  },
+  "merge_radius": 2.5
 }

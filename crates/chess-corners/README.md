@@ -5,10 +5,12 @@ on top of `chess-corners-core`.
 
 This crate is the public Rust API:
 
-- flat `ChessConfig` with explicit semantic modes, threshold mode, and refiner selection
-- single-scale and multiscale detection entry points
+- strategy-typed `ChessConfig` (`DetectionStrategy::Chess` /
+  `DetectionStrategy::Radon`) with a unified `Threshold` enum and
+  pluggable refiner selection
+- single-scale and multiscale detection through a single `Detector` struct
 - optional `image::GrayImage` helpers
-- optional CLI binary and ML-backed refinement entry points
+- optional CLI binary and ML-backed refinement pipeline
 
 `chess-corners-core` and `box-image-pyramid` remain available as lower-level
 sharp tools, but `chess-corners` is the intended compatibility boundary.
@@ -16,52 +18,70 @@ sharp tools, but `chess-corners` is the intended compatibility boundary.
 ## Quick start
 
 ```rust
-use chess_corners::{ChessConfig, RefinementMethod, find_chess_corners_image};
+use chess_corners::{ChessConfig, Detector, RefinementMethod, Threshold};
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
     let mut cfg = ChessConfig::multiscale();
-    cfg.threshold_value = 0.15;
+    cfg.threshold = Threshold::Relative(0.15);
     cfg.refiner.kind = RefinementMethod::Forstner;
 
-    let corners = find_chess_corners_image(&img, &cfg);
+    let mut detector = Detector::new(cfg)?;
+    let corners = detector.detect(&img)?;
     println!("found {} corners", corners.len());
     Ok(())
 }
 ```
 
+`Detector` owns the pyramid and upscale scratch buffers, so calling
+`detector.detect(&img)` repeatedly on successive frames does not
+re-allocate.
+
 ## Public config shape
 
-`ChessConfig` is intentionally flat:
+`ChessConfig` groups detector-specific tuning under a typed
+[`DetectionStrategy`] enum and shares cross-cutting fields at the top
+level:
 
 ```rust
 use chess_corners::{
-    ChessConfig, DescriptorMode, DetectorMode, RefinementMethod, ThresholdMode,
+    ChessConfig, ChessRing, ChessStrategy, DescriptorMode, DetectionStrategy,
+    MultiscaleParams, RadonStrategy, RefinementMethod, Threshold,
 };
 
-let mut cfg = ChessConfig::single_scale();
-cfg.detector_mode = DetectorMode::Canonical;
+let mut cfg = ChessConfig::single_scale();   // ChESS, multiscale = None
+cfg.threshold = Threshold::Relative(0.2);    // or Threshold::Absolute(0.0)
 cfg.descriptor_mode = DescriptorMode::FollowDetector;
-cfg.threshold_mode = ThresholdMode::Relative;
-cfg.threshold_value = 0.2;
-cfg.nms_radius = 2;
-cfg.min_cluster_size = 2;
-cfg.pyramid_levels = 1;
-cfg.pyramid_min_size = 128;
-cfg.refinement_radius = 3;
 cfg.merge_radius = 3.0;
 cfg.refiner.kind = RefinementMethod::CenterOfMass;
+
+// Detector-specific knobs live inside the strategy variant:
+if let DetectionStrategy::Chess(chess) = &mut cfg.strategy {
+    chess.ring = ChessRing::Broad;            // wider, blur-tolerant ring
+    chess.nms_radius = 2;
+    chess.min_cluster_size = 2;
+    chess.multiscale = Some(MultiscaleParams {
+        pyramid_levels: 3,
+        pyramid_min_size: 128,
+        refinement_radius: 3,
+    });
+}
+
+// Or switch to the Radon strategy:
+cfg.strategy = DetectionStrategy::Radon(RadonStrategy::default());
 ```
 
-Use `ChessConfig::single_scale()` for the default one-level detector and
-`ChessConfig::multiscale()` for the recommended 3-level preset.
+Use `ChessConfig::single_scale()` for the default one-level detector,
+`ChessConfig::multiscale()` for the recommended 3-level preset, and
+`ChessConfig::radon()` for the whole-image Duda–Frese detector.
 
-`DetectorMode::Broad` enables the wider, blur-tolerant detector response mode.
-`DescriptorMode` can either follow the detector or override the descriptor
-ring radius explicitly (each descriptor is built by fitting a two-axis tanh
-model to the ring samples — see the book's Part III, §3.4).
+`ChessRing::Broad` enables the wider, blur-tolerant detector response
+mode. `DescriptorMode` can either follow the detector or override the
+descriptor ring radius explicitly (each descriptor is built by fitting
+a two-axis tanh model to the ring samples — see the book's Part III,
+§3.4).
 
 ## Descriptor output
 
@@ -86,6 +106,7 @@ Each detection is a `CornerDescriptor` with:
 - `cfg.refiner.center_of_mass`
 - `cfg.refiner.forstner`
 - `cfg.refiner.saddle_point`
+- `cfg.refiner.radon_peak`
 
 Only `cfg.refiner.kind` selects which one is active:
 
@@ -97,14 +118,14 @@ cfg.refiner.kind = RefinementMethod::Forstner;
 cfg.refiner.forstner.max_offset = 2.0;
 ```
 
-You can also bypass the configured refiner for a single call with
-`find_chess_corners_image_with_refiner` or `find_chess_corners_with_refiner`.
+To switch refiners on the fly without rebuilding the detector, use
+`detector.config_mut().refiner.kind = ...`.
 
 ## CLI config shape
 
-The CLI uses the same flat algorithm schema at the top level, combined with
-application fields such as `image`, `output_json`, `output_png`, `log_level`,
-and `ml`.
+The CLI uses the same strategy-typed algorithm schema, combined with
+application fields such as `image`, `output_json`, `output_png`,
+`log_level`, and `ml`.
 
 See:
 
@@ -113,19 +134,26 @@ See:
 
 ## ML refiner
 
-Enable the `ml-refiner` feature to use the separate ML-backed pipeline:
+Enable the `ml-refiner` feature, then pick the ML pipeline by setting
+the refiner kind:
 
 ```rust
-use chess_corners::{ChessConfig, find_chess_corners_image_with_ml};
+# #[cfg(feature = "ml-refiner")]
+# {
+use chess_corners::{ChessConfig, Detector, RefinementMethod};
 use image::GrayImage;
 
 let img = GrayImage::new(1, 1);
-let cfg = ChessConfig::single_scale();
-let corners = find_chess_corners_image_with_ml(&img, &cfg);
+let mut cfg = ChessConfig::single_scale();
+cfg.refiner.kind = RefinementMethod::Ml;
+
+let mut detector = Detector::new(cfg).unwrap();
+let _ = detector.detect(&img).unwrap();
+# }
 ```
 
-The ML path is slower than the classic refiners and intentionally stays outside
-the canonical `ChessConfig` schema.
+The ML path is slower than the classic refiners and falls back to the
+classic CenterOfMass refiner at coarse pyramid levels.
 
 ## Examples
 

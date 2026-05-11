@@ -1,7 +1,8 @@
 //! Shared primitives for the Duda-Frese (2018) localized Radon
-//! response — used by both [`RadonPeakRefiner`](crate::refine_radon)
-//! (per-candidate subpixel refiner) and the forthcoming whole-image
-//! `radon_detector` path.
+//! response — used by both
+//! [`RadonPeakRefiner`](crate::refine::radon_peak::RadonPeakRefiner)
+//! (per-candidate subpixel refiner) and the whole-image
+//! [`radon_response_u8`](super::radon_response_u8) path.
 //!
 //! The module exists so the angular basis, the peak-fit, and the
 //! response-map box blur live in exactly one place. When the detector

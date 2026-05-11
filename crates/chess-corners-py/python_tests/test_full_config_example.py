@@ -35,15 +35,18 @@ def test_full_config_example_parser_is_lazy_about_pillow():
     assert before == after
 
     cfg = module.load_chess_config(CONFIG_PATH)
-    assert cfg.detector_mode is chess_corners.DetectorMode.BROAD
+    assert cfg.strategy.kind == "chess"
+    assert cfg.strategy.chess.ring is chess_corners.ChessRing.BROAD
     assert cfg.descriptor_mode is chess_corners.DescriptorMode.CANONICAL
-    assert cfg.threshold_mode is chess_corners.ThresholdMode.ABSOLUTE
-    assert cfg.threshold_value == 0.5
+    assert cfg.threshold.kind == "absolute"
+    assert cfg.threshold.value == 0.5
     assert cfg.refiner.kind is chess_corners.RefinementMethod.FORSTNER
     assert cfg.refiner.forstner.max_offset == 2.0
-    assert cfg.pyramid_levels == 3
-    assert cfg.pyramid_min_size == 96
-    assert cfg.refinement_radius == 4
+    ms = cfg.strategy.chess.multiscale
+    assert ms is not None
+    assert ms.pyramid_levels == 3
+    assert ms.pyramid_min_size == 96
+    assert ms.refinement_radius == 4
     assert cfg.merge_radius == 2.5
 
 
@@ -66,16 +69,19 @@ def test_code_config_example_is_lazy_about_pillow_and_builds_full_config():
     assert before == after
 
     cfg = module.build_chess_config()
-    assert cfg.detector_mode is chess_corners.DetectorMode.BROAD
+    assert cfg.strategy.kind == "chess"
+    assert cfg.strategy.chess.ring is chess_corners.ChessRing.BROAD
     assert cfg.descriptor_mode is chess_corners.DescriptorMode.CANONICAL
-    assert cfg.threshold_mode is chess_corners.ThresholdMode.ABSOLUTE
-    assert cfg.threshold_value == 0.5
+    assert cfg.threshold.kind == "absolute"
+    assert cfg.threshold.value == 0.5
     assert cfg.refiner.kind is chess_corners.RefinementMethod.FORSTNER
     assert cfg.refiner.center_of_mass.radius == 2
     assert cfg.refiner.forstner.max_offset == 2.0
     assert cfg.refiner.saddle_point.max_offset == 1.75
-    assert cfg.pyramid_levels == 3
-    assert cfg.pyramid_min_size == 96
+    ms = cfg.strategy.chess.multiscale
+    assert ms is not None
+    assert ms.pyramid_levels == 3
+    assert ms.pyramid_min_size == 96
 
 
 def test_public_package_exposes_py_typed():

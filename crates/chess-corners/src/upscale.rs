@@ -54,8 +54,16 @@ impl Default for UpscaleConfig {
 
 impl UpscaleConfig {
     /// Construct a disabled configuration (no upscaling).
+    ///
+    /// `factor` is set to `1` so the value matches the
+    /// [`Self::effective_factor`] return ("no scaling"). The default
+    /// constructor [`Self::default`] keeps `factor: 2` so callers
+    /// flipping `mode = Fixed` get a sane starting factor.
     pub fn disabled() -> Self {
-        Self::default()
+        Self {
+            mode: UpscaleMode::Disabled,
+            factor: 1,
+        }
     }
 
     /// Construct a fixed-factor configuration. Does not validate.

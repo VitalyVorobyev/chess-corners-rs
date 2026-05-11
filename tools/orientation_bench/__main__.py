@@ -422,7 +422,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--methods",
         nargs="+",
         default=["ring_fit"],
-        help="Methods to run, e.g. ring_fit disk_fit disk_sector_py",
+        help="Methods to run, e.g. ring_fit disk_fit disk_sector_py polar_fit_py",
     )
     sweep.add_argument(
         "--max-cells", type=int, default=None, help="Cap cells per sweep for fast runs"

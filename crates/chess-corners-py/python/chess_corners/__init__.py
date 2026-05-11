@@ -1,14 +1,15 @@
 """Python-first public API for the chess_corners detector.
 
 The config classes (`ChessConfig`, `RefinerConfig`, …) and enums
-(`DetectorMode`, `RefinementMethod`, …) are native PyO3 types defined
-in the compiled `_native` extension. They expose the same surface as
-the prior pure-Python dataclasses — attribute access, classmethod
-factories (`ChessConfig.multiscale()`), `to_dict` / `from_dict` /
-`to_json` / `from_json`, identity-comparable enum members
-(`cfg.detector_mode is DetectorMode.BROAD`) — but the FFI no longer
-serializes through JSON: `find_chess_corners(image, cfg)` hands the
-typed object directly to Rust.
+(`ChessRing`, `RefinementMethod`, …) are native PyO3 types defined
+in the compiled `_native` extension. They expose attribute access,
+classmethod factories (`ChessConfig.multiscale()`,
+`Threshold.relative(...)`, `DetectionStrategy.radon(...)`), and
+`to_dict` / `from_dict` / `to_json` / `from_json` helpers.
+
+The detector itself is the :class:`Detector` PyClass — build once,
+call :meth:`Detector.detect` repeatedly to amortise pyramid / upscale
+buffer allocations across frames.
 """
 
 from __future__ import annotations
@@ -20,18 +21,22 @@ from . import _native
 from ._native import (
     CenterOfMassConfig,
     ChessConfig,
+    ChessRing,
+    ChessStrategy,
     ConfigError,
     DescriptorMode,
-    DetectorMode,
+    DetectionStrategy,
+    Detector,
     ForstnerConfig,
+    MultiscaleParams,
     OrientationMethod,
     PeakFitMode,
-    RadonDetectorParams,
     RadonPeakConfig,
+    RadonStrategy,
     RefinementMethod,
     RefinerConfig,
     SaddlePointConfig,
-    ThresholdMode,
+    Threshold,
     UpscaleConfig,
     UpscaleMode,
 )
@@ -70,7 +75,11 @@ for _cls in (
     ForstnerConfig,
     SaddlePointConfig,
     RadonPeakConfig,
-    RadonDetectorParams,
+    Threshold,
+    MultiscaleParams,
+    ChessStrategy,
+    RadonStrategy,
+    DetectionStrategy,
     RefinerConfig,
     UpscaleConfig,
     ChessConfig,
@@ -79,62 +88,25 @@ for _cls in (
     _cls.__rich_console__ = _rich_console  # type: ignore[attr-defined]
 
 
-def find_chess_corners(image: Any, cfg: ChessConfig | None = None) -> Any:
-    """Detect chessboard corners in a 2D C-contiguous uint8 NumPy image."""
-
-    return _native.find_chess_corners(image, cfg)
-
-
-def radon_heatmap(image: Any, cfg: ChessConfig | None = None) -> Any:
-    """Compute the whole-image Radon detector heatmap.
-
-    Returns a 2D ``float32`` NumPy array at *working resolution* — that
-    is, ``height * upscale * radon_image_upsample`` rows by the same in
-    columns. The working-to-input scale factor is
-    ``cfg.upscale.factor * cfg.radon_detector.image_upsample`` (each
-    clamped to its supported range).
-
-    Parameters
-    ----------
-    image:
-        2D C-contiguous ``uint8`` NumPy array of shape ``(H, W)``.
-    cfg:
-        Optional :class:`ChessConfig`. The ``upscale`` and
-        ``radon_detector`` fields are honoured; other fields are
-        ignored because no corner detection is performed.
-    """
-
-    return _native.radon_heatmap(image, cfg)
-
-
-if hasattr(_native, "find_chess_corners_with_ml"):
-
-    def find_chess_corners_with_ml(image: Any, cfg: ChessConfig | None = None) -> Any:
-        """Detect chessboard corners using the ML-backed refiner pipeline."""
-
-        return _native.find_chess_corners_with_ml(image, cfg)
-
-
 __all__ = [
     "CenterOfMassConfig",
     "ChessConfig",
+    "ChessRing",
+    "ChessStrategy",
     "ConfigError",
     "DescriptorMode",
-    "DetectorMode",
+    "DetectionStrategy",
+    "Detector",
     "ForstnerConfig",
+    "MultiscaleParams",
     "OrientationMethod",
     "PeakFitMode",
-    "RadonDetectorParams",
     "RadonPeakConfig",
+    "RadonStrategy",
     "RefinerConfig",
     "RefinementMethod",
     "SaddlePointConfig",
-    "ThresholdMode",
+    "Threshold",
     "UpscaleConfig",
     "UpscaleMode",
-    "find_chess_corners",
-    "radon_heatmap",
 ]
-
-if hasattr(_native, "find_chess_corners_with_ml"):
-    __all__.append("find_chess_corners_with_ml")

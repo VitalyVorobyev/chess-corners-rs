@@ -5,8 +5,8 @@
 //! Run with `cargo run --release -p chess-corners-core --example
 //! orientation_methods_bench`.
 
-use chess_corners_core::descriptor::{corners_to_descriptors_with_method, Corner};
 use chess_corners_core::orientation::OrientationMethod;
+use chess_corners_core::{detect::Corner, orientation::describe_corners};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -56,14 +56,14 @@ fn time_method(
 ) {
     for _ in 0..3 {
         let corners = base_corners.to_vec();
-        let d = corners_to_descriptors_with_method(img, w, h, 5, corners, method);
+        let d = describe_corners(img, w, h, 5, corners, method);
         black_box(d);
     }
     let mut samples = Vec::with_capacity(iters);
     for _ in 0..iters {
         let corners = base_corners.to_vec();
         let t0 = Instant::now();
-        let d = corners_to_descriptors_with_method(img, w, h, 5, corners, method);
+        let d = describe_corners(img, w, h, 5, corners, method);
         black_box(d);
         samples.push(t0.elapsed().as_secs_f64() * 1e6);
     }

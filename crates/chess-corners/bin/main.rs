@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chess_corners::{DescriptorMode, DetectorMode, RefinementMethod, ThresholdMode};
+use chess_corners::{ChessRing, DescriptorMode, RefinementMethod, Threshold};
 use clap::{Parser, Subcommand};
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
@@ -53,22 +53,27 @@ enum Commands {
         /// Output overlay PNG path override.
         #[arg(long)]
         output_png: Option<PathBuf>,
-        /// Override threshold mode (`relative` or `absolute`).
+        /// Absolute threshold override. Mutually exclusive with
+        /// `--threshold-relative`. Accepted values are non-negative
+        /// floats in the detector's native score units.
         #[arg(long)]
-        threshold_mode: Option<String>,
-        /// Override threshold value.
+        threshold_absolute: Option<f32>,
+        /// Relative threshold override (fraction in `[0, 1]` of the
+        /// per-frame response maximum). Mutually exclusive with
+        /// `--threshold-absolute`.
         #[arg(long)]
-        threshold_value: Option<f32>,
-        /// Override detector mode (`canonical` or `broad`).
+        threshold_relative: Option<f32>,
+        /// Override the ChESS ring (`canonical` or `broad`). Has no
+        /// effect on the Radon strategy.
         #[arg(long)]
-        detector_mode: Option<String>,
+        chess_ring: Option<String>,
         /// Override descriptor mode (`follow_detector`, `canonical`, `broad`).
         #[arg(long)]
         descriptor_mode: Option<String>,
-        /// NMS radius override.
+        /// NMS radius override (applied to whichever strategy is active).
         #[arg(long)]
         nms_radius: Option<u32>,
-        /// Min cluster size override.
+        /// Min cluster size override (applied to whichever strategy is active).
         #[arg(long)]
         min_cluster_size: Option<u32>,
         /// Override the active refiner kind (`center_of_mass`, `forstner`, `saddle_point`).
@@ -93,9 +98,9 @@ fn main() -> Result<()> {
             merge_radius,
             output_json,
             output_png,
-            threshold_mode,
-            threshold_value,
-            detector_mode,
+            threshold_absolute,
+            threshold_relative,
+            chess_ring,
             descriptor_mode,
             nms_radius,
             min_cluster_size,
@@ -106,6 +111,14 @@ fn main() -> Result<()> {
             #[cfg(feature = "tracing")]
             init_tracing(json_trace);
             let mut cfg = load_config(&config)?;
+            let threshold = match (threshold_absolute, threshold_relative) {
+                (Some(_), Some(_)) => anyhow::bail!(
+                    "--threshold-absolute and --threshold-relative are mutually exclusive",
+                ),
+                (Some(v), None) => Some(Threshold::Absolute(v)),
+                (None, Some(v)) => Some(Threshold::Relative(v)),
+                (None, None) => None,
+            };
             let overrides = DetectionOverrides {
                 pyramid_levels,
                 pyramid_min_size,
@@ -113,9 +126,8 @@ fn main() -> Result<()> {
                 merge_radius,
                 output_json,
                 output_png,
-                threshold_mode: parse_flag_enum::<ThresholdMode>(threshold_mode.as_deref())?,
-                threshold_value,
-                detector_mode: parse_flag_enum::<DetectorMode>(detector_mode.as_deref())?,
+                threshold,
+                chess_ring: parse_flag_enum::<ChessRing>(chess_ring.as_deref())?,
                 descriptor_mode: parse_flag_enum::<DescriptorMode>(descriptor_mode.as_deref())?,
                 nms_radius,
                 min_cluster_size,

@@ -63,7 +63,7 @@ def main() -> int:
     args = parse_args()
     cfg = load_chess_config(args.config)
     image = load_grayscale_image(args.image)
-    corners = chess_corners.find_chess_corners(image, cfg)
+    corners = chess_corners.Detector(cfg).detect(image)
 
     print(f"image: {args.image}")
     print(f"image shape: height={image.shape[0]}, width={image.shape[1]}")
