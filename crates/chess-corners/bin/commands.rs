@@ -188,6 +188,26 @@ fn chess_strategy_mut(cfg: &mut ChessConfig) -> Option<&mut ChessStrategy> {
     }
 }
 
+/// Apply an NMS-window override to whichever strategy variant is
+/// active. `nms_radius` and `min_cluster_size` are advertised by the
+/// CLI as generic detection overrides; both ChESS and Radon expose
+/// the same field names in their respective strategy payloads.
+fn apply_nms_radius(cfg: &mut ChessConfig, v: u32) {
+    match &mut cfg.strategy {
+        DetectionStrategy::Chess(chess) => chess.nms_radius = v,
+        DetectionStrategy::Radon(radon) => radon.nms_radius = v,
+        _ => {}
+    }
+}
+
+fn apply_min_cluster_size(cfg: &mut ChessConfig, v: u32) {
+    match &mut cfg.strategy {
+        DetectionStrategy::Chess(chess) => chess.min_cluster_size = v,
+        DetectionStrategy::Radon(radon) => radon.min_cluster_size = v,
+        _ => {}
+    }
+}
+
 pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides) {
     let DetectionOverrides {
         pyramid_levels,
@@ -246,14 +266,10 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
         cfg.algorithm.descriptor_mode = v;
     }
     if let Some(v) = nms_radius {
-        if let Some(chess) = chess_strategy_mut(&mut cfg.algorithm) {
-            chess.nms_radius = v;
-        }
+        apply_nms_radius(&mut cfg.algorithm, v);
     }
     if let Some(v) = min_cluster_size {
-        if let Some(chess) = chess_strategy_mut(&mut cfg.algorithm) {
-            chess.min_cluster_size = v;
-        }
+        apply_min_cluster_size(&mut cfg.algorithm, v);
     }
     if let Some(v) = refiner_kind {
         cfg.algorithm.refiner.kind = v;
@@ -292,4 +308,107 @@ pub fn load_config(path: &Path) -> Result<DetectionConfig> {
     let cfg: DetectionConfig = serde_json::from_reader(file)
         .with_context(|| format!("parsing config {}", path.display()))?;
     Ok(cfg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chess_corners::{DetectionStrategy, RadonStrategy};
+    use std::path::PathBuf;
+
+    fn empty_overrides() -> DetectionOverrides {
+        DetectionOverrides::default()
+    }
+
+    fn radon_detection_config() -> DetectionConfig {
+        let mut algorithm = ChessConfig::radon();
+        // Sanity: confirm `ChessConfig::radon()` actually selects the
+        // Radon strategy, so the regression below tests the intended
+        // dispatch path.
+        assert!(matches!(algorithm.strategy, DetectionStrategy::Radon(_)));
+        // Pin the NMS / cluster fields away from defaults so the
+        // override path is observable.
+        if let DetectionStrategy::Radon(ref mut radon) = algorithm.strategy {
+            radon.nms_radius = 7;
+            radon.min_cluster_size = 3;
+        }
+        DetectionConfig {
+            image: PathBuf::from("ignored.png"),
+            output_json: None,
+            output_png: None,
+            log_level: None,
+            ml: None,
+            algorithm,
+        }
+    }
+
+    #[test]
+    fn nms_radius_override_applies_to_active_radon_strategy() {
+        let mut cfg = radon_detection_config();
+        apply_overrides(
+            &mut cfg,
+            DetectionOverrides {
+                nms_radius: Some(11),
+                ..empty_overrides()
+            },
+        );
+        match cfg.algorithm.strategy {
+            DetectionStrategy::Radon(radon) => assert_eq!(radon.nms_radius, 11),
+            other => panic!("expected Radon strategy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn min_cluster_size_override_applies_to_active_radon_strategy() {
+        let mut cfg = radon_detection_config();
+        apply_overrides(
+            &mut cfg,
+            DetectionOverrides {
+                min_cluster_size: Some(5),
+                ..empty_overrides()
+            },
+        );
+        match cfg.algorithm.strategy {
+            DetectionStrategy::Radon(radon) => assert_eq!(radon.min_cluster_size, 5),
+            other => panic!("expected Radon strategy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn nms_overrides_still_apply_to_chess_strategy() {
+        let mut cfg = DetectionConfig {
+            image: PathBuf::from("ignored.png"),
+            output_json: None,
+            output_png: None,
+            log_level: None,
+            ml: None,
+            algorithm: ChessConfig::single_scale(),
+        };
+        apply_overrides(
+            &mut cfg,
+            DetectionOverrides {
+                nms_radius: Some(9),
+                min_cluster_size: Some(4),
+                ..empty_overrides()
+            },
+        );
+        match cfg.algorithm.strategy {
+            DetectionStrategy::Chess(chess) => {
+                assert_eq!(chess.nms_radius, 9);
+                assert_eq!(chess.min_cluster_size, 4);
+            }
+            other => panic!("expected ChESS strategy, got {other:?}"),
+        }
+    }
+
+    // The Radon detector exposes the same nms/cluster field names as
+    // the ChESS strategy. If a future Radon-side rename happens, this
+    // test will fail fast — better than a silent regression where the
+    // CLI override returns to being a no-op for one strategy variant.
+    #[test]
+    fn nms_and_cluster_fields_exist_on_both_strategies() {
+        let _chess_nms: u32 = ChessConfig::single_scale().to_chess_params().nms_radius;
+        let _radon_nms: u32 = ChessConfig::radon().to_radon_detector_params().nms_radius;
+        let _radon_cluster = RadonStrategy::default().min_cluster_size;
+    }
 }
