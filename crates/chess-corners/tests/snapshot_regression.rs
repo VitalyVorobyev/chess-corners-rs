@@ -1,9 +1,20 @@
 //! Numerical-regression snapshot for the public detector API.
 //!
-//! Goal: pin the corner-descriptor output of the four documented
-//! presets (`single_scale`, `multiscale`, `radon`, `radon_multiscale`)
-//! on the three public test images, so multi-step refactors of the
-//! detection pipeline cannot silently drift the user-visible numbers.
+//! Goal: pin the corner-descriptor output of the two ChESS presets
+//! (`single_scale`, `multiscale`) on the three public test images,
+//! so multi-step refactors of the detection pipeline cannot silently
+//! drift the user-visible numbers.
+//!
+//! The Radon presets (`radon`, `radon_multiscale`) are intentionally
+//! excluded from this strict pinning. Their per-pixel `(max - min)²`
+//! response uses summed-area-table reductions whose threshold
+//! crossings are sensitive to CPU-level FP rounding (e.g. FMA
+//! contraction differences between Apple Silicon and x86_64 hosts),
+//! so the corner count near the `Threshold::Relative(0.01)` cutoff
+//! varies by ±0.5% across runners. That kind of drift is not the
+//! "did we accidentally change the algorithm?" signal we want this
+//! test to capture. The Radon pipeline is covered end-to-end by
+//! `radon_pipeline.rs` (facade) and `radon_vs_chess.rs` (core).
 //!
 //! Run with:
 //!
@@ -86,14 +97,6 @@ const PRESETS: &[Preset] = &[
     Preset {
         name: "multiscale",
         build: DetectorConfig::multiscale,
-    },
-    Preset {
-        name: "radon",
-        build: DetectorConfig::radon,
-    },
-    Preset {
-        name: "radon_multiscale",
-        build: DetectorConfig::radon_multiscale,
     },
 ];
 
