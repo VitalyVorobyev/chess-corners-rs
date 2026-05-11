@@ -1,8 +1,8 @@
-# Per-case (count, fnv1a-64 hash) of the canonical NDJSON corner dump.
+# Per-case corner count for the ChESS presets.
 # Refresh with UPDATE_SNAPSHOTS=1 cargo test -p chess-corners --test snapshot_regression --all-features
-large-multiscale count=359 hash=cd4b667e36090aa6
-large-single_scale count=2142 hash=c8f57a3d5f88e784
-mid-multiscale count=81 hash=8819f41a82603f96
-mid-single_scale count=1199 hash=2311aed94f8ded5f
-small-multiscale count=85 hash=540ae180f8aa9cad
-small-single_scale count=514 hash=d5d749ab2f8f7b55
+large-multiscale count=359
+large-single_scale count=2142
+mid-multiscale count=81
+mid-single_scale count=1199
+small-multiscale count=85
+small-single_scale count=514

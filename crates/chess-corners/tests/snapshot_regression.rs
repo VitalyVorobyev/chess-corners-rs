@@ -1,56 +1,50 @@
 //! Numerical-regression snapshot for the public detector API.
 //!
-//! Goal: pin the corner-descriptor output of the two ChESS presets
-//! (`single_scale`, `multiscale`) on the three public test images,
-//! so multi-step refactors of the detection pipeline cannot silently
-//! drift the user-visible numbers.
+//! Goal: pin the **corner count** of the two ChESS presets
+//! (`single_scale`, `multiscale`) on the three public test images.
+//! A multi-step refactor of the detection pipeline that accidentally
+//! changes the set of corners produced will move the count; an
+//! invariance-preserving refactor will not. This is the cheapest
+//! signal that survives the cross-platform reality below.
+//!
+//! ## Why count-only, not bit-for-bit
+//!
+//! Subpixel corner positions are f32-valued and depend on operations
+//! (FMA contraction, denormals, rounding modes) that differ
+//! observably between CPU microarchitectures. A bit-for-bit hash
+//! pinned on macOS-arm64 will fail on linux-x86 even though the
+//! algorithm is unchanged — every corner's `(x, y)` shifts by ~1 ulp
+//! and the hash flips. We tried that path; it produced false
+//! positives on every non-Apple-Silicon CI runner.
+//!
+//! Counts, by contrast, are integer-valued and stable as long as the
+//! response threshold isn't crossed differently by FP rounding. For
+//! ChESS that holds on the three test images at the default
+//! threshold; the test would catch any genuine algorithm change
+//! (different filtering, different ring, different NMS radius)
+//! because such a change moves counts by ≥ one corner per image.
 //!
 //! The Radon presets (`radon`, `radon_multiscale`) are intentionally
-//! excluded from this strict pinning. Their per-pixel `(max - min)²`
-//! response uses summed-area-table reductions whose threshold
-//! crossings are sensitive to CPU-level FP rounding (e.g. FMA
-//! contraction differences between Apple Silicon and x86_64 hosts),
-//! so the corner count near the `Threshold::Relative(0.01)` cutoff
-//! varies by ±0.5% across runners. That kind of drift is not the
-//! "did we accidentally change the algorithm?" signal we want this
-//! test to capture. The Radon pipeline is covered end-to-end by
+//! excluded: their `(max - min)²` response sits near the
+//! `Threshold::Relative(0.01)` cutoff for many pixels, so
+//! sub-ulp FP differences DO cross the threshold and shift counts
+//! by ±0.5% across CPUs. The Radon path is covered end-to-end by
 //! `radon_pipeline.rs` (facade) and `radon_vs_chess.rs` (core).
 //!
-//! Run with:
+//! ## Manifest format
 //!
-//! ```ignore
-//! cargo test -p chess-corners --test snapshot_regression --all-features
+//! `tests/snapshots/manifest.txt` is a per-`(image, preset)` line:
+//!
+//! ```text
+//! mid-single_scale count=1199
 //! ```
 //!
-//! To refresh the committed baselines (after an intentional change):
+//! Refresh after an intentional algorithm change:
 //!
 //! ```ignore
 //! UPDATE_SNAPSHOTS=1 cargo test -p chess-corners \
 //!     --test snapshot_regression --all-features
 //! ```
-//!
-//! The committed baseline is a single small manifest file
-//! `tests/snapshots/manifest.txt` with one line per `(image, preset)`:
-//!
-//! ```text
-//! mid-single_scale count=359 hash=0123456789abcdef
-//! ```
-//!
-//! The hash is FNV-1a-64 over the sorted NDJSON corner dump (one line
-//! per corner, `(x, y, response, contrast, fit_rms, axes[0..2])`)
-//! prefixed with a `# count=N` header. Hashing makes the baseline
-//! committable in ~1 KB instead of ~13 MB of raw JSON, at the cost of
-//! a less-readable diff on failure. To inspect the actual output when
-//! a test fails, look at `tests/snapshots/actual/<image>-<preset>.json`,
-//! which the failing test writes for local debugging (gitignored).
-//!
-//! Cross-platform determinism: FNV-1a is byte-for-byte the same on any
-//! platform; the corner ordering is stable (sort by `(x, y)` with
-//! `partial_cmp`); the underlying detector math is f32-deterministic
-//! *given a fixed reduction order*. To remove the rayon-induced
-//! reduction-order dependency that otherwise drifts `radon_multiscale`
-//! corner counts by ~ε across CI runners, every detector call runs
-//! inside a pinned single-threaded rayon pool.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -62,20 +56,6 @@ use chess_corners::{CornerDescriptor, Detector, DetectorConfig};
 use image::ImageReader;
 use rayon::ThreadPool;
 use serde::Serialize;
-
-/// One-thread rayon pool, lazily initialised. Used to make Radon SAT
-/// summation order deterministic regardless of the host's logical
-/// CPU count — without forcing the whole crate's runtime to
-/// single-thread.
-fn pinned_pool() -> &'static ThreadPool {
-    static POOL: OnceLock<ThreadPool> = OnceLock::new();
-    POOL.get_or_init(|| {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
-            .build()
-            .expect("build single-threaded rayon pool")
-    })
-}
 
 const SNAPSHOT_DIR: &str = "tests/snapshots";
 const MANIFEST_FILE: &str = "manifest.txt";
@@ -100,9 +80,8 @@ const PRESETS: &[Preset] = &[
     },
 ];
 
-/// One corner record in the snapshot. Float fields are stored as f64
-/// to give serde_json full f32-round-trip precision, so the JSON is a
-/// deterministic representation of the bit pattern.
+/// One corner record. Carried only for the failure-inspection dump
+/// (the manifest itself stores only counts).
 #[derive(Serialize)]
 struct CornerSnap {
     x: f64,
@@ -132,22 +111,27 @@ impl CornerSnap {
     }
 }
 
-/// FNV-1a 64-bit hash. Platform-independent, deterministic, tiny.
-fn fnv1a_64(data: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for &b in data {
-        hash ^= b as u64;
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
+/// One-thread rayon pool, lazily initialised. Pinning the pool
+/// removes thread-count-dependent reduction order; the test still
+/// fails across CPU microarchitectures because FP results differ
+/// at the last bit, but the counts (the thing we actually check)
+/// stay stable.
+fn pinned_pool() -> &'static ThreadPool {
+    static POOL: OnceLock<ThreadPool> = OnceLock::new();
+    POOL.get_or_init(|| {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("build single-threaded rayon pool")
+    })
 }
 
 fn manifest_key(image: &str, preset: &str) -> String {
     format!("{image}-{preset}")
 }
 
-/// Render the detector output for one `(image, preset)` cell into the
-/// canonical NDJSON form. Returns `(count, ndjson_text)`.
+/// Render the detector output for one `(image, preset)` cell.
+/// Returns `(count, ndjson_for_local_debugging)`.
 fn render_snapshot(image: &str, preset: &Preset) -> (usize, String) {
     let img_path = PathBuf::from("../../testimages").join(format!("{image}.png"));
     let img = ImageReader::open(&img_path)
@@ -160,8 +144,6 @@ fn render_snapshot(image: &str, preset: &Preset) -> (usize, String) {
     let mut detector = Detector::new(cfg).expect("build detector");
     let mut corners = pinned_pool().install(|| detector.detect(&img).expect("detect"));
 
-    // Stable order across runs: sort by (x, y) — both are subpixel f32
-    // so use total ordering. We do not expect ties on real imagery.
     corners.sort_by(|a, b| {
         a.x.partial_cmp(&b.x)
             .unwrap()
@@ -177,40 +159,34 @@ fn render_snapshot(image: &str, preset: &Preset) -> (usize, String) {
     (corners.len(), out)
 }
 
-/// Parse the manifest file into a `key → (count, hash)` map.
-fn parse_manifest(text: &str) -> BTreeMap<String, (usize, u64)> {
+/// Parse the manifest file into a `key → count` map.
+fn parse_manifest(text: &str) -> BTreeMap<String, usize> {
     let mut out = BTreeMap::new();
     for (lineno, line) in text.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        // Format: "<key> count=<N> hash=<hex>"
+        // Format: "<key> count=<N>"
         let mut parts = line.split_whitespace();
         let key = parts.next().unwrap_or("").to_string();
         let count_part = parts.next().unwrap_or("");
-        let hash_part = parts.next().unwrap_or("");
         let count: usize = count_part
             .strip_prefix("count=")
             .and_then(|s| s.parse().ok())
             .unwrap_or_else(|| panic!("manifest line {}: bad count: {line}", lineno + 1));
-        let hash: u64 = hash_part
-            .strip_prefix("hash=")
-            .and_then(|s| u64::from_str_radix(s, 16).ok())
-            .unwrap_or_else(|| panic!("manifest line {}: bad hash: {line}", lineno + 1));
-        out.insert(key, (count, hash));
+        out.insert(key, count);
     }
     out
 }
 
 /// Format the manifest map back to text. Sorted by key for stable
 /// commits.
-fn format_manifest(entries: &BTreeMap<String, (usize, u64)>) -> String {
-    let mut out =
-        String::from("# Per-case (count, fnv1a-64 hash) of the canonical NDJSON corner dump.\n");
+fn format_manifest(entries: &BTreeMap<String, usize>) -> String {
+    let mut out = String::from("# Per-case corner count for the ChESS presets.\n");
     out.push_str("# Refresh with UPDATE_SNAPSHOTS=1 cargo test -p chess-corners --test snapshot_regression --all-features\n");
-    for (key, (count, hash)) in entries {
-        out.push_str(&format!("{key} count={count} hash={hash:016x}\n"));
+    for (key, count) in entries {
+        out.push_str(&format!("{key} count={count}\n"));
     }
     out
 }
@@ -218,15 +194,14 @@ fn format_manifest(entries: &BTreeMap<String, (usize, u64)>) -> String {
 fn check_or_update_manifest() {
     let manifest_path = PathBuf::from(SNAPSHOT_DIR).join(MANIFEST_FILE);
 
-    let mut current: BTreeMap<String, (usize, u64)> = BTreeMap::new();
+    let mut current: BTreeMap<String, usize> = BTreeMap::new();
     let mut actuals: Vec<(String, String)> = Vec::new();
 
     for image in IMAGES {
         for preset in PRESETS {
             let (count, ndjson) = render_snapshot(image, preset);
-            let hash = fnv1a_64(ndjson.as_bytes());
             let key = manifest_key(image, preset.name);
-            current.insert(key.clone(), (count, hash));
+            current.insert(key.clone(), count);
             actuals.push((key, ndjson));
         }
     }
@@ -247,14 +222,14 @@ fn check_or_update_manifest() {
     let expected = parse_manifest(&expected_text);
 
     let mut mismatches: Vec<String> = Vec::new();
-    for (key, (cur_count, cur_hash)) in &current {
+    for (key, cur_count) in &current {
         match expected.get(key) {
-            Some((exp_count, exp_hash)) if exp_count == cur_count && exp_hash == cur_hash => {}
-            Some((exp_count, exp_hash)) => mismatches.push(format!(
-                "{key}: expected count={exp_count} hash={exp_hash:016x}, got count={cur_count} hash={cur_hash:016x}"
+            Some(exp_count) if exp_count == cur_count => {}
+            Some(exp_count) => mismatches.push(format!(
+                "{key}: expected count={exp_count}, got count={cur_count}"
             )),
             None => mismatches.push(format!(
-                "{key}: missing from manifest (current count={cur_count}, hash={cur_hash:016x})"
+                "{key}: missing from manifest (current count={cur_count})"
             )),
         }
     }
@@ -282,9 +257,8 @@ fn check_or_update_manifest() {
 }
 
 /// Single test that exercises every `(image, preset)` cell in one
-/// pass. Aggregating into one test keeps the manifest read + parse
-/// cheap and surfaces every drift in one panic message rather than
-/// splitting failures across 12 test outputs.
+/// pass. Aggregating keeps the failure message coherent and the
+/// manifest read cheap.
 #[test]
 fn snapshot_regression() {
     check_or_update_manifest();
