@@ -178,7 +178,7 @@ fn detector_peak_matches_refiner_peak_on_clean_corner() {
     };
     let mut buffers = RadonBuffers::new();
     let resp = radon_response_u8(&img, SIZE, SIZE, &det_params, &mut buffers);
-    let detector_corners = chess_corners_core::detect_corners_from_radon(&resp, &det_params);
+    let detector_corners = chess_corners_core::detect_peaks_from_radon(&resp, &det_params);
 
     // Find the corner nearest to the image center.
     let ctr_x = SIZE as f32 * 0.5;

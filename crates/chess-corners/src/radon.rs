@@ -3,7 +3,7 @@
 //! The whole-image Duda-Frese Radon detector lives in
 //! [`chess_corners_core::detect::radon`]; the corner-detection path is
 //! exposed via [`crate::Detector`] when the active
-//! [`ChessConfig::strategy`](crate::ChessConfig::strategy) is
+//! [`DetectorConfig::strategy`](crate::DetectorConfig::strategy) is
 //! [`DetectionStrategy::Radon`](crate::DetectionStrategy::Radon). This module
 //! adds a thin wrapper that returns the dense Radon response heatmap
 //! (the intermediate `(max_α S_α − min_α S_α)²` image) for
@@ -20,7 +20,7 @@
 
 use chess_corners_core::{radon_response_u8, ImageView, RadonBuffers, ResponseMap};
 
-use crate::config::ChessConfig;
+use crate::config::DetectorConfig;
 use crate::error::ChessError;
 use crate::upscale::{self, UpscaleBuffers};
 
@@ -43,7 +43,7 @@ pub fn radon_heatmap_u8(
     img: &[u8],
     width: u32,
     height: u32,
-    cfg: &ChessConfig,
+    cfg: &DetectorConfig,
 ) -> Result<ResponseMap, ChessError> {
     cfg.upscale.validate()?;
 
@@ -92,7 +92,7 @@ pub fn radon_heatmap_u8(
 #[cfg(feature = "image")]
 pub fn radon_heatmap_image(
     img: &::image::GrayImage,
-    cfg: &ChessConfig,
+    cfg: &DetectorConfig,
 ) -> Result<ResponseMap, ChessError> {
     let (w, h) = img.dimensions();
     radon_heatmap_u8(img.as_raw(), w, h, cfg)
@@ -101,7 +101,7 @@ pub fn radon_heatmap_image(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ChessConfig;
+    use crate::DetectorConfig;
     use chess_corners_core::{radon_response_u8 as core_radon, RadonBuffers as CoreRadonBuffers};
 
     fn synthetic_board(w: usize, h: usize) -> Vec<u8> {
@@ -123,7 +123,7 @@ mod tests {
     fn heatmap_matches_core_path_no_upscale() {
         let (w, h) = (96usize, 72usize);
         let img = synthetic_board(w, h);
-        let cfg = ChessConfig::radon();
+        let cfg = DetectorConfig::radon();
 
         let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
 
@@ -141,7 +141,7 @@ mod tests {
     fn heatmap_dimensions_match_working_resolution() {
         let (w, h) = (96usize, 72usize);
         let img = synthetic_board(w, h);
-        let cfg = ChessConfig::radon();
+        let cfg = DetectorConfig::radon();
         let upsample = cfg.to_radon_detector_params().image_upsample.clamp(1, 2) as usize;
 
         let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
@@ -153,7 +153,7 @@ mod tests {
     fn heatmap_is_non_zero_on_a_board() {
         let (w, h) = (96usize, 72usize);
         let img = synthetic_board(w, h);
-        let cfg = ChessConfig::radon();
+        let cfg = DetectorConfig::radon();
 
         let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
         let max = map.data().iter().copied().fold(f32::NEG_INFINITY, f32::max);
@@ -166,7 +166,7 @@ mod tests {
 
         let (w, h) = (48usize, 36usize);
         let img = synthetic_board(w, h);
-        let mut cfg = ChessConfig::radon();
+        let mut cfg = DetectorConfig::radon();
         cfg.upscale = UpscaleConfig::fixed(2);
         let radon_upsample = cfg.to_radon_detector_params().image_upsample.clamp(1, 2) as usize;
 

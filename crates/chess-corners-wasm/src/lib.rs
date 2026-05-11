@@ -5,7 +5,7 @@
 //! 1. **Setter shortcuts** — `new ChessDetector()` then
 //!    `det.set_threshold(...)` / `det.set_pyramid_levels(...)` /
 //!    `det.set_detector_mode("radon")` etc. Useful for quick demos.
-//! 2. **Typed [`ChessConfig`]** — construct the typed config (with
+//! 2. **Typed [`DetectorConfig`]** — construct the typed config (with
 //!    nested [`RefinerConfig`], [`DetectionStrategy`],
 //!    [`UpscaleConfig`], …), then pass it to
 //!    [`ChessDetector::with_config`]. Exposes every public Rust
@@ -24,7 +24,7 @@
 //! cfg.refiner.kind = RefinementMethod.RadonPeak;       // propagates
 //! cfg.refiner.forstner.maxOffset = 2.0;                // propagates
 //! cfg.strategy.chess.nmsRadius = 3;                    // propagates
-//! cfg.strategy.chess.multiscale.pyramidLevels = 4;     // propagates
+//! cfg.multiscale.pyramidLevels = 4;                    // propagates
 //! ```
 //!
 //! See [`config`] for the cell-sharing details.
@@ -40,10 +40,10 @@ use chess_corners::{
 use wasm_bindgen::prelude::*;
 
 pub use crate::config::{
-    CenterOfMassConfig, ChessConfig, ChessRing, ChessStrategy, DescriptorMode, DetectionStrategy,
-    ForstnerConfig, MultiscaleParams, OrientationMethod, PeakFitMode, RadonPeakConfig,
-    RadonStrategy, RefinementMethod, RefinerConfig, SaddlePointConfig, Threshold, UpscaleConfig,
-    UpscaleMode,
+    CenterOfMassConfig, ChessRing, ChessStrategy, DescriptorMode, DetectionStrategy,
+    DetectorConfig, ForstnerConfig, MultiscaleParams, OrientationMethod, PeakFitMode,
+    RadonPeakConfig, RadonStrategy, RefinementMethod, RefinerConfig, SaddlePointConfig, Threshold,
+    UpscaleConfig, UpscaleMode,
 };
 
 /// Convert RGBA pixels to grayscale using BT.601 luminance weights.
@@ -111,13 +111,13 @@ impl ChessDetector {
         }
     }
 
-    /// Create a detector seeded from a typed [`ChessConfig`]. The
+    /// Create a detector seeded from a typed [`DetectorConfig`]. The
     /// full public config surface — refiner subconfigs, strategy
     /// branches, descriptor mode, upscale — is reachable through the
     /// typed object (see module docs for the alternative setter-
     /// shortcut path).
     #[wasm_bindgen(js_name = withConfig)]
-    pub fn with_config(config: &ChessConfig) -> Result<ChessDetector, JsValue> {
+    pub fn with_config(config: &DetectorConfig) -> Result<ChessDetector, JsValue> {
         let snapshot = config.snapshot();
         let inner = RsDetector::new(snapshot).map_err(|e| JsValue::from_str(&e.to_string()))?;
         Ok(Self {
@@ -128,20 +128,20 @@ impl ChessDetector {
         })
     }
 
-    /// Snapshot the current configuration as a typed [`ChessConfig`].
+    /// Snapshot the current configuration as a typed [`DetectorConfig`].
     /// The returned object is a snapshot — its cells are *not* shared
     /// with the detector's live state. Use [`Self::apply_config`] to
     /// commit edits made on the snapshot.
     #[wasm_bindgen(js_name = getConfig)]
-    pub fn get_config(&self) -> ChessConfig {
-        ChessConfig::from_inner_for_js(self.inner.config().clone())
+    pub fn get_config(&self) -> DetectorConfig {
+        DetectorConfig::from_inner_for_js(self.inner.config().clone())
     }
 
     /// Replace the detector's configuration with the given typed
-    /// [`ChessConfig`]. Resizes pyramid scratch buffers if the
+    /// [`DetectorConfig`]. Resizes pyramid scratch buffers if the
     /// multiscale settings changed.
     #[wasm_bindgen(js_name = applyConfig)]
-    pub fn apply_config(&mut self, config: &ChessConfig) -> Result<(), JsValue> {
+    pub fn apply_config(&mut self, config: &DetectorConfig) -> Result<(), JsValue> {
         let snapshot = config.snapshot();
         self.inner
             .set_config(snapshot)
@@ -151,7 +151,7 @@ impl ChessDetector {
     // ---- Config setters ----
     //
     // These shortcuts route writes to the active strategy branch.
-    // The typed [`ChessConfig`] is the canonical API — prefer
+    // The typed [`DetectorConfig`] is the canonical API — prefer
     // `cfg.strategy.chess.nmsRadius = N` etc. for new code. Shortcuts
     // exist because they're convenient for one-liner demos.
 
@@ -230,20 +230,16 @@ impl ChessDetector {
 
     /// Set the number of pyramid levels (1 = single-scale, ≥2 = multiscale).
     ///
-    /// Auto-promotes the ChESS strategy from single-scale to
-    /// multiscale by attaching a defaulted [`MultiscaleParams`] if
-    /// none is currently attached. Returns an error if `n == 0` or
-    /// if the active strategy is Radon (which is single-scale today).
+    /// Auto-promotes from single-scale to multiscale by attaching a
+    /// defaulted [`MultiscaleParams`] if none is currently attached.
+    /// Honoured by both ChESS and Radon strategies.
+    /// Returns an error if `n == 0`.
     pub fn set_pyramid_levels(&mut self, n: u8) -> Result<(), JsValue> {
         if n == 0 {
             return Err(JsValue::from_str("pyramid_levels must be >= 1"));
         }
-        let RsDetectionStrategy::Chess(chess) = &mut self.inner.config_mut().strategy else {
-            return Err(JsValue::from_str(
-                "set_pyramid_levels is only valid when the active strategy is chess",
-            ));
-        };
-        let ms = chess
+        let cfg = self.inner.config_mut();
+        let ms = cfg
             .multiscale
             .get_or_insert_with(RsMultiscaleParams::default);
         ms.pyramid_levels = n;
@@ -253,15 +249,10 @@ impl ChessDetector {
     /// Set the minimum pyramid-level size in pixels (default 128).
     ///
     /// Auto-promotes single-scale → multiscale just like
-    /// [`Self::set_pyramid_levels`]. Returns an error if the active
-    /// strategy is Radon.
+    /// [`Self::set_pyramid_levels`]. Honoured by both ChESS and Radon.
     pub fn set_pyramid_min_size(&mut self, v: u32) -> Result<(), JsValue> {
-        let RsDetectionStrategy::Chess(chess) = &mut self.inner.config_mut().strategy else {
-            return Err(JsValue::from_str(
-                "set_pyramid_min_size is only valid when the active strategy is chess",
-            ));
-        };
-        let ms = chess
+        let cfg = self.inner.config_mut();
+        let ms = cfg
             .multiscale
             .get_or_insert_with(RsMultiscaleParams::default);
         ms.pyramid_min_size = v as usize;
@@ -480,11 +471,11 @@ fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::
     arr
 }
 
-// Helper used by `lib.rs` to wrap a Rust facade `ChessConfig` value
+// Helper used by `lib.rs` to wrap a Rust facade `DetectorConfig` value
 // in a fresh JS-facing wrapper. The returned wrapper owns brand-new
 // cells (not shared with the source value) — this is intentional for
 // `getConfig()` snapshot semantics.
-impl ChessConfig {
+impl DetectorConfig {
     pub(crate) fn from_inner_for_js(inner: chess_corners::ChessConfig) -> Self {
         Self::from_value_pub(inner)
     }

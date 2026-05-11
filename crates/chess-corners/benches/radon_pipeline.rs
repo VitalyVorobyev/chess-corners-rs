@@ -1,7 +1,7 @@
 //! Whole-image Radon detector pipeline benchmark.
 //!
 //! Measures end-to-end `Detector::detect_u8` latency under
-//! `ChessConfig::radon()` — i.e. SAT build + dense response +
+//! `DetectorConfig::radon()` — i.e. SAT build + dense response +
 //! box-blur + threshold/NMS + 3-point peak fit + descriptor sampling.
 //! Complements `chess-corners-core/benches/radon_response.rs`, which
 //! benches only the response stage.
@@ -15,7 +15,7 @@
 //!   the `image` dev-dependency loads them successfully. Skipped
 //!   silently (with a stderr note) if the file is missing.
 
-use chess_corners::{ChessConfig, Detector};
+use chess_corners::{Detector, DetectorConfig};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use image::ImageReader;
 use std::hint::black_box;
@@ -49,7 +49,7 @@ fn load_test_image(name: &str) -> Option<(Vec<u8>, u32, u32)> {
 
 fn bench_radon_pipeline_synth(c: &mut Criterion) {
     let dims: &[(usize, usize)] = &[(640, 480), (1280, 720), (1920, 1080)];
-    let cfg = ChessConfig::radon();
+    let cfg = DetectorConfig::radon();
     let mut detector = Detector::new(cfg).unwrap();
     let mut group = c.benchmark_group("radon_pipeline_synth");
     for &(w, h) in dims {
@@ -66,7 +66,7 @@ fn bench_radon_pipeline_synth(c: &mut Criterion) {
 }
 
 fn bench_radon_pipeline_real(c: &mut Criterion) {
-    let cfg = ChessConfig::radon();
+    let cfg = DetectorConfig::radon();
     let mut detector = Detector::new(cfg).unwrap();
     let mut group = c.benchmark_group("radon_pipeline_real");
     for name in ["small.png", "mid.png", "large.png"] {

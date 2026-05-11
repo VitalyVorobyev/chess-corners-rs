@@ -1,40 +1,42 @@
 //! High-level chessboard-corner detector with reusable scratch buffers.
 //!
 //! [`Detector`] is the primary entry point for the `chess-corners`
-//! crate. It owns the [`ChessConfig`] and the scratch buffers
+//! crate. It owns the [`DetectorConfig`] and the scratch buffers
 //! (pyramid, upscale, …) required to run detection without
 //! re-allocating across frames.
 //!
 //! ```no_run
-//! use chess_corners::{ChessConfig, Detector};
+//! use chess_corners::{DetectorConfig, Detector};
 //! use image::io::Reader as ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 //!
-//! let mut detector = Detector::new(ChessConfig::multiscale())?;
+//! let mut detector = Detector::new(DetectorConfig::multiscale())?;
 //! let corners = detector.detect(&img)?;
 //! println!("found {} corners", corners.len());
 //! # Ok(()) }
 //! ```
 
 use box_image_pyramid::PyramidBuffers;
-use chess_corners_core::{CornerDescriptor, ImageView};
+use chess_corners_core::{ChessBuffers, CornerDescriptor, ImageView, RadonBuffers};
 
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
 use crate::multiscale;
 use crate::upscale::{self, UpscaleBuffers};
-use crate::{ChessConfig, ChessError};
+use crate::{ChessError, DetectorConfig};
 
 /// High-level chessboard-corner detector.
 ///
 /// Subsumes the previous `find_chess_corners*` family of free
-/// functions. Owns the pyramid and upscale scratch buffers so the
-/// caller can reuse them across successive frames.
+/// functions. Owns the pyramid and detector-specific scratch buffers
+/// so the caller can reuse them across successive frames.
 pub struct Detector {
-    cfg: ChessConfig,
+    cfg: DetectorConfig,
     pyramid: PyramidBuffers,
+    chess_buffers: ChessBuffers,
+    radon_buffers: RadonBuffers,
     upscale: UpscaleBuffers,
     #[cfg(feature = "ml-refiner")]
     ml_state: Option<ml_refiner::MlRefinerState>,
@@ -47,13 +49,15 @@ impl Detector {
     ///
     /// # Errors
     ///
-    /// Returns [`ChessError::Upscale`] when the [`ChessConfig::upscale`]
+    /// Returns [`ChessError::Upscale`] when the [`DetectorConfig::upscale`]
     /// configuration is invalid.
-    pub fn new(cfg: ChessConfig) -> Result<Self, ChessError> {
+    pub fn new(cfg: DetectorConfig) -> Result<Self, ChessError> {
         cfg.upscale.validate()?;
         Ok(Self {
             cfg,
             pyramid: PyramidBuffers::default(),
+            chess_buffers: ChessBuffers::default(),
+            radon_buffers: RadonBuffers::default(),
             upscale: UpscaleBuffers::new(),
             #[cfg(feature = "ml-refiner")]
             ml_state: None,
@@ -64,13 +68,13 @@ impl Detector {
 
     /// Build a detector with the default config.
     pub fn with_default() -> Self {
-        // ChessConfig::default() always has a valid upscale config
+        // DetectorConfig::default() always has a valid upscale config
         // (`Off`), so `new` cannot fail here.
-        Self::new(ChessConfig::default()).expect("default ChessConfig is always valid")
+        Self::new(DetectorConfig::default()).expect("default DetectorConfig is always valid")
     }
 
     /// Borrow the active config.
-    pub fn config(&self) -> &ChessConfig {
+    pub fn config(&self) -> &DetectorConfig {
         &self.cfg
     }
 
@@ -80,7 +84,7 @@ impl Detector {
     ///
     /// Returns [`ChessError::Upscale`] when the new config's upscale
     /// section is invalid.
-    pub fn set_config(&mut self, cfg: ChessConfig) -> Result<(), ChessError> {
+    pub fn set_config(&mut self, cfg: DetectorConfig) -> Result<(), ChessError> {
         cfg.upscale.validate()?;
         self.cfg = cfg;
         // Drop ML state on config change so the next `detect` call
@@ -94,10 +98,10 @@ impl Detector {
 
     /// Mutable access to the active config for ad-hoc tweaks. The
     /// caller is responsible for keeping the config valid; callers
-    /// that change [`ChessConfig::upscale`] should use
+    /// that change [`DetectorConfig::upscale`] should use
     /// [`Self::set_config`] instead so the upscale invariants are
     /// re-validated.
-    pub fn config_mut(&mut self) -> &mut ChessConfig {
+    pub fn config_mut(&mut self) -> &mut DetectorConfig {
         // Drop ML state on raw mutation; the next detect call rebuilds
         // it against whatever fallback refiner the new config implies.
         #[cfg(feature = "ml-refiner")]
@@ -139,6 +143,8 @@ impl Detector {
             return Ok(Self::detect_view_inner(
                 &self.cfg,
                 &mut self.pyramid,
+                &mut self.chess_buffers,
+                &mut self.radon_buffers,
                 #[cfg(feature = "ml-refiner")]
                 &mut self.ml_state,
                 #[cfg(feature = "ml-refiner")]
@@ -149,12 +155,14 @@ impl Detector {
 
         // Split-borrow: each field is borrowed independently so
         // `upscaled` (which borrows `self.upscale`) and the
-        // detect_view_inner call (which borrows `self.pyramid`) don't
+        // detect_view_inner call (which borrows other fields) don't
         // conflict.
         let upscaled = upscale::upscale_bilinear_u8(img, src_w, src_h, factor, &mut self.upscale)?;
         let mut corners = Self::detect_view_inner(
             &self.cfg,
             &mut self.pyramid,
+            &mut self.chess_buffers,
+            &mut self.radon_buffers,
             #[cfg(feature = "ml-refiner")]
             &mut self.ml_state,
             #[cfg(feature = "ml-refiner")]
@@ -186,6 +194,8 @@ impl Detector {
         Self::detect_view_inner(
             &self.cfg,
             &mut self.pyramid,
+            &mut self.chess_buffers,
+            &mut self.radon_buffers,
             #[cfg(feature = "ml-refiner")]
             &mut self.ml_state,
             #[cfg(feature = "ml-refiner")]
@@ -226,9 +236,12 @@ impl Detector {
         self.radon_heatmap_u8(img.as_raw(), img.width(), img.height())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn detect_view_inner(
-        cfg: &ChessConfig,
+        cfg: &DetectorConfig,
         pyramid: &mut PyramidBuffers,
+        chess_buffers: &mut ChessBuffers,
+        radon_buffers: &mut RadonBuffers,
         #[cfg(feature = "ml-refiner")] ml_state: &mut Option<ml_refiner::MlRefinerState>,
         #[cfg(feature = "ml-refiner")] ml_params: &ml_refiner::MlRefinerParams,
         view: ImageView<'_>,
@@ -240,11 +253,17 @@ impl Detector {
                 *ml_state = Some(ml_refiner::MlRefinerState::new(ml_params, &fallback));
             }
             let state = ml_state.as_mut().expect("ml_state initialised above");
-            return multiscale::detect_with_ml(view, cfg, pyramid, ml_params, state);
+            return multiscale::detect_with_ml(
+                view,
+                cfg,
+                pyramid,
+                chess_buffers,
+                radon_buffers,
+                ml_params,
+                state,
+            );
         }
 
-        #[cfg(not(feature = "ml-refiner"))]
-        let _ = pyramid; // silence unused param warning when feature off — actually used below
-        multiscale::detect_with_buffers(view, cfg, pyramid)
+        multiscale::detect_with_buffers(view, cfg, pyramid, chess_buffers, radon_buffers)
     }
 }

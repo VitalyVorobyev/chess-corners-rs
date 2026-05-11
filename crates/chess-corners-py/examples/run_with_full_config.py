@@ -27,16 +27,16 @@ def load_grayscale_image(path: Path) -> np.ndarray:
     return np.ascontiguousarray(array)
 
 
-def build_chess_config(data: object) -> chess_corners.ChessConfig:
+def build_chess_config(data: object) -> chess_corners.DetectorConfig:
     try:
-        return chess_corners.ChessConfig.from_dict(data)
+        return chess_corners.DetectorConfig.from_dict(data)
     except chess_corners.ConfigError as exc:
         raise ConfigError(str(exc)) from exc
 
 
-def load_chess_config(path: Path) -> chess_corners.ChessConfig:
+def load_chess_config(path: Path) -> chess_corners.DetectorConfig:
     try:
-        return chess_corners.ChessConfig.from_json_file(path)
+        return chess_corners.DetectorConfig.from_json_file(path)
     except chess_corners.ConfigError as exc:
         raise ConfigError(str(exc)) from exc
 

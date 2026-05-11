@@ -1,4 +1,4 @@
-"""Round-trip tests for UpscaleConfig and ChessConfig.upscale.
+"""Round-trip tests for UpscaleConfig and DetectorConfig.upscale.
 
 Skipped when the chess_corners native extension is not built.
 """
@@ -9,7 +9,7 @@ chess_corners = pytest.importorskip("chess_corners")
 
 UpscaleConfig = chess_corners.UpscaleConfig
 UpscaleMode = chess_corners.UpscaleMode
-ChessConfig = chess_corners.ChessConfig
+ChessConfig = chess_corners.DetectorConfig
 
 
 def test_disabled_factory():

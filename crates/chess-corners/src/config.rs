@@ -227,10 +227,9 @@ impl Default for MultiscaleParams {
 
 /// Configuration for the ChESS detector branch of [`DetectionStrategy`].
 ///
-/// Carries the ring choice, NMS / clustering thresholds (in input-image
-/// pixels), and an optional [`MultiscaleParams`] for coarse-to-fine
-/// detection. When `multiscale` is `None`, the detector runs a single
-/// scale.
+/// Carries the ring choice and NMS / clustering thresholds (in input-image
+/// pixels). Multiscale settings are now at the top level of
+/// [`DetectorConfig`] and apply to both ChESS and Radon strategies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 #[non_exhaustive]
@@ -241,8 +240,6 @@ pub struct ChessStrategy {
     /// Minimum count of positive-response neighbours in the NMS window
     /// required to accept a peak.
     pub min_cluster_size: u32,
-    /// Optional multiscale settings. `None` = single-scale.
-    pub multiscale: Option<MultiscaleParams>,
 }
 
 impl Default for ChessStrategy {
@@ -251,7 +248,6 @@ impl Default for ChessStrategy {
             ring: ChessRing::Canonical,
             nms_radius: 2,
             min_cluster_size: 2,
-            multiscale: None,
         }
     }
 }
@@ -260,9 +256,8 @@ impl Default for ChessStrategy {
 /// [`DetectionStrategy`].
 ///
 /// All radii and counts are in **working-resolution** pixels (i.e. after
-/// `image_upsample`). The detector currently runs single-scale; a future
-/// release will reserve a `multiscale: Option<MultiscaleParams>` slot
-/// here for coarse-to-fine Radon detection.
+/// `image_upsample`). Multiscale settings are at the top level of
+/// [`DetectorConfig`] and apply to both strategies.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 #[non_exhaustive]
@@ -285,9 +280,6 @@ pub struct RadonStrategy {
     /// Minimum count of positive-response neighbours in the NMS window
     /// required to accept a peak.
     pub min_cluster_size: u32,
-    // NOTE: a `multiscale: Option<MultiscaleParams>` slot is reserved here
-    // for future symmetric coarse-to-fine Radon detection (see the
-    // `#[non_exhaustive]` marker — adding the field will be additive).
 }
 
 impl Default for RadonStrategy {
@@ -329,24 +321,28 @@ impl Default for DetectionStrategy {
 }
 
 // ---------------------------------------------------------------------------
-// ChessConfig
+// DetectorConfig
 // ---------------------------------------------------------------------------
 
 /// High-level detection configuration.
 ///
-/// Build one with [`ChessConfig::single_scale`], [`ChessConfig::multiscale`],
-/// or [`ChessConfig::radon`] and tweak only the fields you need. The
-/// detector translates this into the low-level [`ChessParams`] /
-/// [`RadonDetectorParams`] consumed by `chess-corners-core` at the
-/// detection boundary.
+/// Build one with [`DetectorConfig::single_scale`],
+/// [`DetectorConfig::multiscale`], [`DetectorConfig::radon`], or
+/// [`DetectorConfig::radon_multiscale`] and tweak only the fields you need.
+/// The detector translates this into the low-level [`ChessParams`] /
+/// [`RadonDetectorParams`] consumed by `chess-corners-core` at the detection
+/// boundary.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 #[non_exhaustive]
-pub struct ChessConfig {
+pub struct DetectorConfig {
     /// Detector dispatch: ChESS or Radon, each carrying its own tuning.
     pub strategy: DetectionStrategy,
     /// Acceptance threshold. Same enum is honoured by both detectors.
     pub threshold: Threshold,
+    /// Optional coarse-to-fine multiscale settings. `None` = single-scale.
+    /// Honoured by both the ChESS and Radon strategies.
+    pub multiscale: Option<MultiscaleParams>,
     /// Subpixel refiner selection and per-variant tuning.
     pub refiner: RefinerConfig,
     /// Orientation-fit method used when building corner descriptors.
@@ -360,24 +356,20 @@ pub struct ChessConfig {
     pub merge_radius: f32,
 }
 
-impl Default for ChessConfig {
+impl Default for DetectorConfig {
     fn default() -> Self {
         Self::single_scale()
     }
 }
 
-impl ChessConfig {
+impl DetectorConfig {
     /// Single-scale ChESS preset. Recommended for images where the cell
     /// size comfortably exceeds the canonical ring's ~12 px support.
     pub fn single_scale() -> Self {
         Self {
-            strategy: DetectionStrategy::Chess(ChessStrategy {
-                ring: ChessRing::Canonical,
-                nms_radius: 2,
-                min_cluster_size: 2,
-                multiscale: None,
-            }),
+            strategy: DetectionStrategy::Chess(ChessStrategy::default()),
             threshold: Threshold::Absolute(0.0),
+            multiscale: None,
             refiner: RefinerConfig::default(),
             orientation_method: OrientationMethod::default(),
             descriptor_mode: DescriptorMode::default(),
@@ -390,27 +382,38 @@ impl ChessConfig {
     /// ≥ 1 MP or with cell sizes varying significantly across the frame.
     pub fn multiscale() -> Self {
         Self {
-            strategy: DetectionStrategy::Chess(ChessStrategy {
-                ring: ChessRing::Canonical,
-                nms_radius: 2,
-                min_cluster_size: 2,
-                multiscale: Some(MultiscaleParams {
-                    pyramid_levels: 3,
-                    pyramid_min_size: 128,
-                    refinement_radius: 3,
-                }),
+            strategy: DetectionStrategy::Chess(ChessStrategy::default()),
+            multiscale: Some(MultiscaleParams {
+                pyramid_levels: 3,
+                pyramid_min_size: 128,
+                refinement_radius: 3,
             }),
             ..Self::single_scale()
         }
     }
 
     /// Whole-image Radon detector preset. Useful for heavy blur, low
-    /// contrast, or cells smaller than the ChESS ring support. Currently
-    /// single-scale.
+    /// contrast, or cells smaller than the ChESS ring support.
+    /// Single-scale; use [`Self::radon_multiscale`] for coarse-to-fine
+    /// Radon detection on larger frames.
     pub fn radon() -> Self {
         Self {
             strategy: DetectionStrategy::Radon(RadonStrategy::default()),
             threshold: Threshold::Relative(0.01),
+            multiscale: None,
+            ..Self::single_scale()
+        }
+    }
+
+    /// Coarse-to-fine Radon preset. Useful for blurry / low-contrast
+    /// imagery on large frames where the SAT-based response benefits
+    /// from coarse seeding. Single-scale Radon ([`Self::radon`]) remains
+    /// the right pick for small frames or tight per-frame latency budgets.
+    pub fn radon_multiscale() -> Self {
+        Self {
+            strategy: DetectionStrategy::Radon(RadonStrategy::default()),
+            threshold: Threshold::Relative(0.01),
+            multiscale: Some(MultiscaleParams::default()),
             ..Self::single_scale()
         }
     }
@@ -464,14 +467,11 @@ impl ChessConfig {
     }
 
     /// Translate this config into the [`CoarseToFineParams`] that drive
-    /// the multiscale pipeline. Returns `None` when the active strategy
-    /// is ChESS without multiscale settings, or the Radon strategy
-    /// (which is single-scale today).
+    /// the multiscale pipeline. Returns `None` when `self.multiscale` is
+    /// `None` (single-scale). Both ChESS and Radon honour the same
+    /// top-level multiscale settings.
     pub fn to_coarse_to_fine_params(&self) -> Option<CoarseToFineParams> {
-        let DetectionStrategy::Chess(chess) = &self.strategy else {
-            return None;
-        };
-        let ms = chess.multiscale?;
+        let ms = self.multiscale?;
         let mut cfg = CoarseToFineParams::default();
         let mut pyramid = PyramidParams::default();
         pyramid.num_levels = ms.pyramid_levels;
@@ -482,6 +482,10 @@ impl ChessConfig {
         Some(cfg)
     }
 }
+
+/// Renamed to [`DetectorConfig`]; this alias keeps existing call sites
+/// compiling and will be removed in 0.11.0.
+pub type ChessConfig = DetectorConfig;
 
 // ---------------------------------------------------------------------------
 // Threshold → core param translation
@@ -522,14 +526,14 @@ fn apply_threshold_radon(params: &mut RadonDetectorParams, threshold: Threshold)
 mod tests {
     use super::*;
 
-    fn assert_strategy_chess(cfg: &ChessConfig) -> &ChessStrategy {
+    fn assert_strategy_chess(cfg: &DetectorConfig) -> &ChessStrategy {
         match &cfg.strategy {
             DetectionStrategy::Chess(c) => c,
             other => panic!("expected ChESS strategy, got {other:?}"),
         }
     }
 
-    fn assert_strategy_radon(cfg: &ChessConfig) -> &RadonStrategy {
+    fn assert_strategy_radon(cfg: &DetectorConfig) -> &RadonStrategy {
         match &cfg.strategy {
             DetectionStrategy::Radon(r) => r,
             other => panic!("expected Radon strategy, got {other:?}"),
@@ -538,12 +542,12 @@ mod tests {
 
     #[test]
     fn default_is_single_scale_chess_with_paper_threshold() {
-        let cfg = ChessConfig::default();
+        let cfg = DetectorConfig::default();
         let chess = assert_strategy_chess(&cfg);
         assert_eq!(chess.ring, ChessRing::Canonical);
         assert_eq!(chess.nms_radius, 2);
         assert_eq!(chess.min_cluster_size, 2);
-        assert!(chess.multiscale.is_none());
+        assert!(cfg.multiscale.is_none());
         assert_eq!(cfg.threshold, Threshold::Absolute(0.0));
         assert_eq!(cfg.descriptor_mode, DescriptorMode::FollowDetector);
         assert_eq!(cfg.merge_radius, 3.0);
@@ -563,9 +567,9 @@ mod tests {
 
     #[test]
     fn relative_threshold_clears_absolute() {
-        let cfg = ChessConfig {
+        let cfg = DetectorConfig {
             threshold: Threshold::Relative(0.15),
-            ..ChessConfig::single_scale()
+            ..DetectorConfig::single_scale()
         };
         let params = cfg.to_chess_params();
         assert_eq!(params.threshold_abs, None);
@@ -574,9 +578,9 @@ mod tests {
 
     #[test]
     fn absolute_threshold_overrides_relative() {
-        let cfg = ChessConfig {
+        let cfg = DetectorConfig {
             threshold: Threshold::Absolute(7.5),
-            ..ChessConfig::single_scale()
+            ..DetectorConfig::single_scale()
         };
         let params = cfg.to_chess_params();
         assert_eq!(params.threshold_abs, Some(7.5));
@@ -584,9 +588,9 @@ mod tests {
 
     #[test]
     fn multiscale_preset_carries_pyramid_params() {
-        let cfg = ChessConfig::multiscale();
-        let chess = assert_strategy_chess(&cfg);
-        let ms = chess
+        let cfg = DetectorConfig::multiscale();
+        // multiscale is now at the top level, not nested in the strategy
+        let ms = cfg
             .multiscale
             .expect("multiscale preset must carry MultiscaleParams");
         assert_eq!(ms.pyramid_levels, 3);
@@ -604,7 +608,7 @@ mod tests {
 
     #[test]
     fn radon_preset_uses_radon_strategy_and_relative_threshold() {
-        let cfg = ChessConfig::radon();
+        let cfg = DetectorConfig::radon();
         let radon = assert_strategy_radon(&cfg);
         assert_eq!(radon.ray_radius, 4);
         assert_eq!(radon.image_upsample, 2);
@@ -613,7 +617,7 @@ mod tests {
         assert_eq!(radon.nms_radius, 4);
         assert_eq!(radon.min_cluster_size, 2);
         assert_eq!(cfg.threshold, Threshold::Relative(0.01));
-        // No multiscale wiring for Radon today.
+        assert!(cfg.multiscale.is_none());
         assert!(cfg.to_coarse_to_fine_params().is_none());
 
         let radon_params = cfg.to_radon_detector_params();
@@ -624,8 +628,29 @@ mod tests {
     }
 
     #[test]
+    fn radon_multiscale_preset_carries_pyramid_params() {
+        let cfg = DetectorConfig::radon_multiscale();
+        assert_strategy_radon(&cfg);
+        assert_eq!(cfg.threshold, Threshold::Relative(0.01));
+        let ms = cfg
+            .multiscale
+            .expect("radon_multiscale preset must carry MultiscaleParams");
+        assert_eq!(ms.pyramid_levels, 3);
+        assert_eq!(ms.pyramid_min_size, 128);
+        assert_eq!(ms.refinement_radius, 3);
+
+        let cf = cfg
+            .to_coarse_to_fine_params()
+            .expect("radon_multiscale config must produce CoarseToFineParams");
+        assert_eq!(cf.pyramid.num_levels, 3);
+        assert_eq!(cf.pyramid.min_size, 128);
+        assert_eq!(cf.refinement_radius, 3);
+        assert_eq!(cf.merge_radius, 3.0);
+    }
+
+    #[test]
     fn broad_ring_and_forstner_refiner_propagate_to_params() {
-        let cfg = ChessConfig {
+        let cfg = DetectorConfig {
             strategy: DetectionStrategy::Chess(ChessStrategy {
                 ring: ChessRing::Broad,
                 ..ChessStrategy::default()
@@ -639,7 +664,7 @@ mod tests {
                 },
                 ..RefinerConfig::default()
             },
-            ..ChessConfig::single_scale()
+            ..DetectorConfig::single_scale()
         };
 
         let params = cfg.to_chess_params();
@@ -656,27 +681,37 @@ mod tests {
 
     #[test]
     fn single_scale_preset_round_trips_through_serde() {
-        let cfg = ChessConfig::single_scale();
+        let cfg = DetectorConfig::single_scale();
         let json = serde_json::to_string(&cfg).expect("serialize single-scale config");
-        let decoded: ChessConfig =
+        let decoded: DetectorConfig =
             serde_json::from_str(&json).expect("deserialize single-scale config");
         assert_eq!(decoded, cfg);
     }
 
     #[test]
     fn multiscale_preset_round_trips_through_serde() {
-        let cfg = ChessConfig::multiscale();
+        let cfg = DetectorConfig::multiscale();
         let json = serde_json::to_string(&cfg).expect("serialize multiscale config");
-        let decoded: ChessConfig =
+        let decoded: DetectorConfig =
             serde_json::from_str(&json).expect("deserialize multiscale config");
         assert_eq!(decoded, cfg);
     }
 
     #[test]
     fn radon_preset_round_trips_through_serde() {
-        let cfg = ChessConfig::radon();
+        let cfg = DetectorConfig::radon();
         let json = serde_json::to_string(&cfg).expect("serialize radon config");
-        let decoded: ChessConfig = serde_json::from_str(&json).expect("deserialize radon config");
+        let decoded: DetectorConfig =
+            serde_json::from_str(&json).expect("deserialize radon config");
+        assert_eq!(decoded, cfg);
+    }
+
+    #[test]
+    fn radon_multiscale_preset_round_trips_through_serde() {
+        let cfg = DetectorConfig::radon_multiscale();
+        let json = serde_json::to_string(&cfg).expect("serialize radon_multiscale config");
+        let decoded: DetectorConfig =
+            serde_json::from_str(&json).expect("deserialize radon_multiscale config");
         assert_eq!(decoded, cfg);
     }
 

@@ -42,7 +42,7 @@ def test_full_config_example_parser_is_lazy_about_pillow():
     assert cfg.threshold.value == 0.5
     assert cfg.refiner.kind is chess_corners.RefinementMethod.FORSTNER
     assert cfg.refiner.forstner.max_offset == 2.0
-    ms = cfg.strategy.chess.multiscale
+    ms = cfg.multiscale
     assert ms is not None
     assert ms.pyramid_levels == 3
     assert ms.pyramid_min_size == 96
@@ -78,7 +78,7 @@ def test_code_config_example_is_lazy_about_pillow_and_builds_full_config():
     assert cfg.refiner.center_of_mass.radius == 2
     assert cfg.refiner.forstner.max_offset == 2.0
     assert cfg.refiner.saddle_point.max_offset == 1.75
-    ms = cfg.strategy.chess.multiscale
+    ms = cfg.multiscale
     assert ms is not None
     assert ms.pyramid_levels == 3
     assert ms.pyramid_min_size == 96

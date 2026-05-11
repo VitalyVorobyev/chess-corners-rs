@@ -81,9 +81,9 @@ chess-corners-ml    (ONNX inference, optional via ml-refiner feature)
 
 ### Multiscale Pipeline (`chess-corners`)
 
-Coarse-to-fine pyramid detection with reusable `PyramidBuffers` for successive frames. Configured via `ChessConfig` → `CoarseToFineParams` → `PyramidParams`.
+Coarse-to-fine pyramid detection with reusable `PyramidBuffers` for successive frames. Configured via `DetectorConfig.multiscale: Option<MultiscaleParams>` → `PyramidParams`. Both ChESS and Radon detectors are driven by the `DenseDetector` trait; `multiscale` and `refiner` are top-level on `DetectorConfig` and apply to both.
 
-Optional pre-pipeline **integer bilinear upscaling** (`chess_corners::upscale`, configured via `ChessConfig.upscale`) runs ahead of the pyramid for low-resolution inputs where target corners lack the 5 px ring support. Output descriptor coordinates are always rescaled back to the original input pixel frame.
+Optional pre-pipeline **integer bilinear upscaling** (`chess_corners::upscale`, configured via `DetectorConfig.upscale`) runs ahead of the pyramid for low-resolution inputs where target corners lack the 5 px ring support. Output descriptor coordinates are always rescaled back to the original input pixel frame.
 
 ### Feature Flags
 

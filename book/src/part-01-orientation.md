@@ -25,11 +25,11 @@ Once a detector has produced integer-pixel seeds, one of five
 subpixel refiners brings the coordinates under a pixel:
 `CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, or an
 ONNX-backed `ML` refiner. Each is a one-line swap via
-`ChessConfig.refiner.kind`. The refiners are described in
+`DetectorConfig.refiner.kind`. The refiners are described in
 [Part V](part-05-refiners.md) and benchmarked in
 [Part VIII](part-08-benchmarks.md).
 
-The same `ChessConfig` drives a Rust API, a Python package, a
+The same `DetectorConfig` drives a Rust API, a Python package, a
 browser WebAssembly package, and a CLI. Results are bit-identical
 across binding targets.
 
@@ -85,7 +85,7 @@ Layering rules enforced by CI:
 - `box-image-pyramid` has no chess-specific code — it is a reusable
   grayscale pyramid builder that happens to be used here.
 - Algorithms go in `chess-corners-core`; the facade crate adds the
-  public `ChessConfig` type, CLI, multiscale wiring, and feature
+  public `DetectorConfig` type, CLI, multiscale wiring, and feature
   gates.
 
 Support directories:
@@ -183,6 +183,6 @@ cargo run -p chess-corners --release --bin chess-corners -- \
     run config/chess_cli_config_example.json
 ```
 
-Every surface consumes the same `ChessConfig` JSON schema. Examples
+Every surface consumes the same `DetectorConfig` JSON schema. Examples
 live under `config/`. The next part walks through the public API in
 all four surfaces.

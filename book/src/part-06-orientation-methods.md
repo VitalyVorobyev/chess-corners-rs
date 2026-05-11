@@ -14,7 +14,7 @@ use each, and how each one works step by step.
 
 ## 6.1 API surface
 
-The `orientation_method` field on `ChessConfig` (and the
+The `orientation_method` field on `DetectorConfig` (and the
 `OrientationMethod` enum) selects which algorithm runs:
 
 | Method     | JSON key      | Notes                                                                        |

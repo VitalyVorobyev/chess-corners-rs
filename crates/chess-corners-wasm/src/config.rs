@@ -5,17 +5,17 @@
 //!
 //! Each wrapper stores its inner Rust value in a shared
 //! `Rc<RefCell<T>>` cell, and compound wrappers (`RefinerConfig`,
-//! `ChessConfig`, `DetectionStrategy`, `ChessStrategy`, `RadonStrategy`,
+//! `DetectorConfig`, `DetectionStrategy`, `ChessStrategy`, `RadonStrategy`,
 //! `MultiscaleParams`) hold `Rc` handles to their children's cells. A
 //! getter returns a wrapper backed by the same cell as the parent,
 //! so chained mutation propagates without a round-trip:
 //!
 //! ```js
-//! const cfg = ChessConfig.multiscale();
+//! const cfg = DetectorConfig.multiscalePreset();
 //! cfg.refiner.kind = RefinementMethod.RadonPeak;        // works
 //! cfg.refiner.forstner.maxOffset = 2.0;                  // works
 //! cfg.strategy.chess.nmsRadius = 3;                      // works
-//! cfg.strategy.chess.multiscale.pyramidLevels = 4;       // works
+//! cfg.multiscale.pyramidLevels = 4;                      // works
 //! ```
 //!
 //! Setters that take a nested wrapper (e.g. `cfg.refiner = newCfg`)
@@ -846,22 +846,12 @@ impl MultiscaleParams {
 
 /// ChESS-detector branch of [`DetectionStrategy`]. Mirrors
 /// [`chess_corners::ChessStrategy`].
-///
-/// `multiscale` is an optional handle: `null` means single-scale.
-/// Use `enableMultiscale()` to attach a defaulted [`MultiscaleParams`]
-/// or assign a custom one via the setter; `clearMultiscale()` returns
-/// the strategy to single-scale.
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
 pub struct ChessStrategy {
     ring: Cell<RsChessRing>,
     nms_radius: Cell<u32>,
     min_cluster_size: Cell<u32>,
-    /// `None` cell means single-scale. Switching to multiscale stores
-    /// `Some(cell)` where `cell` is the shared inner cell of a
-    /// [`MultiscaleParams`] wrapper; the wrapper returned from
-    /// `multiscale` getters reuses that cell so edits propagate.
-    multiscale: Cell<Option<Cell<RsMultiscaleParams>>>,
 }
 
 #[wasm_bindgen]
@@ -873,7 +863,6 @@ impl ChessStrategy {
             ring: cell(defaults.ring),
             nms_radius: cell(defaults.nms_radius),
             min_cluster_size: cell(defaults.min_cluster_size),
-            multiscale: cell(defaults.multiscale.map(cell)),
         }
     }
 
@@ -903,47 +892,6 @@ impl ChessStrategy {
     pub fn set_min_cluster_size(&mut self, v: u32) {
         *self.min_cluster_size.borrow_mut() = v;
     }
-
-    /// Returns the attached multiscale params, or `null` for single-scale.
-    /// Edits through the returned wrapper propagate into this strategy.
-    #[wasm_bindgen(getter)]
-    pub fn multiscale(&self) -> Option<MultiscaleParams> {
-        self.multiscale
-            .borrow()
-            .as_ref()
-            .map(|c| MultiscaleParams::from_cell(Rc::clone(c)))
-    }
-    #[wasm_bindgen(setter)]
-    pub fn set_multiscale(&mut self, v: Option<MultiscaleParams>) {
-        *self.multiscale.borrow_mut() = v.map(|w| w.share_cell());
-    }
-
-    /// Detach multiscale settings; the strategy reverts to single-scale.
-    #[wasm_bindgen(js_name = clearMultiscale)]
-    pub fn clear_multiscale(&mut self) {
-        *self.multiscale.borrow_mut() = None;
-    }
-
-    /// Attach a defaulted [`MultiscaleParams`] and return a handle to
-    /// it so the caller can immediately tweak fields. Idempotent: if
-    /// multiscale is already attached, returns the existing handle.
-    #[wasm_bindgen(js_name = enableMultiscale)]
-    pub fn enable_multiscale(&mut self) -> MultiscaleParams {
-        {
-            let mut slot = self.multiscale.borrow_mut();
-            if slot.is_none() {
-                *slot = Some(cell(RsMultiscaleParams::default()));
-            }
-        }
-        // Cannot hold the borrow_mut() across the second borrow().
-        let c = self
-            .multiscale
-            .borrow()
-            .as_ref()
-            .map(Rc::clone)
-            .expect("multiscale just initialized");
-        MultiscaleParams::from_cell(c)
-    }
 }
 
 impl Default for ChessStrategy {
@@ -958,7 +906,6 @@ impl ChessStrategy {
             ring: cell(value.ring),
             nms_radius: cell(value.nms_radius),
             min_cluster_size: cell(value.min_cluster_size),
-            multiscale: cell(value.multiscale.map(cell)),
         }
     }
 
@@ -967,7 +914,6 @@ impl ChessStrategy {
         s.ring = *self.ring.borrow();
         s.nms_radius = *self.nms_radius.borrow();
         s.min_cluster_size = *self.min_cluster_size.borrow();
-        s.multiscale = self.multiscale.borrow().as_ref().map(|c| *c.borrow());
         s
     }
 }
@@ -1304,21 +1250,23 @@ impl UpscaleConfig {
 }
 
 // ---------------------------------------------------------------------------
-// ChessConfig
+// DetectorConfig
 // ---------------------------------------------------------------------------
 
 /// High-level detector configuration. Mirrors
-/// [`chess_corners::ChessConfig`].
+/// [`chess_corners::DetectorConfig`].
 ///
-/// Build one with [`ChessConfig::single_scale`],
-/// [`ChessConfig::multiscale`], or [`ChessConfig::radon`] and tweak
-/// only the fields you need.
+/// Build one with [`DetectorConfig::single_scale`],
+/// [`DetectorConfig::multiscale`], [`DetectorConfig::radon`], or
+/// [`DetectorConfig::radon_multiscale`] and tweak only the fields you need.
 #[non_exhaustive]
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
-pub struct ChessConfig {
+pub struct DetectorConfig {
     strategy: DetectionStrategy,
     threshold: Threshold,
+    /// `None` cell means single-scale. Honoured by both ChESS and Radon.
+    multiscale: Cell<Option<Cell<RsMultiscaleParams>>>,
     refiner: RefinerConfig,
     orientation_method: Cell<RsOrientationMethod>,
     descriptor_mode: Cell<RsDescriptorMode>,
@@ -1326,7 +1274,7 @@ pub struct ChessConfig {
     merge_radius: Cell<f32>,
 }
 
-impl ChessConfig {
+impl DetectorConfig {
     pub(crate) fn from_value_pub(value: RsChessConfig) -> Self {
         Self::from_value(value)
     }
@@ -1335,6 +1283,7 @@ impl ChessConfig {
         Self {
             strategy: DetectionStrategy::from_value(value.strategy),
             threshold: Threshold::from_value(value.threshold),
+            multiscale: cell(value.multiscale.map(cell)),
             refiner: RefinerConfig::from_value(value.refiner),
             orientation_method: cell(value.orientation_method),
             descriptor_mode: cell(value.descriptor_mode),
@@ -1349,6 +1298,7 @@ impl ChessConfig {
         let mut cfg = RsChessConfig::default();
         cfg.strategy = self.strategy.snapshot();
         cfg.threshold = *self.threshold.share_cell().borrow();
+        cfg.multiscale = self.multiscale.borrow().as_ref().map(|c| *c.borrow());
         cfg.refiner = self.refiner.snapshot();
         cfg.orientation_method = *self.orientation_method.borrow();
         cfg.descriptor_mode = *self.descriptor_mode.borrow();
@@ -1359,8 +1309,8 @@ impl ChessConfig {
 }
 
 #[wasm_bindgen]
-impl ChessConfig {
-    /// Construct a `ChessConfig` with library defaults
+impl DetectorConfig {
+    /// Construct a `DetectorConfig` with library defaults
     /// (single-scale ChESS, absolute threshold = 0.0).
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
@@ -1374,13 +1324,21 @@ impl ChessConfig {
     }
 
     /// Recommended 3-level multiscale ChESS preset.
-    pub fn multiscale() -> Self {
+    /// Exposed as `multiscalePreset` in JS.
+    #[wasm_bindgen(js_name = multiscalePreset)]
+    pub fn multiscale_preset() -> Self {
         Self::from_value(RsChessConfig::multiscale())
     }
 
     /// Whole-image Radon detector preset (relative threshold 0.01).
     pub fn radon() -> Self {
         Self::from_value(RsChessConfig::radon())
+    }
+
+    /// Coarse-to-fine Radon preset.
+    #[wasm_bindgen(js_name = radonMultiscale)]
+    pub fn radon_multiscale() -> Self {
+        Self::from_value(RsChessConfig::radon_multiscale())
     }
 
     // ---- Top-level fields ----
@@ -1432,6 +1390,49 @@ impl ChessConfig {
         *self.merge_radius.borrow_mut() = v;
     }
 
+    // ---- Multiscale ----
+
+    /// Returns the attached multiscale params, or `null` for single-scale.
+    /// Edits through the returned wrapper propagate into this config.
+    /// Honoured by both ChESS and Radon strategies.
+    #[wasm_bindgen(getter)]
+    pub fn multiscale(&self) -> Option<MultiscaleParams> {
+        self.multiscale
+            .borrow()
+            .as_ref()
+            .map(|c| MultiscaleParams::from_cell(Rc::clone(c)))
+    }
+    #[wasm_bindgen(setter)]
+    pub fn set_multiscale(&mut self, v: Option<MultiscaleParams>) {
+        *self.multiscale.borrow_mut() = v.map(|w| w.share_cell());
+    }
+
+    /// Detach multiscale settings; the config reverts to single-scale.
+    #[wasm_bindgen(js_name = clearMultiscale)]
+    pub fn clear_multiscale(&mut self) {
+        *self.multiscale.borrow_mut() = None;
+    }
+
+    /// Attach a defaulted [`MultiscaleParams`] and return a handle to
+    /// it so the caller can immediately tweak fields. Idempotent: if
+    /// multiscale is already attached, returns the existing handle.
+    #[wasm_bindgen(js_name = enableMultiscale)]
+    pub fn enable_multiscale(&mut self) -> MultiscaleParams {
+        {
+            let mut slot = self.multiscale.borrow_mut();
+            if slot.is_none() {
+                *slot = Some(cell(RsMultiscaleParams::default()));
+            }
+        }
+        let c = self
+            .multiscale
+            .borrow()
+            .as_ref()
+            .map(Rc::clone)
+            .expect("multiscale just initialized");
+        MultiscaleParams::from_cell(c)
+    }
+
     // ---- Nested wrappers (live views via shared cells) ----
 
     #[wasm_bindgen(getter)]
@@ -1457,7 +1458,7 @@ impl ChessConfig {
     }
 }
 
-impl Default for ChessConfig {
+impl Default for DetectorConfig {
     fn default() -> Self {
         Self::new()
     }
@@ -1479,8 +1480,8 @@ mod tests {
     };
 
     #[test]
-    fn nested_edits_propagate_through_chess_config() {
-        let cfg = ChessConfig::new();
+    fn nested_edits_propagate_through_detector_config() {
+        let cfg = DetectorConfig::new();
         let mut r = cfg.refiner();
         r.set_kind(RefinementMethod::Forstner);
 
@@ -1497,7 +1498,7 @@ mod tests {
 
     #[test]
     fn chess_strategy_field_edits_propagate() {
-        let cfg = ChessConfig::single_scale();
+        let cfg = DetectorConfig::single_scale();
         let mut chess = cfg.strategy().chess();
         chess.set_nms_radius(7);
         chess.set_ring(ChessRing::Broad);
@@ -1512,38 +1513,30 @@ mod tests {
 
     #[test]
     fn enable_multiscale_attaches_and_edits_propagate() {
-        let cfg = ChessConfig::single_scale();
-        let mut chess = cfg.strategy().chess();
-        let mut ms = chess.enable_multiscale();
+        let mut cfg = DetectorConfig::single_scale();
+        let mut ms = cfg.enable_multiscale();
         ms.set_pyramid_levels(5);
         ms.set_pyramid_min_size(64);
 
         let snap = cfg.snapshot();
-        let RsDetectionStrategy::Chess(s) = snap.strategy else {
-            panic!("expected chess strategy")
-        };
-        let attached = s.multiscale.expect("multiscale should be attached");
+        let attached = snap.multiscale.expect("multiscale should be attached");
         assert_eq!(attached.pyramid_levels, 5);
         assert_eq!(attached.pyramid_min_size, 64);
     }
 
     #[test]
     fn clear_multiscale_returns_to_single_scale() {
-        let cfg = ChessConfig::multiscale();
-        let mut chess = cfg.strategy().chess();
-        assert!(chess.multiscale().is_some());
-        chess.clear_multiscale();
+        let mut cfg = DetectorConfig::multiscale_preset();
+        assert!(cfg.multiscale().is_some());
+        cfg.clear_multiscale();
 
         let snap = cfg.snapshot();
-        let RsDetectionStrategy::Chess(s) = snap.strategy else {
-            panic!("expected chess strategy")
-        };
-        assert!(s.multiscale.is_none());
+        assert!(snap.multiscale.is_none());
     }
 
     #[test]
     fn radon_strategy_field_edits_propagate() {
-        let cfg = ChessConfig::radon();
+        let cfg = DetectorConfig::radon();
         let mut radon = cfg.strategy().radon();
         radon.set_ray_radius(7);
         radon.set_image_upsample(2);
@@ -1568,7 +1561,7 @@ mod tests {
 
     #[test]
     fn cfg_threshold_propagates() {
-        let mut cfg = ChessConfig::new();
+        let mut cfg = DetectorConfig::new();
         let t = Threshold::relative(0.15);
         cfg.set_threshold(&t);
         let snap = cfg.snapshot();
@@ -1604,7 +1597,7 @@ mod tests {
 
     #[test]
     fn upscale_edits_propagate() {
-        let cfg = ChessConfig::new();
+        let cfg = DetectorConfig::new();
         let mut up = cfg.upscale();
         up.set_factor(3);
         up.set_mode(UpscaleMode::Fixed);
@@ -1615,7 +1608,7 @@ mod tests {
 
     #[test]
     fn assigning_nested_wrapper_reseats_cells() {
-        let mut cfg = ChessConfig::new();
+        let mut cfg = DetectorConfig::new();
         let mut new_refiner = RefinerConfig::new();
         new_refiner.set_kind(RefinementMethod::SaddlePoint);
         new_refiner.forstner().set_max_offset(3.5);
@@ -1633,7 +1626,7 @@ mod tests {
 
     #[test]
     fn snapshot_returns_independent_state() {
-        let cfg = ChessConfig::new();
+        let cfg = DetectorConfig::new();
         let t = Threshold::absolute(0.1);
         let mut cfg_mut = cfg;
         cfg_mut.set_threshold(&t);
@@ -1652,7 +1645,7 @@ mod tests {
         ];
 
         for (wasm_variant, rs_variant) in cases {
-            let mut cfg = ChessConfig::new();
+            let mut cfg = DetectorConfig::new();
             cfg.set_orientation_method(wasm_variant);
             assert_eq!(cfg.orientation_method(), wasm_variant);
             let snap = cfg.snapshot();
@@ -1661,5 +1654,19 @@ mod tests {
                 "snapshot mismatch for {wasm_variant:?}"
             );
         }
+    }
+
+    #[test]
+    fn radon_multiscale_preset_has_radon_strategy_and_multiscale() {
+        let cfg = DetectorConfig::radon_multiscale();
+        let snap = cfg.snapshot();
+        assert!(
+            matches!(snap.strategy, RsDetectionStrategy::Radon(_)),
+            "radon_multiscale preset must use Radon strategy"
+        );
+        assert!(
+            snap.multiscale.is_some(),
+            "radon_multiscale preset must enable multiscale"
+        );
     }
 }

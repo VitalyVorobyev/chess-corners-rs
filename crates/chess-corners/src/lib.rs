@@ -11,7 +11,7 @@
 //!
 //! [`Detector`] returns subpixel [`CornerDescriptor`] values in
 //! full-resolution image coordinates. In most applications you
-//! construct a [`ChessConfig`], optionally tweak its fields, build a
+//! construct a [`DetectorConfig`], optionally tweak its fields, build a
 //! [`Detector`], and call [`Detector::detect`].
 //!
 //! # Quick start
@@ -22,7 +22,7 @@
 //! crate:
 //!
 //! ```no_run
-//! use chess_corners::{ChessConfig, Detector, RefinementMethod, Threshold};
+//! use chess_corners::{DetectorConfig, Detector, RefinementMethod, Threshold};
 //! use image::io::Reader as ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,7 +30,7 @@
 //!     .decode()?
 //!     .to_luma8();
 //!
-//! let mut cfg = ChessConfig::multiscale();
+//! let mut cfg = DetectorConfig::multiscale();
 //! cfg.threshold = Threshold::Relative(0.15);
 //! cfg.refiner.kind = RefinementMethod::Forstner;
 //!
@@ -53,11 +53,11 @@
 //! [`Detector::detect_u8`]:
 //!
 //! ```no_run
-//! use chess_corners::{ChessConfig, Detector};
+//! use chess_corners::{DetectorConfig, Detector};
 //!
 //! # fn detect(img: &[u8], width: u32, height: u32)
 //! #     -> Result<(), chess_corners::ChessError> {
-//! let cfg = ChessConfig::single_scale();
+//! let cfg = DetectorConfig::single_scale();
 //! let mut detector = Detector::new(cfg)?;
 //! let corners = detector.detect_u8(img, width, height)?;
 //! println!("found {} corners", corners.len());
@@ -73,10 +73,10 @@
 //! ```no_run
 //! # #[cfg(feature = "ml-refiner")]
 //! # {
-//! use chess_corners::{ChessConfig, Detector, RefinementMethod};
+//! use chess_corners::{DetectorConfig, Detector, RefinementMethod};
 //! use image::GrayImage;
 //!
-//! let mut cfg = ChessConfig::single_scale();
+//! let mut cfg = DetectorConfig::single_scale();
 //! cfg.refiner.kind = RefinementMethod::Ml;
 //!
 //! let img = GrayImage::new(1, 1);
@@ -110,7 +110,7 @@
 //!
 //! # Configuration
 //!
-//! [`ChessConfig`] is strategy-typed: the [`ChessConfig::strategy`]
+//! [`DetectorConfig`] is strategy-typed: the [`DetectorConfig::strategy`]
 //! field is a [`DetectionStrategy`] enum carrying either a
 //! [`ChessStrategy`] (ring choice, NMS, optional multiscale) or a
 //! [`RadonStrategy`] (whole-image Duda-Frese parameters). Acceptance
@@ -169,9 +169,13 @@ mod upscale;
 // SAT views, scalar reference paths) remain reachable only via a direct
 // `chess-corners-core` dep.
 pub use crate::config::{
-    ChessConfig, ChessRing, ChessStrategy, DescriptorMode, DetectionStrategy, MultiscaleParams,
+    ChessRing, ChessStrategy, DescriptorMode, DetectionStrategy, DetectorConfig, MultiscaleParams,
     RadonStrategy, RefinementMethod, RefinerConfig, Threshold,
 };
+// Backwards-compat alias for downstream users on 0.9.x. The
+// canonical name is `DetectorConfig` since 0.10.0 (the type now
+// configures both ChESS and Radon detectors).
+pub use crate::config::ChessConfig;
 pub use crate::error::ChessError;
 pub use crate::upscale::{
     rescale_descriptors_to_input, upscale_bilinear_u8, UpscaleBuffers, UpscaleConfig, UpscaleError,

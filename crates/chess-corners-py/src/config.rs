@@ -1237,29 +1237,22 @@ pub struct ChessStrategy {
     pub(crate) ring: RsChessRing,
     pub(crate) nms_radius: u32,
     pub(crate) min_cluster_size: u32,
-    pub(crate) multiscale: Option<Py<MultiscaleParams>>,
 }
 
 impl ChessStrategy {
-    fn from_rs(py: Python<'_>, v: RsChessStrategy) -> PyResult<Self> {
-        let multiscale = match v.multiscale {
-            Some(ms) => Some(Py::new(py, MultiscaleParams { inner: ms })?),
-            None => None,
-        };
+    fn from_rs(_py: Python<'_>, v: RsChessStrategy) -> PyResult<Self> {
         Ok(Self {
             ring: v.ring,
             nms_radius: v.nms_radius,
             min_cluster_size: v.min_cluster_size,
-            multiscale,
         })
     }
 
-    pub(crate) fn to_rs(&self, py: Python<'_>) -> RsChessStrategy {
+    pub(crate) fn to_rs(&self, _py: Python<'_>) -> RsChessStrategy {
         let mut s = RsChessStrategy::default();
         s.ring = self.ring;
         s.nms_radius = self.nms_radius;
         s.min_cluster_size = self.min_cluster_size;
-        s.multiscale = self.multiscale.as_ref().map(|m| m.borrow(py).inner);
         s
     }
 }
@@ -1298,24 +1291,11 @@ impl ChessStrategy {
         self.min_cluster_size = v;
     }
 
-    #[getter]
-    fn multiscale(&self, py: Python<'_>) -> Option<Py<MultiscaleParams>> {
-        self.multiscale.as_ref().map(|m| m.clone_ref(py))
-    }
-    #[setter]
-    fn set_multiscale(&mut self, v: Option<Py<MultiscaleParams>>) {
-        self.multiscale = v;
-    }
-
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
         d.set_item("ring", chess_ring_str(self.ring))?;
         d.set_item("nms_radius", self.nms_radius)?;
         d.set_item("min_cluster_size", self.min_cluster_size)?;
-        match &self.multiscale {
-            Some(ms) => d.set_item("multiscale", ms.borrow(py).to_dict(py)?)?,
-            None => d.set_item("multiscale", py.None())?,
-        }
         Ok(d.unbind())
     }
 
@@ -1328,7 +1308,7 @@ impl ChessStrategy {
         let dict = require_dict(data, "chess_strategy")?;
         reject_unknown_keys(
             &dict,
-            &["ring", "nms_radius", "min_cluster_size", "multiscale"],
+            &["ring", "nms_radius", "min_cluster_size"],
             "chess_strategy",
         )?;
         let mut cfg = Self::from_rs(py, RsChessStrategy::default())?;
@@ -1340,14 +1320,6 @@ impl ChessStrategy {
         }
         if let Some(v) = extract_int(&dict, "min_cluster_size", "chess_strategy")? {
             cfg.min_cluster_size = v as u32;
-        }
-        if let Some(value) = dict.get_item("multiscale")? {
-            if value.is_none() {
-                cfg.multiscale = None;
-            } else {
-                let ms_type = py.get_type::<MultiscaleParams>();
-                cfg.multiscale = Some(Py::new(py, MultiscaleParams::from_dict(&ms_type, &value)?)?);
-            }
         }
         Ok(cfg)
     }
@@ -1926,13 +1898,14 @@ impl RefinerConfig {
 }
 
 // ---------------------------------------------------------------------------
-// ChessConfig
+// DetectorConfig
 // ---------------------------------------------------------------------------
 
 #[pyclass(module = "chess_corners")]
-pub struct ChessConfig {
+pub struct DetectorConfig {
     pub(crate) strategy: Py<DetectionStrategy>,
     pub(crate) threshold: Py<Threshold>,
+    pub(crate) multiscale: Option<Py<MultiscaleParams>>,
     pub(crate) refiner: Py<RefinerConfig>,
     pub(crate) orientation_method: RsOrientationMethod,
     pub(crate) descriptor_mode: RsDescriptorMode,
@@ -1940,11 +1913,16 @@ pub struct ChessConfig {
     pub(crate) merge_radius: f32,
 }
 
-impl ChessConfig {
+impl DetectorConfig {
     fn from_rs(py: Python<'_>, src: RsChessConfig) -> PyResult<Self> {
+        let multiscale = match src.multiscale {
+            Some(ms) => Some(Py::new(py, MultiscaleParams { inner: ms })?),
+            None => None,
+        };
         Ok(Self {
             strategy: Py::new(py, DetectionStrategy::from_rs(py, src.strategy)?)?,
             threshold: Py::new(py, Threshold::from_rs(src.threshold))?,
+            multiscale,
             refiner: Py::new(
                 py,
                 RefinerConfig {
@@ -1986,12 +1964,13 @@ impl ChessConfig {
         Self::from_rs(py, RsChessConfig::default())
     }
 
-    /// Convert into the Rust facade's `ChessConfig` (consuming reads
+    /// Convert into the Rust facade's `DetectorConfig` (consuming reads
     /// of the nested Python wrappers).
     pub(crate) fn to_inner(&self, py: Python<'_>) -> RsChessConfig {
         let mut cfg = RsChessConfig::default();
         cfg.strategy = self.strategy.borrow(py).to_rs(py);
         cfg.threshold = self.threshold.borrow(py).to_rs();
+        cfg.multiscale = self.multiscale.as_ref().map(|m| m.borrow(py).inner);
         cfg.refiner = self.refiner.borrow(py).to_inner(py);
         cfg.orientation_method = self.orientation_method;
         cfg.descriptor_mode = self.descriptor_mode;
@@ -2002,7 +1981,7 @@ impl ChessConfig {
 }
 
 #[pymethods]
-impl ChessConfig {
+impl DetectorConfig {
     #[new]
     fn py_new(py: Python<'_>) -> PyResult<Self> {
         Self::build(py)
@@ -2016,7 +1995,7 @@ impl ChessConfig {
 
     /// Three-level coarse-to-fine ChESS preset.
     #[classmethod]
-    fn multiscale(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
+    fn multiscale_preset(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
         Self::from_rs(py, RsChessConfig::multiscale())
     }
 
@@ -2024,6 +2003,12 @@ impl ChessConfig {
     #[classmethod]
     fn radon(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
         Self::from_rs(py, RsChessConfig::radon())
+    }
+
+    /// Coarse-to-fine Radon preset.
+    #[classmethod]
+    fn radon_multiscale(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
+        Self::from_rs(py, RsChessConfig::radon_multiscale())
     }
 
     // ---- nested wrappers (returned by reference) ----
@@ -2044,6 +2029,15 @@ impl ChessConfig {
     #[setter]
     fn set_threshold(&mut self, v: Py<Threshold>) {
         self.threshold = v;
+    }
+
+    #[getter]
+    fn multiscale(&self, py: Python<'_>) -> Option<Py<MultiscaleParams>> {
+        self.multiscale.as_ref().map(|m| m.clone_ref(py))
+    }
+    #[setter]
+    fn set_multiscale(&mut self, v: Option<Py<MultiscaleParams>>) {
+        self.multiscale = v;
     }
 
     #[getter]
@@ -2097,6 +2091,10 @@ impl ChessConfig {
         let d = PyDict::new(py);
         d.set_item("strategy", self.strategy.borrow(py).to_dict(py)?)?;
         d.set_item("threshold", self.threshold.borrow(py).to_dict(py)?)?;
+        match &self.multiscale {
+            Some(ms) => d.set_item("multiscale", ms.borrow(py).to_dict(py)?)?,
+            None => d.set_item("multiscale", py.None())?,
+        }
         d.set_item("refiner", self.refiner.borrow(py).to_dict(py)?)?;
         d.set_item(
             "orientation_method",
@@ -2120,6 +2118,7 @@ impl ChessConfig {
             &[
                 "strategy",
                 "threshold",
+                "multiscale",
                 "refiner",
                 "orientation_method",
                 "descriptor_mode",
@@ -2139,6 +2138,14 @@ impl ChessConfig {
         if let Some(value) = dict.get_item("threshold")? {
             let threshold_type = py.get_type::<Threshold>();
             cfg.threshold = Py::new(py, Threshold::from_dict(&threshold_type, &value)?)?;
+        }
+        if let Some(value) = dict.get_item("multiscale")? {
+            if value.is_none() {
+                cfg.multiscale = None;
+            } else {
+                let ms_type = py.get_type::<MultiscaleParams>();
+                cfg.multiscale = Some(Py::new(py, MultiscaleParams::from_dict(&ms_type, &value)?)?);
+            }
         }
         if let Some(value) = dict.get_item("refiner")? {
             let refiner_type = py.get_type::<RefinerConfig>();

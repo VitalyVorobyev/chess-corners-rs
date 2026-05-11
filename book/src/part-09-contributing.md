@@ -19,7 +19,7 @@ knobs and regression gates.
 **Algorithms.** ChESS and the Duda-Frese Radon detector are two
 points in the design space. New detectors, refiners, or descriptor
 variants can be added behind the same trait surfaces
-(`CornerRefiner`, `ChessConfig` presets) and benchmarked against the
+(`CornerRefiner`, `DetectorConfig` presets, `DenseDetector` implementations) and benchmarked against the
 shipped pipelines using `crates/chess-corners/examples/bench_sweep.rs`.
 Proposals go in `docs/`, following the existing `proposal-*.md`
 templates.

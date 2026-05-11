@@ -52,24 +52,61 @@ pub fn detect_corners_from_response(resp: &ResponseMap, params: &ChessParams) ->
 }
 
 /// Detector variant that accepts a user-provided refiner implementation.
+///
+/// Wires [`detect_peaks_from_response`] (stage 1: threshold + NMS +
+/// cluster-filter on the response map) into [`refine_corners_on_image`]
+/// (stage 2: image-domain subpixel refinement). The two stages are
+/// available individually for callers that want to inspect or replace
+/// either half.
 pub fn detect_corners_from_response_with_refiner(
     resp: &ResponseMap,
     params: &ChessParams,
     image: Option<ImageView<'_>>,
     refiner: &mut dyn CornerRefiner,
 ) -> Vec<Corner> {
-    detect_corners_from_response_impl(resp, params, image, refiner)
+    let peaks = detect_peaks_from_response_with_refine_radius(resp, params, refiner.radius());
+    refine_corners_on_image(peaks, image, Some(resp), refiner)
 }
 
+/// Stage 1 of ChESS detection: threshold + NMS + cluster-filter on the
+/// response map.
+///
+/// Returns peaks at integer coordinates (cast to `f32`) with the raw
+/// response value as `strength`. The refiner is **not** consulted at
+/// this stage — image-domain subpixel refinement runs separately in
+/// [`refine_corners_on_image`].
+///
+/// The border margin accounts for the ring radius and the NMS window
+/// only; if a downstream refiner needs additional border, the fused
+/// helper [`detect_corners_from_response_with_refiner`] handles that
+/// by deferring to a private variant that also takes the refiner
+/// radius.
 #[cfg_attr(
     feature = "tracing",
-    instrument(level = "debug", skip(resp, params, image, refiner), fields(w = resp.w, h = resp.h))
+    instrument(level = "debug", skip(resp, params), fields(w = resp.w, h = resp.h))
 )]
-fn detect_corners_from_response_impl(
+pub fn detect_peaks_from_response(resp: &ResponseMap, params: &ChessParams) -> Vec<Corner> {
+    detect_peaks_from_response_with_refine_radius(resp, params, 0)
+}
+
+/// Stage 1 of ChESS detection: same as [`detect_peaks_from_response`]
+/// but extends the border margin by `refine_radius` extra pixels so
+/// that an image-domain refiner with the given patch half-width can
+/// safely operate on every accepted peak.
+///
+/// Used by the [`DenseDetector`](crate::DenseDetector) trait
+/// implementor for ChESS, which threads the refiner radius from the
+/// orchestrator into peak detection so the fused legacy behaviour
+/// ([`detect_corners_from_response_with_refiner`]) is preserved
+/// bit-for-bit across the split.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(level = "debug", skip(resp, params), fields(w = resp.w, h = resp.h))
+)]
+pub fn detect_peaks_from_response_with_refine_radius(
     resp: &ResponseMap,
     params: &ChessParams,
-    image: Option<ImageView<'_>>,
-    refiner: &mut dyn CornerRefiner,
+    refine_radius: i32,
 ) -> Vec<Corner> {
     let w = resp.w;
     let h = resp.h;
@@ -102,25 +139,20 @@ fn detect_corners_from_response_impl(
     // the paper's contract.
 
     let nms_r = params.nms_radius as i32;
-    let refine_r = refiner.radius();
     let ring_r = params.ring_radius() as i32;
 
     // We need to stay away from the borders enough to:
     // - have a full NMS window
-    // - have a full refinement window
+    // - have a full refinement window (when chained with a refiner)
     // The response map itself is valid in [ring_r .. w-ring_r), but
     // we don't want to sample outside [0..w/h) during refinement.
-    let border = (ring_r + nms_r + refine_r).max(0) as usize;
+    let border = (ring_r + nms_r + refine_radius).max(0) as usize;
 
     if w <= 2 * border || h <= 2 * border {
         return Vec::new();
     }
 
     let mut corners = Vec::new();
-    let ctx = RefineContext {
-        image,
-        response: Some(resp),
-    };
 
     for y in border..(h - border) {
         for x in border..(w - border) {
@@ -141,20 +173,58 @@ fn detect_corners_from_response_impl(
                 continue;
             }
 
-            let seed_xy = [x as f32, y as f32];
-            let res = refiner.refine(seed_xy, ctx);
-
-            if matches!(res.status, RefineStatus::Accepted) {
-                corners.push(Corner {
-                    x: res.x,
-                    y: res.y,
-                    strength: v,
-                });
-            }
+            corners.push(Corner {
+                x: x as f32,
+                y: y as f32,
+                strength: v,
+            });
         }
     }
 
     corners
+}
+
+/// Stage 2 of detection: image-domain subpixel refinement.
+///
+/// Detector-agnostic: works on any `Vec<Corner>` regardless of whether
+/// the peaks came from the ChESS or Radon detector. Each input peak
+/// is fed to `refiner` with a [`RefineContext`] containing the image
+/// view and the optional response map. Peaks the refiner rejects
+/// (status not [`RefineStatus::Accepted`]) are dropped from the
+/// output; accepted peaks are emitted with their refined subpixel
+/// `(x, y)` and the **input** `strength` (the refiner does not
+/// rescore the peak strength).
+///
+/// Iteration order matches the order of the input vector — necessary
+/// for downstream stages that assume a stable scan order.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(level = "debug", skip(corners, image, response, refiner))
+)]
+pub fn refine_corners_on_image(
+    corners: Vec<Corner>,
+    image: Option<ImageView<'_>>,
+    response: Option<&ResponseMap>,
+    refiner: &mut dyn CornerRefiner,
+) -> Vec<Corner> {
+    if corners.is_empty() {
+        return Vec::new();
+    }
+
+    let ctx = RefineContext { image, response };
+    let mut out = Vec::with_capacity(corners.len());
+    for c in corners {
+        let seed_xy = [c.x, c.y];
+        let res = refiner.refine(seed_xy, ctx);
+        if matches!(res.status, RefineStatus::Accepted) {
+            out.push(Corner {
+                x: res.x,
+                y: res.y,
+                strength: c.strength,
+            });
+        }
+    }
+    out
 }
 
 /// Local-max NMS check over a `(2r+1)²` window on a row-major

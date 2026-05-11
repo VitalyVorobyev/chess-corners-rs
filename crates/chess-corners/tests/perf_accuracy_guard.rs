@@ -17,7 +17,7 @@
 //! is to catch *regressions*, not to replace the per-refiner accuracy
 //! sweep in `refiner_benchmark.rs`.
 
-use chess_corners::{ChessConfig, CornerDescriptor, Detector};
+use chess_corners::{CornerDescriptor, Detector, DetectorConfig};
 
 const SUPER: usize = 8;
 const MATCH_THRESHOLD_PX: f32 = 1.5;
@@ -145,7 +145,14 @@ fn match_detections(detected: &[CornerDescriptor], gt: &[(f32, f32)]) -> MatchSt
     }
 }
 
-fn check(label: &str, cfg: &ChessConfig, img: &[u8], side: usize, gt: &[(f32, f32)], b: &Bounds) {
+fn check(
+    label: &str,
+    cfg: &DetectorConfig,
+    img: &[u8],
+    side: usize,
+    gt: &[(f32, f32)],
+    b: &Bounds,
+) {
     let mut detector = Detector::new(cfg.clone()).unwrap();
     let detected = detector.detect_u8(img, side as u32, side as u32).unwrap();
     let stats = match_detections(&detected, gt);
@@ -196,7 +203,7 @@ fn chess_single_scale_meets_accuracy_floor() {
     let off = (CELL as f32 / 2.0 + 0.31, CELL as f32 / 2.0 + 0.47);
     let img = synthetic_chessboard(SIDE, CELL, off);
     let gt = ground_truth_corners(SIDE, CELL, off);
-    let cfg = ChessConfig::single_scale();
+    let cfg = DetectorConfig::single_scale();
     let bounds = Bounds {
         min_recall: 0.98,
         min_precision: 0.78,
@@ -212,7 +219,7 @@ fn chess_multiscale_meets_accuracy_floor() {
     let off = (CELL as f32 / 2.0 + 0.31, CELL as f32 / 2.0 + 0.47);
     let img = synthetic_chessboard(SIDE, CELL, off);
     let gt = ground_truth_corners(SIDE, CELL, off);
-    let cfg = ChessConfig::multiscale();
+    let cfg = DetectorConfig::multiscale();
     let bounds = Bounds {
         min_recall: 0.85,
         min_precision: 0.75,
@@ -228,7 +235,7 @@ fn radon_meets_accuracy_floor() {
     let off = (CELL as f32 / 2.0 + 0.31, CELL as f32 / 2.0 + 0.47);
     let img = synthetic_chessboard(SIDE, CELL, off);
     let gt = ground_truth_corners(SIDE, CELL, off);
-    let cfg = ChessConfig::radon();
+    let cfg = DetectorConfig::radon();
     let bounds = Bounds {
         min_recall: 0.95,
         min_precision: 0.07,

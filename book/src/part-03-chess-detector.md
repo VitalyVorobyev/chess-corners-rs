@@ -227,7 +227,7 @@ carrying:
 Each candidate is refined from its integer peak to a subpixel
 position by one of the refiners in
 [Part V](part-05-refiners.md). The ChESS detector is selected via
-`ChessConfig.refiner.kind`; the default is `CenterOfMass`, which
+`DetectorConfig.refiner.kind`; the default is `CenterOfMass`, which
 operates directly on the response map, but any of the five refiners
 can be used. Refinement is a per-candidate call and adds at most a
 few tens of nanoseconds for the fastest options.

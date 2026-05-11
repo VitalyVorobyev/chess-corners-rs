@@ -1,6 +1,6 @@
 //! Native Python bindings for the chess-corners detector.
 //!
-//! Exposes a typed [`config::ChessConfig`] (with nested
+//! Exposes a typed [`config::DetectorConfig`] (with nested
 //! [`config::RefinerConfig`], [`config::RadonDetectorParams`], and
 //! per-variant refiner configs) plus a [`Detector`] PyClass that
 //! wraps the facade's reusable buffers.
@@ -14,8 +14,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
 
 use crate::config::{
-    CenterOfMassConfig, ChessConfig, ChessRing, ChessStrategy, ConfigError, DescriptorMode,
-    DetectionStrategy, ForstnerConfig, MultiscaleParams, OrientationMethod, PeakFitMode,
+    CenterOfMassConfig, ChessRing, ChessStrategy, ConfigError, DescriptorMode, DetectionStrategy,
+    DetectorConfig, ForstnerConfig, MultiscaleParams, OrientationMethod, PeakFitMode,
     RadonPeakConfig, RadonStrategy, RefinementMethod, RefinerConfig, SaddlePointConfig, Threshold,
     UpscaleConfig, UpscaleMode,
 };
@@ -73,7 +73,7 @@ fn corners_to_array(
 }
 
 /// Resolve the optional `cfg` argument into a Rust facade `ChessConfig`.
-/// Accepts a typed [`ChessConfig`] or `None` (uses defaults). Any other
+/// Accepts a typed [`DetectorConfig`] or `None` (uses defaults). Any other
 /// type raises `TypeError`.
 fn resolve_config(
     py: Python<'_>,
@@ -85,10 +85,10 @@ fn resolve_config(
     if cfg.is_none() {
         return Ok(chess_corners_rs::ChessConfig::default());
     }
-    if let Ok(typed) = cfg.cast::<ChessConfig>() {
+    if let Ok(typed) = cfg.cast::<DetectorConfig>() {
         return Ok(typed.borrow().to_inner(py));
     }
-    Err(PyTypeError::new_err("cfg must be a ChessConfig"))
+    Err(PyTypeError::new_err("cfg must be a DetectorConfig"))
 }
 
 /// Stateful chessboard-corner detector with reusable scratch buffers.
@@ -104,7 +104,7 @@ pub struct Detector {
 #[pymethods]
 impl Detector {
     /// Build a detector. `cfg` may be `None` (use defaults) or a
-    /// typed [`ChessConfig`].
+    /// typed [`DetectorConfig`].
     #[new]
     #[pyo3(signature = (cfg=None))]
     fn new(py: Python<'_>, cfg: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
@@ -184,7 +184,7 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DetectionStrategy>()?;
     m.add_class::<RefinerConfig>()?;
     m.add_class::<UpscaleConfig>()?;
-    m.add_class::<ChessConfig>()?;
+    m.add_class::<DetectorConfig>()?;
     m.add_class::<Detector>()?;
 
     Ok(())

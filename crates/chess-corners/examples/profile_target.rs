@@ -19,8 +19,8 @@
 //! ```
 
 use chess_corners::{
-    CenterOfMassConfig, ChessConfig, Detector, ForstnerConfig, RadonPeakConfig, RefinementMethod,
-    RefinerConfig, SaddlePointConfig,
+    CenterOfMassConfig, Detector, DetectorConfig, ForstnerConfig, RadonPeakConfig,
+    RefinementMethod, RefinerConfig, SaddlePointConfig,
 };
 use image::ImageReader;
 use std::env;
@@ -136,8 +136,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let data = img.into_raw();
 
     let mut cfg = match args.mode {
-        Mode::Chess => ChessConfig::multiscale(),
-        Mode::Radon => ChessConfig::radon(),
+        Mode::Chess => DetectorConfig::multiscale(),
+        Mode::Radon => DetectorConfig::radon(),
     };
     if matches!(args.mode, Mode::Chess) {
         cfg.refiner = refiner_config(args.refiner);

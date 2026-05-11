@@ -3,16 +3,16 @@
     "chess": {
       "ring": "broad",
       "nms_radius": 3,
-      "min_cluster_size": 1,
-      "multiscale": {
-        "pyramid_levels": 3,
-        "pyramid_min_size": 96,
-        "refinement_radius": 4
-      }
+      "min_cluster_size": 1
     }
   },
   "threshold": {
     "absolute": 0.5
+  },
+  "multiscale": {
+    "pyramid_levels": 3,
+    "pyramid_min_size": 96,
+    "refinement_radius": 4
   },
   "refiner": {
     "kind": "forstner",
