@@ -357,12 +357,14 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
     if let Some(v) = radon_refiner {
         apply_radon_refiner(&mut cfg.algorithm, v);
     }
+    // `Some(0)` is the documented sentinel for "no override — keep the value
+    // parsed from the JSON config". Any other value is forwarded to
+    // `UpscaleConfig::Fixed`; `UpscaleConfig::validate` below rejects factors
+    // outside `{2, 3, 4}` with a clear error.
     if let Some(factor) = upscale_factor {
-        cfg.algorithm.upscale = if factor >= 2 {
-            UpscaleConfig::Fixed(factor)
-        } else {
-            UpscaleConfig::Disabled
-        };
+        if factor != 0 {
+            cfg.algorithm.upscale = UpscaleConfig::Fixed(factor);
+        }
     }
 }
 
@@ -502,5 +504,44 @@ mod tests {
             .to_radon_detector_params()
             .nms_radius;
         let _radon_cluster: u32 = RadonConfig::default().min_cluster_size;
+    }
+
+    fn detection_config_with_upscale(upscale: UpscaleConfig) -> DetectionConfig {
+        let mut algorithm = DetectorConfig::single_scale();
+        algorithm.upscale = upscale;
+        DetectionConfig {
+            image: PathBuf::from("ignored.png"),
+            output_json: None,
+            output_png: None,
+            log_level: None,
+            ml: None,
+            algorithm,
+        }
+    }
+
+    #[test]
+    fn upscale_factor_zero_preserves_json_config_value() {
+        let mut cfg = detection_config_with_upscale(UpscaleConfig::Fixed(3));
+        apply_overrides(
+            &mut cfg,
+            DetectionOverrides {
+                upscale_factor: Some(0),
+                ..empty_overrides()
+            },
+        );
+        assert_eq!(cfg.algorithm.upscale, UpscaleConfig::Fixed(3));
+    }
+
+    #[test]
+    fn upscale_factor_nonzero_overrides_json_config_value() {
+        let mut cfg = detection_config_with_upscale(UpscaleConfig::Disabled);
+        apply_overrides(
+            &mut cfg,
+            DetectionOverrides {
+                upscale_factor: Some(2),
+                ..empty_overrides()
+            },
+        );
+        assert_eq!(cfg.algorithm.upscale, UpscaleConfig::Fixed(2));
     }
 }
