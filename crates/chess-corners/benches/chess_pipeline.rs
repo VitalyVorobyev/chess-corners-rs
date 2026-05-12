@@ -58,7 +58,7 @@ fn bench_chess_pipeline_synth(c: &mut Criterion) {
         group.throughput(Throughput::Elements((w * h) as u64));
         for &(label, mk) in presets {
             let cfg = mk();
-            let mut detector = Detector::new(cfg.clone()).unwrap();
+            let mut detector = Detector::new(cfg).unwrap();
             group.bench_with_input(
                 BenchmarkId::new(label, format!("{w}x{h}")),
                 &cfg,
@@ -88,7 +88,7 @@ fn bench_chess_pipeline_real(c: &mut Criterion) {
         group.throughput(Throughput::Elements((w as u64) * (h as u64)));
         for &(label, mk) in presets {
             let cfg = mk();
-            let mut detector = Detector::new(cfg.clone()).unwrap();
+            let mut detector = Detector::new(cfg).unwrap();
             group.bench_with_input(BenchmarkId::new(label, name), &cfg, |b, _cfg| {
                 b.iter(|| {
                     let corners = detector.detect_u8(&data, w, h).unwrap();

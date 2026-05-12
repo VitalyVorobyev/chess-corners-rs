@@ -19,8 +19,8 @@
 //! ```
 
 use chess_corners::{
-    CenterOfMassConfig, Detector, DetectorConfig, ForstnerConfig, RadonPeakConfig,
-    RefinementMethod, RefinerConfig, SaddlePointConfig,
+    CenterOfMassConfig, ChessConfig, ChessRefiner, DetectionStrategy, Detector, DetectorConfig,
+    ForstnerConfig, RadonConfig, RadonPeakConfig, RadonRefiner, SaddlePointConfig,
 };
 use image::ImageReader;
 use std::env;
@@ -62,19 +62,23 @@ fn parse_refiner(s: &str) -> Result<RefinerSel, String> {
     }
 }
 
-fn refiner_config(sel: RefinerSel) -> RefinerConfig {
-    let mut cfg = RefinerConfig::default();
-    cfg.kind = match sel {
-        RefinerSel::CenterOfMass => RefinementMethod::CenterOfMass,
-        RefinerSel::Forstner => RefinementMethod::Forstner,
-        RefinerSel::Saddle => RefinementMethod::SaddlePoint,
-        RefinerSel::Radon => RefinementMethod::RadonPeak,
-    };
-    cfg.center_of_mass = CenterOfMassConfig::default();
-    cfg.forstner = ForstnerConfig::default();
-    cfg.saddle_point = SaddlePointConfig::default();
-    cfg.radon_peak = RadonPeakConfig::default();
-    cfg
+fn chess_refiner_from_sel(sel: RefinerSel) -> Option<ChessRefiner> {
+    match sel {
+        RefinerSel::CenterOfMass => Some(ChessRefiner::CenterOfMass(CenterOfMassConfig::default())),
+        RefinerSel::Forstner => Some(ChessRefiner::Forstner(ForstnerConfig::default())),
+        RefinerSel::Saddle => Some(ChessRefiner::SaddlePoint(SaddlePointConfig::default())),
+        // RadonPeak is Radon-only; the ChESS strategy can't host it.
+        RefinerSel::Radon => None,
+    }
+}
+
+fn radon_refiner_from_sel(sel: RefinerSel) -> Option<RadonRefiner> {
+    match sel {
+        RefinerSel::Radon => Some(RadonRefiner::RadonPeak(RadonPeakConfig::default())),
+        RefinerSel::CenterOfMass => Some(RadonRefiner::CenterOfMass(CenterOfMassConfig::default())),
+        // Forstner / SaddlePoint are ChESS-only; not representable in the Radon enum.
+        RefinerSel::Forstner | RefinerSel::Saddle => None,
+    }
 }
 
 struct Args {
@@ -139,8 +143,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         Mode::Chess => DetectorConfig::multiscale(),
         Mode::Radon => DetectorConfig::radon(),
     };
-    if matches!(args.mode, Mode::Chess) {
-        cfg.refiner = refiner_config(args.refiner);
+    match args.mode {
+        Mode::Chess => {
+            if let Some(refiner) = chess_refiner_from_sel(args.refiner) {
+                let mut chess = ChessConfig::default();
+                chess.refiner = refiner;
+                cfg.strategy = DetectionStrategy::Chess(chess);
+            }
+        }
+        Mode::Radon => {
+            if let Some(refiner) = radon_refiner_from_sel(args.refiner) {
+                let mut radon = RadonConfig::default();
+                radon.refiner = refiner;
+                cfg.strategy = DetectionStrategy::Radon(radon);
+            }
+        }
     }
     let mut detector = Detector::new(cfg).unwrap();
 

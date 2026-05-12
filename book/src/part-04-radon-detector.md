@@ -18,7 +18,7 @@ The Radon detector is a full alternative to ChESS — same input
 (`&[u8]` grayscale), same output
 ([`CornerDescriptor`](part-03-chess-detector.md#34-corner-descriptors)),
 same place in the pipeline. It is selected via `DetectorConfig.strategy`
-by setting it to `DetectionStrategy::Radon(RadonStrategy)`.
+by setting it to `DetectionStrategy::Radon(RadonConfig)`.
 
 ## 4.1 Ray response
 
@@ -210,7 +210,7 @@ and all its defaults:
 ```rust
 use chess_corners::{DetectorConfig, Detector};
 
-let cfg = DetectorConfig::radon();      // strategy = Radon(RadonStrategy)
+let cfg = DetectorConfig::radon();      // strategy = Radon(RadonConfig)
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&gray_image)?;
 // corners: Vec<CornerDescriptor>
@@ -231,17 +231,17 @@ response kernel. The `multiscale` field is top-level on `DetectorConfig`
 and is honoured by both detectors symmetrically:
 
 ```rust
-use chess_corners::{DetectorConfig, Detector, MultiscaleParams};
+use chess_corners::{DetectorConfig, Detector, MultiscaleConfig};
 
 // Three-level coarse-to-fine Radon preset:
 let mut cfg = DetectorConfig::radon_multiscale();
 
 // Or tune pyramid depth manually:
-cfg.multiscale = Some(MultiscaleParams {
-    pyramid_levels: 2,
-    pyramid_min_size: 128,
+cfg.multiscale = MultiscaleConfig::Pyramid {
+    levels: 2,
+    min_size: 128,
     refinement_radius: 3,
-});
+};
 
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&gray_image)?;
@@ -262,7 +262,7 @@ single-scale `radon` preset remains simpler and equally accurate.
 
 ### Tuning
 
-The active [`RadonStrategy`] inside
+The active [`RadonConfig`] inside
 [`DetectionStrategy::Radon`](https://docs.rs/chess-corners/) exposes
 every field in §4.4's defaults table. The most common tweaks:
 

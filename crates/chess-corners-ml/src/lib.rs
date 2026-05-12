@@ -9,9 +9,9 @@
 //!
 //! This crate is not meant to be used directly. It is consumed by the
 //! `chess-corners` facade crate when the `ml-refiner` feature is
-//! enabled. With the feature on, set
-//! `cfg.refiner.kind = RefinementMethod::Ml` and call
-//! `Detector::detect` to route through the ML refiner.
+//! enabled. With the feature on, set the active ChESS refiner to
+//! `ChessRefiner::Ml` and call `Detector::detect` to route through
+//! the ML refiner.
 //!
 //! # Embedded model
 //!

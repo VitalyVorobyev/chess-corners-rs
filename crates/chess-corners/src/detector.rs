@@ -29,9 +29,8 @@ use crate::{ChessError, DetectorConfig};
 
 /// High-level chessboard-corner detector.
 ///
-/// Subsumes the previous `find_chess_corners*` family of free
-/// functions. Owns the pyramid and detector-specific scratch buffers
-/// so the caller can reuse them across successive frames.
+/// Owns the pyramid and detector-specific scratch buffers so the
+/// caller can reuse them across successive frames.
 pub struct Detector {
     cfg: DetectorConfig,
     pyramid: PyramidBuffers,
@@ -247,9 +246,11 @@ impl Detector {
         view: ImageView<'_>,
     ) -> Vec<CornerDescriptor> {
         #[cfg(feature = "ml-refiner")]
-        if matches!(cfg.refiner.kind, crate::config::RefinementMethod::Ml) {
+        if Self::is_ml_refiner(cfg) {
             if ml_state.is_none() {
-                let fallback = cfg.refiner.to_refiner_kind();
+                let fallback = chess_corners_core::RefinerKind::CenterOfMass(
+                    chess_corners_core::CenterOfMassConfig::default(),
+                );
                 *ml_state = Some(ml_refiner::MlRefinerState::new(ml_params, &fallback));
             }
             let state = ml_state.as_mut().expect("ml_state initialised above");
@@ -265,5 +266,17 @@ impl Detector {
         }
 
         multiscale::detect_with_buffers(view, cfg, pyramid, chess_buffers, radon_buffers)
+    }
+
+    /// Whether the active config selects the ML refiner. Only true on
+    /// the ChESS path, since the Radon strategy carries a separate
+    /// refiner enum that has no ML variant.
+    #[cfg(feature = "ml-refiner")]
+    #[inline]
+    fn is_ml_refiner(cfg: &DetectorConfig) -> bool {
+        matches!(
+            &cfg.strategy,
+            crate::DetectionStrategy::Chess(c) if matches!(c.refiner, crate::ChessRefiner::Ml)
+        )
     }
 }

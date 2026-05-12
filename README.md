@@ -18,12 +18,12 @@ Two independent detectors and five subpixel refiners sit behind one
 |----------------------|--------------------------------------------------------------------------------------|-------------------------------------------------------------------------|
 | Detector             | `ChESS` (ring), `Radon` (rays)                                                       | [Part III](book/src/part-03-chess-detector.md), [Part IV](book/src/part-04-radon-detector.md) |
 | Subpixel refinement  | `CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, `ML` (optional ONNX)         | [Part V](book/src/part-05-refiners.md)                                  |
-| Scale handling       | Single-scale or coarse-to-fine 2× pyramid                                            | [Part VI](book/src/part-06-multiscale-and-pyramids.md)                  |
+| Scale handling       | Single-scale or coarse-to-fine 2× pyramid                                            | [Part VII](book/src/part-07-multiscale-and-pyramids.md)                 |
 
 The full book is at
 <https://vitalyvorobyev.github.io/chess-corners-rs/>, with a
 measurement-driven refiner comparison in
-[Part VII](book/src/part-07-benchmarks.md).
+[Part VIII](book/src/part-08-benchmarks.md).
 
 The workspace publishes four library crates and ships a CLI, a
 Python package, and a WebAssembly package — all consuming the same
@@ -33,7 +33,7 @@ JSON schema.
 
 ```
 chess-corners-py       PyO3 bindings         pip: chess-corners
-chess-corners-wasm     wasm-bindgen          npm: chess-corners-wasm
+chess-corners-wasm     wasm-bindgen          npm: @vitavision/chess-corners
        │
        ▼
 chess-corners          high-level API, CLI, multiscale pipeline
@@ -54,21 +54,26 @@ and every optional dependency is feature-gated. See `AGENTS.md` and
 
 ```toml
 [dependencies]
-chess-corners = "0.10"
+chess-corners = "0.11"
 image = "0.25"
 ```
 
 ```rust
-use chess_corners::{find_chess_corners_image, DetectorConfig, RefinementMethod};
+use chess_corners::{
+    ChessConfig, ChessRefiner, Detector, DetectionStrategy, DetectorConfig, ForstnerConfig,
+};
 use image::ImageReader;
 
 let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
 // Defaults: ChESS detector, multiscale pipeline, CenterOfMass refiner.
 let mut cfg = DetectorConfig::multiscale();
-cfg.refiner.kind = RefinementMethod::Forstner;
+let mut chess = ChessConfig::default();
+chess.refiner = ChessRefiner::Forstner(ForstnerConfig::default());
+cfg.strategy = DetectionStrategy::Chess(chess);
 
-let corners = find_chess_corners_image(&img, &cfg);
+let mut detector = Detector::new(cfg)?;
+let corners = detector.detect(&img)?;
 for c in &corners {
     println!("({:.2}, {:.2})  response={:.1}", c.x, c.y, c.response);
 }
@@ -87,17 +92,12 @@ Switching to the Radon detector is one line:
 
 ```rust
 let cfg = DetectorConfig::radon();
-let corners = find_chess_corners_image(&img, &cfg);
-```
-
-Switching the refiner is also one line:
-
-```rust
-cfg.refiner.kind = RefinementMethod::RadonPeak;
+let mut detector = Detector::new(cfg)?;
+let corners = detector.detect(&img)?;
 ```
 
 Algorithm details and the cost of each option are measured in
-[Part VII](book/src/part-07-benchmarks.md).
+[Part VIII](book/src/part-08-benchmarks.md).
 
 ## Python quick start
 
@@ -111,17 +111,21 @@ import chess_corners
 
 img = np.zeros((128, 128), dtype=np.uint8)
 
-cfg = chess_corners.DetectorConfig.multiscale()
-cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
+cfg = chess_corners.DetectorConfig.multiscale_preset()
 
-corners = chess_corners.find_chess_corners(img, cfg)
+chess = cfg.strategy.chess
+chess.refiner = chess_corners.ChessRefiner.forstner()
+cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+
+detector = chess_corners.Detector(cfg)
+corners = detector.detect(img)
 print(corners.shape)   # (N, 9)
 print(cfg)
 ```
 
-`find_chess_corners` returns a `float32 [N, 9]` array with stride 9
-per corner: `[x, y, response, contrast, fit_rms,
-axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`.
+`Detector.detect(image)` returns a `float32 [N, 9]` array with stride
+9 per corner: `[x, y, response, contrast, fit_rms, axis0_angle,
+axis0_sigma, axis1_angle, axis1_sigma]`.
 
 Every public Python config object supports `to_dict()`,
 `from_dict()`, `to_json()`, `from_json()`, `pretty()`, and `print()`.
@@ -133,11 +137,25 @@ wasm-pack build crates/chess-corners-wasm --target web
 ```
 
 ```js
-import init, { ChessDetector } from 'chess-corners-wasm';
+import init, {
+  ChessDetector,
+  ChessConfig,
+  ChessRefiner,
+  ChessRing,
+  DetectionStrategy,
+  DetectorConfig,
+  ForstnerConfig,
+} from '@vitavision/chess-corners';
 
 await init();
-const detector = new ChessDetector();
-detector.set_pyramid_levels(3);
+
+const cfg = DetectorConfig.multiscalePreset();
+const chess = new ChessConfig();
+chess.ring = ChessRing.Broad;
+chess.refiner = ChessRefiner.withForstner(new ForstnerConfig());
+cfg.strategy = DetectionStrategy.fromChess(chess);
+
+const detector = ChessDetector.withConfig(cfg);
 
 const imageData = ctx.getImageData(0, 0, width, height);
 const corners = detector.detect_rgba(imageData.data, width, height);
@@ -148,8 +166,8 @@ for (let i = 0; i < corners.length; i += 9) {
 }
 ```
 
-See `crates/chess-corners-wasm/README.md` for the full setter list,
-including `set_detector_mode('canonical' | 'broad' | 'radon')`.
+See `crates/chess-corners-wasm/README.md` for the full typed-config
+surface.
 
 ## CLI
 
@@ -161,90 +179,89 @@ cargo run -p chess-corners --release --bin chess-corners -- \
 The CLI loads an image plus JSON config, runs the detector, and
 writes a JSON summary and an overlay PNG. Example configs:
 
-- `config/chess_algorithm_config_example.json` — just the algorithm
-  fields, shared by the Rust and Python APIs.
-- `config/chess_cli_config_example.json` — algorithm + CLI I/O
-  fields.
+- `config/chess_algorithm_config_example.json` — pure `DetectorConfig`
+  shape, shared by the Rust and Python APIs.
+- `config/chess_cli_config_example.json` — algorithm config plus the
+  CLI runner envelope (`image`, `output_json`, `output_png`,
+  `log_level`, `ml`).
 - `config/chess_cli_config_example_ml.json` — ML refiner enabled;
   requires `--features ml-refiner` at build time.
 
 ## `DetectorConfig` schema
 
-Flat schema; the same field names appear in Rust, Python, CLI JSON,
-and WASM setters.
+`DetectorConfig` has one place for every knob. Cross-cutting fields
+(threshold, multiscale, upscale, orientation method, merge radius)
+sit at the top level. Detector-specific tuning is nested inside the
+active strategy variant. Refiners are per-detector: `ChessRefiner`
+for ChESS, `RadonRefiner` for Radon — the type system rules out
+invalid pairings.
 
 ```json
 {
-  "detector_mode": "broad",
-  "descriptor_mode": "canonical",
-  "threshold_mode": "absolute",
-  "threshold_value": 0.5,
-  "nms_radius": 3,
-  "min_cluster_size": 1,
-  "refiner": {
-    "kind": "forstner",
-    "center_of_mass": { "radius": 2 },
-    "forstner": {
-      "radius": 3,
-      "min_trace": 20.0,
-      "min_det": 0.001,
-      "max_condition_number": 60.0,
-      "max_offset": 2.0
-    },
-    "saddle_point": {
-      "radius": 3,
-      "det_margin": 0.002,
-      "max_offset": 1.75,
-      "min_abs_det": 0.0002
-    },
-    "radon_peak": {
-      "ray_radius": 2,
-      "patch_radius": 3,
-      "image_upsample": 2,
-      "response_blur_radius": 1,
-      "peak_fit": "gaussian",
-      "min_response": 0.0,
-      "max_offset": 1.5
+  "strategy": {
+    "chess": {
+      "ring": "broad",
+      "descriptor_ring": "canonical",
+      "nms_radius": 3,
+      "min_cluster_size": 1,
+      "refiner": {
+        "forstner": {
+          "radius": 3,
+          "min_trace": 20.0,
+          "min_det": 0.001,
+          "max_condition_number": 60.0,
+          "max_offset": 2.0
+        }
+      }
     }
   },
-  "radon_detector": {
+  "threshold": { "absolute": 0.5 },
+  "multiscale": {
+    "pyramid": { "levels": 3, "min_size": 96, "refinement_radius": 4 }
+  },
+  "upscale": "disabled",
+  "orientation_method": "ring_fit",
+  "merge_radius": 2.5
+}
+```
+
+Switch to the Radon strategy by replacing the `strategy` value:
+
+```json
+"strategy": {
+  "radon": {
     "ray_radius": 4,
     "image_upsample": 2,
     "response_blur_radius": 1,
     "peak_fit": "gaussian",
-    "threshold_rel": 0.01,
     "nms_radius": 4,
-    "min_cluster_size": 2
-  },
-  "pyramid_levels": 3,
-  "pyramid_min_size": 96,
-  "refinement_radius": 4,
-  "merge_radius": 2.5,
-  "orientation_method": "ring_fit"
+    "min_cluster_size": 2,
+    "refiner": { "radon_peak": {} }
+  }
 }
 ```
 
-`orientation_method` controls the two-axis orientation fit applied to each
-detected corner. Two values are available:
+`orientation_method` controls the two-axis orientation fit applied to
+each detected corner:
 
-- `ring_fit` *(default)* — fits the parametric two-axis chessboard intensity
-  model to 16 ring samples via Gauss-Newton, with per-axis 1σ uncertainties
-  calibrated by a piecewise-linear lookup table. Suitable for the full range
-  of standard chessboard images.
-- `disk_fit` — full-disk crossing-line estimator. Samples all image pixels
-  in a disk around the corner center and fits two possibly non-orthogonal
-  axes. Falls back to `ring_fit` on clean orthogonal corners and near image
-  borders. Use when corners are imaged under strong projective warp.
+- `ring_fit` *(default)* — fits the parametric two-axis chessboard
+  intensity model to 16 ring samples via Gauss-Newton, with per-axis
+  1σ uncertainties calibrated by a piecewise-linear lookup table.
+- `disk_fit` — full-disk crossing-line estimator. Samples all image
+  pixels in a disk around the corner center and fits two possibly
+  non-orthogonal axes. Falls back to `ring_fit` on clean orthogonal
+  corners and near image borders. Use when corners are imaged under
+  strong projective warp.
 
-`detector_mode` picks a detector:
+`strategy.chess.ring` selects the ChESS sampling ring:
 
-- `canonical` — ChESS with radius-5 ring (default).
-- `broad` — ChESS with radius-10 ring; more blur-tolerant.
-- `radon` — Duda-Frese Radon detector; handles small cells and
-  heavy blur. Configuration lives under `radon_detector`.
+- `canonical` — radius-5 ring (paper default).
+- `broad` — radius-10 ring; wider support window for low-resolution
+  or heavily blurred imagery.
 
-`descriptor_mode` follows the detector by default; you can override
-it to sample the descriptor ring at the other ChESS radius.
+`strategy.chess.descriptor_ring` defaults to `follow_detector`; set
+it to `canonical` or `broad` to sample the descriptor ring at a
+different radius than the detector.
 
 ## Corner descriptor
 

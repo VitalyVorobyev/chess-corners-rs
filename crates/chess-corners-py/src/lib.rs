@@ -1,9 +1,10 @@
 //! Native Python bindings for the chess-corners detector.
 //!
-//! Exposes a typed [`config::DetectorConfig`] (with nested
-//! [`config::RefinerConfig`], [`config::RadonDetectorParams`], and
-//! per-variant refiner configs) plus a [`Detector`] PyClass that
-//! wraps the facade's reusable buffers.
+//! Exposes a typed [`config::DetectorConfig`] mirroring the Rust
+//! facade tree (strategy-typed `ChessConfig` / `RadonConfig`,
+//! per-detector refiners, tagged `MultiscaleConfig` / `UpscaleConfig`
+//! / `Threshold` classes) plus a [`Detector`] PyClass that wraps
+//! the facade's reusable buffers.
 
 mod config;
 
@@ -14,10 +15,10 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
 
 use crate::config::{
-    CenterOfMassConfig, ChessRing, ChessStrategy, ConfigError, DescriptorMode, DetectionStrategy,
-    DetectorConfig, ForstnerConfig, MultiscaleParams, OrientationMethod, PeakFitMode,
-    RadonPeakConfig, RadonStrategy, RefinementMethod, RefinerConfig, SaddlePointConfig, Threshold,
-    UpscaleConfig, UpscaleMode,
+    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, ConfigError, DescriptorRing,
+    DetectionStrategy, DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod,
+    PeakFitMode, RadonConfig, RadonPeakConfig, RadonRefiner, SaddlePointConfig, Threshold,
+    UpscaleConfig,
 };
 
 fn extract_image<'py>(
@@ -72,18 +73,18 @@ fn corners_to_array(
     Ok(out.into_pyarray(py).into_any().unbind())
 }
 
-/// Resolve the optional `cfg` argument into a Rust facade `ChessConfig`.
+/// Resolve the optional `cfg` argument into a Rust facade `DetectorConfig`.
 /// Accepts a typed [`DetectorConfig`] or `None` (uses defaults). Any other
 /// type raises `TypeError`.
 fn resolve_config(
     py: Python<'_>,
     cfg: Option<&Bound<'_, PyAny>>,
-) -> PyResult<chess_corners_rs::ChessConfig> {
+) -> PyResult<chess_corners_rs::DetectorConfig> {
     let Some(cfg) = cfg else {
-        return Ok(chess_corners_rs::ChessConfig::default());
+        return Ok(chess_corners_rs::DetectorConfig::default());
     };
     if cfg.is_none() {
-        return Ok(chess_corners_rs::ChessConfig::default());
+        return Ok(chess_corners_rs::DetectorConfig::default());
     }
     if let Ok(typed) = cfg.cast::<DetectorConfig>() {
         return Ok(typed.borrow().to_inner(py));
@@ -167,23 +168,22 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ConfigError", py.get_type::<ConfigError>())?;
 
     m.add_class::<ChessRing>()?;
-    m.add_class::<DescriptorMode>()?;
-    m.add_class::<RefinementMethod>()?;
+    m.add_class::<DescriptorRing>()?;
     m.add_class::<PeakFitMode>()?;
     m.add_class::<OrientationMethod>()?;
-    m.add_class::<UpscaleMode>()?;
 
     m.add_class::<CenterOfMassConfig>()?;
     m.add_class::<ForstnerConfig>()?;
     m.add_class::<SaddlePointConfig>()?;
     m.add_class::<RadonPeakConfig>()?;
     m.add_class::<Threshold>()?;
-    m.add_class::<MultiscaleParams>()?;
-    m.add_class::<ChessStrategy>()?;
-    m.add_class::<RadonStrategy>()?;
-    m.add_class::<DetectionStrategy>()?;
-    m.add_class::<RefinerConfig>()?;
+    m.add_class::<MultiscaleConfig>()?;
     m.add_class::<UpscaleConfig>()?;
+    m.add_class::<ChessRefiner>()?;
+    m.add_class::<RadonRefiner>()?;
+    m.add_class::<ChessConfig>()?;
+    m.add_class::<RadonConfig>()?;
+    m.add_class::<DetectionStrategy>()?;
     m.add_class::<DetectorConfig>()?;
     m.add_class::<Detector>()?;
 

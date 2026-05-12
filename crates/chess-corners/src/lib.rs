@@ -22,7 +22,10 @@
 //! crate:
 //!
 //! ```no_run
-//! use chess_corners::{DetectorConfig, Detector, RefinementMethod, Threshold};
+//! use chess_corners::{
+//!     ChessConfig, ChessRefiner, Detector, DetectionStrategy, DetectorConfig, ForstnerConfig,
+//!     Threshold,
+//! };
 //! use image::io::Reader as ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,7 +35,9 @@
 //!
 //! let mut cfg = DetectorConfig::multiscale();
 //! cfg.threshold = Threshold::Relative(0.15);
-//! cfg.refiner.kind = RefinementMethod::Forstner;
+//! let mut chess = ChessConfig::default();
+//! chess.refiner = ChessRefiner::Forstner(ForstnerConfig::default());
+//! cfg.strategy = DetectionStrategy::Chess(chess);
 //!
 //! let mut detector = Detector::new(cfg)?;
 //! let corners = detector.detect(&img)?;
@@ -67,17 +72,21 @@
 //!
 //! ## ML refiner (feature `ml-refiner`)
 //!
-//! Pick the ML pipeline by setting [`RefinementMethod::Ml`] in the
-//! refiner config:
+//! Pick the ML pipeline by selecting [`ChessRefiner::Ml`] inside the
+//! ChESS strategy:
 //!
 //! ```no_run
 //! # #[cfg(feature = "ml-refiner")]
 //! # {
-//! use chess_corners::{DetectorConfig, Detector, RefinementMethod};
+//! use chess_corners::{
+//!     ChessConfig, ChessRefiner, Detector, DetectionStrategy, DetectorConfig,
+//! };
 //! use image::GrayImage;
 //!
 //! let mut cfg = DetectorConfig::single_scale();
-//! cfg.refiner.kind = RefinementMethod::Ml;
+//! let mut chess = ChessConfig::default();
+//! chess.refiner = ChessRefiner::Ml;
+//! cfg.strategy = DetectionStrategy::Chess(chess);
 //!
 //! let img = GrayImage::new(1, 1);
 //! let mut detector = Detector::new(cfg).unwrap();
@@ -112,11 +121,12 @@
 //!
 //! [`DetectorConfig`] is strategy-typed: the [`DetectorConfig::strategy`]
 //! field is a [`DetectionStrategy`] enum carrying either a
-//! [`ChessStrategy`] (ring choice, NMS, optional multiscale) or a
-//! [`RadonStrategy`] (whole-image Duda-Frese parameters). Acceptance
-//! is a single [`Threshold`] enum (`Absolute` or `Relative`). The
-//! detector translates this into lower-level [`ChessParams`] and
-//! [`CoarseToFineParams`] internally.
+//! [`ChessConfig`] (detector ring, descriptor ring, NMS, refiner) or
+//! a [`RadonConfig`] (whole-image Duda-Frese parameters). Acceptance
+//! is a single [`Threshold`] enum (`Absolute` or `Relative`).
+//! [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
+//! and apply to both strategies. The detector translates this into
+//! lower-level [`ChessParams`] and [`CoarseToFineParams`] internally.
 //!
 //! If you need raw response maps or more control, the most useful
 //! low-level primitives are re-exported here:
@@ -169,17 +179,12 @@ mod upscale;
 // SAT views, scalar reference paths) remain reachable only via a direct
 // `chess-corners-core` dep.
 pub use crate::config::{
-    ChessRing, ChessStrategy, DescriptorMode, DetectionStrategy, DetectorConfig, MultiscaleParams,
-    RadonStrategy, RefinementMethod, RefinerConfig, Threshold,
+    ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy, DetectorConfig,
+    MultiscaleConfig, RadonConfig, RadonRefiner, Threshold,
 };
-// Backwards-compat alias for downstream users on 0.9.x. The
-// canonical name is `DetectorConfig` since 0.10.0 (the type now
-// configures both ChESS and Radon detectors).
-pub use crate::config::ChessConfig;
 pub use crate::error::ChessError;
 pub use crate::upscale::{
     rescale_descriptors_to_input, upscale_bilinear_u8, UpscaleBuffers, UpscaleConfig, UpscaleError,
-    UpscaleMode,
 };
 pub use chess_corners_core::{
     AxisEstimate, AxisFitResult, CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner,
@@ -202,7 +207,7 @@ pub use chess_corners_core::orientation::describe_corners;
 // Primary detector entry point.
 pub use crate::detector::Detector;
 
-// Pyramid types remain re-exported because [`MultiscaleParams`]
+// Pyramid types remain re-exported because [`MultiscaleConfig::Pyramid`]
 // ultimately binds to [`PyramidParams`].
 pub use crate::multiscale::CoarseToFineParams;
 pub use box_image_pyramid::{ImageBuffer, PyramidBuffers, PyramidParams};

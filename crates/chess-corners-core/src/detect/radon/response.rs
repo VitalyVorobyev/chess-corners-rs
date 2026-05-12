@@ -24,6 +24,7 @@ use core::simd::Simd;
 use std::simd::cmp::SimdOrd;
 
 use super::primitives::{box_blur_inplace, PeakFitMode};
+use crate::refine::RefinerKind;
 use crate::ResponseMap;
 
 /// Number of pixels processed per SIMD iteration in
@@ -44,7 +45,7 @@ pub type SatElem = i64;
 pub type SatElem = u32;
 
 /// Configuration for the whole-image Radon detector.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RadonDetectorParams {
     /// Half-length of each ray in **working-resolution** pixels (i.e.
@@ -76,6 +77,11 @@ pub struct RadonDetectorParams {
     /// Minimum count of positive-response neighbours in the NMS window
     /// required to accept a peak. Rejects isolated noise.
     pub min_cluster_size: u32,
+    /// Subpixel refiner applied after Radon peak extraction. Defaults
+    /// to the Radon-projection refiner that pairs with the detector
+    /// output.
+    #[serde(default)]
+    pub refiner: RefinerKind,
 }
 
 impl Default for RadonDetectorParams {
@@ -89,6 +95,7 @@ impl Default for RadonDetectorParams {
             threshold_abs: None,
             nms_radius: 4,
             min_cluster_size: 2,
+            refiner: RefinerKind::RadonPeak(crate::refine::RadonPeakConfig::default()),
         }
     }
 }

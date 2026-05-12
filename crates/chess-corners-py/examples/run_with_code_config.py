@@ -30,33 +30,27 @@ def load_grayscale_image(path: Path) -> np.ndarray:
 def build_chess_config() -> chess_corners.DetectorConfig:
     cfg = chess_corners.DetectorConfig.multiscale_preset()
 
-    cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
-    cfg.strategy.chess.nms_radius = 3
-    cfg.strategy.chess.min_cluster_size = 1
-    cfg.descriptor_mode = chess_corners.DescriptorMode.CANONICAL
+    # Strategy-specific knobs live inside ChessConfig.
+    chess = cfg.strategy.chess
+    chess.ring = chess_corners.ChessRing.BROAD
+    chess.descriptor_ring = chess_corners.DescriptorRing.CANONICAL
+    chess.nms_radius = 3
+    chess.min_cluster_size = 1
+
+    fcfg = chess_corners.ForstnerConfig()
+    fcfg.radius = 3
+    fcfg.min_trace = 20.0
+    fcfg.min_det = 0.001
+    fcfg.max_condition_number = 60.0
+    fcfg.max_offset = 2.0
+    chess.refiner = chess_corners.ChessRefiner.forstner(fcfg)
+
+    cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
     cfg.threshold = chess_corners.Threshold.absolute(0.5)
     cfg.merge_radius = 2.5
-
-    ms = chess_corners.MultiscaleParams()
-    ms.pyramid_levels = 3
-    ms.pyramid_min_size = 96
-    ms.refinement_radius = 4
-    cfg.multiscale = ms
-
-    cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
-
-    cfg.refiner.center_of_mass.radius = 2
-
-    cfg.refiner.forstner.radius = 3
-    cfg.refiner.forstner.min_trace = 20.0
-    cfg.refiner.forstner.min_det = 0.001
-    cfg.refiner.forstner.max_condition_number = 60.0
-    cfg.refiner.forstner.max_offset = 2.0
-
-    cfg.refiner.saddle_point.radius = 3
-    cfg.refiner.saddle_point.det_margin = 0.002
-    cfg.refiner.saddle_point.max_offset = 1.75
-    cfg.refiner.saddle_point.min_abs_det = 0.0002
+    cfg.multiscale = chess_corners.MultiscaleConfig.pyramid(
+        levels=3, min_size=96, refinement_radius=4
+    )
 
     return cfg
 
@@ -97,8 +91,8 @@ def main() -> int:
             f"x={strongest[0]:.3f}, y={strongest[1]:.3f}, "
             f"response={strongest[2]:.3f}, contrast={strongest[3]:.3f}, "
             f"fit_rms={strongest[4]:.3f}, "
-            f"axis0=({strongest[5]:.4f}±{strongest[6]:.4f}), "
-            f"axis1=({strongest[7]:.4f}±{strongest[8]:.4f})"
+            f"axis0=({strongest[5]:.4f}+/-{strongest[6]:.4f}), "
+            f"axis1=({strongest[7]:.4f}+/-{strongest[8]:.4f})"
         )
 
     return 0

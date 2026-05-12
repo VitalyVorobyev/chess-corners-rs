@@ -38,10 +38,15 @@ A `RefineResult` carries the refined `(x, y)`, a refiner-specific
 - `Rejected` — the refined offset exceeded the refiner's
   `max_offset`, or a per-refiner score threshold fired.
 
-The public user-facing selector is `RefinementMethod`. At runtime the
-facade stores an owned `Refiner` enum (one allocated scratch buffer
-per concrete refiner) so the same instance is reused across seeds —
-no per-corner allocation.
+The user-facing selector is per-detector: `ChessRefiner` (carrying
+`CenterOfMass`, `Forstner`, `SaddlePoint`, and optionally `Ml`) lives
+inside `ChessConfig`; `RadonRefiner` (carrying `RadonPeak` and
+`CenterOfMass`) lives inside `RadonConfig`. Each enum variant carries
+its tuning struct as a payload, so a refiner kind change cannot leave
+a stale per-refiner config field behind. At runtime the facade stores
+an owned `Refiner` enum (one allocated scratch buffer per concrete
+refiner) so the same instance is reused across seeds — no per-corner
+allocation.
 
 ## 5.2 CenterOfMass
 
@@ -289,10 +294,12 @@ The measurement-driven comparison lives in Part VIII. In short:
 - SaddlePoint is a blur- and condition-robust default when you don't
   know the scene in advance.
 
-The refiner is selected via `DetectorConfig.refiner.kind`, which is a
-simple enum — switching between them is a single-line change, and
-the comparison numbers in Part VIII come from running all five on the
-same fixture at a single build.
+The refiner is selected through the strategy's `refiner` field —
+`cfg.strategy.chess.refiner = ChessRefiner::Forstner(_)` for ChESS,
+`cfg.strategy.radon.refiner = RadonRefiner::CenterOfMass(_)` for
+Radon. Switching is a single-line change, and the comparison numbers
+in Part VIII come from running all five on the same fixture at a
+single build.
 
 ---
 

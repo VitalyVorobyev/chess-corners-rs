@@ -1,13 +1,15 @@
 """Python-first public API for the chess_corners detector.
 
-The config classes (`DetectorConfig`, `RefinerConfig`, …) and enums
-(`ChessRing`, `RefinementMethod`, …) are native PyO3 types defined
-in the compiled `_native` extension. They expose attribute access,
-classmethod factories (`DetectorConfig.multiscale()`,
-`Threshold.relative(...)`, `DetectionStrategy.radon(...)`), and
+The config classes (`DetectorConfig`, `ChessConfig`, `RadonConfig`,
+`ChessRefiner`, `RadonRefiner`, ...) and enums (`ChessRing`,
+`DescriptorRing`, `PeakFitMode`, `OrientationMethod`) are native PyO3
+types defined in the compiled `_native` extension. They expose
+attribute access, classmethod factories
+(`DetectorConfig.multiscale()`, `Threshold.relative(...)`,
+`MultiscaleConfig.pyramid(...)`, `ChessRefiner.forstner(cfg)`), and
 `to_dict` / `from_dict` / `to_json` / `from_json` helpers.
 
-The detector itself is the :class:`Detector` PyClass — build once,
+The detector itself is the :class:`Detector` PyClass - build once,
 call :meth:`Detector.detect` repeatedly to amortise pyramid / upscale
 buffer allocations across frames.
 """
@@ -20,37 +22,29 @@ from typing import Any, TextIO
 from . import _native
 from ._native import (
     CenterOfMassConfig,
-    DetectorConfig,
+    ChessConfig,
+    ChessRefiner,
     ChessRing,
-    ChessStrategy,
     ConfigError,
-    DescriptorMode,
+    DescriptorRing,
     DetectionStrategy,
     Detector,
+    DetectorConfig,
     ForstnerConfig,
-    MultiscaleParams,
+    MultiscaleConfig,
     OrientationMethod,
     PeakFitMode,
+    RadonConfig,
     RadonPeakConfig,
-    RadonStrategy,
-    RefinementMethod,
-    RefinerConfig,
+    RadonRefiner,
     SaddlePointConfig,
     Threshold,
     UpscaleConfig,
-    UpscaleMode,
 )
-
-# Backwards-compat alias for callers on 0.9.x. Will be removed in 0.11.0.
-ChessConfig = DetectorConfig
 
 
 def _print(self: Any, *, file: TextIO | None = None, indent: int = 2, sort_keys: bool = True) -> None:
-    """Pretty-print a config object, using ``rich`` when available.
-
-    Attached to every config class below so that
-    ``ChessConfig().print()`` keeps working from earlier versions.
-    """
+    """Pretty-print a config object, using ``rich`` when available."""
 
     if file is None:
         try:
@@ -79,12 +73,13 @@ for _cls in (
     SaddlePointConfig,
     RadonPeakConfig,
     Threshold,
-    MultiscaleParams,
-    ChessStrategy,
-    RadonStrategy,
-    DetectionStrategy,
-    RefinerConfig,
+    MultiscaleConfig,
     UpscaleConfig,
+    ChessRefiner,
+    RadonRefiner,
+    ChessConfig,
+    RadonConfig,
+    DetectionStrategy,
     DetectorConfig,
 ):
     _cls.print = _print  # type: ignore[attr-defined]
@@ -94,23 +89,21 @@ for _cls in (
 __all__ = [
     "CenterOfMassConfig",
     "ChessConfig",
+    "ChessRefiner",
     "ChessRing",
-    "ChessStrategy",
     "ConfigError",
-    "DescriptorMode",
+    "DescriptorRing",
     "DetectionStrategy",
-    "DetectorConfig",
     "Detector",
+    "DetectorConfig",
     "ForstnerConfig",
-    "MultiscaleParams",
+    "MultiscaleConfig",
     "OrientationMethod",
     "PeakFitMode",
+    "RadonConfig",
     "RadonPeakConfig",
-    "RadonStrategy",
-    "RefinerConfig",
-    "RefinementMethod",
+    "RadonRefiner",
     "SaddlePointConfig",
     "Threshold",
     "UpscaleConfig",
-    "UpscaleMode",
 ]

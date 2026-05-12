@@ -106,6 +106,7 @@ fn axial_ray_sums_match_refiner_at_image_upsample_1() {
         threshold_rel: 0.0,
         nms_radius: 1,
         min_cluster_size: 0,
+        ..RadonDetectorParams::default()
     };
     let mut buffers = RadonBuffers::new();
     let detector_resp = radon_response_u8(&img, SIZE, SIZE, &params, &mut buffers);

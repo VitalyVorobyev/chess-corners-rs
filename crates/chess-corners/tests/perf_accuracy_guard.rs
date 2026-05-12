@@ -153,7 +153,7 @@ fn check(
     gt: &[(f32, f32)],
     b: &Bounds,
 ) {
-    let mut detector = Detector::new(cfg.clone()).unwrap();
+    let mut detector = Detector::new(*cfg).unwrap();
     let detected = detector.detect_u8(img, side as u32, side as u32).unwrap();
     let stats = match_detections(&detected, gt);
     eprintln!(

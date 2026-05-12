@@ -8,76 +8,83 @@ import pytest
 chess_corners = pytest.importorskip("chess_corners")
 
 UpscaleConfig = chess_corners.UpscaleConfig
-UpscaleMode = chess_corners.UpscaleMode
-ChessConfig = chess_corners.DetectorConfig
+DetectorConfig = chess_corners.DetectorConfig
 
 
 def test_disabled_factory():
     cfg = UpscaleConfig.disabled()
-    assert cfg.mode == UpscaleMode.DISABLED
-    assert cfg.factor == 1
+    assert cfg.kind == "disabled"
+    with pytest.raises(AttributeError):
+        _ = cfg.factor
 
 
 def test_fixed_factory():
     cfg = UpscaleConfig.fixed(2)
-    assert cfg.mode == UpscaleMode.FIXED
+    assert cfg.kind == "fixed"
     assert cfg.factor == 2
 
 
 def test_to_dict_round_trip_disabled():
     cfg = UpscaleConfig.disabled()
     d = cfg.to_dict()
-    assert d["mode"] == "disabled"
+    assert d == {"disabled": None}
     cfg2 = UpscaleConfig.from_dict(d)
-    assert cfg2.mode == UpscaleMode.DISABLED
-    assert cfg2.factor == cfg.factor
+    assert cfg2.kind == "disabled"
 
 
 def test_to_dict_round_trip_fixed():
     cfg = UpscaleConfig.fixed(3)
     d = cfg.to_dict()
-    assert d["mode"] == "fixed"
-    assert d["factor"] == 3
+    assert d == {"fixed": 3}
     cfg2 = UpscaleConfig.from_dict(d)
-    assert cfg2.mode == UpscaleMode.FIXED
+    assert cfg2.kind == "fixed"
     assert cfg2.factor == 3
 
 
 def test_chess_config_upscale_attribute():
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     # Default should be disabled.
-    assert cfg.upscale.mode == UpscaleMode.DISABLED
+    assert cfg.upscale.kind == "disabled"
 
 
 def test_chess_config_set_upscale():
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     cfg.upscale = UpscaleConfig.fixed(2)
-    assert cfg.upscale.mode == UpscaleMode.FIXED
+    assert cfg.upscale.kind == "fixed"
     assert cfg.upscale.factor == 2
 
 
 def test_chess_config_to_dict_includes_upscale():
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     cfg.upscale = UpscaleConfig.fixed(4)
     d = cfg.to_dict()
     assert "upscale" in d
-    assert d["upscale"]["mode"] == "fixed"
-    assert d["upscale"]["factor"] == 4
+    assert d["upscale"] == {"fixed": 4}
 
 
 def test_chess_config_round_trip_with_upscale():
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     cfg.upscale = UpscaleConfig.fixed(2)
     d = cfg.to_dict()
-    cfg2 = ChessConfig.from_dict(d)
-    assert cfg2.upscale.mode == UpscaleMode.FIXED
+    cfg2 = DetectorConfig.from_dict(d)
+    assert cfg2.upscale.kind == "fixed"
     assert cfg2.upscale.factor == 2
 
 
 def test_chess_config_json_round_trip_with_upscale():
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     cfg.upscale = UpscaleConfig.fixed(3)
     json_str = cfg.to_json()
-    cfg2 = ChessConfig.from_json(json_str)
-    assert cfg2.upscale.mode == UpscaleMode.FIXED
+    cfg2 = DetectorConfig.from_json(json_str)
+    assert cfg2.upscale.kind == "fixed"
     assert cfg2.upscale.factor == 3
+
+
+def test_upscale_rejects_both_variants():
+    with pytest.raises(chess_corners.ConfigError):
+        UpscaleConfig.from_dict({"disabled": None, "fixed": 2})
+
+
+def test_upscale_rejects_neither_variant():
+    with pytest.raises(chess_corners.ConfigError):
+        UpscaleConfig.from_dict({})

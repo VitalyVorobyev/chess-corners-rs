@@ -339,10 +339,15 @@ When a frame returns fewer corners than expected:
 ### Real-time loop, 30+ fps
 
 ```rust
-use chess_corners::{DetectorConfig, Detector, RefinementMethod};
+use chess_corners::{
+    ChessConfig, ChessRefiner, DetectionStrategy, Detector, DetectorConfig, SaddlePointConfig,
+};
 
 let mut cfg = DetectorConfig::multiscale();
-cfg.refiner.kind = RefinementMethod::SaddlePoint;  // stable and fast
+let mut chess = ChessConfig::default();
+chess.refiner = ChessRefiner::SaddlePoint(SaddlePointConfig::default()); // stable and fast
+cfg.strategy = DetectionStrategy::Chess(chess);
+
 let mut detector = Detector::new(cfg)?;
 
 loop {
@@ -358,10 +363,14 @@ loop {
 ### Offline calibration, maximum accuracy
 
 ```rust
-use chess_corners::{DetectorConfig, Detector, RefinementMethod};
+use chess_corners::{
+    DetectionStrategy, Detector, DetectorConfig, RadonConfig, RadonPeakConfig, RadonRefiner,
+};
 
-let mut cfg = DetectorConfig::multiscale();
-cfg.refiner.kind = RefinementMethod::RadonPeak;
+let mut cfg = DetectorConfig::radon_multiscale();
+let mut radon = RadonConfig::default();
+radon.refiner = RadonRefiner::RadonPeak(RadonPeakConfig::default());
+cfg.strategy = DetectionStrategy::Radon(radon);
 cfg.merge_radius = 2.0;
 
 let mut detector = Detector::new(cfg)?;
@@ -375,10 +384,15 @@ The extra 5–15 ms per frame is invisible in an offline run.
 ```rust
 # #[cfg(feature = "ml-refiner")]
 # {
-use chess_corners::{DetectorConfig, Detector, RefinementMethod};
+use chess_corners::{
+    ChessConfig, ChessRefiner, DetectionStrategy, Detector, DetectorConfig,
+};
 
 let mut cfg = DetectorConfig::multiscale();
-cfg.refiner.kind = RefinementMethod::Ml;
+let mut chess = ChessConfig::default();
+chess.refiner = ChessRefiner::Ml;
+cfg.strategy = DetectionStrategy::Chess(chess);
+
 let mut detector = Detector::new(cfg).unwrap();
 let corners = detector.detect(&image).unwrap();
 # }

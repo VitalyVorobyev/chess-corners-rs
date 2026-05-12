@@ -16,7 +16,7 @@ import pytest
 chess_corners = pytest.importorskip("chess_corners")
 
 OrientationMethod = chess_corners.OrientationMethod
-ChessConfig = chess_corners.DetectorConfig
+DetectorConfig = chess_corners.DetectorConfig
 ConfigError = chess_corners.ConfigError
 Threshold = chess_corners.Threshold
 
@@ -34,7 +34,7 @@ ALL_VARIANTS = [
 @pytest.mark.parametrize("variant, key", ALL_VARIANTS)
 def test_orientation_method_dict_roundtrip(variant, key):
     """Each OrientationMethod variant survives a to_dict / from_dict roundtrip."""
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     cfg.orientation_method = variant
 
     d = cfg.to_dict()
@@ -42,7 +42,7 @@ def test_orientation_method_dict_roundtrip(variant, key):
         f"to_dict serialised {variant!r} as {d['orientation_method']!r}, expected {key!r}"
     )
 
-    cfg2 = ChessConfig.from_dict(d)
+    cfg2 = DetectorConfig.from_dict(d)
     assert cfg2.orientation_method == variant, (
         f"from_dict did not restore {variant!r}: got {cfg2.orientation_method!r}"
     )
@@ -51,7 +51,7 @@ def test_orientation_method_dict_roundtrip(variant, key):
 @pytest.mark.parametrize("variant, key", ALL_VARIANTS)
 def test_orientation_method_json_roundtrip(variant, key):
     """Each OrientationMethod variant survives a to_json / from_json roundtrip."""
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     cfg.orientation_method = variant
 
     json_str = cfg.to_json()
@@ -60,7 +60,7 @@ def test_orientation_method_json_roundtrip(variant, key):
         f"to_json serialised {variant!r} as {parsed['orientation_method']!r}, expected {key!r}"
     )
 
-    cfg2 = ChessConfig.from_json(json_str)
+    cfg2 = DetectorConfig.from_json(json_str)
     assert cfg2.orientation_method == variant, (
         f"from_json did not restore {variant!r}: got {cfg2.orientation_method!r}"
     )
@@ -72,16 +72,14 @@ def test_orientation_method_json_roundtrip(variant, key):
 
 
 def test_default_orientation_method_is_ring_fit():
-    """Default ChessConfig().orientation_method must be RING_FIT."""
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     assert cfg.orientation_method == OrientationMethod.RING_FIT, (
         f"default orientation_method is {cfg.orientation_method!r}, expected RING_FIT"
     )
 
 
 def test_default_orientation_method_serialises_as_ring_fit():
-    """Default ChessConfig must serialise orientation_method as ring_fit."""
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     d = cfg.to_dict()
     assert d["orientation_method"] == "ring_fit", (
         f"default serialised as {d['orientation_method']!r}"
@@ -94,8 +92,7 @@ def test_default_orientation_method_serialises_as_ring_fit():
 
 
 def test_setting_orientation_method_changes_serialised_value():
-    """Assigning a different variant must change the serialised value."""
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     cfg.orientation_method = OrientationMethod.DISK_FIT
 
     d = cfg.to_dict()
@@ -105,8 +102,7 @@ def test_setting_orientation_method_changes_serialised_value():
 
 
 def test_orientation_method_survives_other_field_mutations():
-    """orientation_method must not be reset when other config fields are mutated."""
-    cfg = ChessConfig()
+    cfg = DetectorConfig()
     cfg.orientation_method = OrientationMethod.DISK_FIT
     cfg.threshold = Threshold.relative(0.25)  # mutate unrelated field
 
@@ -121,16 +117,14 @@ def test_orientation_method_survives_other_field_mutations():
 
 
 def test_from_dict_rejects_unknown_orientation_method():
-    """from_dict must raise ConfigError for an unknown orientation_method string."""
-    d = ChessConfig().to_dict()
+    d = DetectorConfig().to_dict()
     d["orientation_method"] = "not_a_real_method"
     with pytest.raises(ConfigError):
-        ChessConfig.from_dict(d)
+        DetectorConfig.from_dict(d)
 
 
 def test_from_json_rejects_unknown_orientation_method():
-    """from_json must raise ConfigError for an unknown orientation_method string."""
-    d = json.loads(ChessConfig().to_json())
+    d = json.loads(DetectorConfig().to_json())
     d["orientation_method"] = "not_a_real_method"
     with pytest.raises(ConfigError):
-        ChessConfig.from_json(json.dumps(d))
+        DetectorConfig.from_json(json.dumps(d))

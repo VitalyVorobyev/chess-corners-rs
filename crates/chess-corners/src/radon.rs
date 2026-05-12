@@ -15,7 +15,7 @@
 //! dimensions; the working-to-input scale factor is
 //! `cfg.upscale.effective_factor() *
 //! cfg.to_radon_detector_params().image_upsample.clamp(1, 2)` (the
-//! Radon-side factor lives in the [`RadonStrategy`](crate::RadonStrategy)
+//! Radon-side factor lives in the [`RadonConfig`](crate::RadonConfig)
 //! payload of [`DetectionStrategy::Radon`](crate::DetectionStrategy)).
 
 use chess_corners_core::{radon_response_u8, ImageView, RadonBuffers, ResponseMap};

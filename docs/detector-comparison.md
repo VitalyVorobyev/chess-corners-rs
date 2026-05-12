@@ -1,18 +1,20 @@
 # Detector comparison — ChESS ring vs whole-image Radon
 
-This document explains when to pick `DetectorMode::Canonical`
-(equivalently `Broad`) — the classic ChESS ring kernel — versus
-`DetectorMode::Radon` — the Duda-Frese whole-image localized Radon
-detector added in M2. It is the companion to
-[`refiner-comparison.md`](refiner-comparison.md), which covers the
+This document explains when to pick `DetectionStrategy::Chess` — the
+classic ChESS ring kernel — versus `DetectionStrategy::Radon` — the
+Duda-Frese whole-image localized Radon detector. It is the companion
+to [`refiner-comparison.md`](refiner-comparison.md), which covers the
 subpixel refinement stage.
 
-The two detectors consume the same `ChessConfig` surface. Switching
-between them is a single field change:
+The two detectors consume the same `DetectorConfig` surface. Switching
+between them is a strategy assignment:
 
 ```rust
-let mut cfg = ChessConfig::default();
-cfg.detector_mode = DetectorMode::Radon;     // or ::Canonical, ::Broad
+use chess_corners::{DetectionStrategy, DetectorConfig, RadonConfig};
+
+let mut cfg = DetectorConfig::default();
+cfg.strategy = DetectionStrategy::Radon(RadonConfig::default());
+// Or use the presets: DetectorConfig::radon() / DetectorConfig::radon_multiscale().
 ```
 
 Both return corners in base-image coordinates and both emit the same
@@ -86,9 +88,12 @@ assert!(
 
 For the per-refiner subpixel accuracy once corners are found, see
 [`refiner-comparison.md`](refiner-comparison.md). The detector and
-refiner choices are independent — in Radon mode the detector's
-3-point Gaussian peak fit supplies the subpixel refinement directly,
-so `RefinerConfig::kind` is not consulted.
+refiner choices are independent: each detector strategy has its own
+`refiner` field carrying only the refiner variants that apply
+(`ChessRefiner` for ChESS, `RadonRefiner` for Radon). On a Radon
+strategy the detector's 3-point Gaussian peak fit supplies the
+subpixel refinement directly; the `RadonRefiner` selects an optional
+post-refinement step (`RadonPeak` is the default).
 
 ## Throughput
 
@@ -137,7 +142,7 @@ at them.
 
 ## Pipeline details
 
-On a `DetectorMode::Radon` call, the facade pipeline runs:
+On a `DetectionStrategy::Radon` call, the facade pipeline runs:
 
 ```text
 u8 image ──► [optional 2× bilinear upsample]

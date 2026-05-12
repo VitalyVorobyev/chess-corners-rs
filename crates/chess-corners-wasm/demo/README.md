@@ -6,16 +6,25 @@ images, live parameter tuning, and webcam-streaming detection.
 
 ## What it shows
 
-The demo exposes every `ChessDetector` setter from
-`chess-corners-wasm`, including the v0.6.0 additions (two-axis
-descriptor, optional integer upscaling):
+The demo drives the detector through the typed `DetectorConfig` tree
+exposed by `chess-corners-wasm`. The on-screen sliders edit a Rust-
+backed config and call `detector.applyConfig(cfg)` to commit the
+edits.
 
-- `set_threshold`, `set_nms_radius`, `set_min_cluster_size`,
-  `set_broad_mode`
-- `set_pyramid_levels`, `set_pyramid_min_size`
-- **`set_upscale_factor`** (new in 0.6.0 — 0/1 disables, 2/3/4 upscale
-  bilinearly before detection)
-- `set_refiner` — `center_of_mass` / `forstner` / `saddle_point`
+The user-visible controls correspond to fields on the typed config:
+
+- ChESS vs Radon — `cfg.strategy = DetectionStrategy.fromChess(...)` or
+  `.fromRadon(...)`.
+- ChESS ring (Canonical / Broad) — `cfg.strategy.chess.ring`.
+- Threshold — `cfg.threshold = Threshold.relative(v)`.
+- NMS radius / min cluster size — on the active strategy variant.
+- Pyramid levels and min size — `cfg.multiscale =
+  MultiscaleConfig.pyramid(levels, minSize, 3)` (or `.singleScale()`).
+- Upscale factor — `cfg.upscale = UpscaleConfig.disabled()` or
+  `UpscaleConfig.fixed(k)` with `k ∈ {2, 3, 4}`.
+- Refiner — `ChessRefiner.withCenterOfMass(...)`,
+  `.withForstner(...)`, `.withSaddlePoint(...)`, or
+  `RadonRefiner.withRadonPeak(...)` on the Radon path.
 
 For each detected corner it overlays:
 
@@ -71,20 +80,20 @@ crates/chess-corners-wasm/demo/
 
 ### Detector
 
-| Control        | WASM setter             | Notes                                                |
-|----------------|-------------------------|------------------------------------------------------|
-| Threshold      | `set_threshold`         | Relative threshold (fraction of max response)        |
-| NMS radius     | `set_nms_radius`        | Non-max suppression window radius, in pixels         |
-| Min cluster    | `set_min_cluster_size`  | Reject isolated responses with fewer neighbours      |
-| Broad ring     | `set_broad_mode`        | Use the r=10 ChESS ring instead of the canonical r=5 |
+| Control     | Config path                                  | Notes                                                |
+|-------------|----------------------------------------------|------------------------------------------------------|
+| Threshold   | `cfg.threshold`                              | Relative threshold (fraction of max response)        |
+| NMS radius  | `cfg.strategy.chess.nmsRadius` (or radon)    | Non-max suppression window radius, in pixels         |
+| Min cluster | `cfg.strategy.chess.minClusterSize`          | Reject isolated responses with fewer neighbours      |
+| Broad ring  | `cfg.strategy.chess.ring = ChessRing.Broad`  | Use the r=10 ChESS ring instead of the canonical r=5 |
 
 ### Pyramid / upscale
 
-| Control        | WASM setter                 | Notes                                                        |
-|----------------|-----------------------------|--------------------------------------------------------------|
-| Levels         | `set_pyramid_levels(n: u8)` | `1` = single-scale; `≥2` = coarse-to-fine                    |
-| Min size       | `set_pyramid_min_size`      | Stop the pyramid when either dim drops below this            |
-| Upscale factor | `set_upscale_factor`        | `0`/`1` = off; `2`/`3`/`4` = bilinear upscale before detect  |
+| Control        | Config path                                                 | Notes                                                        |
+|----------------|-------------------------------------------------------------|--------------------------------------------------------------|
+| Levels         | `cfg.multiscale = MultiscaleConfig.pyramid(n, ...)`         | `1` selects `singleScale()`; `≥ 2` selects `pyramid(...)`    |
+| Min size       | `cfg.multiscale = MultiscaleConfig.pyramid(_, minSize, _)`  | Stop the pyramid when either dim drops below this            |
+| Upscale factor | `cfg.upscale = UpscaleConfig.fixed(k)`                       | `0`/`1` selects `disabled()`; `2`/`3`/`4` enables upscale    |
 
 Upscaling runs **ahead of the pyramid**. Output coordinates are always
 reported in the original input pixel frame — the facade divides `x, y`
@@ -92,10 +101,12 @@ by the factor before returning.
 
 ### Advanced
 
-- **Refiner** — pick the subpixel refiner. `center_of_mass` is the
-  default, fastest, and least precise. `forstner` uses the structure
+- **Refiner** — pick the subpixel refiner.
+  `ChessRefiner.withCenterOfMass(...)` is the default, fastest, and
+  least precise. `ChessRefiner.withForstner(...)` uses the structure
   tensor of the ring-sampled image and is typically the most accurate
-  for distorted boards. `saddle_point` fits a quadratic surface.
+  for distorted boards. `ChessRefiner.withSaddlePoint(...)` fits a
+  quadratic surface.
 - **Auto rerun** — re-runs detection whenever a slider changes.
 
 ### Overlay
