@@ -283,9 +283,10 @@ pub enum MultiscaleConfig {
 The top-level `DetectorConfig.merge_radius` (in base-image pixels)
 controls duplicate suppression after refinement.
 
-`DetectorConfig::multiscale()` constructs the preset
-`MultiscaleConfig::Pyramid { levels: 3, min_size: 128,
-refinement_radius: 3 }`, which is a reasonable starting point:
+`DetectorConfig::chess_multiscale()` constructs the preset
+`MultiscaleConfig::pyramid_default()` — equivalent to
+`MultiscaleConfig::pyramid(3, 128, 3)` — which is a reasonable
+starting point:
 
 - 3 pyramid levels with minimum size 128,
 - ROI radius 3 at the coarse level (scaled up at the base; with 3 levels this is ≈12 px at full resolution).
@@ -450,8 +451,21 @@ Some example presets:
 
 - **Default multiscale** (good starting point, ChESS):
 
-  - `DetectorConfig::multiscale()` — 3 levels, `min_size = 128`,
-    `refinement_radius = 3`, `merge_radius = 3.0`.
+  - `DetectorConfig::chess_multiscale()` — `MultiscaleConfig::pyramid_default()`:
+    3 levels, `min_size = 128`, `refinement_radius = 3`, `merge_radius = 3.0`.
+
+  ```rust
+  use chess_corners::DetectorConfig;
+  let cfg = DetectorConfig::chess_multiscale();
+  ```
+
+- **Custom pyramid depth**:
+
+  ```rust
+  use chess_corners::{DetectorConfig, MultiscaleConfig};
+  let cfg = DetectorConfig::chess_multiscale()
+      .with_multiscale(MultiscaleConfig::pyramid(4, 64, 4));
+  ```
 
 - **Coarse-to-fine Radon** (blurry / low-contrast large frames):
 
@@ -461,7 +475,7 @@ Some example presets:
 
 - **Fast single-scale** (ChESS, sharp calibration boards):
 
-  - `DetectorConfig::single_scale()` — no pyramid, minimal memory.
+  - `DetectorConfig::chess()` — no pyramid, minimal memory.
 
 - **Robust small-board detection**:
 

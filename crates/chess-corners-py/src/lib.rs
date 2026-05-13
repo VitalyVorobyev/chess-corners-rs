@@ -136,6 +136,28 @@ impl Detector {
         corners_to_array(py, corners)
     }
 
+    /// Return a snapshot of the current detector configuration.
+    ///
+    /// The returned [`DetectorConfig`] is an independent copy — mutating it
+    /// does not affect the live detector. Pass it back to
+    /// [`Self::apply_config`] after editing.
+    fn config(&self, py: Python<'_>) -> PyResult<DetectorConfig> {
+        DetectorConfig::from_rs(py, *self.inner.config())
+    }
+
+    /// Replace the detector configuration.
+    ///
+    /// Equivalent to `Detector(cfg)` but reuses the existing pyramid and
+    /// upscale scratch buffers (they are resized lazily on the next
+    /// [`Self::detect`] call). Validates the upscale factor; raises
+    /// `ValueError` if the config is invalid.
+    fn apply_config(&mut self, py: Python<'_>, cfg: &Bound<'_, PyAny>) -> PyResult<()> {
+        let cfg = resolve_config(py, Some(cfg))?;
+        self.inner
+            .set_config(cfg)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
     /// Compute the dense Radon response heatmap.
     fn radon_heatmap<'py>(
         &mut self,

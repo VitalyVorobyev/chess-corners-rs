@@ -339,14 +339,10 @@ When a frame returns fewer corners than expected:
 ### Real-time loop, 30+ fps
 
 ```rust
-use chess_corners::{
-    ChessConfig, ChessRefiner, DetectionStrategy, Detector, DetectorConfig, SaddlePointConfig,
-};
+use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 
-let mut cfg = DetectorConfig::multiscale();
-let mut chess = ChessConfig::default();
-chess.refiner = ChessRefiner::SaddlePoint(SaddlePointConfig::default()); // stable and fast
-cfg.strategy = DetectionStrategy::Chess(chess);
+let cfg = DetectorConfig::chess_multiscale()
+    .with_chess(|c| c.refiner = ChessRefiner::saddle_point()); // stable and fast
 
 let mut detector = Detector::new(cfg)?;
 
@@ -363,15 +359,11 @@ loop {
 ### Offline calibration, maximum accuracy
 
 ```rust
-use chess_corners::{
-    DetectionStrategy, Detector, DetectorConfig, RadonConfig, RadonPeakConfig, RadonRefiner,
-};
+use chess_corners::{Detector, DetectorConfig, RadonRefiner};
 
-let mut cfg = DetectorConfig::radon_multiscale();
-let mut radon = RadonConfig::default();
-radon.refiner = RadonRefiner::RadonPeak(RadonPeakConfig::default());
-cfg.strategy = DetectionStrategy::Radon(radon);
-cfg.merge_radius = 2.0;
+let cfg = DetectorConfig::radon_multiscale()
+    .with_radon(|r| r.refiner = RadonRefiner::radon_peak())
+    .with_merge_radius(2.0);
 
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&image)?;
@@ -384,14 +376,10 @@ The extra 5–15 ms per frame is invisible in an offline run.
 ```rust
 # #[cfg(feature = "ml-refiner")]
 # {
-use chess_corners::{
-    ChessConfig, ChessRefiner, DetectionStrategy, Detector, DetectorConfig,
-};
+use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 
-let mut cfg = DetectorConfig::multiscale();
-let mut chess = ChessConfig::default();
-chess.refiner = ChessRefiner::Ml;
-cfg.strategy = DetectionStrategy::Chess(chess);
+let cfg = DetectorConfig::chess_multiscale()
+    .with_chess(|c| c.refiner = ChessRefiner::Ml);
 
 let mut detector = Detector::new(cfg).unwrap();
 let corners = detector.detect(&image).unwrap();

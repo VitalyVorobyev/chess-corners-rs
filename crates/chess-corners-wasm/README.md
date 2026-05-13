@@ -89,7 +89,7 @@ import init, {
 await init();
 
 // Multiscale ChESS preset for live webcam feeds.
-const cfg = DetectorConfig.multiscalePreset();
+const cfg = DetectorConfig.chessMultiscale();
 const detector = ChessDetector.withConfig(cfg);
 
 const video = document.querySelector('video');
@@ -161,7 +161,7 @@ import init, {
 
 await init();
 
-const cfg = DetectorConfig.multiscalePreset();
+const cfg = DetectorConfig.chessMultiscale();
 
 // Top-level fields are simple getters / setters:
 cfg.threshold = Threshold.relative(0.15);
@@ -248,7 +248,7 @@ Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector
 
 ## Binary size
 
-~51 KB raw, ~23 KB gzipped (single-scale, no parallelism, no SIMD).
+~196 KB raw, ~70 KB gzipped (single-scale, no parallelism, no SIMD, measured on 0.11.0).
 
 ## License
 

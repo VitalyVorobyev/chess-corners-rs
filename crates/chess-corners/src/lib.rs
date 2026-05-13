@@ -22,10 +22,7 @@
 //! crate:
 //!
 //! ```no_run
-//! use chess_corners::{
-//!     ChessConfig, ChessRefiner, Detector, DetectionStrategy, DetectorConfig, ForstnerConfig,
-//!     Threshold,
-//! };
+//! use chess_corners::{ChessRefiner, Detector, DetectorConfig, Threshold};
 //! use image::io::Reader as ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,11 +30,9 @@
 //!     .decode()?
 //!     .to_luma8();
 //!
-//! let mut cfg = DetectorConfig::multiscale();
-//! cfg.threshold = Threshold::Relative(0.15);
-//! let mut chess = ChessConfig::default();
-//! chess.refiner = ChessRefiner::Forstner(ForstnerConfig::default());
-//! cfg.strategy = DetectionStrategy::Chess(chess);
+//! let cfg = DetectorConfig::chess_multiscale()
+//!     .with_threshold(Threshold::Relative(0.15))
+//!     .with_chess(|c| c.refiner = ChessRefiner::forstner());
 //!
 //! let mut detector = Detector::new(cfg)?;
 //! let corners = detector.detect(&img)?;
@@ -62,7 +57,7 @@
 //!
 //! # fn detect(img: &[u8], width: u32, height: u32)
 //! #     -> Result<(), chess_corners::ChessError> {
-//! let cfg = DetectorConfig::single_scale();
+//! let cfg = DetectorConfig::chess();
 //! let mut detector = Detector::new(cfg)?;
 //! let corners = detector.detect_u8(img, width, height)?;
 //! println!("found {} corners", corners.len());
@@ -78,15 +73,10 @@
 //! ```no_run
 //! # #[cfg(feature = "ml-refiner")]
 //! # {
-//! use chess_corners::{
-//!     ChessConfig, ChessRefiner, Detector, DetectionStrategy, DetectorConfig,
-//! };
+//! use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 //! use image::GrayImage;
 //!
-//! let mut cfg = DetectorConfig::single_scale();
-//! let mut chess = ChessConfig::default();
-//! chess.refiner = ChessRefiner::Ml;
-//! cfg.strategy = DetectionStrategy::Chess(chess);
+//! let cfg = DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::Ml);
 //!
 //! let img = GrayImage::new(1, 1);
 //! let mut detector = Detector::new(cfg).unwrap();
@@ -100,8 +90,10 @@
 //! predicts `[dx, dy, conf_logit]`, but the confidence output is
 //! currently ignored; the offsets are applied directly. Current
 //! benchmarks are synthetic; real-world accuracy still needs
-//! validation. The ML path is also slower (about 23.5 ms vs 0.6 ms
-//! for 77 corners on `testimages/mid.png`).
+//! validation. Per-refiner cost is measured in Part VIII §7.6 of the
+//! book; the ML path is significantly slower than the hand-coded
+//! refiners and best used when its accuracy advantage on noise-heavy
+//! scenes (Part VIII §7.4) actually matters.
 //!
 //! ## Python bindings
 //!

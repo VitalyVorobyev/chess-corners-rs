@@ -45,12 +45,14 @@ Inside `RadonConfig`:
 
 Four presets cover the common cases:
 
-| Preset                                | Detector | Scale          |
-|---------------------------------------|----------|----------------|
-| `DetectorConfig::single_scale()`      | ChESS    | Single-scale   |
-| `DetectorConfig::multiscale()`        | ChESS    | 3-level pyramid|
-| `DetectorConfig::radon()`             | Radon    | Single-scale   |
-| `DetectorConfig::radon_multiscale()`  | Radon    | 3-level pyramid|
+| Preset                                    | Detector | Scale          |
+|-------------------------------------------|----------|----------------|
+| `DetectorConfig::chess()`                 | ChESS    | Single-scale   |
+| `DetectorConfig::chess_multiscale()`      | ChESS    | 3-level pyramid|
+| `DetectorConfig::radon()`                 | Radon    | Single-scale   |
+| `DetectorConfig::radon_multiscale()`      | Radon    | 3-level pyramid|
+
+`single_scale()` and `multiscale()` are deprecated aliases for the ChESS presets in Rust and JS. In Python the corresponding aliases are `single_scale()` and `multiscale_preset()`. All will be removed in 0.12.0.
 
 Three guarantees follow from this shape:
 
@@ -85,7 +87,7 @@ use image::io::Reader as ImageReader;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
-    let cfg = DetectorConfig::single_scale();  // ChESS detector, defaults
+    let cfg = DetectorConfig::chess();  // ChESS detector, defaults
     let mut detector = Detector::new(cfg)?;
     let corners = detector.detect(&img)?;
 
@@ -119,14 +121,10 @@ For throughput, ChESS is faster; see
 ### 2.2.3 Swapping the subpixel refiner
 
 ```rust
-use chess_corners::{
-    ChessConfig, ChessRefiner, DetectionStrategy, DetectorConfig, ForstnerConfig,
-};
+use chess_corners::{ChessRefiner, DetectorConfig};
 
-let mut cfg = DetectorConfig::multiscale();
-let mut chess = ChessConfig::default();
-chess.refiner = ChessRefiner::Forstner(ForstnerConfig::default());
-cfg.strategy = DetectionStrategy::Chess(chess);
+let cfg = DetectorConfig::chess_multiscale()
+    .with_chess(|c| c.refiner = ChessRefiner::forstner());
 ```
 
 Each refiner variant carries its tuning struct inline:
@@ -154,8 +152,8 @@ the `image` crate and feed a packed `&[u8]`:
 use chess_corners::{Detector, DetectorConfig, Threshold};
 
 fn detect(img: &[u8], width: u32, height: u32) -> Result<(), chess_corners::ChessError> {
-    let mut cfg = DetectorConfig::single_scale();
-    cfg.threshold = Threshold::Relative(0.2);
+    let mut cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Relative(0.2));
 
     let mut detector = Detector::new(cfg)?;
     let corners = detector.detect_u8(img, width, height)?;
@@ -205,7 +203,7 @@ import chess_corners
 
 img = np.zeros((128, 128), dtype=np.uint8)
 
-cfg = chess_corners.DetectorConfig.multiscale_preset()
+cfg = chess_corners.DetectorConfig.chess_multiscale()
 cfg.threshold = chess_corners.Threshold.relative(0.15)
 
 # Refiner switching: rebuild the typed config tree.
@@ -228,9 +226,10 @@ print(corners.shape)   # (N, 9)
 
 The Python `DetectorConfig` mirrors the Rust type field-for-field and
 supports `to_dict()`, `from_dict()`, `to_json()`, `from_json()`,
-`pretty()`, and `print()`. The factory methods are named
-`single_scale()`, `multiscale_preset()`, `radon()`, and
-`radon_multiscale()`.
+`pretty()`, and `print()`. The canonical factory methods are
+`chess()`, `chess_multiscale()`, `radon()`, and
+`radon_multiscale()`. The aliases `single_scale()` and
+`multiscale_preset()` are deprecated and will be removed in 0.12.0.
 
 Tagged enum classes follow the same idiom across the board: read
 `cfg.threshold.kind` / `cfg.threshold.value`, build a new one with
@@ -294,7 +293,7 @@ import init, {
 await init();
 
 // Build a typed configuration tree.
-const cfg = DetectorConfig.multiscalePreset();
+const cfg = DetectorConfig.chessMultiscale();
 cfg.threshold = Threshold.relative(0.15);
 cfg.multiscale = MultiscaleConfig.pyramid(3, 128, 3); // levels, minSize, refinementRadius
 
@@ -326,7 +325,7 @@ edits. The factory functions on the tagged classes follow the same
 `ChessRefiner.withCenterOfMass(cfg)`,
 `ChessRefiner.withSaddlePoint(cfg)`, `RadonRefiner.withRadonPeak(cfg)`,
 `RadonRefiner.withCenterOfMass(cfg)`, `MultiscaleConfig.singleScale()`,
-`MultiscaleConfig.pyramid({...})`, `UpscaleConfig.disabled()`,
+`MultiscaleConfig.pyramid(levels, minSize, refinementRadius)`, `UpscaleConfig.disabled()`,
 `UpscaleConfig.fixed(factor)`.
 
 ## 2.5 CLI
@@ -408,12 +407,10 @@ wheel built with the same feature (Python), then pick the
 ```rust
 # #[cfg(feature = "ml-refiner")]
 # {
-use chess_corners::{ChessConfig, ChessRefiner, DetectionStrategy, Detector, DetectorConfig};
+use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 
-let mut cfg = DetectorConfig::multiscale();
-let mut chess = ChessConfig::default();
-chess.refiner = ChessRefiner::Ml;
-cfg.strategy = DetectionStrategy::Chess(chess);
+let cfg = DetectorConfig::chess_multiscale()
+    .with_chess(|c| c.refiner = ChessRefiner::Ml);
 
 let mut detector = Detector::new(cfg).unwrap();
 let corners = detector.detect(&img).unwrap();

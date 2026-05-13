@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let img = ImageReader::open(&img_path)?.decode()?.to_luma8();
 
-    let cfg = DetectorConfig::single_scale();
+    let cfg = DetectorConfig::chess();
 
     let mut detector = Detector::new(cfg)?;
     let corners = detector.detect(&img)?;

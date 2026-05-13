@@ -28,7 +28,7 @@ def load_grayscale_image(path: Path) -> np.ndarray:
 
 
 def build_chess_config() -> chess_corners.DetectorConfig:
-    cfg = chess_corners.DetectorConfig.multiscale_preset()
+    cfg = chess_corners.DetectorConfig.chess_multiscale()
 
     # Strategy-specific knobs live inside ChessConfig.
     chess = cfg.strategy.chess

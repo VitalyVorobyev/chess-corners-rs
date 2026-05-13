@@ -30,8 +30,8 @@ use image::ImageReader;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
-    let mut cfg = DetectorConfig::multiscale();
-    cfg.threshold = Threshold::Relative(0.15);
+    let cfg = DetectorConfig::chess_multiscale()
+        .with_threshold(Threshold::Relative(0.15));
 
     let mut detector = Detector::new(cfg)?;
     let corners = detector.detect(&img)?;
@@ -46,12 +46,15 @@ re-allocate.
 
 ## Presets
 
-| Preset                              | Detector | Scale          |
-|-------------------------------------|----------|----------------|
-| `DetectorConfig::single_scale()`    | ChESS    | Single-scale   |
-| `DetectorConfig::multiscale()`      | ChESS    | 3-level pyramid |
-| `DetectorConfig::radon()`           | Radon    | Single-scale   |
-| `DetectorConfig::radon_multiscale()`| Radon    | 3-level pyramid |
+| Preset                                 | Detector | Scale           |
+|----------------------------------------|----------|-----------------|
+| `DetectorConfig::chess()`              | ChESS    | Single-scale    |
+| `DetectorConfig::chess_multiscale()`   | ChESS    | 3-level pyramid |
+| `DetectorConfig::radon()`              | Radon    | Single-scale    |
+| `DetectorConfig::radon_multiscale()`   | Radon    | 3-level pyramid |
+
+`single_scale()` and `multiscale()` are deprecated aliases for `chess()` and
+`chess_multiscale()` respectively, and will be removed in 0.12.0.
 
 ## Public config shape
 
@@ -61,33 +64,24 @@ level:
 
 ```rust
 use chess_corners::{
-    ChessConfig, ChessRefiner, ChessRing, DetectionStrategy, DetectorConfig,
-    DescriptorRing, MultiscaleConfig, RadonConfig, Threshold, UpscaleConfig,
+    ChessRefiner, ChessRing, DetectorConfig,
+    DescriptorRing, MultiscaleConfig, Threshold, UpscaleConfig,
 };
 
-let mut cfg = DetectorConfig::single_scale();    // ChESS, no pyramid
-cfg.threshold = Threshold::Relative(0.2);         // or Threshold::Absolute(0.0)
-cfg.merge_radius = 3.0;
-
-// Multiscale and upscale use the same enum-with-payload shape:
-cfg.multiscale = MultiscaleConfig::Pyramid {
-    levels: 3,
-    min_size: 128,
-    refinement_radius: 3,
-};
-cfg.upscale = UpscaleConfig::Fixed(2);
-
-// Detector-specific knobs live inside the strategy variant:
-let mut chess = ChessConfig::default();
-chess.ring = ChessRing::Broad;                    // wider, blur-tolerant ring
-chess.descriptor_ring = DescriptorRing::FollowDetector;
-chess.nms_radius = 2;
-chess.min_cluster_size = 2;
-chess.refiner = ChessRefiner::default();          // CenterOfMass with defaults
-cfg.strategy = DetectionStrategy::Chess(chess);
-
+let cfg = DetectorConfig::chess()
+    .with_threshold(Threshold::Relative(0.2))
+    .with_merge_radius(3.0)
+    .with_multiscale(MultiscaleConfig::pyramid_default())
+    .with_upscale(UpscaleConfig::Fixed(2))
+    .with_chess(|c| {
+        c.ring = ChessRing::Broad;
+        c.descriptor_ring = DescriptorRing::FollowDetector;
+        c.nms_radius = 2;
+        c.min_cluster_size = 2;
+        c.refiner = ChessRefiner::default();
+    });
 // Or switch to the Radon strategy:
-cfg.strategy = DetectionStrategy::Radon(RadonConfig::default());
+let cfg = cfg.with_radon(|_| {});
 ```
 
 Three guarantees follow from this shape:
@@ -124,17 +118,11 @@ carries its tuning struct as a payload, so switching kinds cannot
 leave a stale per-refiner config behind:
 
 ```rust
-use chess_corners::{
-    ChessConfig, ChessRefiner, DetectionStrategy, DetectorConfig, ForstnerConfig,
-};
+use chess_corners::{ChessRefiner, DetectorConfig, ForstnerConfig};
 
-let mut cfg = DetectorConfig::single_scale();
-let mut chess = ChessConfig::default();
-chess.refiner = ChessRefiner::Forstner(ForstnerConfig {
-    max_offset: 2.0,
-    ..ForstnerConfig::default()
+let cfg = DetectorConfig::chess().with_chess(|c| {
+    c.refiner = ChessRefiner::Forstner(ForstnerConfig { max_offset: 2.0, ..ForstnerConfig::default() });
 });
-cfg.strategy = DetectionStrategy::Chess(chess);
 ```
 
 The Radon equivalent uses `RadonRefiner::RadonPeak(_)` or
@@ -163,16 +151,11 @@ ChESS strategy's refiner:
 ```rust
 # #[cfg(feature = "ml-refiner")]
 # {
-use chess_corners::{
-    ChessConfig, ChessRefiner, DetectionStrategy, Detector, DetectorConfig,
-};
+use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 use image::GrayImage;
 
 let img = GrayImage::new(1, 1);
-let mut cfg = DetectorConfig::single_scale();
-let mut chess = ChessConfig::default();
-chess.refiner = ChessRefiner::Ml;
-cfg.strategy = DetectionStrategy::Chess(chess);
+let cfg = DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::Ml);
 
 let mut detector = Detector::new(cfg).unwrap();
 let _ = detector.detect(&img).unwrap();

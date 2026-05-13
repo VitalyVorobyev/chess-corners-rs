@@ -81,8 +81,8 @@ impl ChessDetector {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
-            inner: RsDetector::new(RsDetectorConfig::single_scale())
-                .expect("single_scale config is always valid"),
+            inner: RsDetector::new(RsDetectorConfig::chess())
+                .expect("chess config is always valid"),
             last_response: None,
             last_radon_response: None,
             last_radon_scale: 0,
@@ -92,8 +92,8 @@ impl ChessDetector {
     /// Create a detector with the recommended multiscale preset.
     pub fn multiscale() -> Self {
         Self {
-            inner: RsDetector::new(RsDetectorConfig::multiscale())
-                .expect("multiscale preset is always valid"),
+            inner: RsDetector::new(RsDetectorConfig::chess_multiscale())
+                .expect("chess_multiscale preset is always valid"),
             last_response: None,
             last_radon_response: None,
             last_radon_scale: 0,

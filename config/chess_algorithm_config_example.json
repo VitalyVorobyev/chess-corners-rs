@@ -26,9 +26,7 @@
       "refinement_radius": 4
     }
   },
-  "upscale": {
-    "disabled": null
-  },
+  "upscale": "disabled",
   "orientation_method": "ring_fit",
   "merge_radius": 2.5
 }

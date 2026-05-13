@@ -87,8 +87,8 @@ pub struct ChessParams {
     /// Minimum count of positive-response neighbors in NMS window
     /// to accept a corner (rejects isolated noise).
     pub min_cluster_size: u32,
-    /// Subpixel refinement backend and its configuration. Defaults to the legacy
-    /// center-of-mass refiner on the response map.
+    /// Subpixel refinement backend and its configuration. Defaults to
+    /// center-of-mass on the response map.
     pub refiner: RefinerKind,
     /// Orientation-fit method used to estimate the two grid axes at
     /// each detected corner. Default [`OrientationMethod::RingFit`]

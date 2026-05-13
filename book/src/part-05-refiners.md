@@ -294,10 +294,10 @@ The measurement-driven comparison lives in Part VIII. In short:
 - SaddlePoint is a blur- and condition-robust default when you don't
   know the scene in advance.
 
-The refiner is selected through the strategy's `refiner` field —
-`cfg.strategy.chess.refiner = ChessRefiner::Forstner(_)` for ChESS,
-`cfg.strategy.radon.refiner = RadonRefiner::CenterOfMass(_)` for
-Radon. Switching is a single-line change, and the comparison numbers
+The refiner is selected through the strategy's `refiner` field.
+For ChESS: `DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner())`.
+For Radon: `DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::radon_peak())`.
+Switching is a single-line change, and the comparison numbers
 in Part VIII come from running all five on the same fixture at a
 single build.
 

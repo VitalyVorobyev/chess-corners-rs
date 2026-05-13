@@ -234,14 +234,15 @@ and is honoured by both detectors symmetrically:
 use chess_corners::{DetectorConfig, Detector, MultiscaleConfig};
 
 // Three-level coarse-to-fine Radon preset:
-let mut cfg = DetectorConfig::radon_multiscale();
+let cfg = DetectorConfig::radon_multiscale();
 
-// Or tune pyramid depth manually:
-cfg.multiscale = MultiscaleConfig::Pyramid {
-    levels: 2,
-    min_size: 128,
-    refinement_radius: 3,
-};
+// Tune a nested Radon field via the closure mutator:
+let cfg = DetectorConfig::radon_multiscale()
+    .with_radon(|r| r.ray_radius = 6);
+
+// Or set the pyramid depth directly:
+let mut cfg = DetectorConfig::radon_multiscale();
+cfg.multiscale = MultiscaleConfig::pyramid(2, 128, 3);
 
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&gray_image)?;

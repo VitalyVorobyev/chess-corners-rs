@@ -15,7 +15,7 @@ import chess_corners
 
 img = np.zeros((128, 128), dtype=np.uint8)
 
-cfg = chess_corners.DetectorConfig.multiscale_preset()
+cfg = chess_corners.DetectorConfig.chess_multiscale()
 cfg.threshold = chess_corners.Threshold.relative(0.15)
 chess = cfg.strategy.chess
 chess.refiner = chess_corners.ChessRefiner.forstner()
@@ -61,7 +61,7 @@ inside a `DetectionStrategy` variant. Top-level fields are
 `merge_radius`.
 
 ```python
-cfg = chess_corners.DetectorConfig.single_scale()  # ChESS, no pyramid
+cfg = chess_corners.DetectorConfig.chess()  # ChESS, no pyramid
 cfg.threshold = chess_corners.Threshold.relative(0.2)
 cfg.merge_radius = 3.0
 
@@ -142,7 +142,7 @@ Every public config object supports:
 Example:
 
 ```python
-cfg = chess_corners.DetectorConfig.multiscale_preset()
+cfg = chess_corners.DetectorConfig.chess_multiscale()
 text = cfg.to_json(indent=2)
 restored = chess_corners.DetectorConfig.from_json(text)
 
@@ -184,7 +184,7 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
       "refinement_radius": 4
     }
   },
-  "upscale": { "disabled": null },
+  "upscale": "disabled",
   "orientation_method": "ring_fit",
   "merge_radius": 2.5
 }

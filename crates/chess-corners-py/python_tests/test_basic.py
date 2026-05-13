@@ -50,15 +50,12 @@ def test_chess_refiner_variant_and_payload():
 
 
 def test_chess_refiner_attached_to_chess_strategy():
-    cfg = chess_corners.DetectorConfig()
-    chess = cfg.strategy.chess
-    chess.refiner = chess_corners.ChessRefiner.forstner()
-    cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+    cfg = chess_corners.DetectorConfig().with_chess(refiner=chess_corners.ChessRefiner.forstner())
     assert cfg.strategy.chess.refiner.kind == "forstner"
 
 
 def test_config_roundtrip_and_print_helpers():
-    cfg = chess_corners.DetectorConfig.multiscale_preset()
+    cfg = chess_corners.DetectorConfig.chess_multiscale()
     cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
     cfg.strategy.chess.descriptor_ring = chess_corners.DescriptorRing.CANONICAL
     cfg.threshold = chess_corners.Threshold.absolute(4.5)
@@ -172,7 +169,7 @@ def test_detection_strategy_factory_and_accessor():
 
 
 def test_multiscale_tagged_class_single_scale():
-    cfg = chess_corners.DetectorConfig.single_scale()
+    cfg = chess_corners.DetectorConfig.chess()
     ms = cfg.multiscale
     assert ms.kind == "single_scale"
     with pytest.raises(AttributeError):
@@ -184,7 +181,7 @@ def test_multiscale_tagged_class_single_scale():
 def test_multiscale_tagged_class_pyramid():
     """Multiscale pyramid variant exposes its tuning fields."""
 
-    cfg = chess_corners.DetectorConfig.multiscale_preset()
+    cfg = chess_corners.DetectorConfig.chess_multiscale()
     ms = cfg.multiscale
     assert ms.kind == "pyramid"
     assert ms.levels == 3
@@ -203,6 +200,33 @@ def test_multiscale_factories():
     assert pyramid.levels == 4
     assert pyramid.min_size == 96
     assert pyramid.refinement_radius == 2
+
+
+def test_detector_config_roundtrip():
+    """config() / apply_config() round-trip and buffer reuse."""
+    img = _checkerboard(square_size=16, squares=8)
+
+    cfg = chess_corners.DetectorConfig.chess()
+    cfg.threshold = chess_corners.Threshold.relative(0.1)
+    detector = chess_corners.Detector(cfg)
+
+    # Snapshot the live config and verify it reflects the applied threshold.
+    snapshot = detector.config()
+    assert snapshot.threshold.kind == "relative"
+
+    # Mutate the snapshot and apply it back.
+    snapshot.threshold = chess_corners.Threshold.absolute(0.0)
+    detector.apply_config(snapshot)
+
+    # The updated config should be reflected in a new snapshot.
+    updated = detector.config()
+    assert updated.threshold.kind == "absolute"
+
+    # Detector must still produce a valid result after apply_config.
+    corners = detector.detect(img)
+    assert corners.dtype == np.float32
+    assert corners.ndim == 2
+    assert corners.shape[1] == 9
 
 
 def test_radon_multiscale_classmethod():

@@ -96,9 +96,10 @@ pub fn detect_peaks_from_response(resp: &ResponseMap, params: &ChessParams) -> V
 ///
 /// Used by the [`DenseDetector`](crate::DenseDetector) trait
 /// implementor for ChESS, which threads the refiner radius from the
-/// orchestrator into peak detection so the fused legacy behaviour
-/// ([`detect_corners_from_response_with_refiner`]) is preserved
-/// bit-for-bit across the split.
+/// orchestrator into peak detection so the response and refinement
+/// stages address the same valid pixel region. See
+/// [`detect_corners_from_response_with_refiner`] for the fused
+/// variant that combines both stages.
 #[cfg_attr(
     feature = "tracing",
     instrument(level = "debug", skip(resp, params), fields(w = resp.w, h = resp.h))

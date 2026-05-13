@@ -203,7 +203,7 @@ fn chess_single_scale_meets_accuracy_floor() {
     let off = (CELL as f32 / 2.0 + 0.31, CELL as f32 / 2.0 + 0.47);
     let img = synthetic_chessboard(SIDE, CELL, off);
     let gt = ground_truth_corners(SIDE, CELL, off);
-    let cfg = DetectorConfig::single_scale();
+    let cfg = DetectorConfig::chess();
     let bounds = Bounds {
         min_recall: 0.98,
         min_precision: 0.78,
@@ -219,7 +219,7 @@ fn chess_multiscale_meets_accuracy_floor() {
     let off = (CELL as f32 / 2.0 + 0.31, CELL as f32 / 2.0 + 0.47);
     let img = synthetic_chessboard(SIDE, CELL, off);
     let gt = ground_truth_corners(SIDE, CELL, off);
-    let cfg = DetectorConfig::multiscale();
+    let cfg = DetectorConfig::chess_multiscale();
     let bounds = Bounds {
         min_recall: 0.85,
         min_precision: 0.75,

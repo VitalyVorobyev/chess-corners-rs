@@ -25,8 +25,10 @@ use chess_corners::{
     RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
     Threshold as RsThreshold, UpscaleConfig as RsUpscaleConfig,
 };
+use std::ffi::CString;
+
 use pyo3::create_exception;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyDeprecationWarning, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString, PyType};
 
@@ -1090,6 +1092,18 @@ impl MultiscaleConfig {
     #[classmethod]
     fn single_scale(_cls: &Bound<'_, PyType>) -> Self {
         Self::from_rs(RsMultiscaleConfig::SingleScale)
+    }
+
+    /// Pyramid variant with library-default parameters (levels=3, min_size=128,
+    /// refinement_radius=3). Use `pyramid(levels=..., ...)` for custom settings.
+    #[classmethod]
+    fn pyramid_default(_cls: &Bound<'_, PyType>) -> Self {
+        Self {
+            kind: MultiscaleKind::Pyramid,
+            levels: 3,
+            min_size: 128,
+            refinement_radius: 3,
+        }
     }
 
     /// Pyramid variant: build an image pyramid and refine coarse seeds
@@ -2609,7 +2623,7 @@ pub struct DetectorConfig {
 }
 
 impl DetectorConfig {
-    fn from_rs(py: Python<'_>, src: RsDetectorConfig) -> PyResult<Self> {
+    pub(crate) fn from_rs(py: Python<'_>, src: RsDetectorConfig) -> PyResult<Self> {
         Ok(Self {
             strategy: Py::new(py, DetectionStrategy::from_rs(py, src.strategy)?)?,
             threshold: Py::new(py, Threshold::from_rs(src.threshold))?,
@@ -2622,6 +2636,11 @@ impl DetectorConfig {
 
     fn build(py: Python<'_>) -> PyResult<Self> {
         Self::from_rs(py, RsDetectorConfig::default())
+    }
+
+    /// Deep-clone this wrapper into a new owned `DetectorConfig`.
+    fn clone_inner(&self, py: Python<'_>) -> PyResult<Self> {
+        Self::from_rs(py, self.to_inner(py))
     }
 
     /// Convert into the Rust facade's `DetectorConfig`.
@@ -2646,14 +2665,14 @@ impl DetectorConfig {
 
     /// Single-scale ChESS preset.
     #[classmethod]
-    fn single_scale(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
-        Self::from_rs(py, RsDetectorConfig::single_scale())
+    fn chess(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
+        Self::from_rs(py, RsDetectorConfig::chess())
     }
 
     /// Three-level coarse-to-fine ChESS preset.
     #[classmethod]
-    fn multiscale_preset(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
-        Self::from_rs(py, RsDetectorConfig::multiscale())
+    fn chess_multiscale(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
+        Self::from_rs(py, RsDetectorConfig::chess_multiscale())
     }
 
     /// Whole-image Radon detector preset.
@@ -2666,6 +2685,197 @@ impl DetectorConfig {
     #[classmethod]
     fn radon_multiscale(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
         Self::from_rs(py, RsDetectorConfig::radon_multiscale())
+    }
+
+    /// Deprecated. Use `DetectorConfig.chess()` instead.
+    #[classmethod]
+    fn single_scale(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
+        let msg = CString::new(
+            "DetectorConfig.single_scale() is deprecated; use DetectorConfig.chess() instead",
+        )
+        .unwrap();
+        PyErr::warn(py, &py.get_type::<PyDeprecationWarning>(), &msg, 1)?;
+        Self::from_rs(py, RsDetectorConfig::chess())
+    }
+
+    /// Deprecated. Use `DetectorConfig.chess_multiscale()` instead.
+    #[classmethod]
+    fn multiscale_preset(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
+        let msg = CString::new(
+            "DetectorConfig.multiscale_preset() is deprecated; use DetectorConfig.chess_multiscale() instead",
+        )
+        .unwrap();
+        PyErr::warn(py, &py.get_type::<PyDeprecationWarning>(), &msg, 1)?;
+        Self::from_rs(py, RsDetectorConfig::chess_multiscale())
+    }
+
+    // ---- chainable builder methods ----
+
+    /// Return a new `DetectorConfig` with the threshold replaced.
+    fn with_threshold(&self, py: Python<'_>, threshold: Py<Threshold>) -> PyResult<Self> {
+        let mut cfg = self.clone_inner(py)?;
+        cfg.threshold = threshold;
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` with the multiscale config replaced.
+    fn with_multiscale(&self, py: Python<'_>, multiscale: Py<MultiscaleConfig>) -> PyResult<Self> {
+        let mut cfg = self.clone_inner(py)?;
+        cfg.multiscale = multiscale;
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` with the upscale config replaced.
+    fn with_upscale(&self, py: Python<'_>, upscale: Py<UpscaleConfig>) -> PyResult<Self> {
+        let mut cfg = self.clone_inner(py)?;
+        cfg.upscale = upscale;
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` with the orientation method replaced.
+    fn with_orientation_method(&self, py: Python<'_>, method: OrientationMethod) -> PyResult<Self> {
+        let mut cfg = self.clone_inner(py)?;
+        cfg.orientation_method = method.into();
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` with the merge radius replaced.
+    fn with_merge_radius(&self, py: Python<'_>, radius: f32) -> PyResult<Self> {
+        let mut cfg = self.clone_inner(py)?;
+        cfg.merge_radius = radius;
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` with the ChESS strategy fields updated
+    /// from the provided keyword arguments. If the current strategy is Radon,
+    /// it is replaced with a default `ChessConfig` before applying kwargs.
+    /// Top-level fields (threshold, multiscale, etc.) are preserved.
+    ///
+    /// Accepted kwargs: `refiner`, `ring`, `descriptor_ring`, `nms_radius`,
+    /// `min_cluster_size`.
+    #[pyo3(signature = (**kwargs))]
+    fn with_chess(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        const CHESS_FIELDS: &[&str] = &[
+            "refiner",
+            "ring",
+            "descriptor_ring",
+            "nms_radius",
+            "min_cluster_size",
+        ];
+
+        let mut cfg = self.clone_inner(py)?;
+
+        // Determine the base chess sub-config.
+        let base_chess = match cfg.strategy.borrow(py).kind {
+            StrategyKind::Chess => cfg.strategy.borrow(py).chess.borrow(py).to_rs(py),
+            StrategyKind::Radon => RsChessConfig::default(),
+        };
+        let mut chess = ChessConfig::from_rs(py, base_chess)?;
+
+        if let Some(kw) = kwargs {
+            for key in kw.keys().iter() {
+                let key_str: String = key.extract()?;
+                if !CHESS_FIELDS.contains(&key_str.as_str()) {
+                    return Err(PyTypeError::new_err(format!(
+                        "unexpected keyword argument: '{key_str}'"
+                    )));
+                }
+            }
+            if let Some(v) = kw.get_item("refiner")? {
+                chess.refiner = v.extract::<Py<ChessRefiner>>()?;
+            }
+            if let Some(v) = kw.get_item("ring")? {
+                let ring: ChessRing = v.extract()?;
+                chess.ring = ring.into();
+            }
+            if let Some(v) = kw.get_item("descriptor_ring")? {
+                let dr: DescriptorRing = v.extract()?;
+                chess.descriptor_ring = dr.into();
+            }
+            if let Some(v) = kw.get_item("nms_radius")? {
+                chess.nms_radius = v.extract::<u32>()?;
+            }
+            if let Some(v) = kw.get_item("min_cluster_size")? {
+                chess.min_cluster_size = v.extract::<u32>()?;
+            }
+        }
+
+        let strategy = DetectionStrategy {
+            kind: StrategyKind::Chess,
+            chess: Py::new(py, chess)?,
+            radon: Py::new(py, RadonConfig::from_rs(py, RsRadonConfig::default())?)?,
+        };
+        cfg.strategy = Py::new(py, strategy)?;
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` with the Radon strategy fields updated
+    /// from the provided keyword arguments. If the current strategy is ChESS,
+    /// it is replaced with a default `RadonConfig` before applying kwargs.
+    /// Top-level fields (threshold, multiscale, etc.) are preserved.
+    ///
+    /// Accepted kwargs: `refiner`, `ray_radius`, `image_upsample`,
+    /// `response_blur_radius`, `peak_fit`, `nms_radius`, `min_cluster_size`.
+    #[pyo3(signature = (**kwargs))]
+    fn with_radon(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        const RADON_FIELDS: &[&str] = &[
+            "refiner",
+            "ray_radius",
+            "image_upsample",
+            "response_blur_radius",
+            "peak_fit",
+            "nms_radius",
+            "min_cluster_size",
+        ];
+
+        let mut cfg = self.clone_inner(py)?;
+
+        let base_radon = match cfg.strategy.borrow(py).kind {
+            StrategyKind::Radon => cfg.strategy.borrow(py).radon.borrow(py).to_rs(py),
+            StrategyKind::Chess => RsRadonConfig::default(),
+        };
+        let mut radon = RadonConfig::from_rs(py, base_radon)?;
+
+        if let Some(kw) = kwargs {
+            for key in kw.keys().iter() {
+                let key_str: String = key.extract()?;
+                if !RADON_FIELDS.contains(&key_str.as_str()) {
+                    return Err(PyTypeError::new_err(format!(
+                        "unexpected keyword argument: '{key_str}'"
+                    )));
+                }
+            }
+            if let Some(v) = kw.get_item("refiner")? {
+                radon.refiner = v.extract::<Py<RadonRefiner>>()?;
+            }
+            if let Some(v) = kw.get_item("ray_radius")? {
+                radon.ray_radius = v.extract::<u32>()?;
+            }
+            if let Some(v) = kw.get_item("image_upsample")? {
+                radon.image_upsample = v.extract::<u32>()?;
+            }
+            if let Some(v) = kw.get_item("response_blur_radius")? {
+                radon.response_blur_radius = v.extract::<u32>()?;
+            }
+            if let Some(v) = kw.get_item("peak_fit")? {
+                let pf: PeakFitMode = v.extract()?;
+                radon.peak_fit = pf.into();
+            }
+            if let Some(v) = kw.get_item("nms_radius")? {
+                radon.nms_radius = v.extract::<u32>()?;
+            }
+            if let Some(v) = kw.get_item("min_cluster_size")? {
+                radon.min_cluster_size = v.extract::<u32>()?;
+            }
+        }
+
+        let strategy = DetectionStrategy {
+            kind: StrategyKind::Radon,
+            chess: Py::new(py, ChessConfig::from_rs(py, RsChessConfig::default())?)?,
+            radon: Py::new(py, radon)?,
+        };
+        cfg.strategy = Py::new(py, strategy)?;
+        Ok(cfg)
     }
 
     // ---- nested wrappers (returned by reference) ----

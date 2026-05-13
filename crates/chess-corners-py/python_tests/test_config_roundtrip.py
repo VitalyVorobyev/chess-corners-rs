@@ -54,12 +54,11 @@ def test_default_config_dict_roundtrip_fields_match():
 
 def test_chess_refiner_forstner_max_offset_survives_roundtrip():
     """A mutation in a deeply nested config field must survive JSON roundtrip."""
-    cfg = chess_corners.DetectorConfig()
     fcfg = chess_corners.ForstnerConfig()
     fcfg.max_offset = 3.5
-    chess = cfg.strategy.chess
-    chess.refiner = chess_corners.ChessRefiner.forstner(fcfg)
-    cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+    cfg = chess_corners.DetectorConfig().with_chess(
+        refiner=chess_corners.ChessRefiner.forstner(fcfg)
+    )
 
     json_str = cfg.to_json()
     cfg2 = chess_corners.DetectorConfig.from_json(json_str)

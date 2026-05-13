@@ -12,7 +12,7 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 //!
-//! let mut detector = Detector::new(DetectorConfig::multiscale())?;
+//! let mut detector = Detector::new(DetectorConfig::chess_multiscale())?;
 //! let corners = detector.detect(&img)?;
 //! println!("found {} corners", corners.len());
 //! # Ok(()) }

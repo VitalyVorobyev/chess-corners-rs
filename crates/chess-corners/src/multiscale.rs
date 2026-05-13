@@ -666,10 +666,10 @@ mod tests {
 
     #[test]
     fn chess_config_multiscale_preset_has_expected_pyramid() {
-        let cfg = DetectorConfig::multiscale();
+        let cfg = DetectorConfig::chess_multiscale();
         let cf = cfg
             .to_coarse_to_fine_params()
-            .expect("multiscale preset must produce CoarseToFineParams");
+            .expect("chess_multiscale preset must produce CoarseToFineParams");
         assert_eq!(cf.pyramid.num_levels, 3);
         assert_eq!(cf.pyramid.min_size, 128);
         assert_eq!(cf.refinement_radius, 3);

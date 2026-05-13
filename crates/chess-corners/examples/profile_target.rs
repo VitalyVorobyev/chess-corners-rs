@@ -19,8 +19,8 @@
 //! ```
 
 use chess_corners::{
-    CenterOfMassConfig, ChessConfig, ChessRefiner, DetectionStrategy, Detector, DetectorConfig,
-    ForstnerConfig, RadonConfig, RadonPeakConfig, RadonRefiner, SaddlePointConfig,
+    CenterOfMassConfig, ChessRefiner, Detector, DetectorConfig, ForstnerConfig, RadonPeakConfig,
+    RadonRefiner, SaddlePointConfig,
 };
 use image::ImageReader;
 use std::env;
@@ -139,26 +139,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (w, h) = (img.width(), img.height());
     let data = img.into_raw();
 
-    let mut cfg = match args.mode {
-        Mode::Chess => DetectorConfig::multiscale(),
-        Mode::Radon => DetectorConfig::radon(),
-    };
-    match args.mode {
+    let cfg = match args.mode {
         Mode::Chess => {
+            let mut cfg = DetectorConfig::chess_multiscale();
             if let Some(refiner) = chess_refiner_from_sel(args.refiner) {
-                let mut chess = ChessConfig::default();
-                chess.refiner = refiner;
-                cfg.strategy = DetectionStrategy::Chess(chess);
+                cfg = cfg.with_chess(|c| c.refiner = refiner);
             }
+            cfg
         }
         Mode::Radon => {
+            let mut cfg = DetectorConfig::radon();
             if let Some(refiner) = radon_refiner_from_sel(args.refiner) {
-                let mut radon = RadonConfig::default();
-                radon.refiner = refiner;
-                cfg.strategy = DetectionStrategy::Radon(radon);
+                cfg = cfg.with_radon(|r| r.refiner = refiner);
             }
+            cfg
         }
-    }
+    };
     let mut detector = Detector::new(cfg).unwrap();
 
     // Warm up: pages, caches, and any one-time allocations.

@@ -59,18 +59,14 @@ image = "0.25"
 ```
 
 ```rust
-use chess_corners::{
-    ChessConfig, ChessRefiner, Detector, DetectionStrategy, DetectorConfig, ForstnerConfig,
-};
+use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 use image::ImageReader;
 
 let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
 // Defaults: ChESS detector, multiscale pipeline, CenterOfMass refiner.
-let mut cfg = DetectorConfig::multiscale();
-let mut chess = ChessConfig::default();
-chess.refiner = ChessRefiner::Forstner(ForstnerConfig::default());
-cfg.strategy = DetectionStrategy::Chess(chess);
+let cfg = DetectorConfig::chess_multiscale()
+    .with_chess(|c| c.refiner = ChessRefiner::forstner());
 
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&img)?;
@@ -81,12 +77,12 @@ for c in &corners {
 
 Four presets cover the most common setups:
 
-| Preset                              | Detector | Scale          | Best for                                  |
-|-------------------------------------|----------|----------------|-------------------------------------------|
-| `DetectorConfig::single_scale()`    | ChESS    | Single-scale   | Sharp boards, large cells                 |
-| `DetectorConfig::multiscale()`      | ChESS    | 3-level pyramid | General-purpose (recommended default)    |
-| `DetectorConfig::radon()`           | Radon    | Single-scale   | Small cells, heavy blur, low contrast     |
-| `DetectorConfig::radon_multiscale()`| Radon    | 3-level pyramid | Radon on large / blurry frames           |
+| Preset                                 | Detector | Scale           |
+|----------------------------------------|----------|-----------------|
+| `DetectorConfig::chess()`              | ChESS    | Single-scale    |
+| `DetectorConfig::chess_multiscale()`   | ChESS    | 3-level pyramid |
+| `DetectorConfig::radon()`              | Radon    | Single-scale    |
+| `DetectorConfig::radon_multiscale()`   | Radon    | 3-level pyramid |
 
 Switching to the Radon detector is one line:
 
@@ -111,7 +107,7 @@ import chess_corners
 
 img = np.zeros((128, 128), dtype=np.uint8)
 
-cfg = chess_corners.DetectorConfig.multiscale_preset()
+cfg = chess_corners.DetectorConfig.chess_multiscale()
 
 chess = cfg.strategy.chess
 chess.refiner = chess_corners.ChessRefiner.forstner()
@@ -149,7 +145,7 @@ import init, {
 
 await init();
 
-const cfg = DetectorConfig.multiscalePreset();
+const cfg = DetectorConfig.chessMultiscale();
 const chess = new ChessConfig();
 chess.ring = ChessRing.Broad;
 chess.refiner = ChessRefiner.withForstner(new ForstnerConfig());
@@ -200,7 +196,7 @@ invalid pairings.
 {
   "strategy": {
     "chess": {
-      "ring": "broad",
+      "ring": "canonical",
       "descriptor_ring": "canonical",
       "nms_radius": 3,
       "min_cluster_size": 1,

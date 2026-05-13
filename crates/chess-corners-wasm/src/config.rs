@@ -11,7 +11,7 @@
 //! so chained mutation propagates without a round-trip:
 //!
 //! ```js
-//! const cfg = DetectorConfig.multiscalePreset();
+//! const cfg = DetectorConfig.chessMultiscale();
 //! cfg.strategy.chess.ring = ChessRing.Broad;             // works
 //! cfg.strategy.chess.refiner.forstner.maxOffset = 2.0;   // works
 //! cfg.strategy.chess.nmsRadius = 3;                      // works
@@ -1006,6 +1006,15 @@ impl MultiscaleConfig {
         }
     }
 
+    /// Library-default three-level pyramid configuration (levels = 3,
+    /// minSize = 128, refinementRadius = 3). Matches the preset used by
+    /// [`DetectorConfig::chess_multiscale`] and
+    /// [`DetectorConfig::radon_multiscale`]. JS: `MultiscaleConfig.pyramidDefault()`.
+    #[wasm_bindgen(js_name = pyramidDefault)]
+    pub fn pyramid_default() -> Self {
+        Self::pyramid(3, 128, 3)
+    }
+
     /// Construct a coarse-to-fine pyramid configuration with the given
     /// number of levels, minimum short-edge size in pixels, and
     /// refinement ROI half-radius in coarse-level pixels. JS:
@@ -1733,11 +1742,11 @@ impl DetectionStrategy {
 /// High-level detector configuration. Mirrors
 /// [`chess_corners::DetectorConfig`].
 ///
-/// Build one with [`DetectorConfig::single_scale`],
-/// [`DetectorConfig::multiscale_preset`], [`DetectorConfig::radon`], or
+/// Build one with [`DetectorConfig::chess`],
+/// [`DetectorConfig::chess_multiscale`], [`DetectorConfig::radon`], or
 /// [`DetectorConfig::radon_multiscale`] and tweak only the fields you
 /// need. In JS the factory names are camel-cased
-/// (`DetectorConfig.singleScale()`, `DetectorConfig.multiscalePreset()`,
+/// (`DetectorConfig.chess()`, `DetectorConfig.chessMultiscale()`,
 /// `DetectorConfig.radonMultiscale()`).
 #[non_exhaustive]
 #[wasm_bindgen]
@@ -1767,6 +1776,13 @@ impl DetectorConfig {
         }
     }
 
+    /// Create a deep-independent copy by round-tripping through the Rust
+    /// snapshot. Used by builder methods so edits on the returned config
+    /// do not alias the source's cells.
+    fn deep_clone(&self) -> Self {
+        Self::from_value(self.snapshot())
+    }
+
     /// Snapshot the current state into the Rust facade
     /// [`RsDetectorConfig`] for hand-off to the detector.
     pub(crate) fn snapshot(&self) -> RsDetectorConfig {
@@ -1790,28 +1806,248 @@ impl DetectorConfig {
         Self::from_value(RsDetectorConfig::default())
     }
 
-    /// Single-scale ChESS preset (alias for [`Self::new`]).
-    #[wasm_bindgen(js_name = singleScale)]
-    pub fn single_scale() -> Self {
-        Self::from_value(RsDetectorConfig::single_scale())
+    /// Single-scale ChESS preset. JS: `DetectorConfig.chess()`.
+    pub fn chess() -> Self {
+        Self::from_value(RsDetectorConfig::chess())
     }
 
-    /// Recommended 3-level multiscale ChESS preset.
-    /// Exposed as `multiscalePreset` in JS.
-    #[wasm_bindgen(js_name = multiscalePreset)]
-    pub fn multiscale_preset() -> Self {
-        Self::from_value(RsDetectorConfig::multiscale())
+    /// Three-level coarse-to-fine ChESS preset. JS: `DetectorConfig.chessMultiscale()`.
+    #[wasm_bindgen(js_name = chessMultiscale)]
+    pub fn chess_multiscale() -> Self {
+        Self::from_value(RsDetectorConfig::chess_multiscale())
     }
 
     /// Whole-image Radon detector preset (relative threshold 0.01).
+    /// JS: `DetectorConfig.radon()`.
     pub fn radon() -> Self {
         Self::from_value(RsDetectorConfig::radon())
     }
 
-    /// Coarse-to-fine Radon preset.
+    /// Coarse-to-fine Radon preset. JS: `DetectorConfig.radonMultiscale()`.
     #[wasm_bindgen(js_name = radonMultiscale)]
     pub fn radon_multiscale() -> Self {
         Self::from_value(RsDetectorConfig::radon_multiscale())
+    }
+
+    /// Deprecated — use `DetectorConfig.chess()` instead.
+    ///
+    /// Logs a `console.warn` and returns the same config as [`Self::chess`].
+    #[wasm_bindgen(js_name = singleScale)]
+    pub fn single_scale() -> Self {
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::warn_1(
+            &"DetectorConfig.singleScale() is deprecated; use DetectorConfig.chess() instead"
+                .into(),
+        );
+        Self::chess()
+    }
+
+    /// Deprecated — use `DetectorConfig.chessMultiscale()` instead.
+    ///
+    /// Logs a `console.warn` and returns the same config as
+    /// [`Self::chess_multiscale`].
+    #[wasm_bindgen(js_name = multiscale)]
+    pub fn multiscale_deprecated() -> Self {
+        #[cfg(target_arch = "wasm32")]
+        web_sys::console::warn_1(
+            &"DetectorConfig.multiscale() is deprecated; use DetectorConfig.chessMultiscale() instead"
+                .into(),
+        );
+        Self::chess_multiscale()
+    }
+
+    // ---- Chainable builder methods ----
+
+    /// Return a copy of this config with the threshold replaced.
+    /// JS: `cfg.withThreshold(Threshold.relative(0.15))`.
+    #[wasm_bindgen(js_name = withThreshold)]
+    pub fn with_threshold(&self, threshold: &Threshold) -> Self {
+        let mut out = self.deep_clone();
+        out.set_threshold(threshold);
+        out
+    }
+
+    /// Return a copy of this config with the multiscale setting replaced.
+    /// JS: `cfg.withMultiscale(MultiscaleConfig.pyramidDefault())`.
+    #[wasm_bindgen(js_name = withMultiscale)]
+    pub fn with_multiscale(&self, multiscale: &MultiscaleConfig) -> Self {
+        let mut out = self.deep_clone();
+        out.set_multiscale(multiscale);
+        out
+    }
+
+    /// Return a copy of this config with the upscale setting replaced.
+    /// JS: `cfg.withUpscale(UpscaleConfig.fixed(2))`.
+    #[wasm_bindgen(js_name = withUpscale)]
+    pub fn with_upscale(&self, upscale: &UpscaleConfig) -> Self {
+        let mut out = self.deep_clone();
+        out.set_upscale(upscale);
+        out
+    }
+
+    /// Return a copy of this config with the orientation method replaced.
+    /// JS: `cfg.withOrientationMethod(OrientationMethod.DiskFit)`.
+    #[wasm_bindgen(js_name = withOrientationMethod)]
+    pub fn with_orientation_method(&self, method: OrientationMethod) -> Self {
+        let mut out = self.deep_clone();
+        out.set_orientation_method(method);
+        out
+    }
+
+    /// Return a copy of this config with the merge radius replaced.
+    /// JS: `cfg.withMergeRadius(5.0)`.
+    #[wasm_bindgen(js_name = withMergeRadius)]
+    pub fn with_merge_radius(&self, radius: f32) -> Self {
+        let mut out = self.deep_clone();
+        out.set_merge_radius(radius);
+        out
+    }
+
+    /// Return a copy of this config with the ChESS refiner replaced.
+    ///
+    /// Use this instead of the `refiner` key in `withChess({})` — wasm-bindgen
+    /// Rust structs cannot be passed through plain `js_sys::Object` iteration.
+    /// JS: `cfg.withChessRefiner(ChessRefiner.withForstner(new ForstnerConfig()))`.
+    #[wasm_bindgen(js_name = withChessRefiner)]
+    pub fn with_chess_refiner(&self, refiner: &ChessRefiner) -> Self {
+        let mut out = self.deep_clone();
+        if out.strategy.kind() != "chess" {
+            out.strategy.use_chess();
+        }
+        out.strategy.chess().set_refiner(refiner);
+        out
+    }
+
+    /// Return a copy of this config with the Radon refiner replaced.
+    ///
+    /// Use this instead of the `refiner` key in `withRadon({})`.
+    /// JS: `cfg.withRadonRefiner(RadonRefiner.withCenterOfMass(new CenterOfMassConfig()))`.
+    #[wasm_bindgen(js_name = withRadonRefiner)]
+    pub fn with_radon_refiner(&self, refiner: &RadonRefiner) -> Self {
+        let mut out = self.deep_clone();
+        if out.strategy.kind() != "radon" {
+            out.strategy.use_radon();
+        }
+        out.strategy.radon().set_refiner(refiner);
+        out
+    }
+
+    /// Return a copy of this config with ChESS strategy fields patched
+    /// from a plain JS options object.
+    ///
+    /// Accepted keys (all optional):
+    /// - `ring`: `ChessRing`
+    /// - `nmsRadius`: integer
+    /// - `descriptorRing`: `DescriptorRing`
+    ///
+    /// To set the refiner use the typed [`Self::with_chess_refiner`] builder
+    /// instead — wasm-bindgen Rust structs cannot be passed via plain options
+    /// objects.
+    ///
+    /// Unknown keys throw `Error("unexpected option: '<key>'")`.
+    /// JS: `cfg.withChess({ ring: ChessRing.Broad, nmsRadius: 4 })`.
+    #[wasm_bindgen(js_name = withChess)]
+    pub fn with_chess(&self, opts: &js_sys::Object) -> Result<DetectorConfig, JsValue> {
+        let mut out = self.deep_clone();
+        // Ensure the strategy is Chess; switch if currently Radon.
+        if out.strategy.kind() != "chess" {
+            out.strategy.use_chess();
+        }
+        let keys = js_sys::Object::keys(opts);
+        for i in 0..keys.length() {
+            let key = keys.get(i);
+            let key_str = key.as_string().unwrap_or_default();
+            let val = js_sys::Reflect::get(opts, &key)?;
+            match key_str.as_str() {
+                "refiner" => {
+                    apply_chess_refiner_from_js(&mut out, val)?;
+                }
+                "ring" => {
+                    let disc = val
+                        .as_f64()
+                        .ok_or_else(|| JsValue::from_str("ring must be a ChessRing enum value"))?
+                        as u8;
+                    let ring = if disc == ChessRing::Broad as u8 {
+                        ChessRing::Broad
+                    } else {
+                        ChessRing::Canonical
+                    };
+                    out.strategy.chess().set_ring(ring);
+                }
+                "nmsRadius" => {
+                    let r = val
+                        .as_f64()
+                        .ok_or_else(|| JsValue::from_str("nmsRadius must be a number"))?
+                        as u32;
+                    out.strategy.chess().set_nms_radius(r);
+                }
+                "descriptorRing" => {
+                    let dr = val.as_f64().ok_or_else(|| {
+                        JsValue::from_str("descriptorRing must be a DescriptorRing enum value")
+                    })? as u8;
+                    let dr = match dr {
+                        1 => DescriptorRing::Canonical,
+                        2 => DescriptorRing::Broad,
+                        _ => DescriptorRing::FollowDetector,
+                    };
+                    out.strategy.chess().set_descriptor_ring(dr);
+                }
+                other => {
+                    return Err(JsValue::from_str(&format!("unexpected option: '{other}'")));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Return a copy of this config with Radon strategy fields patched
+    /// from a plain JS options object.
+    ///
+    /// Accepted keys (all optional):
+    /// - `rayRadius`: integer
+    /// - `imageUpsample`: integer
+    ///
+    /// To set the refiner use the typed [`Self::with_radon_refiner`] builder
+    /// instead.
+    ///
+    /// Unknown keys throw `Error("unexpected option: '<key>'")`.
+    /// JS: `cfg.withRadon({ rayRadius: 6, imageUpsample: 2 })`.
+    #[wasm_bindgen(js_name = withRadon)]
+    pub fn with_radon(&self, opts: &js_sys::Object) -> Result<DetectorConfig, JsValue> {
+        let mut out = self.deep_clone();
+        // Ensure the strategy is Radon; switch if currently Chess.
+        if out.strategy.kind() != "radon" {
+            out.strategy.use_radon();
+        }
+        let keys = js_sys::Object::keys(opts);
+        for i in 0..keys.length() {
+            let key = keys.get(i);
+            let key_str = key.as_string().unwrap_or_default();
+            let val = js_sys::Reflect::get(opts, &key)?;
+            match key_str.as_str() {
+                "refiner" => {
+                    apply_radon_refiner_from_js(&mut out, val)?;
+                }
+                "rayRadius" => {
+                    let r = val
+                        .as_f64()
+                        .ok_or_else(|| JsValue::from_str("rayRadius must be a number"))?
+                        as u32;
+                    out.strategy.radon().set_ray_radius(r);
+                }
+                "imageUpsample" => {
+                    let r = val
+                        .as_f64()
+                        .ok_or_else(|| JsValue::from_str("imageUpsample must be a number"))?
+                        as u32;
+                    out.strategy.radon().set_image_upsample(r);
+                }
+                other => {
+                    return Err(JsValue::from_str(&format!("unexpected option: '{other}'")));
+                }
+            }
+        }
+        Ok(out)
     }
 
     // ---- Top-level fields ----
@@ -1882,6 +2118,27 @@ impl Default for DetectorConfig {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for with_chess / with_radon options objects
+// ---------------------------------------------------------------------------
+
+/// Reject an `refiner` key coming from the `with_chess` or `with_radon` options
+/// object. wasm-bindgen Rust structs tagged with `#[wasm_bindgen]` are opaque
+/// pointers to JS — they cannot be extracted from a plain `JsValue` via
+/// `JsCast::dyn_ref`. Callers should use the dedicated typed builder methods
+/// `withChessRefiner` / `withRadonRefiner` instead.
+fn apply_chess_refiner_from_js(_cfg: &mut DetectorConfig, _val: JsValue) -> Result<(), JsValue> {
+    Err(JsValue::from_str(
+        "refiner cannot be set via the options object; use .withChessRefiner(refiner) instead",
+    ))
+}
+
+fn apply_radon_refiner_from_js(_cfg: &mut DetectorConfig, _val: JsValue) -> Result<(), JsValue> {
+    Err(JsValue::from_str(
+        "refiner cannot be set via the options object; use .withRadonRefiner(refiner) instead",
+    ))
 }
 
 #[cfg(test)]
@@ -1975,7 +2232,7 @@ mod tests {
 
     #[test]
     fn multiscale_assigning_wrapper_swaps_to_single_scale() {
-        let mut cfg = DetectorConfig::multiscale_preset();
+        let mut cfg = DetectorConfig::chess_multiscale();
         assert_eq!(cfg.multiscale().kind(), "pyramid");
         cfg.set_multiscale(&MultiscaleConfig::single_scale());
         assert_eq!(cfg.multiscale().kind(), "single_scale");
@@ -2159,5 +2416,334 @@ mod tests {
             r.refiner,
             chess_corners::RadonRefiner::CenterOfMass(_)
         ));
+    }
+
+    // ---- New 0.11.0 API ----
+
+    #[test]
+    fn chess_preset_is_single_scale() {
+        let cfg = DetectorConfig::chess();
+        let snap = cfg.snapshot();
+        assert!(
+            matches!(snap.strategy, RsDetectionStrategy::Chess(_)),
+            "chess() preset must use Chess strategy"
+        );
+        assert!(
+            matches!(snap.multiscale, RsMultiscaleConfig::SingleScale),
+            "chess() preset must be single-scale"
+        );
+    }
+
+    #[test]
+    fn chess_multiscale_preset_has_pyramid() {
+        let cfg = DetectorConfig::chess_multiscale();
+        let snap = cfg.snapshot();
+        assert!(
+            matches!(snap.strategy, RsDetectionStrategy::Chess(_)),
+            "chess_multiscale() preset must use Chess strategy"
+        );
+        assert!(
+            matches!(snap.multiscale, RsMultiscaleConfig::Pyramid { .. }),
+            "chess_multiscale() preset must enable pyramid multiscale"
+        );
+    }
+
+    #[test]
+    fn single_scale_delegates_to_chess() {
+        // Deprecated shim must return an identical snapshot to chess().
+        let snap_compat = DetectorConfig::single_scale().snapshot();
+        let snap_new = DetectorConfig::chess().snapshot();
+        // Both must be Chess/SingleScale.
+        assert!(matches!(
+            snap_compat.strategy,
+            RsDetectionStrategy::Chess(_)
+        ));
+        assert!(matches!(
+            snap_compat.multiscale,
+            RsMultiscaleConfig::SingleScale
+        ));
+        // Threshold must match.
+        assert_eq!(
+            std::mem::discriminant(&snap_compat.threshold),
+            std::mem::discriminant(&snap_new.threshold)
+        );
+    }
+
+    #[test]
+    fn multiscale_delegates_to_chess_multiscale() {
+        // Deprecated shim must return an identical snapshot to chess_multiscale().
+        let snap_compat = DetectorConfig::multiscale_deprecated().snapshot();
+        let snap_new = DetectorConfig::chess_multiscale().snapshot();
+        assert!(matches!(
+            snap_compat.strategy,
+            RsDetectionStrategy::Chess(_)
+        ));
+        assert!(matches!(
+            snap_compat.multiscale,
+            RsMultiscaleConfig::Pyramid { .. }
+        ));
+        // Both snapshots must have the same multiscale discriminant.
+        assert_eq!(
+            std::mem::discriminant(&snap_compat.multiscale),
+            std::mem::discriminant(&snap_new.multiscale)
+        );
+    }
+
+    #[test]
+    fn pyramid_default_matches_chess_multiscale_preset() {
+        let ms = MultiscaleConfig::pyramid_default();
+        assert_eq!(ms.kind(), "pyramid");
+        // levels / min_size / refinement_radius must equal the facade defaults (3/128/3).
+        let snap = ms.snapshot();
+        assert!(
+            matches!(
+                snap,
+                RsMultiscaleConfig::Pyramid {
+                    levels: 3,
+                    min_size: 128,
+                    refinement_radius: 3,
+                }
+            ),
+            "pyramid_default must equal (3, 128, 3); got {snap:?}"
+        );
+    }
+
+    #[test]
+    fn with_threshold_builder_returns_new_config() {
+        let cfg = DetectorConfig::chess();
+        let snap_before = cfg.snapshot();
+        assert!(matches!(snap_before.threshold, RsThreshold::Absolute(_)));
+
+        let t = Threshold::relative(0.12);
+        let cfg2 = cfg.with_threshold(&t);
+        let snap2 = cfg2.snapshot();
+        assert!(
+            matches!(snap2.threshold, RsThreshold::Relative(f) if (f - 0.12).abs() < f32::EPSILON)
+        );
+
+        // Original is unchanged.
+        let snap_orig = cfg.snapshot();
+        assert!(matches!(snap_orig.threshold, RsThreshold::Absolute(_)));
+    }
+
+    #[test]
+    fn with_multiscale_builder_returns_new_config() {
+        let cfg = DetectorConfig::chess();
+        let ms = MultiscaleConfig::pyramid(4, 64, 5);
+        let cfg2 = cfg.with_multiscale(&ms);
+        let snap = cfg2.snapshot();
+        assert!(
+            matches!(
+                snap.multiscale,
+                RsMultiscaleConfig::Pyramid {
+                    levels: 4,
+                    min_size: 64,
+                    refinement_radius: 5,
+                }
+            ),
+            "with_multiscale must propagate to snapshot; got {snap:?}"
+        );
+
+        // Original is unchanged.
+        let snap_orig = cfg.snapshot();
+        assert!(matches!(
+            snap_orig.multiscale,
+            RsMultiscaleConfig::SingleScale
+        ));
+    }
+
+    #[test]
+    fn with_upscale_builder_returns_new_config() {
+        let cfg = DetectorConfig::chess();
+        let up = UpscaleConfig::fixed(2);
+        let cfg2 = cfg.with_upscale(&up);
+        let snap = cfg2.snapshot();
+        assert!(matches!(snap.upscale, RsUpscaleConfig::Fixed(2)));
+        // Original is unchanged.
+        let snap_orig = cfg.snapshot();
+        assert!(matches!(snap_orig.upscale, RsUpscaleConfig::Disabled));
+    }
+
+    #[test]
+    fn with_orientation_method_builder_returns_new_config() {
+        let cfg = DetectorConfig::chess();
+        let cfg2 = cfg.with_orientation_method(OrientationMethod::DiskFit);
+        let snap = cfg2.snapshot();
+        assert_eq!(snap.orientation_method, RsOrientationMethod::DiskFit);
+        // Original is unchanged.
+        let snap_orig = cfg.snapshot();
+        assert_eq!(snap_orig.orientation_method, RsOrientationMethod::RingFit);
+    }
+
+    #[test]
+    fn with_merge_radius_builder_returns_new_config() {
+        let cfg = DetectorConfig::chess();
+        let cfg2 = cfg.with_merge_radius(7.5);
+        let snap = cfg2.snapshot();
+        assert!((snap.merge_radius - 7.5).abs() < f32::EPSILON);
+        // Original is unchanged.
+        let snap_orig = cfg.snapshot();
+        assert!((snap_orig.merge_radius - 3.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn with_chess_refiner_builder_sets_forstner() {
+        let cfg = DetectorConfig::chess();
+        let mut forstner = ForstnerConfig::new();
+        forstner.set_max_offset(4.0);
+        let refiner = ChessRefiner::forstner(&forstner);
+        let cfg2 = cfg.with_chess_refiner(&refiner);
+        let snap = cfg2.snapshot();
+        let RsDetectionStrategy::Chess(c) = snap.strategy else {
+            panic!("expected chess strategy")
+        };
+        assert!(
+            matches!(c.refiner, chess_corners::ChessRefiner::Forstner(f) if (f.max_offset - 4.0).abs() < f32::EPSILON),
+            "with_chess_refiner must set Forstner with max_offset=4.0"
+        );
+        // Original is unchanged.
+        let snap_orig = cfg.snapshot();
+        let RsDetectionStrategy::Chess(c_orig) = snap_orig.strategy else {
+            panic!("expected chess strategy")
+        };
+        assert!(
+            !matches!(c_orig.refiner, chess_corners::ChessRefiner::Forstner(_)),
+            "original config must not have Forstner refiner"
+        );
+    }
+
+    #[test]
+    fn with_radon_refiner_builder_sets_center_of_mass() {
+        let cfg = DetectorConfig::radon();
+        let cm = CenterOfMassConfig::new();
+        let refiner = RadonRefiner::center_of_mass(&cm);
+        let cfg2 = cfg.with_radon_refiner(&refiner);
+        let snap = cfg2.snapshot();
+        let RsDetectionStrategy::Radon(r) = snap.strategy else {
+            panic!("expected radon strategy")
+        };
+        assert!(matches!(
+            r.refiner,
+            chess_corners::RadonRefiner::CenterOfMass(_)
+        ));
+    }
+
+    // The following tests use js_sys::Object / js_sys::Reflect which panic on
+    // non-wasm32 targets ("cannot call wasm-bindgen imported functions on
+    // non-wasm targets"). They are gated to wasm32 so `cargo test` on the
+    // host continues to work. They run under `wasm-pack test` / wasm-bindgen-test.
+    #[cfg(target_arch = "wasm32")]
+    #[test]
+    fn with_chess_opts_ring_and_nms_radius() {
+        let cfg = DetectorConfig::chess();
+        let opts = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &opts,
+            &JsValue::from_str("ring"),
+            &JsValue::from_f64(ChessRing::Broad as u8 as f64),
+        )
+        .unwrap();
+        js_sys::Reflect::set(
+            &opts,
+            &JsValue::from_str("nmsRadius"),
+            &JsValue::from_f64(7.0),
+        )
+        .unwrap();
+        let cfg2 = cfg.with_chess(&opts).expect("with_chess must succeed");
+        let snap = cfg2.snapshot();
+        let RsDetectionStrategy::Chess(c) = snap.strategy else {
+            panic!("expected chess strategy")
+        };
+        assert_eq!(c.ring, chess_corners::ChessRing::Broad);
+        assert_eq!(c.nms_radius, 7);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[test]
+    fn with_chess_opts_unknown_key_returns_error() {
+        let cfg = DetectorConfig::chess();
+        let opts = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &opts,
+            &JsValue::from_str("unknownField"),
+            &JsValue::from_f64(1.0),
+        )
+        .unwrap();
+        let err = cfg
+            .with_chess(&opts)
+            .expect_err("unknown key must produce an error");
+        let msg = err.as_string().unwrap_or_default();
+        assert!(
+            msg.contains("unexpected option: 'unknownField'"),
+            "error message must name the unknown key; got: {msg}"
+        );
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[test]
+    fn with_radon_opts_ray_radius_and_image_upsample() {
+        let cfg = DetectorConfig::radon();
+        let opts = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &opts,
+            &JsValue::from_str("rayRadius"),
+            &JsValue::from_f64(6.0),
+        )
+        .unwrap();
+        js_sys::Reflect::set(
+            &opts,
+            &JsValue::from_str("imageUpsample"),
+            &JsValue::from_f64(2.0),
+        )
+        .unwrap();
+        let cfg2 = cfg.with_radon(&opts).expect("with_radon must succeed");
+        let snap = cfg2.snapshot();
+        let RsDetectionStrategy::Radon(r) = snap.strategy else {
+            panic!("expected radon strategy")
+        };
+        assert_eq!(r.ray_radius, 6);
+        assert_eq!(r.image_upsample, 2);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[test]
+    fn with_radon_opts_unknown_key_returns_error() {
+        let cfg = DetectorConfig::radon();
+        let opts = js_sys::Object::new();
+        js_sys::Reflect::set(&opts, &JsValue::from_str("badKey"), &JsValue::from_f64(1.0)).unwrap();
+        let err = cfg
+            .with_radon(&opts)
+            .expect_err("unknown key must produce an error");
+        let msg = err.as_string().unwrap_or_default();
+        assert!(
+            msg.contains("unexpected option: 'badKey'"),
+            "error message must name the unknown key; got: {msg}"
+        );
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[test]
+    fn with_chess_opts_on_radon_config_switches_strategy() {
+        // Calling with_chess on a radon config must flip strategy to Chess.
+        let cfg = DetectorConfig::radon();
+        let snap_before = cfg.snapshot();
+        assert!(matches!(
+            snap_before.strategy,
+            RsDetectionStrategy::Radon(_)
+        ));
+
+        let opts = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &opts,
+            &JsValue::from_str("nmsRadius"),
+            &JsValue::from_f64(5.0),
+        )
+        .unwrap();
+        let cfg2 = cfg.with_chess(&opts).expect("with_chess must succeed");
+        let snap = cfg2.snapshot();
+        assert!(
+            matches!(snap.strategy, RsDetectionStrategy::Chess(_)),
+            "strategy must flip to Chess"
+        );
     }
 }

@@ -72,11 +72,11 @@ struct Preset {
 const PRESETS: &[Preset] = &[
     Preset {
         name: "single_scale",
-        build: DetectorConfig::single_scale,
+        build: DetectorConfig::chess,
     },
     Preset {
         name: "multiscale",
-        build: DetectorConfig::multiscale,
+        build: DetectorConfig::chess_multiscale,
     },
 ];
 

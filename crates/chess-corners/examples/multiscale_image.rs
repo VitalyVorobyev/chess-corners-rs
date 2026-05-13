@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let img = ImageReader::open(&img_path)?.decode()?.to_luma8();
 
-    let mut cfg = DetectorConfig::multiscale();
+    let mut cfg = DetectorConfig::chess_multiscale();
     if let MultiscaleConfig::Pyramid {
         ref mut min_size, ..
     } = cfg.multiscale
