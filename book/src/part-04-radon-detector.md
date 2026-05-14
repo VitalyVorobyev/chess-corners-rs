@@ -9,10 +9,14 @@ being selective.
 
 The Radon response detector is an alternative based on Duda & Frese
 (2018), *"Accurate Detection and Localization of Checkerboard Corners
-for Calibration"*. Instead of a ring, it integrates along four rays
-through each candidate pixel and uses the gap between the strongest
-and weakest ray as the corner response. The computation is kept O(1)
-per pixel using summed-area tables.
+for Calibration"* (BMVC). Instead of a ring, it integrates along four
+rays through each candidate pixel and uses the gap between the
+strongest and weakest ray as the corner response. The computation is
+kept O(1) per pixel using summed-area tables.
+
+For a self-contained overview of the algorithm, see the
+[duda-radon-corners atlas page](https://vitavision.dev/atlas/duda-radon-corners)
+on vitavision.dev.
 
 The Radon detector is a full alternative to ChESS — same input
 (`&[u8]` grayscale), same output

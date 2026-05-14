@@ -1,4 +1,14 @@
-# chess-corners-rs
+<h1>
+  <a href="https://vitavision.dev/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="book/src/img/vv-favicon-dark.svg">
+      <img src="book/src/img/vv-favicon-light.svg" alt="vitavision.dev" height="48" align="left">
+    </picture>
+  </a>
+  &nbsp;chess-corners-rs
+</h1>
+
+Part of the [vitavision.dev](https://vitavision.dev/) computer-vision atlas.
 
 [![CI](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/ci.yml)
 [![Security audit](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/audit.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/audit.yml)
@@ -18,7 +28,7 @@ use the same `DetectorConfig` schema.
 
 | Stage | Options | More detail |
 |-------|---------|-------------|
-| Detector | `ChESS` ring response, `Radon` ray-sum response | [ChESS](book/src/part-03-chess-detector.md), [Radon](book/src/part-04-radon-detector.md) |
+| Detector | `ChESS` ring response, `Radon` ray-sum response | [ChESS](book/src/part-03-chess-detector.md) · [atlas](https://vitavision.dev/atlas/chess-corners), [Radon](book/src/part-04-radon-detector.md) · [atlas](https://vitavision.dev/atlas/duda-radon-corners) |
 | Refiner | `CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
 | Scale handling | Single-scale or coarse-to-fine 2× pyramid | [Multiscale](book/src/part-07-multiscale-and-pyramids.md) |
 | Benchmarks | Synthetic sweeps and pipeline timings | [Benchmarks](book/src/part-08-benchmarks.md) |
@@ -242,6 +252,19 @@ This project uses AI coding assistants as implementation tools. The
 author validates algorithmic behavior and numerical results before
 release through formatting, linting, tests, documentation builds, the
 book, and binding checks.
+
+## References
+
+- ChESS detector — Bennett, S. & Lasenby, J. (2014). *ChESS — Quick and
+  Robust Detection of Chess-board Features*. Computer Vision and Image
+  Understanding, 118:197–210.
+  [arXiv:1301.5491](https://arxiv.org/abs/1301.5491).
+- Radon detector — Duda, A. & Frese, U. (2018). *Accurate Detection and
+  Localization of Checkerboard Corners for Calibration*. BMVC.
+
+Further reading on the vitavision.dev atlas:
+[chess-corners](https://vitavision.dev/atlas/chess-corners) ·
+[duda-radon-corners](https://vitavision.dev/atlas/duda-radon-corners).
 
 ## Pre-PR Quality Gates
 

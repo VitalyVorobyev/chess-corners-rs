@@ -1,13 +1,18 @@
 # Part III: The ChESS response detector
 
 ChESS (Chess-board Extraction by Subtraction and Summation,
-Bennett & Lasenby, 2013) is a ring-based corner detector specialized
+[Bennett & Lasenby, 2014](https://arxiv.org/abs/1301.5491); CVIU
+118:197–210) is a ring-based corner detector specialized
 for chessboard X-junctions. Given an 8-bit grayscale image, it produces
 a dense response map; positive values mark chessboard-like corners,
 while edges, blobs, and flat regions should have lower response on the
 ideal checkerboard model. The benchmark chapter reports single-digit
 millisecond timings for the measured camera-sized test images with the
 `simd` or `rayon` features enabled.
+
+For a self-contained overview of the algorithm, see the
+[chess-corners atlas page](https://vitavision.dev/atlas/chess-corners) on
+vitavision.dev.
 
 This part covers the ChESS pipeline end-to-end: the ring geometry,
 the response formula, the dense response computation over the image,

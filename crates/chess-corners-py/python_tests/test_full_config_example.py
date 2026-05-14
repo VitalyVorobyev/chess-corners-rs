@@ -18,7 +18,7 @@ CODE_EXAMPLE_PATH = (
 
 
 # A pure detector-config JSON (no CLI runtime keys) exercising every
-# top-level branch of the 0.11.0 shape.
+# top-level branch of the 0.10.0 shape.
 SAMPLE_CONFIG = {
     "strategy": {
         "chess": {

@@ -462,21 +462,6 @@ impl DetectorConfig {
         self
     }
 
-    /// Deprecated alias for [`Self::chess`]. Will be removed in 0.12.0.
-    #[deprecated(since = "0.11.0", note = "use `DetectorConfig::chess()` instead")]
-    pub fn single_scale() -> Self {
-        Self::chess()
-    }
-
-    /// Deprecated alias for [`Self::chess_multiscale`]. Will be removed in 0.12.0.
-    #[deprecated(
-        since = "0.11.0",
-        note = "use `DetectorConfig::chess_multiscale()` instead"
-    )]
-    pub fn multiscale() -> Self {
-        Self::chess_multiscale()
-    }
-
     /// Translate this config into the low-level [`ChessParams`] consumed
     /// by `chess-corners-core`. Only meaningful when
     /// [`Self::strategy`] is the ChESS variant.
@@ -1061,16 +1046,6 @@ mod tests {
                 min_size: 128,
                 refinement_radius: 3
             }
-        );
-    }
-
-    #[allow(deprecated)]
-    #[test]
-    fn deprecated_shims_return_same_value_as_new_constructors() {
-        assert_eq!(DetectorConfig::single_scale(), DetectorConfig::chess());
-        assert_eq!(
-            DetectorConfig::multiscale(),
-            DetectorConfig::chess_multiscale()
         );
     }
 

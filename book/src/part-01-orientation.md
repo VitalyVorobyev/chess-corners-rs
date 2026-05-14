@@ -1,4 +1,20 @@
+<p align="center">
+  <a href="https://vitavision.dev/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="img/vv-favicon-dark.svg">
+      <img src="img/vv-favicon-light.svg" alt="vitavision.dev" height="64">
+    </picture>
+  </a>
+</p>
+
 # Part I: Orientation
+
+Part of the [vitavision.dev](https://vitavision.dev/) computer-vision
+atlas. Self-contained algorithm overviews live at
+[vitavision.dev/atlas/chess-corners](https://vitavision.dev/atlas/chess-corners)
+and
+[vitavision.dev/atlas/duda-radon-corners](https://vitavision.dev/atlas/duda-radon-corners);
+this book is the implementation reference for the Rust workspace.
 
 ## 1.1 What the library does
 
@@ -11,14 +27,18 @@ pipeline.
 Two independent detectors and five subpixel refiners live behind a
 single configuration type:
 
-- **ChESS response detector** — a ring-based kernel from Bennett &
-  Lasenby (2013). This is the default and the fastest preset in the
-  measured clean-image benchmark. Covered in
-  [Part III](part-03-chess-detector.md).
+- **ChESS response detector** — a ring-based kernel from
+  [Bennett & Lasenby (2014)](https://arxiv.org/abs/1301.5491). This is
+  the default and the fastest preset in the measured clean-image
+  benchmark. Covered in [Part III](part-03-chess-detector.md); atlas
+  overview at
+  [vitavision.dev/atlas/chess-corners](https://vitavision.dev/atlas/chess-corners).
 - **Radon response detector** — a ray-based kernel from Duda &
   Frese (2018). Added for cases where the ChESS ring does not produce
   enough seeds, especially the small-cell, blur, and low-contrast
-  fixtures in this repository. Covered in [Part IV](part-04-radon-detector.md).
+  fixtures in this repository. Covered in
+  [Part IV](part-04-radon-detector.md); atlas overview at
+  [vitavision.dev/atlas/duda-radon-corners](https://vitavision.dev/atlas/duda-radon-corners).
 
 Both produce the same `CornerDescriptor` output, and both feed the
 same [multiscale pipeline](part-07-multiscale-and-pyramids.md).
