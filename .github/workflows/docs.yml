@@ -42,6 +42,7 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
+          cache-bin: false
           cache-on-failure: true
 
       - name: Build documentation
