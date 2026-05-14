@@ -37,6 +37,10 @@ jobs:
         if: matrix.toolchain == 'stable'
         run: rustup component add rustfmt clippy
 
+      - name: check documented crate versions
+        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
+        run: python3 tools/check_doc_versions.py
+
       - name: fmt
         if: matrix.toolchain == 'stable'
         run: cargo fmt --all --check

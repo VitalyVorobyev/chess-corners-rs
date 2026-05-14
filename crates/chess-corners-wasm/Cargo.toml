@@ -11,10 +11,15 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+ml-refiner = ["chess-corners/ml-refiner"]
+
 [dependencies]
 chess-corners.workspace = true
 wasm-bindgen.workspace = true
 js-sys.workspace = true
+web-sys.workspace = true
 
 [dev-dependencies]
 wasm-bindgen-test.workspace = true

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chess_corners::{ChessRing, DescriptorMode, RefinementMethod, Threshold};
+use chess_corners::{ChessRing, DescriptorRing, Threshold};
 use clap::{Parser, Subcommand};
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
@@ -13,7 +13,10 @@ use log::LevelFilter;
 #[cfg(not(feature = "tracing"))]
 use std::str::FromStr;
 
-use commands::{apply_overrides, load_config, run_detection, DetectionOverrides};
+use commands::{
+    apply_overrides, load_config, run_detection, ChessRefinerSel, DetectionOverrides,
+    RadonRefinerSel,
+};
 
 #[cfg(feature = "tracing")]
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -67,18 +70,32 @@ enum Commands {
         /// effect on the Radon strategy.
         #[arg(long)]
         chess_ring: Option<String>,
-        /// Override descriptor mode (`follow_detector`, `canonical`, `broad`).
+        /// Override the ChESS descriptor ring
+        /// (`follow_detector`, `canonical`, `broad`). Has no effect on
+        /// the Radon strategy.
         #[arg(long)]
-        descriptor_mode: Option<String>,
+        descriptor_ring: Option<String>,
         /// NMS radius override (applied to whichever strategy is active).
         #[arg(long)]
         nms_radius: Option<u32>,
         /// Min cluster size override (applied to whichever strategy is active).
         #[arg(long)]
         min_cluster_size: Option<u32>,
-        /// Override the active refiner kind (`center_of_mass`, `forstner`, `saddle_point`).
+        /// Override the ChESS subpixel refiner (`center_of_mass`,
+        /// `forstner`, `saddle_point`). Has no effect when the active
+        /// strategy is Radon.
         #[arg(long)]
-        refiner_kind: Option<String>,
+        chess_refiner: Option<String>,
+        /// Override the Radon subpixel refiner (`radon_peak`,
+        /// `center_of_mass`). Has no effect when the active strategy
+        /// is ChESS.
+        #[arg(long)]
+        radon_refiner: Option<String>,
+        /// Integer upscale factor (2, 3, or 4). If set, enables
+        /// pre-pipeline bilinear upscaling. Pass `0` or omit to leave
+        /// the JSON config value unchanged.
+        #[arg(long)]
+        upscale_factor: Option<u32>,
         /// Emit tracing in JSON format.
         #[cfg(feature = "tracing")]
         #[arg(long)]
@@ -101,10 +118,12 @@ fn main() -> Result<()> {
             threshold_absolute,
             threshold_relative,
             chess_ring,
-            descriptor_mode,
+            descriptor_ring,
             nms_radius,
             min_cluster_size,
-            refiner_kind,
+            chess_refiner,
+            radon_refiner,
+            upscale_factor,
             #[cfg(feature = "tracing")]
             json_trace,
         } => {
@@ -128,10 +147,12 @@ fn main() -> Result<()> {
                 output_png,
                 threshold,
                 chess_ring: parse_flag_enum::<ChessRing>(chess_ring.as_deref())?,
-                descriptor_mode: parse_flag_enum::<DescriptorMode>(descriptor_mode.as_deref())?,
+                descriptor_ring: parse_flag_enum::<DescriptorRing>(descriptor_ring.as_deref())?,
                 nms_radius,
                 min_cluster_size,
-                refiner_kind: parse_flag_enum::<RefinementMethod>(refiner_kind.as_deref())?,
+                chess_refiner: parse_flag_enum::<ChessRefinerSel>(chess_refiner.as_deref())?,
+                radon_refiner: parse_flag_enum::<RadonRefinerSel>(radon_refiner.as_deref())?,
+                upscale_factor,
             };
             apply_overrides(&mut cfg, overrides);
 

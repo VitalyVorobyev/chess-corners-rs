@@ -10,15 +10,15 @@ Run from the workspace root:
 The script:
 
 1. Builds the ``chess-corners`` CLI in release mode if it is missing.
-2. For each of the three test images, writes a temporary
-   ``DetectionConfig`` JSON and invokes the CLI with
-   ``threshold_mode=absolute`` and the chosen ``threshold_value``.
+2. For each of the three test images, writes a temporary CLI config JSON
+   that sets ``threshold = absolute`` with the chosen threshold value and
+   invokes the CLI's ``run`` subcommand.
 3. Renders each detection JSON with ``tools/plot_output.py`` and saves
    the overlay under ``book/src/img/``.
 
-No pyramid: ``pyramid_levels=1`` (single-scale) — matches the paper's
-contract and avoids the coarse-to-fine seed loss observed on
-low-contrast scenes.
+Single-scale only (``multiscale = single_scale``) — matches the paper's
+contract and avoids the coarse-to-fine seed loss observed on low-
+contrast scenes.
 """
 from __future__ import annotations
 
@@ -64,18 +64,20 @@ def build_cli() -> None:
 def detection_config(image_path: Path, threshold: float, output_json: Path) -> dict:
     return {
         "image": str(image_path),
-        "detector_mode": "canonical",
-        "descriptor_mode": "follow_detector",
-        "threshold_mode": "absolute",
-        "threshold_value": float(threshold),
-        "nms_radius": 2,
-        "min_cluster_size": 2,
-        "refiner": {"kind": "center_of_mass"},
-        "pyramid_levels": 1,
-        "pyramid_min_size": 128,
-        "refinement_radius": 3,
+        "strategy": {
+            "chess": {
+                "ring": "canonical",
+                "descriptor_ring": "follow_detector",
+                "nms_radius": 2,
+                "min_cluster_size": 2,
+                "refiner": {"center_of_mass": {}},
+            }
+        },
+        "threshold": {"absolute": float(threshold)},
+        "multiscale": "single_scale",
+        "upscale": "disabled",
+        "orientation_method": "ring_fit",
         "merge_radius": 3.0,
-        "upscale": {"mode": "disabled"},
         "output_json": str(output_json),
         "output_png": None,
         "log_level": "warn",

@@ -2,15 +2,16 @@
 //!
 //! Computes the dense `R(x, y) = (max_α S_α − min_α S_α)²` response
 //! over four ray angles using summed-area tables for `O(1)` per-pixel
-//! ray sums. Optional 2× bilinear upsampling at the entry boosts
-//! accuracy on small chessboard cells.
+//! ray sums. Optional 2× bilinear upsampling matches the paper-style
+//! working grid used by the facade preset.
 //!
 //! # SAT element type
 //!
-//! Summed-area tables default to `i64`, which is always safe. Enable
-//! the `radon-sat-u32` crate feature to switch to `u32`, which halves
-//! SAT memory and widens SIMD lanes at the cost of a ~16 MP image-size
-//! cap (`255 · W · H ≤ u32::MAX`).
+//! Summed-area tables default to `i64`, which leaves far more headroom
+//! than `u32` for normal image sizes. Enable the `radon-sat-u32` crate
+//! feature to switch to `u32`, which halves SAT memory and widens SIMD
+//! lanes at the cost of a ~16 MP image-size cap
+//! (`255 · W · H ≤ u32::MAX`).
 
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,7 @@ use core::simd::Simd;
 use std::simd::cmp::SimdOrd;
 
 use super::primitives::{box_blur_inplace, PeakFitMode};
+use crate::refine::RefinerKind;
 use crate::ResponseMap;
 
 /// Number of pixels processed per SIMD iteration in
@@ -44,7 +46,7 @@ pub type SatElem = i64;
 pub type SatElem = u32;
 
 /// Configuration for the whole-image Radon detector.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RadonDetectorParams {
     /// Half-length of each ray in **working-resolution** pixels (i.e.
@@ -59,8 +61,7 @@ pub struct RadonDetectorParams {
     /// Half-size of the box blur applied to the response map. `0`
     /// disables blurring; `1` yields a 3×3 box.
     pub response_blur_radius: u32,
-    /// Peak-fit mode for the 3-point subpixel refinement. Gaussian
-    /// (log-space) is more stable at near-plateau peaks.
+    /// Peak-fit mode for the 3-point subpixel refinement.
     pub peak_fit: PeakFitMode,
     /// Relative response threshold as a fraction of the map's max
     /// value. Used when `threshold_abs` is `None`.
@@ -76,6 +77,11 @@ pub struct RadonDetectorParams {
     /// Minimum count of positive-response neighbours in the NMS window
     /// required to accept a peak. Rejects isolated noise.
     pub min_cluster_size: u32,
+    /// Subpixel refiner applied after Radon peak extraction. Defaults
+    /// to the Radon-projection refiner that pairs with the detector
+    /// output.
+    #[serde(default)]
+    pub refiner: RefinerKind,
 }
 
 impl Default for RadonDetectorParams {
@@ -89,6 +95,7 @@ impl Default for RadonDetectorParams {
             threshold_abs: None,
             nms_radius: 4,
             min_cluster_size: 2,
+            refiner: RefinerKind::RadonPeak(crate::refine::RadonPeakConfig::default()),
         }
     }
 }

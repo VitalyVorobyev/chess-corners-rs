@@ -79,7 +79,7 @@ def main() -> None:
         help=(
             "Also run a Radon-detector config alongside the ChESS multi/single "
             "configs. Reads config/config_radon.json if present, otherwise "
-            "patches config_single.json with detector_mode='radon'."
+            "patches config_single.json to swap the ChESS strategy for a Radon one."
         ),
     )
     args = parser.parse_args()
@@ -106,8 +106,19 @@ def main() -> None:
             radon_cfg = load_config(radon_config_path)
         else:
             radon_cfg = dict(single_cfg)
-            radon_cfg["detector_mode"] = "radon"
-            radon_cfg["pyramid_levels"] = 1
+            radon_cfg["strategy"] = {
+                "radon": {
+                    "ray_radius": 4,
+                    "image_upsample": 2,
+                    "response_blur_radius": 1,
+                    "peak_fit": "gaussian",
+                    "nms_radius": 4,
+                    "min_cluster_size": 2,
+                    "refiner": {"radon_peak": {}},
+                }
+            }
+            radon_cfg["threshold"] = {"relative": 0.01}
+            radon_cfg["multiscale"] = "single_scale"
         configs.append((radon_cfg, "radon"))
 
     for cfg, label in configs:

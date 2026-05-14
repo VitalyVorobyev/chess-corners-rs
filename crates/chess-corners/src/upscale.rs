@@ -8,87 +8,60 @@
 //! back to input-image pixel coordinates by the facade, so callers do
 //! not need to be aware of the stage.
 //!
-//! Supported factors: 2, 3, 4 (bilinear only in v1).
+//! Supported factors: 2, 3, 4 (bilinear only).
 
 use chess_corners_core::{CornerDescriptor, ImageView};
 use serde::{Deserialize, Serialize};
 
-/// Upscaling mode, encoded into JSON as `"disabled"` or `"fixed"`.
+/// Optional pre-pipeline integer-factor upscaling.
 ///
-/// Kept as a separate enum for forward compatibility — future modes
-/// (auto-fit, non-integer factors) can be added without rewriting
-/// callers.
+/// JSON shape mirrors the other enum-with-payload knobs (`Threshold`,
+/// `MultiscaleConfig`):
+///
+/// - `{ "disabled": null }` — no upscaling (default).
+/// - `{ "fixed": 2 }` — upscale by an integer factor before detection.
+///   Allowed factors: `{2, 3, 4}`. Output corner coordinates are
+///   rescaled back to the original input-pixel frame by the facade.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
-pub enum UpscaleMode {
-    /// Do not upscale (default).
+pub enum UpscaleConfig {
+    /// Do not upscale.
     #[default]
     Disabled,
     /// Upscale by a fixed integer factor (allowed: 2, 3, 4).
-    Fixed,
-}
-
-/// Upscaling configuration exposed through [`crate::DetectorConfig`].
-///
-/// JSON shape: `{ "mode": "disabled" }` or `{ "mode": "fixed", "factor": 2 }`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-#[non_exhaustive]
-pub struct UpscaleConfig {
-    /// Selected upscale mode. Default: [`UpscaleMode::Disabled`].
-    pub mode: UpscaleMode,
-    /// Integer factor used when `mode == Fixed`. Ignored otherwise.
-    /// Must be 2, 3, or 4.
-    pub factor: u32,
-}
-
-impl Default for UpscaleConfig {
-    fn default() -> Self {
-        Self {
-            mode: UpscaleMode::Disabled,
-            factor: 2,
-        }
-    }
+    Fixed(u32),
 }
 
 impl UpscaleConfig {
     /// Construct a disabled configuration (no upscaling).
-    ///
-    /// `factor` is set to `1` so the value matches the
-    /// [`Self::effective_factor`] return ("no scaling"). The default
-    /// constructor [`Self::default`] keeps `factor: 2` so callers
-    /// flipping `mode = Fixed` get a sane starting factor.
     pub fn disabled() -> Self {
-        Self {
-            mode: UpscaleMode::Disabled,
-            factor: 1,
-        }
+        Self::Disabled
     }
 
-    /// Construct a fixed-factor configuration. Does not validate.
+    /// Construct a fixed-factor configuration. Does not validate;
+    /// callers should run [`Self::validate`] before constructing a
+    /// [`crate::Detector`] (the constructor does this automatically).
     pub fn fixed(factor: u32) -> Self {
-        Self {
-            mode: UpscaleMode::Fixed,
-            factor,
-        }
+        Self::Fixed(factor)
     }
 
     /// Return the effective integer factor, or 1 when disabled.
     #[inline]
     pub fn effective_factor(&self) -> u32 {
-        match self.mode {
-            UpscaleMode::Disabled => 1,
-            UpscaleMode::Fixed => self.factor,
+        match *self {
+            Self::Disabled => 1,
+            Self::Fixed(k) => k,
         }
     }
 
     /// Validate that the configuration is well-formed.
     pub fn validate(&self) -> Result<(), UpscaleError> {
-        if matches!(self.mode, UpscaleMode::Fixed) && !matches!(self.factor, 2..=4) {
-            return Err(UpscaleError::InvalidFactor(self.factor));
+        match *self {
+            Self::Disabled => Ok(()),
+            Self::Fixed(2..=4) => Ok(()),
+            Self::Fixed(k) => Err(UpscaleError::InvalidFactor(k)),
         }
-        Ok(())
     }
 }
 
@@ -261,9 +234,9 @@ pub fn upscale_bilinear_u8<'a>(
 /// [`upscale_bilinear_u8`]:
 ///
 /// ```text
-/// forward : x_out = (x_src + 0.5) · k − 0.5
-/// inverse : x_src = (x_out + 0.5) / k − 0.5
-///         = x_out / k − (k − 1) / (2k)
+/// forward : x_out = (x_src + 0.5) * k - 0.5
+/// inverse : x_src = (x_out + 0.5) / k - 0.5
+///         = x_out / k - (k - 1) / (2k)
 /// ```
 ///
 /// A naive `x /= k` biases returned coordinates by `(k − 1) / (2k)`
@@ -288,6 +261,7 @@ mod tests {
     #[test]
     fn config_default_is_disabled() {
         let cfg = UpscaleConfig::default();
+        assert_eq!(cfg, UpscaleConfig::Disabled);
         assert_eq!(cfg.effective_factor(), 1);
         assert!(cfg.validate().is_ok());
     }
@@ -307,6 +281,24 @@ mod tests {
             assert!(cfg.validate().is_ok());
             assert_eq!(cfg.effective_factor(), good);
         }
+    }
+
+    #[test]
+    fn disabled_round_trips_through_serde() {
+        let cfg = UpscaleConfig::Disabled;
+        let json = serde_json::to_string(&cfg).expect("serialize disabled");
+        assert!(json.contains("disabled"));
+        let decoded: UpscaleConfig = serde_json::from_str(&json).expect("deserialize disabled");
+        assert_eq!(decoded, cfg);
+    }
+
+    #[test]
+    fn fixed_round_trips_through_serde() {
+        let cfg = UpscaleConfig::Fixed(3);
+        let json = serde_json::to_string(&cfg).expect("serialize fixed");
+        assert!(json.contains("fixed"));
+        let decoded: UpscaleConfig = serde_json::from_str(&json).expect("deserialize fixed");
+        assert_eq!(decoded, cfg);
     }
 
     #[test]

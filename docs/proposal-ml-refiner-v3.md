@@ -1,5 +1,10 @@
 # ML Refiner Retraining Plan (v3)
 
+> Historical design note. The shipped model is now v4. This document is
+> kept as the investigation trail for the v2 → v3/v4 retraining work;
+> use `docs/refiner-comparison.md` and Part V/VIII of the book for the
+> current behavior summary.
+
 `chess_refiner_v2.onnx` scores ~0.5 px mean error on
 `crates/chess-corners/tests/refiner_benchmark.rs`, while CenterOfMass
 hits 0.08 and RadonPeak 0.05. The ONNX/PyTorch parity test

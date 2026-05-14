@@ -12,7 +12,7 @@
 use chess_corners::{DetectionStrategy, Detector, DetectorConfig, ImageView};
 
 fn detect_view(view: ImageView<'_>, cfg: &DetectorConfig) -> Vec<chess_corners::CornerDescriptor> {
-    let mut detector = Detector::new(cfg.clone()).expect("config valid");
+    let mut detector = Detector::new(*cfg).expect("config valid");
     detector.detect_view(view)
 }
 

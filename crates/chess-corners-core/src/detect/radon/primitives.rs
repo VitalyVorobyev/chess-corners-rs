@@ -41,7 +41,8 @@ pub enum PeakFitMode {
     /// Classic parabolic fit on the raw response values.
     Parabolic,
     /// Parabolic fit on `log(response)` — equivalent to fitting a
-    /// Gaussian through three samples. Paper default; recommended.
+    /// Gaussian through three samples. This is the paper default and
+    /// the facade preset.
     #[default]
     Gaussian,
 }

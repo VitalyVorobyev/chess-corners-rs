@@ -12,11 +12,13 @@ Two independent detectors and five subpixel refiners live behind a
 single configuration type:
 
 - **ChESS response detector** — a ring-based kernel from Bennett &
-  Lasenby (2013). Fast on typical printed targets. Covered in
+  Lasenby (2013). This is the default and the fastest preset in the
+  measured clean-image benchmark. Covered in
   [Part III](part-03-chess-detector.md).
 - **Radon response detector** — a ray-based kernel from Duda &
-  Frese (2018). Selective on small cells and heavy blur, where the
-  ChESS ring loses support. Covered in [Part IV](part-04-radon-detector.md).
+  Frese (2018). Added for cases where the ChESS ring does not produce
+  enough seeds, especially the small-cell, blur, and low-contrast
+  fixtures in this repository. Covered in [Part IV](part-04-radon-detector.md).
 
 Both produce the same `CornerDescriptor` output, and both feed the
 same [multiscale pipeline](part-07-multiscale-and-pyramids.md).
@@ -24,20 +26,19 @@ same [multiscale pipeline](part-07-multiscale-and-pyramids.md).
 Once a detector has produced integer-pixel seeds, one of five
 subpixel refiners brings the coordinates under a pixel:
 `CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, or an
-ONNX-backed `ML` refiner. Each is a one-line swap via
-`DetectorConfig.refiner.kind`. The refiners are described in
+ONNX-backed `ML` refiner. Each is selected through the active
+strategy's `refiner` field. The refiners are described in
 [Part V](part-05-refiners.md) and benchmarked in
 [Part VIII](part-08-benchmarks.md).
 
 The same `DetectorConfig` drives a Rust API, a Python package, a
-browser WebAssembly package, and a CLI. Results are bit-identical
-across binding targets.
+browser WebAssembly package, and a CLI. They call the same Rust
+detector pipeline and use the same configuration schema.
 
 ## 1.2 Typical use cases
 
-- Camera calibration (mono, stereo, or multi-camera) — detect
-  chessboard corners across lighting conditions, cell sizes, and
-  mild motion or defocus blur.
+- Camera calibration (mono, stereo, or multi-camera) with printed or
+  screen-displayed chessboard targets.
 - Pose estimation of calibration rigs and fixtures.
 - Robotics and AR setups where a chessboard is a temporary alignment
   target.
@@ -52,8 +53,7 @@ Compared with other corner pipelines:
   accept.
 - **Versus ID-based markers** (AprilTag, ArUco): this library
   detects unlabeled grid corners. It does not decode an ID, so you
-  need to know the board layout separately — but you gain robustness
-  to lighting and a much smaller-area target.
+  need to know the board layout separately.
 
 ## 1.3 Workspace layout
 
@@ -63,7 +63,7 @@ below the facade.
 
 ```
 ┌─ chess-corners-py      (PyO3 bindings, pip package: chess-corners)
-├─ chess-corners-wasm    (wasm-bindgen, npm package: chess-corners-wasm)
+├─ chess-corners-wasm    (wasm-bindgen, npm package: @vitavision/chess-corners)
 │                        ▲
 │                        │
 ├─ chess-corners         (high-level Rust API, CLI, multiscale pipeline)
@@ -144,7 +144,7 @@ at the same site:
 
 ```toml
 [dependencies]
-chess-corners = "0.5"
+chess-corners = "0.11"
 image = "0.25"      # if you want GrayImage integration
 ```
 

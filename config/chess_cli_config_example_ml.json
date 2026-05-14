@@ -1,20 +1,27 @@
 {
   "image": "testimages/mid.png",
-  "detector_mode": "canonical",
-  "descriptor_mode": "follow_detector",
-  "threshold_mode": "relative",
-  "threshold_value": 0.2,
-  "nms_radius": 2,
-  "min_cluster_size": 2,
-  "refiner": {
-    "kind": "center_of_mass"
+  "ml": true,
+  "strategy": {
+    "chess": {
+      "ring": "canonical",
+      "descriptor_ring": "follow_detector",
+      "nms_radius": 2,
+      "min_cluster_size": 2,
+      "refiner": {
+        "center_of_mass": {
+          "radius": 2
+        }
+      }
+    }
   },
-  "pyramid_levels": 1,
-  "pyramid_min_size": 256,
-  "refinement_radius": 3,
-  "merge_radius": 2.0,
+  "threshold": {
+    "absolute": 0.0
+  },
+  "multiscale": "single_scale",
+  "upscale": "disabled",
+  "orientation_method": "ring_fit",
+  "merge_radius": 3.0,
   "output_json": null,
   "output_png": null,
-  "ml": true,
   "log_level": "info"
 }

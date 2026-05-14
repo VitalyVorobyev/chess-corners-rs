@@ -80,8 +80,17 @@ for (let i = 0; i < corners.length; i += 9) {
 ### Webcam streaming
 
 ```js
-const detector = new ChessDetector();
-detector.set_pyramid_levels(3); // enable multiscale for better detection
+import init, {
+  ChessDetector,
+  DetectorConfig,
+  MultiscaleConfig,
+} from '@vitavision/chess-corners';
+
+await init();
+
+// Multiscale ChESS preset for live webcam feeds.
+const cfg = DetectorConfig.chessMultiscale();
+const detector = ChessDetector.withConfig(cfg);
 
 const video = document.querySelector('video');
 const canvas = document.createElement('canvas');
@@ -126,88 +135,73 @@ for (let i = 0; i < response.length; i++) {
 ctx.putImageData(out, 0, 0);
 ```
 
-### Configuration
+## Typed configuration
 
-```js
-const detector = new ChessDetector();
-
-// Or start with the multiscale preset:
-// const detector = ChessDetector.multiscale();
-
-// Threshold (fraction of max response, default 0.2).
-detector.set_threshold(0.15);
-
-// Non-maximum suppression radius (default 2).
-detector.set_nms_radius(3);
-
-// Broad mode uses the wider, more blur-tolerant detector sampling pattern.
-detector.set_broad_mode(false);
-
-// Minimum cluster size to accept a corner (default 2).
-detector.set_min_cluster_size(2);
-
-// Pyramid levels: 1 = single-scale, 3 = recommended multiscale.
-detector.set_pyramid_levels(3);
-
-// Minimum pyramid level size in pixels (default 128).
-detector.set_pyramid_min_size(128);
-
-// Subpixel refiner: "center_of_mass" (default), "forstner", or "saddle_point".
-detector.set_refiner("forstner");
-```
-
-### Typed configuration (full surface)
-
-For deeper tuning — refiner subconfig, Radon detector parameters,
-descriptor mode, coarse-to-fine radii — construct a typed
-`DetectorConfig` and seed the detector with `ChessDetector.withConfig`.
-Every public Rust facade field is reachable through the typed
-classes and exposed with TypeScript types in the generated
-`.d.ts`.
-
-Nested config edits propagate naturally — getters hand back a
-wrapper backed by the same shared cell as the parent, so chained
-mutation works without a round-trip:
+Every detector knob is reachable through a typed `DetectorConfig` tree.
+Construct one with a preset and tweak only the fields you need:
 
 ```ts
 import init, {
-  DetectorConfig,
   ChessDetector,
-  DetectorMode,
+  DetectorConfig,
+  ChessConfig,
+  ChessRefiner,
+  ChessRing,
+  DescriptorRing,
+  DetectionStrategy,
+  ForstnerConfig,
+  MultiscaleConfig,
+  OrientationMethod,
   PeakFitMode,
-  RefinementMethod,
+  RadonConfig,
+  RadonRefiner,
+  Threshold,
+  UpscaleConfig,
 } from '@vitavision/chess-corners';
 
 await init();
 
-const cfg = DetectorConfig.multiscale();
-cfg.detectorMode = DetectorMode.Radon;
-cfg.thresholdValue = 0.15;
-cfg.refiner.kind = RefinementMethod.RadonPeak;
-cfg.refiner.forstner.maxOffset = 2.0;
-cfg.radonDetector.rayRadius = 5;
-cfg.radonDetector.imageUpsample = 2;
-cfg.radonDetector.peakFit = PeakFitMode.Gaussian;
+const cfg = DetectorConfig.chessMultiscale();
+
+// Top-level fields are simple getters / setters:
+cfg.threshold = Threshold.relative(0.15);
+cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3); // levels, minSize, refinementRadius
+cfg.upscale = UpscaleConfig.fixed(2);
+cfg.orientationMethod = OrientationMethod.DiskFit;
+cfg.mergeRadius = 2.5;
+
+// Strategy selects ChESS vs Radon and carries the detector tuning:
+const chess = new ChessConfig();
+chess.ring = ChessRing.Broad;
+chess.descriptorRing = DescriptorRing.Canonical;
+chess.nmsRadius = 3;
+chess.refiner = ChessRefiner.withForstner(new ForstnerConfig());
+cfg.strategy = DetectionStrategy.fromChess(chess);
 
 const detector = ChessDetector.withConfig(cfg);
-
-// `getConfig()` returns a *snapshot* — its cells are independent of
-// the detector's live state (type: `DetectorConfig`). Use
-// `applyConfig()` to commit changes made on the snapshot.
-const snapshot = detector.getConfig();
-snapshot.nmsRadius = 4;
-detector.applyConfig(snapshot);
 ```
 
-Setters that take a nested wrapper (e.g. `cfg.refiner = newRefiner`)
-reseat `cfg`'s shared cells to point at `newRefiner`'s cells, so
-future `cfg.refiner.*` calls observe `newRefiner`'s state. JS code
-that already held the previous `cfg.refiner` keeps observing the
-previous cells — matching natural JS attribute-replacement semantics.
+### Nested edits propagate
 
-The legacy `set_*` shortcut methods continue to work and edit the
-same underlying configuration, so the two styles can be mixed at
-will.
+Getters return wrappers that share storage with the parent, so chained
+mutation works without a round-trip:
+
+```ts
+cfg.strategy.chess.ring = ChessRing.Broad;
+cfg.strategy.chess.refiner.forstner.maxOffset = 2.0;
+cfg.strategy.chess.nmsRadius = 3;
+cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3);
+```
+
+`getConfig()` returns an independent snapshot whose cells are detached
+from the live detector. Use `applyConfig()` to commit edits made on the
+snapshot:
+
+```ts
+const snapshot = detector.getConfig();
+snapshot.strategy.chess.nmsRadius = 4;
+detector.applyConfig(snapshot);
+```
 
 ## API Reference
 
@@ -217,19 +211,20 @@ will.
 |--------|-------------|
 | `new ChessDetector()` | Create detector with default single-scale config |
 | `ChessDetector.multiscale()` | Create detector with 3-level pyramid preset |
+| `ChessDetector.withConfig(cfg)` | Create detector seeded from a typed `DetectorConfig` |
+| `detector.getConfig()` | Snapshot the live configuration as a `DetectorConfig` |
+| `detector.applyConfig(cfg)` | Replace the configuration with the given `DetectorConfig` |
 | `detect(pixels, w, h)` | Detect corners from grayscale `Uint8Array` |
 | `detect_rgba(pixels, w, h)` | Detect corners from RGBA `Uint8Array` |
 | `response(pixels, w, h)` | Compute response map from grayscale pixels |
 | `response_rgba(pixels, w, h)` | Compute response map from RGBA pixels |
 | `response_width()` | Width of the last computed response map |
 | `response_height()` | Height of the last computed response map |
-| `set_threshold(rel)` | Set relative threshold (0.0-1.0) |
-| `set_nms_radius(r)` | Set NMS radius |
-| `set_broad_mode(v)` | Toggle broad detector mode |
-| `set_min_cluster_size(v)` | Set min cluster size |
-| `set_pyramid_levels(n)` | Set pyramid depth |
-| `set_pyramid_min_size(v)` | Set min pyramid level size |
-| `set_refiner(name)` | Set subpixel refiner |
+| `radon_heatmap(pixels, w, h)` | Compute the Radon heatmap from grayscale pixels |
+| `radon_heatmap_rgba(pixels, w, h)` | Compute the Radon heatmap from RGBA pixels |
+| `radon_heatmap_width()` | Width of the last computed Radon heatmap (working resolution) |
+| `radon_heatmap_height()` | Height of the last computed Radon heatmap |
+| `radon_heatmap_scale()` | Working-to-input scale factor for the last heatmap |
 
 ### Output format
 
@@ -247,13 +242,13 @@ will.
 | `i + 7` | `axis1_angle` | Second grid axis, radians in `(axis0, axis0 + π)` |
 | `i + 8` | `axis1_sigma` | 1σ uncertainty of `axis1_angle` |
 
-Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector of the corner. The two grid axes are not assumed orthogonal, so the layout correctly captures projective warp.
+Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector of the corner. The two grid axes are not assumed orthogonal, so the layout can represent projective warp instead of forcing a right-angle model.
 
 **Response map** (`response` / `response_rgba`): `Float32Array` in row-major order, dimensions available via `response_width()` / `response_height()`.
 
 ## Binary size
 
-~51 KB raw, ~23 KB gzipped (single-scale, no parallelism, no SIMD).
+~196 KB raw, ~70 KB gzipped (single-scale, no parallelism, no SIMD, measured on 0.11.0).
 
 ## License
 

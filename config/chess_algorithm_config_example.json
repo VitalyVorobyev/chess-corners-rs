@@ -2,42 +2,31 @@
   "strategy": {
     "chess": {
       "ring": "broad",
+      "descriptor_ring": "canonical",
       "nms_radius": 3,
-      "min_cluster_size": 1
+      "min_cluster_size": 1,
+      "refiner": {
+        "forstner": {
+          "radius": 2,
+          "min_trace": 25.0,
+          "min_det": 0.001,
+          "max_condition_number": 50.0,
+          "max_offset": 1.5
+        }
+      }
     }
   },
   "threshold": {
     "absolute": 0.5
   },
   "multiscale": {
-    "pyramid_levels": 3,
-    "pyramid_min_size": 96,
-    "refinement_radius": 4
-  },
-  "refiner": {
-    "kind": "forstner",
-    "center_of_mass": {
-      "radius": 2
-    },
-    "forstner": {
-      "radius": 3,
-      "min_trace": 20.0,
-      "min_det": 0.001,
-      "max_condition_number": 60.0,
-      "max_offset": 2.0
-    },
-    "saddle_point": {
-      "radius": 3,
-      "det_margin": 0.002,
-      "max_offset": 1.75,
-      "min_abs_det": 0.0002
+    "pyramid": {
+      "levels": 3,
+      "min_size": 96,
+      "refinement_radius": 4
     }
   },
+  "upscale": "disabled",
   "orientation_method": "ring_fit",
-  "descriptor_mode": "canonical",
-  "upscale": {
-    "mode": "disabled",
-    "factor": 1
-  },
   "merge_radius": 2.5
 }

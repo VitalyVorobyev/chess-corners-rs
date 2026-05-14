@@ -8,7 +8,7 @@ fn detect_u8(
     h: u32,
     cfg: &DetectorConfig,
 ) -> Result<Vec<chess_corners::CornerDescriptor>, ChessError> {
-    let mut detector = Detector::new(cfg.clone())?;
+    let mut detector = Detector::new(*cfg)?;
     detector.detect_u8(img, w, h)
 }
 
@@ -99,7 +99,7 @@ fn upscale_returns_input_frame_coordinates() {
     let img = quadrant_corner(size, 20, 220);
 
     let cfg_off = low_res_cfg();
-    let mut cfg_on = cfg_off.clone();
+    let mut cfg_on = cfg_off;
     cfg_on.upscale = UpscaleConfig::fixed(2);
 
     let corners_off = detect_u8(&img, size, size, &cfg_off).unwrap();
@@ -132,7 +132,7 @@ fn upscale_returns_input_frame_coordinates() {
 
 #[test]
 fn upscale_fixed_factor_one_returns_err() {
-    // `UpscaleMode::Fixed` with factor 1 is an invariant violation:
+    // `UpscaleConfig::Fixed` with factor 1 is an invariant violation:
     // `UpscaleConfig::validate()` rejects it, and the detection
     // entrypoint must return Err instead of silently treating it as
     // disabled.

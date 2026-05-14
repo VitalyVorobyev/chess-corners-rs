@@ -18,7 +18,7 @@ The Radon detector is a full alternative to ChESS — same input
 (`&[u8]` grayscale), same output
 ([`CornerDescriptor`](part-03-chess-detector.md#34-corner-descriptors)),
 same place in the pipeline. It is selected via `DetectorConfig.strategy`
-by setting it to `DetectionStrategy::Radon(RadonStrategy)`.
+by setting it to `DetectionStrategy::Radon(RadonConfig)`.
 
 ## 4.1 Ray response
 
@@ -41,9 +41,10 @@ gap between the largest and smallest ray sum:
 R(x, y) = (max_α S_α  −  min_α S_α)²
 ```
 
-`R` is always non-negative, peaks at X‑junctions, and stays small on
-flat regions, straight edges, and blobs because in each of those cases
-all four ray sums end up close to each other.
+`R` is always non-negative. On the idealized checkerboard model used
+by the tests, it peaks at X-junctions and stays small on flat regions,
+straight edges, and blobs because in each of those cases all four ray
+sums end up close to each other.
 
 The squaring keeps the response proportional to the square of image
 contrast, which is the natural scale for a log-fit later. It also
@@ -87,7 +88,7 @@ controls this:
 - `image_upsample = 1` — detector operates on the input grid.
 - `image_upsample = 2` — input is bilinearly upsampled 2× before
   SATs are built; all subsequent steps run at the higher resolution.
-  **This is the paper default and the recommended setting.**
+  This is the paper default and the facade preset value.
 
 Higher factors are clamped to 2 (`MAX_IMAGE_UPSAMPLE`). The response
 map and detected peaks live at working resolution; the detector
@@ -106,8 +107,7 @@ by the Radon refiner (see Part V):
 
 1. **Box blur.** A separable `(2·blur_radius + 1)²` box filter
    smooths the response map in place. `blur_radius = 1` (a 3×3 box)
-   stabilizes the subsequent peak fit on noisy data and is the
-   recommended default.
+   is the facade preset and matches the paper-style peak-fit pipeline.
 2. **Threshold.** Pixels below `threshold_abs` (if set) or
    `threshold_rel · max(R)` are dropped. Because `R ≥ 0` everywhere,
    there is no useful "strictly positive" selection analogous to
@@ -135,11 +135,11 @@ no iteration. Implementation: `radon::fit_peak_frac` in
 |-------------------------|---------|--------------------------------------------------------------------------------------------------------|
 | `ray_radius`            | 4       | Paper value at `image_upsample = 2`; 2 physical pixels of support.                                     |
 | `image_upsample`        | 2       | Paper default. Halves aliasing on the ray endpoints.                                                   |
-| `response_blur_radius`  | 1       | 3×3 box. Reduces peak-fit variance without broadening sharp peaks.                                     |
+| `response_blur_radius`  | 1       | 3×3 box used by the preset and by the repository's Radon tests.                                        |
 | `threshold_rel`         | 0.01    | 1 % of `max(R)`. `R ≥ 0` means a strictly positive threshold is required; 0.01 is a conservative floor. |
 | `nms_radius`            | 4       | Matches `ray_radius` — local maxima should be at least one ray length apart.                           |
 | `min_cluster_size`      | 2       | Requires at least one supporting positive neighbor inside the NMS window.                              |
-| `peak_fit`              | Gaussian | More stable than parabolic on near-flat peaks; both work on sharp peaks.                              |
+| `peak_fit`              | Gaussian | Log-space 3-point fit used by the paper-style pipeline; parabolic fit is also available.              |
 
 ## 4.5 When to pick ChESS vs Radon
 
@@ -149,17 +149,19 @@ values. The practical differences:
 | Property                          | ChESS (Part III)                 | Radon (this chapter)                      |
 |-----------------------------------|-----------------------------------|-------------------------------------------|
 | Support required                  | 16 samples at radius 5 or 10      | 4 rays of length `2·ray_radius + 1`       |
-| Minimum cell size (physical px)   | ~7 px (ring fits inside one cell) | ~4 px with `image_upsample = 2`           |
-| Tolerance to Gaussian blur        | Degrades near σ ≈ 1.5 px          | Stable up to σ ≈ 2.5 px                   |
-| Sensitivity to defocus            | Ring smears across cells          | Ray integral averages through blur        |
+| Minimum cell size in repo sweep   | Degrades when the ring crosses neighbouring cells | Tested down to ~4 px with `image_upsample = 2` |
+| Gaussian blur in repo sweep       | Degrades near σ ≈ 1.5 px          | Lower error through σ ≈ 2.5 px on that fixture |
+| Defocus / blur mechanism          | Ring samples can smear across cells | Ray integral averages over a short support |
 | Cost per image                    | One ring sample per pixel (+SIMD) | 4 SATs + one dense map per pixel          |
 | Memory overhead                   | One `ResponseMap`                 | Four SATs + response + blur scratch       |
 | Subpixel refinement               | Needs a separate refiner stage    | Built into the detector's peak fit        |
 
-ChESS is faster and has a more selective response on sharp, typical
-calibration imagery. The Radon detector is the right pick when one
-of ChESS's assumptions breaks: small cells, heavy blur, low contrast,
-or low light. Part VIII has the measured numbers.
+ChESS is faster on the measured clean test images. The Radon detector
+is useful when the ChESS ring response does not seed enough corners,
+especially in the synthetic small-cell, blur, and low-contrast cases
+covered by the tests and Part VIII. Treat those measurements as
+guidance and validate on your own image distribution when the tradeoff
+matters.
 
 The two detectors are not meant to be stacked. They are peers, and
 the `DetectorConfig.strategy` enum picks one.
@@ -192,13 +194,13 @@ to avoid per-frame allocations.
 
 ```rust
 use chess_corners_core::{
-    detect_corners_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
+    detect_peaks_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
 };
 
 let mut buffers = RadonBuffers::new();
 let params = RadonDetectorParams::default();
 let resp = radon_response_u8(&img_u8, width, height, &params, &mut buffers);
-let corners = detect_corners_from_radon(&resp, &params);
+let corners = detect_peaks_from_radon(&resp, &params);
 // corners: Vec<Corner> — each has (x, y, strength) in input pixels.
 ```
 
@@ -210,7 +212,7 @@ and all its defaults:
 ```rust
 use chess_corners::{DetectorConfig, Detector};
 
-let cfg = DetectorConfig::radon();      // strategy = Radon(RadonStrategy)
+let cfg = DetectorConfig::radon();      // strategy = Radon(RadonConfig)
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&gray_image)?;
 // corners: Vec<CornerDescriptor>
@@ -231,47 +233,49 @@ response kernel. The `multiscale` field is top-level on `DetectorConfig`
 and is honoured by both detectors symmetrically:
 
 ```rust
-use chess_corners::{DetectorConfig, Detector, MultiscaleParams};
+use chess_corners::{DetectorConfig, Detector, MultiscaleConfig};
 
 // Three-level coarse-to-fine Radon preset:
-let mut cfg = DetectorConfig::radon_multiscale();
+let cfg = DetectorConfig::radon_multiscale();
 
-// Or tune pyramid depth manually:
-cfg.multiscale = Some(MultiscaleParams {
-    pyramid_levels: 2,
-    pyramid_min_size: 128,
-    refinement_radius: 3,
-});
+// Tune a nested Radon field via the closure mutator:
+let cfg = DetectorConfig::radon_multiscale()
+    .with_radon(|r| r.ray_radius = 6);
+
+// Or set the pyramid depth directly:
+let mut cfg = DetectorConfig::radon_multiscale();
+cfg.multiscale = MultiscaleConfig::pyramid(2, 128, 3);
 
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&gray_image)?;
 ```
 
-When to prefer `radon_multiscale` over single-scale `radon`:
+When to try `radon_multiscale` before single-scale `radon`:
 
-- **Large frames** (≥ 1280 × 960) where the full-resolution Radon
-  response is the dominant cost: coarse seeding skips most of the
-  base-level SAT computation.
-- **Blurry or low-contrast imagery** across a large field of view
-  where the ring-based ChESS kernel would fail even with a pyramid.
+- **Large frames** (≥ 1280 × 960) where full-resolution Radon response
+  cost dominates the frame budget.
+- **Blurry or low-contrast imagery** across a large field of view where
+  the ChESS preset does not emit enough seeds.
 - **Tight latency budgets** on large sensors where single-scale
   `radon` is too slow and the ChESS multiscale preset misses corners.
 
-For small frames or when per-frame latency is not a concern, the
-single-scale `radon` preset remains simpler and equally accurate.
+For small frames or when per-frame latency is not a concern,
+single-scale `radon` is simpler and worth measuring against the
+multiscale preset.
 
 ### Tuning
 
-The active [`RadonStrategy`] inside
+The active [`RadonConfig`] inside
 [`DetectionStrategy::Radon`](https://docs.rs/chess-corners/) exposes
 every field in §4.4's defaults table. The most common tweaks:
 
-- Heavy blur or low contrast: raise `ray_radius` to 5–6 working pixels.
+- Heavy blur or low contrast: try `ray_radius` in the 5–6 working-pixel range.
 - Small cells (3–4 physical pixels): keep `image_upsample = 2`;
   reduce `ray_radius` to 2–3.
-- Very clean data: drop `response_blur_radius` to 0 and
-  `threshold_rel` to something larger (e.g. 0.05) to cut weak peaks.
-- Noise-heavy scenes: raise `response_blur_radius` to 2.
+- Very clean data: try `response_blur_radius = 0` and a higher relative
+  threshold (for example 0.05) to cut weak peaks.
+- Noise-heavy scenes: try `response_blur_radius = 2` and verify the
+  result count and residuals.
 
 ---
 

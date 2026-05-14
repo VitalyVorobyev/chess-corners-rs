@@ -28,9 +28,9 @@ pub use descriptor::describe_corners;
 
 /// Method used to fit the two grid axes at a detected corner.
 ///
-/// The default [`Self::RingFit`] covers the vast majority of use cases. Use
-/// [`Self::DiskFit`] when you need improved axis accuracy on corners with
-/// strong projective skew (axis separation far from 90°).
+/// [`Self::RingFit`] is the default. [`Self::DiskFit`] samples a larger
+/// local support region and is intended for corners with strong
+/// projective skew (axis separation far from 90°).
 ///
 /// All variants emit `axes[0]` and `axes[1]` under the same canonical
 /// convention documented on [`crate::detect::CornerDescriptor`]:
@@ -69,9 +69,9 @@ pub enum OrientationMethod {
     /// falls back to [`Self::RingFit`] output transparently.
     ///
     /// Use this when standard chessboards are imaged under strong
-    /// projective warp (axis separation far from 90°). Higher per-corner
-    /// cost than `RingFit` (~5–10× on typical hardware), but the lazy-gate
-    /// short-circuits on clean inputs so the average cost is much lower.
+    /// projective warp (axis separation far from 90°). It has higher
+    /// per-corner cost than `RingFit`; the lazy gate keeps the full disk
+    /// fit off clean orthogonal corners.
     ///
     /// Output axes use the same canonical convention as [`Self::RingFit`]
     /// — see the type-level doc comment above and
@@ -90,11 +90,11 @@ pub(crate) fn ring_fit_for_descriptor(samples: &[f32; 16], ring_phi: &[f32; 16])
     ring_fit::fit_ring(samples, ring_phi)
 }
 
-/// Image-side RingFit entry point. Radius-10 descriptor rings are useful
-/// for broad, blurred detections, but on very small extreme-skew
-/// corners that outer trace can cross the wrong sectors. If the outer
-/// fit already looks suspicious, retry the canonical radius-5 trace and
-/// use it as a cheap safety fallback.
+/// Image-side RingFit entry point. Radius-10 descriptor rings sample
+/// farther from the candidate center. On very small extreme-skew corners
+/// that outer trace can cross the wrong sectors. If the outer fit already
+/// looks suspicious, retry the canonical radius-5 trace and use it as a
+/// cheap safety fallback.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ring_fit_for_image(
     img: &[u8],

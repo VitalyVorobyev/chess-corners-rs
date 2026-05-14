@@ -5,13 +5,37 @@
 
 use anyhow::{Context, Result};
 use chess_corners::{
-    AxisEstimate, ChessRing, ChessStrategy, CornerDescriptor, DescriptorMode, DetectionStrategy,
-    Detector, DetectorConfig, MultiscaleParams, RefinementMethod, Threshold,
+    AxisEstimate, CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, CornerDescriptor,
+    DescriptorRing, DetectionStrategy, Detector, DetectorConfig, ForstnerConfig, MultiscaleConfig,
+    RadonPeakConfig, RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
 };
 use image::{ImageBuffer, ImageReader, Luma};
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Write, path::Path, path::PathBuf};
+
+/// Refiner selector for the ChESS strategy, exposed by the CLI.
+///
+/// Accepts only the variants valid for ChESS; passing a Radon-only
+/// refiner via `--chess-refiner` is rejected at clap parse time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChessRefinerSel {
+    CenterOfMass,
+    Forstner,
+    SaddlePoint,
+}
+
+/// Refiner selector for the Radon strategy, exposed by the CLI.
+///
+/// Accepts only the variants valid for Radon; passing a ChESS-only
+/// refiner via `--radon-refiner` is rejected at clap parse time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RadonRefinerSel {
+    RadonPeak,
+    CenterOfMass,
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DetectionConfig {
@@ -38,10 +62,18 @@ pub struct DetectionOverrides {
     pub output_png: Option<PathBuf>,
     pub threshold: Option<Threshold>,
     pub chess_ring: Option<ChessRing>,
-    pub descriptor_mode: Option<DescriptorMode>,
+    pub descriptor_ring: Option<DescriptorRing>,
     pub nms_radius: Option<u32>,
     pub min_cluster_size: Option<u32>,
-    pub refiner_kind: Option<RefinementMethod>,
+    /// Override the ChESS subpixel refiner. Ignored when the active
+    /// strategy is not ChESS.
+    pub chess_refiner: Option<ChessRefinerSel>,
+    /// Override the Radon subpixel refiner. Ignored when the active
+    /// strategy is not Radon.
+    pub radon_refiner: Option<RadonRefinerSel>,
+    /// Integer upscale factor override. `Some(0)` means no override;
+    /// `Some(k)` for k >= 2 sets `upscale = Fixed(k)`.
+    pub upscale_factor: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -82,25 +114,31 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
     validate_algorithm_config(&cfg.algorithm)?;
 
     let img = ImageReader::open(&cfg.image)?.decode()?.to_luma8();
-    info!("refiner: {:?}", cfg.algorithm.refiner.kind);
 
     #[cfg_attr(not(feature = "ml-refiner"), allow(unused_mut))]
-    let mut algorithm = cfg.algorithm.clone();
+    let mut algorithm = cfg.algorithm;
     if cfg.ml.unwrap_or(false) {
         #[cfg(feature = "ml-refiner")]
         {
             info!("ml refiner: enabled");
-            algorithm.refiner.kind = RefinementMethod::Ml;
+            if let DetectionStrategy::Chess(ref mut chess) = algorithm.strategy {
+                chess.refiner = ChessRefiner::Ml;
+            } else {
+                anyhow::bail!(
+                    "ml refiner is only valid with the ChESS strategy; the active config selects Radon"
+                );
+            }
         }
         #[cfg(not(feature = "ml-refiner"))]
         {
             anyhow::bail!("ml refiner requires the \"ml-refiner\" feature")
         }
     }
+    log_active_refiner(&algorithm);
     let mut detector = Detector::new(algorithm).map_err(|e| anyhow::anyhow!(e))?;
     let corners = detector.detect(&img).map_err(|e| anyhow::anyhow!(e))?;
 
-    let multiscale_active = chess_multiscale(&cfg.algorithm).is_some();
+    let multiscale_active = matches!(cfg.algorithm.multiscale, MultiscaleConfig::Pyramid { .. });
     let json_out = cfg.output_json.clone().unwrap_or_else(|| {
         if multiscale_active {
             cfg.image.with_extension("multiscale.corners.json")
@@ -112,7 +150,7 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
         image: cfg.image.to_string_lossy().into_owned(),
         width: img.width(),
         height: img.height(),
-        algorithm: cfg.algorithm.clone(),
+        algorithm: cfg.algorithm,
         corners: corners.iter().map(CornerOut::from).collect(),
     };
     write_json(&json_out, &dump)?;
@@ -145,15 +183,20 @@ impl From<&CornerDescriptor> for CornerOut {
 }
 
 pub fn validate_algorithm_config(cfg: &DetectorConfig) -> Result<()> {
-    if let Some(ms) = chess_multiscale(cfg) {
-        if ms.pyramid_levels == 0 {
-            anyhow::bail!("strategy.chess.multiscale.pyramid_levels must be >= 1");
+    if let MultiscaleConfig::Pyramid {
+        levels,
+        min_size,
+        refinement_radius,
+    } = cfg.multiscale
+    {
+        if levels == 0 {
+            anyhow::bail!("multiscale.pyramid.levels must be >= 1");
         }
-        if ms.pyramid_min_size == 0 {
-            anyhow::bail!("strategy.chess.multiscale.pyramid_min_size must be >= 1");
+        if min_size == 0 {
+            anyhow::bail!("multiscale.pyramid.min_size must be >= 1");
         }
-        if ms.refinement_radius == 0 {
-            anyhow::bail!("strategy.chess.multiscale.refinement_radius must be >= 1");
+        if refinement_radius == 0 {
+            anyhow::bail!("multiscale.pyramid.refinement_radius must be >= 1");
         }
     }
     if cfg.merge_radius <= 0.0 {
@@ -174,11 +217,15 @@ pub fn validate_algorithm_config(cfg: &DetectorConfig) -> Result<()> {
     Ok(())
 }
 
-fn chess_multiscale(cfg: &DetectorConfig) -> Option<MultiscaleParams> {
-    cfg.multiscale
+fn log_active_refiner(cfg: &DetectorConfig) {
+    match &cfg.strategy {
+        DetectionStrategy::Chess(chess) => info!("refiner: {:?}", chess.refiner),
+        DetectionStrategy::Radon(radon) => info!("refiner: {:?}", radon.refiner),
+        _ => info!("refiner: <unknown strategy>"),
+    }
 }
 
-fn chess_strategy_mut(cfg: &mut DetectorConfig) -> Option<&mut ChessStrategy> {
+fn chess_strategy_mut(cfg: &mut DetectorConfig) -> Option<&mut ChessConfig> {
     match &mut cfg.strategy {
         DetectionStrategy::Chess(c) => Some(c),
         _ => None,
@@ -205,6 +252,29 @@ fn apply_min_cluster_size(cfg: &mut DetectorConfig, v: u32) {
     }
 }
 
+fn apply_chess_refiner(cfg: &mut DetectorConfig, sel: ChessRefinerSel) {
+    if let DetectionStrategy::Chess(chess) = &mut cfg.strategy {
+        chess.refiner = match sel {
+            ChessRefinerSel::CenterOfMass => {
+                ChessRefiner::CenterOfMass(CenterOfMassConfig::default())
+            }
+            ChessRefinerSel::Forstner => ChessRefiner::Forstner(ForstnerConfig::default()),
+            ChessRefinerSel::SaddlePoint => ChessRefiner::SaddlePoint(SaddlePointConfig::default()),
+        };
+    }
+}
+
+fn apply_radon_refiner(cfg: &mut DetectorConfig, sel: RadonRefinerSel) {
+    if let DetectionStrategy::Radon(radon) = &mut cfg.strategy {
+        radon.refiner = match sel {
+            RadonRefinerSel::RadonPeak => RadonRefiner::RadonPeak(RadonPeakConfig::default()),
+            RadonRefinerSel::CenterOfMass => {
+                RadonRefiner::CenterOfMass(CenterOfMassConfig::default())
+            }
+        };
+    }
+}
+
 pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides) {
     let DetectionOverrides {
         pyramid_levels,
@@ -215,30 +285,43 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
         output_png,
         threshold,
         chess_ring,
-        descriptor_mode,
+        descriptor_ring,
         nms_radius,
         min_cluster_size,
-        refiner_kind,
+        chess_refiner,
+        radon_refiner,
+        upscale_factor,
     } = overrides;
 
     // Multiscale overrides apply to the top-level multiscale field,
     // which is honoured by both ChESS and Radon strategies. Any single
-    // multiscale override coerces `multiscale` from `None` →
-    // `Some(default)` so subsequent fields land somewhere visible.
+    // multiscale override coerces `multiscale` from `SingleScale` →
+    // `Pyramid { defaults }` so subsequent fields land somewhere visible.
     if pyramid_levels.is_some() || pyramid_min_size.is_some() || refinement_radius.is_some() {
-        let ms = cfg
-            .algorithm
-            .multiscale
-            .get_or_insert_with(MultiscaleParams::default);
+        let (mut cur_levels, mut cur_min_size, mut cur_refinement_radius) =
+            match cfg.algorithm.multiscale {
+                MultiscaleConfig::Pyramid {
+                    levels,
+                    min_size,
+                    refinement_radius,
+                } => (levels, min_size, refinement_radius),
+                MultiscaleConfig::SingleScale => (3, 128usize, 3),
+                _ => (3, 128usize, 3),
+            };
         if let Some(v) = pyramid_levels {
-            ms.pyramid_levels = v;
+            cur_levels = v;
         }
         if let Some(v) = pyramid_min_size {
-            ms.pyramid_min_size = v as usize;
+            cur_min_size = v as usize;
         }
         if let Some(v) = refinement_radius {
-            ms.refinement_radius = v;
+            cur_refinement_radius = v;
         }
+        cfg.algorithm.multiscale = MultiscaleConfig::Pyramid {
+            levels: cur_levels,
+            min_size: cur_min_size,
+            refinement_radius: cur_refinement_radius,
+        };
     }
     if let Some(v) = merge_radius {
         cfg.algorithm.merge_radius = v;
@@ -257,8 +340,10 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
             chess.ring = v;
         }
     }
-    if let Some(v) = descriptor_mode {
-        cfg.algorithm.descriptor_mode = v;
+    if let Some(v) = descriptor_ring {
+        if let Some(chess) = chess_strategy_mut(&mut cfg.algorithm) {
+            chess.descriptor_ring = v;
+        }
     }
     if let Some(v) = nms_radius {
         apply_nms_radius(&mut cfg.algorithm, v);
@@ -266,8 +351,20 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
     if let Some(v) = min_cluster_size {
         apply_min_cluster_size(&mut cfg.algorithm, v);
     }
-    if let Some(v) = refiner_kind {
-        cfg.algorithm.refiner.kind = v;
+    if let Some(v) = chess_refiner {
+        apply_chess_refiner(&mut cfg.algorithm, v);
+    }
+    if let Some(v) = radon_refiner {
+        apply_radon_refiner(&mut cfg.algorithm, v);
+    }
+    // `Some(0)` is the documented sentinel for "no override — keep the value
+    // parsed from the JSON config". Any other value is forwarded to
+    // `UpscaleConfig::Fixed`; `UpscaleConfig::validate` below rejects factors
+    // outside `{2, 3, 4}` with a clear error.
+    if let Some(factor) = upscale_factor {
+        if factor != 0 {
+            cfg.algorithm.upscale = UpscaleConfig::Fixed(factor);
+        }
     }
 }
 
@@ -308,7 +405,7 @@ pub fn load_config(path: &Path) -> Result<DetectionConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chess_corners::{DetectionStrategy, RadonStrategy};
+    use chess_corners::RadonConfig;
     use std::path::PathBuf;
 
     fn empty_overrides() -> DetectionOverrides {
@@ -377,7 +474,7 @@ mod tests {
             output_png: None,
             log_level: None,
             ml: None,
-            algorithm: DetectorConfig::single_scale(),
+            algorithm: DetectorConfig::chess(),
         };
         apply_overrides(
             &mut cfg,
@@ -402,10 +499,49 @@ mod tests {
     // CLI override returns to being a no-op for one strategy variant.
     #[test]
     fn nms_and_cluster_fields_exist_on_both_strategies() {
-        let _chess_nms: u32 = DetectorConfig::single_scale().to_chess_params().nms_radius;
+        let _chess_nms: u32 = DetectorConfig::chess().to_chess_params().nms_radius;
         let _radon_nms: u32 = DetectorConfig::radon()
             .to_radon_detector_params()
             .nms_radius;
-        let _radon_cluster = RadonStrategy::default().min_cluster_size;
+        let _radon_cluster: u32 = RadonConfig::default().min_cluster_size;
+    }
+
+    fn detection_config_with_upscale(upscale: UpscaleConfig) -> DetectionConfig {
+        let mut algorithm = DetectorConfig::chess();
+        algorithm.upscale = upscale;
+        DetectionConfig {
+            image: PathBuf::from("ignored.png"),
+            output_json: None,
+            output_png: None,
+            log_level: None,
+            ml: None,
+            algorithm,
+        }
+    }
+
+    #[test]
+    fn upscale_factor_zero_preserves_json_config_value() {
+        let mut cfg = detection_config_with_upscale(UpscaleConfig::Fixed(3));
+        apply_overrides(
+            &mut cfg,
+            DetectionOverrides {
+                upscale_factor: Some(0),
+                ..empty_overrides()
+            },
+        );
+        assert_eq!(cfg.algorithm.upscale, UpscaleConfig::Fixed(3));
+    }
+
+    #[test]
+    fn upscale_factor_nonzero_overrides_json_config_value() {
+        let mut cfg = detection_config_with_upscale(UpscaleConfig::Disabled);
+        apply_overrides(
+            &mut cfg,
+            DetectionOverrides {
+                upscale_factor: Some(2),
+                ..empty_overrides()
+            },
+        );
+        assert_eq!(cfg.algorithm.upscale, UpscaleConfig::Fixed(2));
     }
 }

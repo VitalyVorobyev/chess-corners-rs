@@ -1,12 +1,10 @@
 //! Whole-image Duda-Frese Radon detector.
 //!
-//! An alternative to the ChESS detector in [`super::chess`] for
-//! frames where the 16-sample ring fails — heavy motion blur, strong
-//! defocus, low-contrast scenes, or cells smaller than
-//! `~2·ring_radius`. The detector computes a dense 4-angle localized
-//! Radon response `R(x, y) = (max_α S_α − min_α S_α)²` using
-//! summed-area tables for `O(1)`-per-pixel ray sums, then applies the
-//! same peak-fit pipeline as
+//! An alternative to the ChESS detector in [`super::chess`] for frames
+//! where the 16-sample ring does not produce enough seeds in the target
+//! data. The detector computes a dense 4-angle localized Radon response
+//! `R(x, y) = (max_α S_α − min_α S_α)²` using summed-area tables for
+//! `O(1)`-per-pixel ray sums, then applies the same peak-fit pipeline as
 //! [`crate::refine::radon_peak::RadonPeakRefiner`]: threshold / NMS /
 //! box-blur / 3-point Gaussian fit in x and y.
 //!

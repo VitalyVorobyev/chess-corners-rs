@@ -1,4 +1,20 @@
-import init, { ChessDetector } from '../pkg/chess_corners_wasm.js';
+import init, {
+  ChessDetector,
+  ChessConfig,
+  ChessRefiner,
+  ChessRing,
+  CenterOfMassConfig,
+  DetectionStrategy,
+  DetectorConfig,
+  ForstnerConfig,
+  MultiscaleConfig,
+  RadonConfig,
+  RadonRefiner,
+  RadonPeakConfig,
+  SaddlePointConfig,
+  Threshold,
+  UpscaleConfig,
+} from '../pkg/chess_corners_wasm.js';
 
 // Layout of each corner in the stride-9 Float32Array returned by `detect()`.
 const STRIDE = 9;
@@ -80,29 +96,58 @@ linkRange(pyrMinSize, pyrMinSizeVal);
 linkRange(arrowLen, arrowLenVal);
 linkRange(dotRadius, dotRadiusVal);
 
-function configureDetector(det) {
-  // Map the legacy `canonical | broad | radon` dropdown to the new
-  // two-way `chess | radon` strategy + a separate `broad` ring flag.
+function buildRefiner(name) {
+  switch (name) {
+    case "forstner":
+      return ChessRefiner.withForstner(new ForstnerConfig());
+    case "saddle_point":
+      return ChessRefiner.withSaddlePoint(new SaddlePointConfig());
+    case "center_of_mass":
+    default:
+      return ChessRefiner.withCenterOfMass(new CenterOfMassConfig());
+  }
+}
+
+function buildConfig() {
+  // Map the dropdown to the typed config tree.
   const modeValue = detectorMode.value;
   const isRadon = modeValue === "radon";
-  det.set_detector_mode(isRadon ? "radon" : "chess");
-  if (!isRadon) {
-    det.set_broad_mode(modeValue === "broad");
+  const cfg = new DetectorConfig();
+
+  cfg.threshold = Threshold.relative(parseFloat(threshold.value));
+
+  const upFactor = parseInt(upscaleFactor.value, 10);
+  cfg.upscale =
+    upFactor <= 1 ? UpscaleConfig.disabled() : UpscaleConfig.fixed(upFactor);
+
+  if (isRadon) {
+    const radon = new RadonConfig();
+    radon.nmsRadius = parseInt(nmsRadius.value, 10);
+    radon.minClusterSize = parseInt(minCluster.value, 10);
+    radon.refiner = RadonRefiner.withRadonPeak(new RadonPeakConfig());
+    cfg.strategy = DetectionStrategy.fromRadon(radon);
+    // Radon detector is single-scale in the demo.
+    cfg.multiscale = MultiscaleConfig.singleScale();
+  } else {
+    const chess = new ChessConfig();
+    chess.ring = modeValue === "broad" ? ChessRing.Broad : ChessRing.Canonical;
+    chess.nmsRadius = parseInt(nmsRadius.value, 10);
+    chess.minClusterSize = parseInt(minCluster.value, 10);
+    chess.refiner = buildRefiner(refiner.value);
+    cfg.strategy = DetectionStrategy.fromChess(chess);
+
+    const levels = parseInt(pyrLevels.value, 10);
+    cfg.multiscale =
+      levels <= 1
+        ? MultiscaleConfig.singleScale()
+        : MultiscaleConfig.pyramid(levels, parseInt(pyrMinSize.value, 10), 3);
   }
 
-  det.set_threshold(parseFloat(threshold.value));
-  det.set_nms_radius(parseInt(nmsRadius.value, 10));
-  det.set_min_cluster_size(parseInt(minCluster.value, 10));
+  return cfg;
+}
 
-  // Pyramid setters are only valid on the chess strategy. The Radon
-  // detector is single-scale today, so we just skip them.
-  if (!isRadon) {
-    det.set_pyramid_levels(parseInt(pyrLevels.value, 10));
-    det.set_pyramid_min_size(parseInt(pyrMinSize.value, 10));
-  }
-
-  det.set_upscale_factor(parseInt(upscaleFactor.value, 10));
-  det.set_refiner(refiner.value);
+function configureDetector(det) {
+  det.applyConfig(buildConfig());
 }
 
 // Render a working-resolution Radon heatmap into the main canvas at

@@ -15,9 +15,9 @@ import chess_corners
 
 img = np.zeros((128, 128), dtype=np.uint8)
 
-cfg = chess_corners.DetectorConfig.multiscale()
+cfg = chess_corners.DetectorConfig.chess_multiscale()
 cfg.threshold = chess_corners.Threshold.relative(0.15)
-cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
 corners = detector.detect(img)
@@ -25,16 +25,12 @@ print(corners.shape, corners.dtype)
 print(cfg)
 ```
 
-`ChessConfig` is a deprecated alias for `DetectorConfig`; it remains
-available for backwards compatibility but will be removed in 0.11.0.
-New code should use `DetectorConfig`.
-
 `Detector(cfg).detect(image)` returns a NumPy `float32` array of shape
 `(N, 9)` with columns:
 
 1. `x` — subpixel corner x in input pixels
 2. `y` — subpixel corner y in input pixels
-3. `response` — raw ChESS response at the detected peak
+3. `response` — raw detector response at the detected peak
 4. `contrast` — amplitude of the fitted bright/dark structure
 5. `fit_rms` — RMS residual of the two-axis intensity fit (gray levels)
 6. `axis0_angle` — angle of the first local grid axis, radians in `[0, π)`
@@ -58,73 +54,89 @@ The rows are sorted deterministically by `response` descending, then `x`, then `
 ## Public config API
 
 `DetectorConfig` is strategy-typed: detector-specific tuning lives
-inside a [`DetectionStrategy`] variant, while threshold, refiner,
-multiscale, descriptor mode, upscaling, and merge radius sit at the
-top level.
+inside a `DetectionStrategy` variant. Top-level fields are
+`threshold`, `multiscale`, `upscale`, `orientation_method`, and
+`merge_radius`.
 
 ```python
-cfg = chess_corners.DetectorConfig.single_scale()  # ChESS, multiscale = None
-cfg.descriptor_mode = chess_corners.DescriptorMode.FOLLOW_DETECTOR
+cfg = chess_corners.DetectorConfig.chess()  # ChESS, no pyramid
 cfg.threshold = chess_corners.Threshold.relative(0.2)
 cfg.merge_radius = 3.0
 
 # Enable the coarse-to-fine pyramid (both detectors honour this):
-cfg.multiscale = chess_corners.MultiscaleParams(
-    pyramid_levels=3, pyramid_min_size=128, refinement_radius=3,
+cfg.multiscale = chess_corners.MultiscaleConfig.pyramid(
+    levels=3, min_size=128, refinement_radius=3,
 )
 
-# Detector-specific knobs live inside the strategy:
-chess = cfg.strategy.chess      # None unless strategy.kind == "chess"
-chess.ring = chess_corners.ChessRing.BROAD
-chess.nms_radius = 2
-chess.min_cluster_size = 2
+# Detector-specific knobs live inside the strategy. Nested getters
+# return the live shared object, so direct attribute assignment
+# propagates back to `cfg` — no rebuild needed:
+cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
+cfg.strategy.chess.descriptor_ring = chess_corners.DescriptorRing.FOLLOW_DETECTOR
+cfg.strategy.chess.nms_radius = 2
+cfg.strategy.chess.min_cluster_size = 2
 
-# Or switch to the Radon strategy:
+# Switch the active strategy by assigning a new one:
 cfg.strategy = chess_corners.DetectionStrategy.from_radon(
-    chess_corners.RadonStrategy()
+    chess_corners.RadonConfig()
 )
 ```
 
-All nested objects are default-initialized, so you can always do:
+For one-shot configuration, the chainable `with_chess(**kwargs)` /
+`with_radon(**kwargs)` builders return a new config with only the
+named fields replaced:
 
 ```python
-cfg = chess_corners.DetectorConfig()
-cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
-cfg.refiner.forstner.max_offset = 2.0
+cfg = (
+    chess_corners.DetectorConfig.chess_multiscale()
+    .with_chess(
+        refiner=chess_corners.ChessRefiner.forstner(),
+        ring=chess_corners.ChessRing.BROAD,
+        nms_radius=2,
+    )
+)
 ```
 
-Supported enums and tagged classes:
+Refiners are per-detector: `ChessRefiner` carries one of
+`center_of_mass`, `forstner`, `saddle_point`, or `ml` (with the
+`ml-refiner` feature). `RadonRefiner` carries one of `radon_peak` or
+`center_of_mass`. The active variant's tuning is reachable via the
+`payload` property:
 
-- `Threshold`: `Threshold.absolute(value)` / `Threshold.relative(frac)`
+```python
+fcfg = chess_corners.ForstnerConfig()
+fcfg.max_offset = 2.0
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner(fcfg)
+
+assert cfg.strategy.chess.refiner.kind == "forstner"
+assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
+```
+
+Tagged classes:
+
+- `Threshold`: `Threshold.absolute(value)` / `Threshold.relative(frac)`;
+  read `cfg.threshold.kind` and `cfg.threshold.value`.
+- `MultiscaleConfig`: `MultiscaleConfig.single_scale()` /
+  `MultiscaleConfig.pyramid(levels=, min_size=, refinement_radius=)`;
+  read `cfg.multiscale.kind` and (when `pyramid`) `levels`,
+  `min_size`, `refinement_radius`.
+- `UpscaleConfig`: `UpscaleConfig.disabled()` /
+  `UpscaleConfig.fixed(factor)`; read `cfg.upscale.kind` and (when
+  `fixed`) `factor`.
+- `ChessRefiner`: `center_of_mass()`, `forstner()`, `saddle_point()`,
+  `ml()` (with the `ml-refiner` feature).
+- `RadonRefiner`: `radon_peak()`, `center_of_mass()`.
+
+Enums:
+
 - `ChessRing`: `CANONICAL`, `BROAD`
-- `DescriptorMode`: `FOLLOW_DETECTOR`, `CANONICAL`, `BROAD`
-- `DetectionStrategy`: `DetectionStrategy.from_chess(ChessStrategy)` /
-  `DetectionStrategy.from_radon(RadonStrategy)`; read the active
-  variant via `strategy.kind` (`"chess"` or `"radon"`) and the typed
-  payload via `strategy.chess` / `strategy.radon`.
-- `RefinementMethod`: `CENTER_OF_MASS`, `FORSTNER`, `SADDLE_POINT`,
-  `RADON_PEAK`
+- `DescriptorRing`: `FOLLOW_DETECTOR`, `CANONICAL`, `BROAD`
+- `PeakFitMode`: `PARABOLIC`, `GAUSSIAN`
+- `OrientationMethod`: `RING_FIT`, `DISK_FIT`
 
-`ChessRing.BROAD` uses the wider, blur-tolerant detector sampling
-pattern. Leave `descriptor_mode` at `FOLLOW_DETECTOR` unless you have
-a reason to override descriptor or orientation sampling separately.
-
-## Refiner configuration
-
-`cfg.refiner` always contains every leaf config:
-
-- `cfg.refiner.center_of_mass`
-- `cfg.refiner.forstner`
-- `cfg.refiner.saddle_point`
-
-Only `cfg.refiner.kind` selects which one is active.
-
-```python
-cfg = chess_corners.DetectorConfig()
-cfg.refiner.kind = chess_corners.RefinementMethod.SADDLE_POINT
-cfg.refiner.saddle_point.radius = 3
-cfg.refiner.saddle_point.max_offset = 2.0
-```
+`ChessRing.BROAD` uses the wider radius-10 detector sampling pattern.
+Leave `descriptor_ring` at `FOLLOW_DETECTOR` unless you have a reason
+to override descriptor sampling separately.
 
 ## JSON helpers and printing
 
@@ -140,7 +152,7 @@ Every public config object supports:
 Example:
 
 ```python
-cfg = chess_corners.DetectorConfig.multiscale()
+cfg = chess_corners.DetectorConfig.chess_multiscale()
 text = cfg.to_json(indent=2)
 restored = chess_corners.DetectorConfig.from_json(text)
 
@@ -160,34 +172,30 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
   "strategy": {
     "chess": {
       "ring": "broad",
+      "descriptor_ring": "canonical",
       "nms_radius": 3,
       "min_cluster_size": 1,
-      "multiscale": {
-        "pyramid_levels": 3,
-        "pyramid_min_size": 96,
-        "refinement_radius": 4
+      "refiner": {
+        "forstner": {
+          "radius": 3,
+          "min_trace": 20.0,
+          "min_det": 0.001,
+          "max_condition_number": 60.0,
+          "max_offset": 2.0
+        }
       }
     }
   },
   "threshold": { "absolute": 0.5 },
-  "descriptor_mode": "canonical",
-  "refiner": {
-    "kind": "forstner",
-    "center_of_mass": { "radius": 2 },
-    "forstner": {
-      "radius": 3,
-      "min_trace": 20.0,
-      "min_det": 0.001,
-      "max_condition_number": 60.0,
-      "max_offset": 2.0
-    },
-    "saddle_point": {
-      "radius": 3,
-      "det_margin": 0.002,
-      "max_offset": 1.75,
-      "min_abs_det": 0.0002
+  "multiscale": {
+    "pyramid": {
+      "levels": 3,
+      "min_size": 96,
+      "refinement_radius": 4
     }
   },
+  "upscale": "disabled",
+  "orientation_method": "ring_fit",
   "merge_radius": 2.5
 }
 ```
@@ -202,7 +210,8 @@ Switch to the Radon strategy by replacing the `strategy` object:
     "response_blur_radius": 1,
     "peak_fit": "gaussian",
     "nms_radius": 4,
-    "min_cluster_size": 2
+    "min_cluster_size": 2,
+    "refiner": { "radon_peak": {} }
   }
 }
 ```
@@ -235,9 +244,7 @@ uv pip install --python .venv/bin/python Pillow
 
 ## ML refiner
 
-If the bindings are built with the `ml-refiner` feature, you can route
-through the ML pipeline by setting the refiner kind on the typed
-config — the binding currently surfaces only the four classic refiners
-through `RefinementMethod`, so ML is reached via the Rust facade or by
-constructing a typed `DetectorConfig` with the `ml` kind from a JSON / dict
-input. This is the same `Detector` instance, no second entry point.
+If the bindings are built with the `ml-refiner` feature, the ML
+pipeline is selected by passing `ChessRefiner.ml()` as the active
+variant on the ChESS strategy. The ML refiner runs a small ONNX model
+on normalized intensity patches around each candidate.

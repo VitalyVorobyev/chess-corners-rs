@@ -172,10 +172,9 @@ The pipeline runs in seven steps:
 
 ## 6.5 Choosing a method
 
-`DiskFit` costs ~5–10× more per corner than `RingFit` in the worst
-case (~131 µs vs ~15 µs on typical hardware), but the lazy gate
-short-circuits clean inputs so the average cost is much closer to
-`RingFit` on real chessboard imagery. Switch to `DiskFit` when working
+`DiskFit` costs more per corner than `RingFit` in the orientation
+benchmark (~131 µs vs ~15 µs for the measured case), but the lazy gate
+short-circuits clean orthogonal inputs. Switch to `DiskFit` when working
 with images that have known projective warp; otherwise leave the
 default in place.
 

@@ -51,16 +51,14 @@ def synthetic_corner(theta0: float, theta1: float, width: float) -> np.ndarray:
     return np.clip(128.0 + 80.0 * q, 0.0, 255.0).astype(np.uint8)
 
 
-def make_config(method) -> "cc.ChessConfig":
-    cfg = cc.ChessConfig()
-    cfg.detector_mode = cc.DetectorMode.BROAD
-    cfg.threshold_mode = cc.ThresholdMode.ABSOLUTE
-    cfg.threshold_value = 0.05
-    cfg.nms_radius = 2
-    cfg.min_cluster_size = 1
-    cfg.pyramid_levels = 1
-    cfg.pyramid_min_size = 32
-    cfg.refinement_radius = 3
+def make_config(method) -> "cc.DetectorConfig":
+    cfg = cc.DetectorConfig.single_scale()
+    chess = cc.ChessConfig()
+    chess.ring = cc.ChessRing.BROAD
+    chess.nms_radius = 2
+    chess.min_cluster_size = 1
+    cfg.strategy = cc.DetectionStrategy.from_chess(chess)
+    cfg.threshold = cc.Threshold.absolute(0.05)
     cfg.merge_radius = 1.5
     cfg.orientation_method = method
     return cfg
@@ -69,7 +67,8 @@ def make_config(method) -> "cc.ChessConfig":
 def detect(patch: np.ndarray, method) -> np.ndarray | None:
     """Return the corner row closest to the patch center, or None."""
     cfg = make_config(method)
-    corners = cc.find_chess_corners(np.ascontiguousarray(patch), cfg)
+    detector = cc.Detector(cfg)
+    corners = detector.detect(np.ascontiguousarray(patch))
     if len(corners) == 0:
         return None
     cx0, cy0 = PATCH_CENTER, PATCH_CENTER

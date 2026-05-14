@@ -272,7 +272,7 @@ dependencies = [
 
 [[package]]
 name = "box-image-pyramid"
-version = "0.9.0"
+version = "0.11.0"
 dependencies = [
  "criterion",
  "fast_image_resize",
@@ -345,7 +345,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chess-corners"
-version = "0.9.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "box-image-pyramid",
@@ -364,7 +364,7 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-core"
-version = "0.9.0"
+version = "0.11.0"
 dependencies = [
  "criterion",
  "image",
@@ -377,7 +377,7 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-ml"
-version = "0.9.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "ndarray 0.17.2",
@@ -389,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-py"
-version = "0.9.0"
+version = "0.11.0"
 dependencies = [
  "chess-corners",
  "numpy",
@@ -400,12 +400,13 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-wasm"
-version = "0.9.0"
+version = "0.11.0"
 dependencies = [
  "chess-corners",
  "js-sys",
  "wasm-bindgen",
  "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]
@@ -743,9 +744,9 @@ dependencies = [
 
 [[package]]
 name = "filetime"
-version = "0.2.28"
+version = "0.2.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d5b2eef6fafbf69f877e55509ce5b11a760690ac9700a2921be067aa6afaef6"
+checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
 dependencies = [
  "cfg-if",
  "libc",

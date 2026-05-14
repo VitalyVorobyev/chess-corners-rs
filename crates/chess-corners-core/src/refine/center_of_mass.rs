@@ -1,8 +1,8 @@
 //! Center-of-mass refiner: 5×5 weighted centroid on the response map.
 //!
-//! Default subpixel refiner. Cheap; preserves the historical
-//! pre-refinement behaviour. Operates on the dense ChESS response map
-//! (not the image intensity patch).
+//! The library default subpixel refiner. Operates on the dense ChESS
+//! response map (not the image intensity patch); cheapest of the
+//! built-in refiners.
 
 use super::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
 use serde::{Deserialize, Serialize};

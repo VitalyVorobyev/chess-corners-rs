@@ -4,102 +4,162 @@
 [![Security audit](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/audit.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/audit.yml)
 [![Docs](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/docs.yml/badge.svg)](https://vitalyvorobyev.github.io/chess-corners-rs/)
 
-Fast Rust library for detecting chessboard corners — the X-junctions
-where four alternating dark/bright cells meet — to sub-pixel
-precision. The kind of detector that sits at the front of a camera
-calibration, pose estimation, or AR alignment pipeline.
+Rust workspace for detecting chessboard X-junctions: the points where
+four alternating dark and bright cells meet. The main crate returns
+subpixel corner positions plus a local two-axis descriptor that can be
+used by calibration, pose-estimation, and overlay pipelines.
 
 ![](book/src/img/mid_chess.png)
 
-Two independent detectors and five subpixel refiners sit behind one
-`DetectorConfig` type:
+The public Rust API, Python package, WebAssembly package, and CLI all
+use the same `DetectorConfig` schema.
 
-| Stage                | Options                                                                              | Book                                                                    |
-|----------------------|--------------------------------------------------------------------------------------|-------------------------------------------------------------------------|
-| Detector             | `ChESS` (ring), `Radon` (rays)                                                       | [Part III](book/src/part-03-chess-detector.md), [Part IV](book/src/part-04-radon-detector.md) |
-| Subpixel refinement  | `CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, `ML` (optional ONNX)         | [Part V](book/src/part-05-refiners.md)                                  |
-| Scale handling       | Single-scale or coarse-to-fine 2× pyramid                                            | [Part VI](book/src/part-06-multiscale-and-pyramids.md)                  |
+## What Ships
 
-The full book is at
-<https://vitalyvorobyev.github.io/chess-corners-rs/>, with a
-measurement-driven refiner comparison in
-[Part VII](book/src/part-07-benchmarks.md).
+| Stage | Options | More detail |
+|-------|---------|-------------|
+| Detector | `ChESS` ring response, `Radon` ray-sum response | [ChESS](book/src/part-03-chess-detector.md), [Radon](book/src/part-04-radon-detector.md) |
+| Refiner | `CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
+| Scale handling | Single-scale or coarse-to-fine 2× pyramid | [Multiscale](book/src/part-07-multiscale-and-pyramids.md) |
+| Benchmarks | Synthetic sweeps and pipeline timings | [Benchmarks](book/src/part-08-benchmarks.md) |
 
-The workspace publishes four library crates and ships a CLI, a
-Python package, and a WebAssembly package — all consuming the same
-JSON schema.
+Workspace crates:
 
-## Workspace
-
-```
+```text
 chess-corners-py       PyO3 bindings         pip: chess-corners
-chess-corners-wasm     wasm-bindgen          npm: chess-corners-wasm
+chess-corners-wasm     wasm-bindgen          npm: @vitavision/chess-corners
        │
        ▼
-chess-corners          high-level API, CLI, multiscale pipeline
+chess-corners          public Rust API, CLI, multiscale pipeline
        │
        ▼
-chess-corners-core     ChESS + Radon detectors, refiners, descriptors
+chess-corners-core     low-level detectors, refiners, descriptors
 
-box-image-pyramid      standalone u8 pyramid builder (no chess coupling)
+box-image-pyramid      standalone u8 2× pyramid builder
 chess-corners-ml       optional ONNX refiner (`ml-refiner` feature)
 ```
 
-Layering rules are enforced in CI — `core` does not depend on the
-facade, `box-image-pyramid` is chess-agnostic and reusable elsewhere,
-and every optional dependency is feature-gated. See `AGENTS.md` and
-`CLAUDE.md` for the full rules.
+`chess-corners` is the compatibility boundary. `chess-corners-core`
+contains lower-level primitives for callers that need raw response maps
+or custom pipelines. `box-image-pyramid` has no chess-specific
+dependencies.
 
-## Rust quick start
+## Rust Quick Start
 
 ```toml
 [dependencies]
-chess-corners = "0.10"
+chess-corners = "0.11"
 image = "0.25"
 ```
 
 ```rust
-use chess_corners::{find_chess_corners_image, DetectorConfig, RefinementMethod};
+use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 use image::ImageReader;
 
 let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
-// Defaults: ChESS detector, multiscale pipeline, CenterOfMass refiner.
-let mut cfg = DetectorConfig::multiscale();
-cfg.refiner.kind = RefinementMethod::Forstner;
+let cfg = DetectorConfig::chess_multiscale()
+    .with_chess(|c| c.refiner = ChessRefiner::forstner());
 
-let corners = find_chess_corners_image(&img, &cfg);
+let mut detector = Detector::new(cfg)?;
+let corners = detector.detect(&img)?;
+
 for c in &corners {
     println!("({:.2}, {:.2})  response={:.1}", c.x, c.y, c.response);
 }
 ```
 
-Four presets cover the most common setups:
+Presets:
 
-| Preset                              | Detector | Scale          | Best for                                  |
-|-------------------------------------|----------|----------------|-------------------------------------------|
-| `DetectorConfig::single_scale()`    | ChESS    | Single-scale   | Sharp boards, large cells                 |
-| `DetectorConfig::multiscale()`      | ChESS    | 3-level pyramid | General-purpose (recommended default)    |
-| `DetectorConfig::radon()`           | Radon    | Single-scale   | Small cells, heavy blur, low contrast     |
-| `DetectorConfig::radon_multiscale()`| Radon    | 3-level pyramid | Radon on large / blurry frames           |
+| Preset | Detector | Scale |
+|--------|----------|-------|
+| `DetectorConfig::chess()` | ChESS | Single-scale |
+| `DetectorConfig::chess_multiscale()` | ChESS | 3-level pyramid |
+| `DetectorConfig::radon()` | Radon | Single-scale |
+| `DetectorConfig::radon_multiscale()` | Radon | 3-level pyramid |
 
-Switching to the Radon detector is one line:
+Switching detector families is a config change:
 
 ```rust
 let cfg = DetectorConfig::radon();
-let corners = find_chess_corners_image(&img, &cfg);
+let mut detector = Detector::new(cfg)?;
+let corners = detector.detect(&img)?;
 ```
 
-Switching the refiner is also one line:
+## Output
 
-```rust
-cfg.refiner.kind = RefinementMethod::RadonPeak;
+Each Rust detection is a `CornerDescriptor`:
+
+| Field | Meaning |
+|-------|---------|
+| `x`, `y` | Subpixel position in input-image pixels |
+| `response` | Raw detector response at the detected peak |
+| `contrast` | Bright/dark amplitude from the two-axis intensity fit |
+| `fit_rms` | RMS residual of that fit |
+| `axes[0]`, `axes[1]` | Two local grid-axis directions with per-axis 1σ uncertainty |
+
+The two axes are not forced to be orthogonal. This lets the descriptor
+represent perspective warp and lens distortion instead of collapsing the
+corner to a right-angle model. See
+[Part III §3.4](book/src/part-03-chess-detector.md#34-corner-descriptors)
+for the convention and derivation.
+
+![Projective-warp orientation overlays](book/src/img/readme_warp_overlays.png)
+
+Reproduce the overlay with:
+
+```bash
+python tools/render_readme_warp_overlays.py
 ```
 
-Algorithm details and the cost of each option are measured in
-[Part VII](book/src/part-07-benchmarks.md).
+## Choosing Options
 
-## Python quick start
+Use `DetectorConfig::chess_multiscale()` as the default entry point.
+It is the fastest configuration in the README benchmark below and it
+keeps the detector work at a smaller pyramid level before refining in
+the input image.
+
+Use the Radon presets when the ChESS ring response does not produce
+enough reliable seeds. The repository has synthetic tests and benchmark
+sections for small cells, blur, and low contrast; those are the cases
+where the Radon ray-sum response was added. Treat this as a measured
+configuration choice, not a universal statement about all camera data:
+validate on your own images when the decision matters.
+
+Refiner choice is also workload-dependent. The benchmark chapter reports
+the fixture, timing loop, and error metric used for each claim. In that
+fixture, `RadonPeak` has the lowest clean/blurred error and the optional
+ML refiner has the lowest mean error in the heaviest noise condition,
+while the geometric refiners are much cheaper per corner.
+
+## Performance Snapshot
+
+Wall time for `Detector::detect()` on [`testimages/mid.png`](testimages/mid.png)
+(1024×576), single-thread release build on an M-class CPU. Each config
+uses a threshold tuned to emit the same 77 true X-junctions with zero
+false positives on this image. Median and p95 are over 50 runs after a
+5-run warmup:
+
+| Config | Corners | Median |
+|--------|--------:|-------:|
+| `DetectorConfig::chess()` | 77 | 4.5 ms |
+| `DetectorConfig::chess_multiscale()` | 77 | 0.8 ms |
+| `DetectorConfig::radon()` | 77 | 28 ms |
+| `DetectorConfig::radon_multiscale()` | 77 | 3.0 ms |
+
+This table is a narrow snapshot, not a cross-dataset ranking. It is
+useful for understanding the cost of each preset on one clean test
+image. Reproduce it with:
+
+```bash
+python tools/render_readme_perf.py
+```
+
+The broader benchmark chapter includes blur, noise, cell-size, feature
+flag, and pipeline measurements:
+[Part VIII](book/src/part-08-benchmarks.md).
+
+## Python
 
 ```bash
 python -m pip install chess-corners
@@ -111,20 +171,17 @@ import chess_corners
 
 img = np.zeros((128, 128), dtype=np.uint8)
 
-cfg = chess_corners.DetectorConfig.multiscale()
-cfg.refiner.kind = chess_corners.RefinementMethod.FORSTNER
+cfg = chess_corners.DetectorConfig.chess_multiscale()
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
-corners = chess_corners.find_chess_corners(img, cfg)
-print(corners.shape)   # (N, 9)
-print(cfg)
+detector = chess_corners.Detector(cfg)
+corners = detector.detect(img)
+print(corners.shape)  # (N, 9)
 ```
 
-`find_chess_corners` returns a `float32 [N, 9]` array with stride 9
-per corner: `[x, y, response, contrast, fit_rms,
-axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`.
-
-Every public Python config object supports `to_dict()`,
-`from_dict()`, `to_json()`, `from_json()`, `pretty()`, and `print()`.
+The returned NumPy array is `float32` with columns:
+`x, y, response, contrast, fit_rms, axis0_angle, axis0_sigma,
+axis1_angle, axis1_sigma`.
 
 ## JavaScript / WebAssembly
 
@@ -133,23 +190,18 @@ wasm-pack build crates/chess-corners-wasm --target web
 ```
 
 ```js
-import init, { ChessDetector } from 'chess-corners-wasm';
+import init, { ChessDetector, DetectorConfig } from '@vitavision/chess-corners';
 
 await init();
-const detector = new ChessDetector();
-detector.set_pyramid_levels(3);
 
+const cfg = DetectorConfig.chessMultiscale();
+const detector = ChessDetector.withConfig(cfg);
 const imageData = ctx.getImageData(0, 0, width, height);
 const corners = detector.detect_rgba(imageData.data, width, height);
-
-// Same stride-9 layout as Python.
-for (let i = 0; i < corners.length; i += 9) {
-    console.log(`(${corners[i].toFixed(2)}, ${corners[i + 1].toFixed(2)})`);
-}
 ```
 
-See `crates/chess-corners-wasm/README.md` for the full setter list,
-including `set_detector_mode('canonical' | 'broad' | 'radon')`.
+See [`crates/chess-corners-wasm/README.md`](crates/chess-corners-wasm/README.md)
+for typed configuration and browser examples.
 
 ## CLI
 
@@ -158,139 +210,43 @@ cargo run -p chess-corners --release --bin chess-corners -- \
     run config/chess_cli_config_example.json
 ```
 
-The CLI loads an image plus JSON config, runs the detector, and
-writes a JSON summary and an overlay PNG. Example configs:
+The CLI loads an image and JSON config, runs the detector, then writes
+a JSON summary and optional overlay PNG. Useful config examples:
 
-- `config/chess_algorithm_config_example.json` — just the algorithm
-  fields, shared by the Rust and Python APIs.
-- `config/chess_cli_config_example.json` — algorithm + CLI I/O
-  fields.
-- `config/chess_cli_config_example_ml.json` — ML refiner enabled;
-  requires `--features ml-refiner` at build time.
+- [`config/chess_algorithm_config_example.json`](config/chess_algorithm_config_example.json)
+  — pure `DetectorConfig`, shared by Rust and Python.
+- [`config/chess_cli_config_example.json`](config/chess_cli_config_example.json)
+  — `DetectorConfig` plus CLI input/output fields.
+- [`config/chess_cli_config_example_ml.json`](config/chess_cli_config_example_ml.json)
+  — ML refiner example; requires `--features ml-refiner`.
 
-## `DetectorConfig` schema
+## Feature Flags
 
-Flat schema; the same field names appear in Rust, Python, CLI JSON,
-and WASM setters.
+| Feature | Effect |
+|---------|--------|
+| `image` | `image::GrayImage` entry points |
+| `rayon` | Parallel response/refinement work |
+| `simd` | Portable SIMD for ChESS kernels; requires nightly Rust |
+| `par_pyramid` | SIMD/Rayon paths inside `box-image-pyramid` |
+| `tracing` | Structured diagnostic spans |
+| `ml-refiner` | ONNX refiner through `chess-corners-ml` |
+| `cli` | Builds the `chess-corners` binary |
+| `radon-sat-u32` | Uses `u32` Radon SATs for lower memory with an input-size cap |
 
-```json
-{
-  "detector_mode": "broad",
-  "descriptor_mode": "canonical",
-  "threshold_mode": "absolute",
-  "threshold_value": 0.5,
-  "nms_radius": 3,
-  "min_cluster_size": 1,
-  "refiner": {
-    "kind": "forstner",
-    "center_of_mass": { "radius": 2 },
-    "forstner": {
-      "radius": 3,
-      "min_trace": 20.0,
-      "min_det": 0.001,
-      "max_condition_number": 60.0,
-      "max_offset": 2.0
-    },
-    "saddle_point": {
-      "radius": 3,
-      "det_margin": 0.002,
-      "max_offset": 1.75,
-      "min_abs_det": 0.0002
-    },
-    "radon_peak": {
-      "ray_radius": 2,
-      "patch_radius": 3,
-      "image_upsample": 2,
-      "response_blur_radius": 1,
-      "peak_fit": "gaussian",
-      "min_response": 0.0,
-      "max_offset": 1.5
-    }
-  },
-  "radon_detector": {
-    "ray_radius": 4,
-    "image_upsample": 2,
-    "response_blur_radius": 1,
-    "peak_fit": "gaussian",
-    "threshold_rel": 0.01,
-    "nms_radius": 4,
-    "min_cluster_size": 2
-  },
-  "pyramid_levels": 3,
-  "pyramid_min_size": 96,
-  "refinement_radius": 4,
-  "merge_radius": 2.5,
-  "orientation_method": "ring_fit"
-}
-```
+Feature flags should affect performance or observability, not the
+numerical output. Deterministic ordering is part of the public contract.
 
-`orientation_method` controls the two-axis orientation fit applied to each
-detected corner. Two values are available:
+## Diligence Statement
 
-- `ring_fit` *(default)* — fits the parametric two-axis chessboard intensity
-  model to 16 ring samples via Gauss-Newton, with per-axis 1σ uncertainties
-  calibrated by a piecewise-linear lookup table. Suitable for the full range
-  of standard chessboard images.
-- `disk_fit` — full-disk crossing-line estimator. Samples all image pixels
-  in a disk around the corner center and fits two possibly non-orthogonal
-  axes. Falls back to `ring_fit` on clean orthogonal corners and near image
-  borders. Use when corners are imaged under strong projective warp.
+This project uses AI coding assistants as implementation tools. The
+author validates algorithmic behavior and numerical results before
+release through formatting, linting, tests, documentation builds, the
+book, and binding checks.
 
-`detector_mode` picks a detector:
-
-- `canonical` — ChESS with radius-5 ring (default).
-- `broad` — ChESS with radius-10 ring; more blur-tolerant.
-- `radon` — Duda-Frese Radon detector; handles small cells and
-  heavy blur. Configuration lives under `radon_detector`.
-
-`descriptor_mode` follows the detector by default; you can override
-it to sample the descriptor ring at the other ChESS radius.
-
-## Corner descriptor
-
-Every detection returns a `CornerDescriptor`:
-
-| Field        | Type                | Meaning                                                                        |
-|--------------|---------------------|--------------------------------------------------------------------------------|
-| `x`, `y`     | `f32`               | Subpixel position in input image pixels.                                       |
-| `response`   | `f32`               | Raw detector response at the peak. Scale is detector-specific.                  |
-| `contrast`   | `f32` (≥ 0)         | Bright/dark amplitude from the ring intensity fit (gray levels).                |
-| `fit_rms`    | `f32` (≥ 0)         | RMS residual of that fit (gray levels).                                         |
-| `axes[0, 1]` | `[AxisEstimate; 2]` | Two local grid axis directions with per-axis 1σ angular uncertainty.            |
-
-The two axes are **not** assumed orthogonal — projective warp or lens
-distortion tilts the sectors independently, and the fit captures both.
-Axis 0 lives in `[0, π)`; axis 1 lies in `(axis0, axis0 + π)`, with
-the CCW arc from axis 0 to axis 1 crossing a dark sector. Full
-derivation in
-[Part III §3.4](book/src/part-03-chess-detector.md#34-corner-descriptors).
-
-## Feature flags
-
-| Feature       | Crate                 | Effect                                                                      |
-|---------------|-----------------------|-----------------------------------------------------------------------------|
-| `image`       | facade (default)      | `image::GrayImage` convenience entry points.                                |
-| `rayon`       | core, facade          | Parallel ChESS response + multiscale refinement over cores.                 |
-| `simd`        | core, facade          | Portable SIMD for the ChESS kernel. Requires nightly Rust.                  |
-| `par_pyramid` | box-image-pyramid     | SIMD / Rayon inside the pyramid downsampler.                                |
-| `tracing`     | core, facade          | JSON spans for the detector pipeline.                                       |
-| `ml-refiner`  | facade                | Enables the ONNX refiner (via `chess-corners-ml`).                          |
-| `cli`         | facade                | Builds the `chess-corners` binary.                                          |
-| `radon-sat-u32` | core                | Switches the Radon SAT accumulator to `u32` for lower memory, ~16 MP cap.   |
-
-All feature combinations produce the same numerical results; flags
-only affect performance and observability.
-
-## Diligence statement
-
-This project is developed with AI coding assistants as implementation
-tools. The author validates algorithmic behaviour and numerical
-results and enforces the quality gates below (fmt, clippy, tests,
-docs, mdbook, Python checks) before every release.
-
-## Pre-PR quality gates
+## Pre-PR Quality Gates
 
 ```bash
+python3 tools/check_doc_versions.py
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features

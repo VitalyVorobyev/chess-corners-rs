@@ -16,10 +16,14 @@ This part describes:
 - how to pick a multiscale configuration.
 
 The multiscale path is available for **both** the ChESS and Radon
-detectors. The `multiscale: Option<MultiscaleParams>` field sits at the
-top level of `DetectorConfig` and is honoured symmetrically by both.
-See [Part IV §4.7](part-04-radon-detector.md#47-coarse-to-fine-radon) for the
-Radon-specific preset and when to prefer it over single-scale Radon.
+detectors. The `multiscale: MultiscaleConfig` field sits at the top
+level of `DetectorConfig` and is honoured symmetrically by both.
+`MultiscaleConfig::SingleScale` skips the pyramid entirely;
+`MultiscaleConfig::Pyramid { levels, min_size, refinement_radius }`
+enables it. See
+[Part IV §4.7](part-04-radon-detector.md#47-coarse-to-fine-radon) for
+the Radon-specific preset and when to prefer it over single-scale
+Radon.
 
 ---
 
@@ -255,28 +259,34 @@ The multiscale detector is implemented in
 
 ### 7.2.1 Coarse-to-fine parameters
 
-Multiscale settings are expressed through `MultiscaleParams`, which is
-the `Option<MultiscaleParams>` value at `DetectorConfig.multiscale`:
+Multiscale settings are expressed through `MultiscaleConfig`, the
+value at `DetectorConfig.multiscale`:
 
 ```rust
-pub struct MultiscaleParams {
-    pub pyramid_levels: u8,
-    pub pyramid_min_size: usize,
-    /// ROI radius at the coarse level (ignored when pyramid_levels <= 1).
-    pub refinement_radius: u32,
+pub enum MultiscaleConfig {
+    SingleScale,
+    Pyramid {
+        levels: u8,
+        min_size: usize,
+        /// ROI radius at the coarse level.
+        refinement_radius: u32,
+    },
 }
 ```
 
-- `pyramid_levels` – maximum number of levels (including base).
-- `pyramid_min_size` – smallest allowed dimension; stops halving once
-  a level would fall below this size.
+- `levels` – maximum number of levels (including base).
+- `min_size` – smallest allowed dimension; stops halving once a level
+  would fall below this size.
 - `refinement_radius` – radius of the ROI around each coarse corner in
   **coarse-level** pixels; converted to base-level pixels internally.
 
 The top-level `DetectorConfig.merge_radius` (in base-image pixels)
 controls duplicate suppression after refinement.
 
-`MultiscaleParams::default()` provides a reasonable starting point:
+`DetectorConfig::chess_multiscale()` constructs the preset
+`MultiscaleConfig::pyramid_default()` — equivalent to
+`MultiscaleConfig::pyramid(3, 128, 3)` — which is a reasonable
+starting point:
 
 - 3 pyramid levels with minimum size 128,
 - ROI radius 3 at the coarse level (scaled up at the base; with 3 levels this is ≈12 px at full resolution).
@@ -285,9 +295,10 @@ controls duplicate suppression after refinement.
 
 The [`Detector`](https://docs.rs/chess-corners) struct in
 `chess-corners` owns a `PyramidBuffers` internally. The multiscale
-pipeline is opt-in via `DetectorConfig.multiscale = Some(MultiscaleParams { … })`;
-when `multiscale` is `None` the detector takes the single-scale path.
-Both the ChESS and Radon strategies are routed through the same
+pipeline is opt-in via `DetectorConfig.multiscale =
+MultiscaleConfig::Pyramid { … }`; with
+`MultiscaleConfig::SingleScale` the detector takes the single-scale
+path. Both the ChESS and Radon strategies are routed through the same
 coarse-to-fine orchestrator via the `DenseDetector` trait. The
 pipeline on each `detect` / `detect_u8` call is:
 
@@ -342,11 +353,11 @@ successive frames to it.
 ## 7.3 Choosing multiscale configs
 
 The behavior of the multiscale detector is driven primarily by
-`MultiscaleParams` (exposed as `DetectorConfig.multiscale`) plus the
+`MultiscaleConfig` (the value at `DetectorConfig.multiscale`) plus the
 top-level `DetectorConfig.merge_radius`:
 
-- `pyramid_levels`,
-- `pyramid_min_size`,
+- `levels`,
+- `min_size`,
 - `refinement_radius`,
 - `merge_radius` (top-level field).
 
@@ -356,32 +367,31 @@ equally to both detectors.
 ### 7.3.1 Single-scale vs multiscale
 
 - **Single-scale**:
-  - Set `pyramid.num_levels = 1`.
-  - The detector behaves exactly like the single‑scale path: it runs
-    ChESS once at the base resolution and skips coarse refinement.
+  - Set `cfg.multiscale = MultiscaleConfig::SingleScale`.
+  - The detector runs once at the base resolution and skips coarse
+    refinement.
   - This is a good choice when:
     - the chessboard occupies a large portion of the frame,
     - the board is reasonably sharp, and
     - you want maximum recall at a fixed scale.
 
 - **Multiscale**:
-  - Use `pyramid.num_levels` in the range 2–4 for most use cases.
+  - Use `levels` in the range 2–4 for most use cases.
   - More levels mean:
-    - coarser initial detection (smaller image yields fewer, more
-      robust coarse corners),
+    - coarser initial detection on a smaller image,
     - more refinement work at the base level,
-    - potentially better robustness when the board is small or heavily
-      blurred.
+    - a different seed/refine tradeoff that should be measured on the
+      target image set.
 
-As a rule of thumb, start with `num_levels = 3` and adjust only if you
-have specific performance or robustness requirements.
+As a rule of thumb, start with `levels = 3` and adjust only if your
+measurements show a recall or latency problem.
 
 ### 7.3.2 `min_size` and pyramid coverage
 
-`pyramid.min_size` limits how small the smallest level can be. If the
-base image is small (e.g., smaller than `min_size`), the pyramid may
-end up with a single level regardless of `num_levels`, effectively
-falling back to single‑scale.
+`min_size` limits how small the smallest level can be. If the base
+image is small (e.g., smaller than `min_size`), the pyramid may end
+up with a single level regardless of `levels`, effectively falling
+back to single‑scale.
 
 Recommendations:
 
@@ -389,13 +399,13 @@ Recommendations:
   per square on the chessboard. If your board is already small in the
   base image, a too‑aggressive `min_size` may collapse the pyramid and
   give you no coarse‑to‑fine benefit.
-- For high‑resolution inputs (e.g., 4K), a `min_size` around 128 or
-  256 usually works well.
+- For high-resolution inputs (for example 4K), `min_size` values around
+  128 or 256 are useful starting points, but they are not universal.
 
 ### 7.3.3 ROI radius
 
-`MultiscaleParams.refinement_radius` is specified in **coarse-level pixels**
-and converted to base-level pixels using the pyramid scale. Internally,
+`refinement_radius` is specified in **coarse-level pixels** and
+converted to base-level pixels using the pyramid scale. Internally,
 the code also enforces a minimum ROI radius that respects:
 
 - the detector's own support radius (ChESS ring or Radon ray length),
@@ -426,8 +436,8 @@ only the stronger one is kept.
 
 Guidelines:
 
-- For typical calibration boards, values around 1.5–2.5 pixels are
-  common.
+- Values around 1.5–2.5 pixels are useful starting points for ordinary
+  printed calibration boards.
 - If your detector tends to produce duplicate corners around the same
   junction (e.g., because the ROI refinement finds multiple close
   maxima), increase `merge_radius`.
@@ -440,8 +450,21 @@ Some example presets:
 
 - **Default multiscale** (good starting point, ChESS):
 
-  - `DetectorConfig::multiscale()` — 3 levels, `min_size = 128`,
-    `refinement_radius = 3`, `merge_radius = 3.0`.
+  - `DetectorConfig::chess_multiscale()` — `MultiscaleConfig::pyramid_default()`:
+    3 levels, `min_size = 128`, `refinement_radius = 3`, `merge_radius = 3.0`.
+
+  ```rust
+  use chess_corners::DetectorConfig;
+  let cfg = DetectorConfig::chess_multiscale();
+  ```
+
+- **Custom pyramid depth**:
+
+  ```rust
+  use chess_corners::{DetectorConfig, MultiscaleConfig};
+  let cfg = DetectorConfig::chess_multiscale()
+      .with_multiscale(MultiscaleConfig::pyramid(4, 64, 4));
+  ```
 
 - **Coarse-to-fine Radon** (blurry / low-contrast large frames):
 
@@ -451,7 +474,7 @@ Some example presets:
 
 - **Fast single-scale** (ChESS, sharp calibration boards):
 
-  - `DetectorConfig::single_scale()` — no pyramid, minimal memory.
+  - `DetectorConfig::chess()` — no pyramid, minimal memory.
 
 - **Robust small-board detection**:
 

@@ -245,10 +245,10 @@ fn detect_multiscale<D: DenseDetector>(
     // The refiner only contributes to the ROI margin when the
     // detector actually consumes it. Detectors whose
     // `refine_peaks_on_image` is a no-op (today: Radon) declare
-    // `refines_on_image() == false` so that switching
-    // `cfg.refiner` between e.g. `CenterOfMass` and `SaddlePoint`
-    // doesn't silently shrink Radon's valid seed area near the
-    // image border.
+    // `refines_on_image() == false` so that switching the active
+    // strategy's refiner between e.g. `CenterOfMass` and
+    // `SaddlePoint` doesn't silently shrink Radon's valid seed
+    // area near the image border.
     let refine_border = if detector.refines_on_image() {
         refiner_radius(shape.refiner_kind)
     } else {
@@ -424,28 +424,41 @@ pub(crate) fn detect_with_buffers(
     chess_buffers: &mut ChessBuffers,
     radon_buffers: &mut RadonBuffers,
 ) -> Vec<CornerDescriptor> {
-    let refiner_kind = cfg.refiner.to_refiner_kind();
-    let chess_params = cfg.to_chess_params();
-    let shape = DetectorShape {
-        refiner_kind: &refiner_kind,
-        descriptor_ring_radius: chess_params.descriptor_ring_radius(),
-        orientation_method: chess_params.orientation_method,
-        merge_radius: cfg.merge_radius,
-    };
     let multiscale = cfg.to_coarse_to_fine_params();
 
     match &cfg.strategy {
-        DetectionStrategy::Chess(_) => detect_multiscale(
-            base,
-            &ChessDetector,
-            &chess_params,
-            chess_buffers,
-            pyramid_buffers,
-            multiscale.as_ref(),
-            &shape,
-        ),
+        DetectionStrategy::Chess(_) => {
+            let chess_params = cfg.to_chess_params();
+            let refiner_kind = chess_params.refiner.clone();
+            let shape = DetectorShape {
+                refiner_kind: &refiner_kind,
+                descriptor_ring_radius: chess_params.descriptor_ring_radius(),
+                orientation_method: chess_params.orientation_method,
+                merge_radius: cfg.merge_radius,
+            };
+            detect_multiscale(
+                base,
+                &ChessDetector,
+                &chess_params,
+                chess_buffers,
+                pyramid_buffers,
+                multiscale.as_ref(),
+                &shape,
+            )
+        }
         DetectionStrategy::Radon(_) => {
             let radon_params = cfg.to_radon_detector_params();
+            let refiner_kind = radon_params.refiner.clone();
+            // Radon strategies don't carry a descriptor-ring knob;
+            // descriptors sample the canonical r=5 ring downstream.
+            // Orientation method is top-level on DetectorConfig.
+            let shape = DetectorShape {
+                refiner_kind: &refiner_kind,
+                descriptor_ring_radius: chess_corners_core::ChessParams::default()
+                    .descriptor_ring_radius(),
+                orientation_method: cfg.orientation_method,
+                merge_radius: cfg.merge_radius,
+            };
             detect_multiscale(
                 base,
                 &RadonDetector,
@@ -653,10 +666,10 @@ mod tests {
 
     #[test]
     fn chess_config_multiscale_preset_has_expected_pyramid() {
-        let cfg = DetectorConfig::multiscale();
+        let cfg = DetectorConfig::chess_multiscale();
         let cf = cfg
             .to_coarse_to_fine_params()
-            .expect("multiscale preset must produce CoarseToFineParams");
+            .expect("chess_multiscale preset must produce CoarseToFineParams");
         assert_eq!(cf.pyramid.num_levels, 3);
         assert_eq!(cf.pyramid.min_size, 128);
         assert_eq!(cf.refinement_radius, 3);

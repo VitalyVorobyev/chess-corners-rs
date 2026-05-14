@@ -2,15 +2,14 @@
 //!
 //! All refiners implement the [`CornerRefiner`] trait and are
 //! addressed through the user-facing [`RefinerKind`] enum. Default
-//! settings preserve the historical center-of-mass behaviour.
+//! settings select the center-of-mass refiner on the response map.
 //!
-//! - [`center_of_mass`] — legacy 5×5 weighted centroid on the response
-//!   map. Cheap; the default.
+//! - [`center_of_mass`] — 5×5 weighted centroid on the response
+//!   map. Cheap; the library default.
 //! - [`forstner`] — gradient structure-tensor refinement on the image
 //!   intensity patch.
-//! - [`saddle_point`] — quadratic surface fit, robust to mild blur.
-//! - [`radon_peak`] — Radon-projection refiner along candidate axes;
-//!   robust to blur and low contrast.
+//! - [`saddle_point`] — quadratic surface fit on the image patch.
+//! - [`radon_peak`] — Radon-projection refiner along candidate axes.
 
 use crate::imageview::ImageView;
 use crate::ResponseMap;

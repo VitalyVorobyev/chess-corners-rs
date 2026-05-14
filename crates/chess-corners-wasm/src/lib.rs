@@ -1,18 +1,10 @@
 //! WebAssembly bindings for the ChESS / Radon corner detector.
 //!
-//! Two ways to drive the detector from JS:
-//!
-//! 1. **Setter shortcuts** — `new ChessDetector()` then
-//!    `det.set_threshold(...)` / `det.set_pyramid_levels(...)` /
-//!    `det.set_detector_mode("radon")` etc. Useful for quick demos.
-//! 2. **Typed [`DetectorConfig`]** — construct the typed config (with
-//!    nested [`RefinerConfig`], [`DetectionStrategy`],
-//!    [`UpscaleConfig`], …), then pass it to
-//!    [`ChessDetector::with_config`]. Exposes every public Rust
-//!    facade field with type-safe getters/setters.
-//!
-//! Both paths edit the same underlying Rust struct, so they can be
-//! mixed at will.
+//! Construct a typed [`DetectorConfig`] (with nested [`DetectionStrategy`],
+//! [`ChessConfig`] / [`RadonConfig`], [`ChessRefiner`] / [`RadonRefiner`],
+//! [`MultiscaleConfig`], [`UpscaleConfig`]), then pass it to
+//! [`ChessDetector::with_config`]. The typed config tree is the single
+//! source of truth for every detector knob.
 //!
 //! # Editing nested typed configs
 //!
@@ -21,10 +13,10 @@
 //! works without a round-trip:
 //!
 //! ```ignore
-//! cfg.refiner.kind = RefinementMethod.RadonPeak;       // propagates
-//! cfg.refiner.forstner.maxOffset = 2.0;                // propagates
-//! cfg.strategy.chess.nmsRadius = 3;                    // propagates
-//! cfg.multiscale.pyramidLevels = 4;                    // propagates
+//! cfg.strategy.chess.ring = ChessRing.Broad;             // propagates
+//! cfg.strategy.chess.refiner.forstner.maxOffset = 2.0;   // propagates
+//! cfg.strategy.chess.nmsRadius = 3;                      // propagates
+//! cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3);   // propagates
 //! ```
 //!
 //! See [`config`] for the cell-sharing details.
@@ -32,18 +24,15 @@
 pub mod config;
 
 use chess_corners::{
-    chess_response_u8, radon_heatmap_u8, ChessConfig as RsChessConfig,
-    DetectionStrategy as RsDetectionStrategy, Detector as RsDetector,
-    MultiscaleParams as RsMultiscaleParams, RefinementMethod as RsRefinementMethod, ResponseMap,
-    Threshold as RsThreshold, UpscaleConfig as RsUpscaleConfig,
+    chess_response_u8, radon_heatmap_u8, Detector as RsDetector,
+    DetectorConfig as RsDetectorConfig, ResponseMap,
 };
 use wasm_bindgen::prelude::*;
 
 pub use crate::config::{
-    CenterOfMassConfig, ChessRing, ChessStrategy, DescriptorMode, DetectionStrategy,
-    DetectorConfig, ForstnerConfig, MultiscaleParams, OrientationMethod, PeakFitMode,
-    RadonPeakConfig, RadonStrategy, RefinementMethod, RefinerConfig, SaddlePointConfig, Threshold,
-    UpscaleConfig, UpscaleMode,
+    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy,
+    DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig,
+    RadonPeakConfig, RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
 };
 
 /// Convert RGBA pixels to grayscale using BT.601 luminance weights.
@@ -59,7 +48,7 @@ fn rgba_to_gray(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
     gray
 }
 
-/// Stateful ChESS corner detector for use from JavaScript.
+/// Stateful ChESS / Radon corner detector for use from JavaScript.
 ///
 /// Holds configuration and reusable pyramid buffers so that repeated
 /// calls (e.g. from a webcam feed) avoid re-allocating intermediate
@@ -92,30 +81,28 @@ impl ChessDetector {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
-            inner: RsDetector::new(RsChessConfig::single_scale())
-                .expect("single_scale config is always valid"),
+            inner: RsDetector::new(RsDetectorConfig::chess())
+                .expect("chess config is always valid"),
             last_response: None,
             last_radon_response: None,
             last_radon_scale: 0,
         }
     }
 
-    /// Create a detector with the recommended multiscale preset.
+    /// Create a detector with the ChESS multiscale preset.
     pub fn multiscale() -> Self {
         Self {
-            inner: RsDetector::new(RsChessConfig::multiscale())
-                .expect("multiscale preset is always valid"),
+            inner: RsDetector::new(RsDetectorConfig::chess_multiscale())
+                .expect("chess_multiscale preset is always valid"),
             last_response: None,
             last_radon_response: None,
             last_radon_scale: 0,
         }
     }
 
-    /// Create a detector seeded from a typed [`DetectorConfig`]. The
-    /// full public config surface — refiner subconfigs, strategy
-    /// branches, descriptor mode, upscale — is reachable through the
-    /// typed object (see module docs for the alternative setter-
-    /// shortcut path).
+    /// Create a detector seeded from a typed [`DetectorConfig`]. Every
+    /// public Rust facade field is reachable through the typed tree;
+    /// see the module docs for the cell-sharing semantics.
     #[wasm_bindgen(js_name = withConfig)]
     pub fn with_config(config: &DetectorConfig) -> Result<ChessDetector, JsValue> {
         let snapshot = config.snapshot();
@@ -134,7 +121,7 @@ impl ChessDetector {
     /// commit edits made on the snapshot.
     #[wasm_bindgen(js_name = getConfig)]
     pub fn get_config(&self) -> DetectorConfig {
-        DetectorConfig::from_inner_for_js(self.inner.config().clone())
+        DetectorConfig::from_inner_for_js(*self.inner.config())
     }
 
     /// Replace the detector's configuration with the given typed
@@ -146,151 +133,6 @@ impl ChessDetector {
         self.inner
             .set_config(snapshot)
             .map_err(|e| JsValue::from_str(&e.to_string()))
-    }
-
-    // ---- Config setters ----
-    //
-    // These shortcuts route writes to the active strategy branch.
-    // The typed [`DetectorConfig`] is the canonical API — prefer
-    // `cfg.strategy.chess.nmsRadius = N` etc. for new code. Shortcuts
-    // exist because they're convenient for one-liner demos.
-
-    /// Switch the threshold to `Relative(rel)`.
-    ///
-    /// The same enum is honoured by both detectors, so this is a
-    /// single source of truth — no per-detector mirroring is needed.
-    pub fn set_threshold(&mut self, rel: f32) {
-        self.inner.config_mut().threshold = RsThreshold::Relative(rel);
-    }
-
-    /// Select the detection strategy: `"chess"` or `"radon"`.
-    ///
-    /// Switching to `"chess"` installs a default [`ChessStrategy`]
-    /// (single-scale, canonical ring, threshold left untouched).
-    /// Switching to `"radon"` installs a default [`RadonStrategy`].
-    /// Any prior per-branch tuning is replaced — for incremental
-    /// edits use the typed config (`cfg.strategy = ...`).
-    pub fn set_detector_mode(&mut self, name: &str) -> Result<(), JsValue> {
-        let strategy = match name {
-            "chess" => RsDetectionStrategy::Chess(Default::default()),
-            "radon" => RsDetectionStrategy::Radon(Default::default()),
-            _ => {
-                return Err(JsValue::from_str(
-                    "unknown detector mode: use \"chess\" or \"radon\"",
-                ));
-            }
-        };
-        self.inner.config_mut().strategy = strategy;
-        Ok(())
-    }
-
-    /// Toggle the broad (r=10) ChESS sampling ring.
-    ///
-    /// Only meaningful when the active strategy is ChESS. Returns an
-    /// error if the strategy is Radon — switch via
-    /// `set_detector_mode("chess")` first.
-    pub fn set_broad_mode(&mut self, v: bool) -> Result<(), JsValue> {
-        match &mut self.inner.config_mut().strategy {
-            RsDetectionStrategy::Chess(chess) => {
-                chess.ring = if v {
-                    chess_corners::ChessRing::Broad
-                } else {
-                    chess_corners::ChessRing::Canonical
-                };
-                Ok(())
-            }
-            _ => Err(JsValue::from_str(
-                "set_broad_mode is only valid when the active strategy is chess",
-            )),
-        }
-    }
-
-    /// Set the non-maximum suppression radius.
-    ///
-    /// Writes to whichever strategy is active. The ChESS `nms_radius`
-    /// is measured in input-image pixels; the Radon `nms_radius` is
-    /// measured in working-resolution pixels (post-`imageUpsample`).
-    pub fn set_nms_radius(&mut self, r: u32) {
-        match &mut self.inner.config_mut().strategy {
-            RsDetectionStrategy::Chess(chess) => chess.nms_radius = r,
-            RsDetectionStrategy::Radon(radon) => radon.nms_radius = r,
-            _ => {}
-        }
-    }
-
-    /// Set the minimum cluster size required to accept a corner.
-    /// Writes to whichever strategy is active.
-    pub fn set_min_cluster_size(&mut self, v: u32) {
-        match &mut self.inner.config_mut().strategy {
-            RsDetectionStrategy::Chess(chess) => chess.min_cluster_size = v,
-            RsDetectionStrategy::Radon(radon) => radon.min_cluster_size = v,
-            _ => {}
-        }
-    }
-
-    /// Set the number of pyramid levels (1 = single-scale, ≥2 = multiscale).
-    ///
-    /// Auto-promotes from single-scale to multiscale by attaching a
-    /// defaulted [`MultiscaleParams`] if none is currently attached.
-    /// Honoured by both ChESS and Radon strategies.
-    /// Returns an error if `n == 0`.
-    pub fn set_pyramid_levels(&mut self, n: u8) -> Result<(), JsValue> {
-        if n == 0 {
-            return Err(JsValue::from_str("pyramid_levels must be >= 1"));
-        }
-        let cfg = self.inner.config_mut();
-        let ms = cfg
-            .multiscale
-            .get_or_insert_with(RsMultiscaleParams::default);
-        ms.pyramid_levels = n;
-        Ok(())
-    }
-
-    /// Set the minimum pyramid-level size in pixels (default 128).
-    ///
-    /// Auto-promotes single-scale → multiscale just like
-    /// [`Self::set_pyramid_levels`]. Honoured by both ChESS and Radon.
-    pub fn set_pyramid_min_size(&mut self, v: u32) -> Result<(), JsValue> {
-        let cfg = self.inner.config_mut();
-        let ms = cfg
-            .multiscale
-            .get_or_insert_with(RsMultiscaleParams::default);
-        ms.pyramid_min_size = v as usize;
-        Ok(())
-    }
-
-    /// Set the optional pre-pipeline upscale factor.
-    ///
-    /// `factor == 0` or `factor == 1` disables upscaling. Accepts
-    /// integer factors 2, 3, 4. Corner coordinates are always returned
-    /// in input-image pixel space; callers do not need to rescale.
-    pub fn set_upscale_factor(&mut self, factor: u32) -> Result<(), JsValue> {
-        self.inner.config_mut().upscale = match factor {
-            0 | 1 => RsUpscaleConfig::disabled(),
-            2..=4 => RsUpscaleConfig::fixed(factor),
-            other => {
-                return Err(JsValue::from_str(&format!(
-                    "unsupported upscale factor {other} (expected 0, 1, 2, 3, or 4)",
-                )));
-            }
-        };
-        Ok(())
-    }
-
-    /// Set the subpixel refiner: `"center_of_mass"`, `"forstner"`,
-    /// `"saddle_point"`, or `"radon_peak"`.
-    pub fn set_refiner(&mut self, name: &str) -> Result<(), JsValue> {
-        self.inner.config_mut().refiner.kind =
-            match name {
-                "center_of_mass" => RsRefinementMethod::CenterOfMass,
-                "forstner" => RsRefinementMethod::Forstner,
-                "saddle_point" => RsRefinementMethod::SaddlePoint,
-                "radon_peak" => RsRefinementMethod::RadonPeak,
-                _ => return Err(JsValue::from_str(
-                    "unknown refiner: use center_of_mass, forstner, saddle_point, or radon_peak",
-                )),
-            };
-        Ok(())
     }
 
     // ---- Detection ----
@@ -376,9 +218,8 @@ impl ChessDetector {
     /// to get the actual dimensions, and [`Self::radon_heatmap_scale`]
     /// for the working-to-input scale factor.
     ///
-    /// Honours `set_upscale_factor`, `set_threshold`, and the active
-    /// Radon strategy tuning on the detector. The detector mode does
-    /// not need to be `"radon"` to call this — the heatmap is always
+    /// Honours the current detector configuration. The active strategy
+    /// does not need to be Radon to call this — the heatmap is always
     /// computable from the current effective Radon params.
     pub fn radon_heatmap(
         &mut self,
@@ -476,7 +317,7 @@ fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::
 // cells (not shared with the source value) — this is intentional for
 // `getConfig()` snapshot semantics.
 impl DetectorConfig {
-    pub(crate) fn from_inner_for_js(inner: chess_corners::ChessConfig) -> Self {
+    pub(crate) fn from_inner_for_js(inner: chess_corners::DetectorConfig) -> Self {
         Self::from_value_pub(inner)
     }
 }

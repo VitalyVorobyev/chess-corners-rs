@@ -1,5 +1,10 @@
 # Whole-Image Radon Detector — Design Document
 
+> Historical design note. This document records the original Radon
+> implementation plan and may mention pre-0.11 paths or names. For the
+> current API, see `docs/detector-comparison.md` and
+> `book/src/part-04-radon-detector.md`.
+
 ## 1. Problem framing
 
 Today every corner passes through the ChESS ring kernel in

@@ -1,28 +1,44 @@
-//! Ergonomic ChESS detector facade over `chess-corners-core`.
+//! Ergonomic ChESS / Radon corner-detector facade over
+//! `chess-corners-core`.
 //!
 //! # Overview
 //!
-//! This crate is the high-level entry point for the ChESS
-//! (Chess-board Extraction by Subtraction and Summation) corner
-//! detector. The [`Detector`] struct ties together the dense response
-//! kernel, NMS, pluggable refinement, orientation fit, and the
-//! multiscale / upscale scratch buffers behind a single `detect`
-//! call.
+//! This crate is the high-level entry point for two chessboard-corner
+//! detectors that share the same output surface:
 //!
-//! [`Detector`] returns subpixel [`CornerDescriptor`] values in
-//! full-resolution image coordinates. In most applications you
-//! construct a [`DetectorConfig`], optionally tweak its fields, build a
-//! [`Detector`], and call [`Detector::detect`].
+//! - **ChESS** (Chess-board Extraction by Subtraction and Summation)
+//!   — a dense ring-difference response with NMS and a pluggable
+//!   subpixel refiner. This is the default path and the fastest preset
+//!   in the repository's clean-image benchmark.
+//! - **Radon** — a whole-image Duda-Frese accumulator that scores
+//!   corners by summing ray intensities through each pixel. It is useful
+//!   when the ChESS ring does not produce enough seeds, especially in
+//!   the small-cell, blur, and low-contrast fixtures covered by the
+//!   tests.
+//!
+//! The [`Detector`] struct ties together the active strategy, the
+//! orientation fit, and the multiscale / upscale scratch buffers
+//! behind a single `detect` call. It returns subpixel
+//! [`CornerDescriptor`] values in full-resolution input coordinates.
+//! In most applications you construct a [`DetectorConfig`] (typically
+//! via [`DetectorConfig::chess`], [`DetectorConfig::chess_multiscale`],
+//! [`DetectorConfig::radon`], or [`DetectorConfig::radon_multiscale`]),
+//! optionally tweak its fields, build a [`Detector`], and call
+//! [`Detector::detect`].
+//!
+//! Building a [`Detector`] once and calling [`Detector::detect`] in a
+//! loop reuses the pyramid, response, and upscale scratch buffers
+//! across frames — no per-frame allocation.
 //!
 //! # Quick start
 //!
 //! ## Using `image` (default)
 //!
 //! The default feature set includes integration with the `image`
-//! crate:
+//! crate. This example reads from disk and is marked `no_run`:
 //!
 //! ```no_run
-//! use chess_corners::{DetectorConfig, Detector, RefinementMethod, Threshold};
+//! use chess_corners::{ChessRefiner, Detector, DetectorConfig, Threshold};
 //! use image::io::Reader as ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,9 +46,9 @@
 //!     .decode()?
 //!     .to_luma8();
 //!
-//! let mut cfg = DetectorConfig::multiscale();
-//! cfg.threshold = Threshold::Relative(0.15);
-//! cfg.refiner.kind = RefinementMethod::Forstner;
+//! let cfg = DetectorConfig::chess_multiscale()
+//!     .with_threshold(Threshold::Relative(0.15))
+//!     .with_chess(|c| c.refiner = ChessRefiner::forstner());
 //!
 //! let mut detector = Detector::new(cfg)?;
 //! let corners = detector.detect(&img)?;
@@ -52,34 +68,68 @@
 //! If you already have an 8-bit grayscale buffer, call
 //! [`Detector::detect_u8`]:
 //!
-//! ```no_run
-//! use chess_corners::{DetectorConfig, Detector};
+//! ```
+//! use chess_corners::{Detector, DetectorConfig};
 //!
-//! # fn detect(img: &[u8], width: u32, height: u32)
-//! #     -> Result<(), chess_corners::ChessError> {
-//! let cfg = DetectorConfig::single_scale();
+//! // 8×8 black/white checkerboard of 16-pixel squares (128×128).
+//! let mut img = vec![0u8; 128 * 128];
+//! for y in 0..128 {
+//!     for x in 0..128 {
+//!         if ((x / 16) + (y / 16)) % 2 == 0 {
+//!             img[y * 128 + x] = 255;
+//!         }
+//!     }
+//! }
+//!
+//! let cfg = DetectorConfig::chess();
 //! let mut detector = Detector::new(cfg)?;
-//! let corners = detector.detect_u8(img, width, height)?;
-//! println!("found {} corners", corners.len());
-//! # let _ = corners;
-//! # Ok(()) }
+//! let corners = detector.detect_u8(&img, 128, 128)?;
+//! assert!(!corners.is_empty());
+//! # Ok::<(), chess_corners::ChessError>(())
+//! ```
+//!
+//! ## Radon strategy
+//!
+//! Switch to the whole-image Radon detector when ChESS misses corners on
+//! the images you care about. The strategy lives inside
+//! [`DetectorConfig::strategy`]; pick a Radon preset to get sensible
+//! defaults:
+//!
+//! ```
+//! use chess_corners::{Detector, DetectorConfig};
+//!
+//! let mut img = vec![0u8; 128 * 128];
+//! for y in 0..128 {
+//!     for x in 0..128 {
+//!         if ((x / 16) + (y / 16)) % 2 == 0 {
+//!             img[y * 128 + x] = 255;
+//!         }
+//!     }
+//! }
+//!
+//! let cfg = DetectorConfig::radon();
+//! let mut detector = Detector::new(cfg)?;
+//! let corners = detector.detect_u8(&img, 128, 128)?;
+//! assert!(!corners.is_empty());
+//! # Ok::<(), chess_corners::ChessError>(())
 //! ```
 //!
 //! ## ML refiner (feature `ml-refiner`)
 //!
-//! Pick the ML pipeline by setting [`RefinementMethod::Ml`] in the
-//! refiner config:
+//! Pick the ML pipeline by selecting [`ChessRefiner::Ml`] inside the
+//! ChESS strategy. The example is marked `no_run` because loading the
+//! embedded ONNX model on first use is not appropriate for a doctest:
 //!
 //! ```no_run
 //! # #[cfg(feature = "ml-refiner")]
 //! # {
-//! use chess_corners::{DetectorConfig, Detector, RefinementMethod};
+//! use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 //! use image::GrayImage;
 //!
-//! let mut cfg = DetectorConfig::single_scale();
-//! cfg.refiner.kind = RefinementMethod::Ml;
+//! let cfg = DetectorConfig::chess()
+//!     .with_chess(|c| c.refiner = ChessRefiner::Ml);
 //!
-//! let img = GrayImage::new(1, 1);
+//! let img: GrayImage = image::open("board.png").unwrap().to_luma8();
 //! let mut detector = Detector::new(cfg).unwrap();
 //! let corners = detector.detect(&img).unwrap();
 //! # let _ = corners;
@@ -90,33 +140,36 @@
 //! patches (uint8 / 255.0) centered at each candidate. The model
 //! predicts `[dx, dy, conf_logit]`, but the confidence output is
 //! currently ignored; the offsets are applied directly. Current
-//! benchmarks are synthetic; real-world accuracy still needs
-//! validation. The ML path is also slower (about 23.5 ms vs 0.6 ms
-//! for 77 corners on `testimages/mid.png`).
+//! accuracy benchmarks are synthetic; real-world accuracy still needs
+//! validation. Per-refiner cost is measured in Part VIII §7.6 of the
+//! book. The ML path is slower than the hand-coded refiners and should
+//! be chosen only after measuring that its behavior helps your data.
 //!
-//! ## Python bindings
+//! ## Python and JavaScript bindings
 //!
-//! The workspace includes a PyO3-based Python extension crate at
-//! `crates/chess-corners-py`. It exposes a `chess_corners.Detector`
-//! class whose `detect(image)` method accepts a 2D `uint8` NumPy
-//! array and returns a float32 `(N, 9)` array with columns `[x, y,
-//! response, contrast, fit_rms, axis0_angle, axis0_sigma,
-//! axis1_angle, axis1_sigma]`. See `crates/chess-corners-py/README.md`
-//! for usage and configuration details.
+//! The workspace also ships bindings that wrap this facade:
 //!
-//! Building a [`Detector`] once and calling [`Detector::detect`] in a
-//! loop reuses the pyramid and upscale scratch buffers across frames
-//! — no per-frame allocation.
+//! - `crates/chess-corners-py` (PyO3 / maturin) exposes a
+//!   `chess_corners.Detector` class whose `detect(image)` method
+//!   accepts a 2D `uint8` NumPy array and returns a `float32`
+//!   `(N, 9)` array with columns `[x, y, response, contrast, fit_rms,
+//!   axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`. See its
+//!   README for usage and configuration details.
+//! - `crates/chess-corners-wasm` (wasm-bindgen / wasm-pack) exposes
+//!   the same surface to JavaScript / TypeScript via the
+//!   `@vitavision/chess-corners` npm package.
 //!
 //! # Configuration
 //!
 //! [`DetectorConfig`] is strategy-typed: the [`DetectorConfig::strategy`]
 //! field is a [`DetectionStrategy`] enum carrying either a
-//! [`ChessStrategy`] (ring choice, NMS, optional multiscale) or a
-//! [`RadonStrategy`] (whole-image Duda-Frese parameters). Acceptance
-//! is a single [`Threshold`] enum (`Absolute` or `Relative`). The
-//! detector translates this into lower-level [`ChessParams`] and
-//! [`CoarseToFineParams`] internally.
+//! [`ChessConfig`] (detector ring, descriptor ring, NMS, refiner) or
+//! a [`RadonConfig`] (whole-image Duda-Frese parameters). Acceptance
+//! is a single [`Threshold`] enum (`Absolute` or `Relative`).
+//! [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
+//! and apply to both strategies. The detector translates this into
+//! the lower-level [`ChessParams`] / [`RadonDetectorParams`] structs
+//! internally.
 //!
 //! If you need raw response maps or more control, the most useful
 //! low-level primitives are re-exported here:
@@ -150,8 +203,12 @@
 //! The library API is stable across feature combinations; features
 //! only affect performance and observability, not numerical results.
 //!
-//! The ChESS idea was proposed in the papaer Bennett, Lasenby, *ChESS: A Fast and
-//! Accurate Chessboard Corner Detector*, CVIU 2014
+//! # References
+//!
+//! - Bennett, Lasenby. *ChESS: A Fast and Accurate Chessboard Corner
+//!   Detector*. CVIU 2014.
+//! - Duda, Frese. *Accurate Detection and Localization of Checkerboard
+//!   Corners for Calibration*. BMVC 2018.
 
 mod config;
 mod detector;
@@ -169,17 +226,12 @@ mod upscale;
 // SAT views, scalar reference paths) remain reachable only via a direct
 // `chess-corners-core` dep.
 pub use crate::config::{
-    ChessRing, ChessStrategy, DescriptorMode, DetectionStrategy, DetectorConfig, MultiscaleParams,
-    RadonStrategy, RefinementMethod, RefinerConfig, Threshold,
+    ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy, DetectorConfig,
+    MultiscaleConfig, RadonConfig, RadonRefiner, Threshold,
 };
-// Backwards-compat alias for downstream users on 0.9.x. The
-// canonical name is `DetectorConfig` since 0.10.0 (the type now
-// configures both ChESS and Radon detectors).
-pub use crate::config::ChessConfig;
 pub use crate::error::ChessError;
 pub use crate::upscale::{
     rescale_descriptors_to_input, upscale_bilinear_u8, UpscaleBuffers, UpscaleConfig, UpscaleError,
-    UpscaleMode,
 };
 pub use chess_corners_core::{
     AxisEstimate, AxisFitResult, CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner,
@@ -202,7 +254,7 @@ pub use chess_corners_core::orientation::describe_corners;
 // Primary detector entry point.
 pub use crate::detector::Detector;
 
-// Pyramid types remain re-exported because [`MultiscaleParams`]
+// Pyramid types remain re-exported because [`MultiscaleConfig::Pyramid`]
 // ultimately binds to [`PyramidParams`].
 pub use crate::multiscale::CoarseToFineParams;
 pub use box_image_pyramid::{ImageBuffer, PyramidBuffers, PyramidParams};

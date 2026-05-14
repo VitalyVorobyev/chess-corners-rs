@@ -3,23 +3,23 @@
   "strategy": {
     "chess": {
       "ring": "canonical",
+      "descriptor_ring": "follow_detector",
       "nms_radius": 2,
       "min_cluster_size": 2,
-      "multiscale": null
+      "refiner": {
+        "center_of_mass": {
+          "radius": 2
+        }
+      }
     }
   },
   "threshold": {
     "absolute": 0.0
   },
-  "refiner": {
-    "kind": "center_of_mass"
-  },
+  "multiscale": "single_scale",
+  "upscale": "disabled",
   "orientation_method": "ring_fit",
-  "descriptor_mode": "follow_detector",
-  "upscale": {
-    "mode": "disabled"
-  },
-  "merge_radius": 2.0,
+  "merge_radius": 3.0,
   "output_json": null,
   "output_png": null,
   "log_level": "info"

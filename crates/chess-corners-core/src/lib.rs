@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-//! Core primitives for computing ChESS responses and extracting subpixel corners.
+//! Core primitives for ChESS/Radon response computation, subpixel
+//! refinement, and corner descriptors.
 //!
 //! The crate is organized along the three orthogonal axes the
 //! detector pipeline composes:
@@ -87,8 +88,8 @@ pub struct ChessParams {
     /// Minimum count of positive-response neighbors in NMS window
     /// to accept a corner (rejects isolated noise).
     pub min_cluster_size: u32,
-    /// Subpixel refinement backend and its configuration. Defaults to the legacy
-    /// center-of-mass refiner on the response map.
+    /// Subpixel refinement backend and its configuration. Defaults to
+    /// center-of-mass on the response map.
     pub refiner: RefinerKind,
     /// Orientation-fit method used to estimate the two grid axes at
     /// each detected corner. Default [`OrientationMethod::RingFit`]

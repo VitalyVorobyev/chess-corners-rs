@@ -1,65 +1,65 @@
 # Design Summary
 
-## Crate Layering
+This repository is split into small crates with explicit ownership:
 
+```text
+chess-corners-py       Python package, built on the Rust facade
+chess-corners-wasm     WebAssembly package, built on the Rust facade
+       │
+       ▼
+chess-corners          public Rust API, CLI, multiscale/upscale pipeline
+       │
+       ▼
+chess-corners-core     detector kernels, refiners, descriptors
+
+box-image-pyramid      standalone u8 2× pyramid builder
+chess-corners-ml       optional ONNX refiner used by `ml-refiner`
 ```
-chess-corners-py    (PyO3 Python bindings, module: chess_corners)
-       |
-chess-corners       (High-level facade, multiscale pipeline, CLI)
-       |
-chess-corners-core  (Low-level: response, detection, refinement)
 
-chess-corners-ml    (ONNX ML refiner, optional via ml-refiner feature)
+The dependency direction is one-way. `chess-corners-core` does not
+depend on `chess-corners`, and `box-image-pyramid` has no chess-specific
+dependencies.
 
-box-image-pyramid   (Standalone u8 pyramid, 2x box-filter downsample)
-```
+## Pipeline
 
-**Dependency rule:** `chess-corners-core` must never depend on `chess-corners`.
-`box-image-pyramid` is fully independent with zero chess-specific coupling.
+The facade detector follows the same high-level shape for both detector
+families:
 
-## Core Algorithm Pipeline
+1. Optionally upscale the input with `UpscaleConfig`.
+2. Optionally build a 2× image pyramid with `MultiscaleConfig`.
+3. Run either the ChESS ring response or the Radon ray-sum response.
+4. Threshold, suppress non-maxima, and reject isolated peaks.
+5. Refine each accepted seed with the active per-detector refiner.
+6. Merge near duplicates in input-image coordinates.
+7. Build `CornerDescriptor` values with a two-axis orientation fit.
 
-1. **Response computation** (`core/response.rs`) -- Dense ChESS response using 16-sample rings at radius 5 (or 10 for heavy blur). Formula: `R = SR - DR - 16 * |mean_ring - mean_cross|`.
-2. **Detection** (`core/detect.rs`) -- Relative/absolute thresholding, non-maximum suppression (NMS), minimum cluster size filtering.
-3. **Refinement** (`core/refine.rs`) -- Pluggable via `CornerRefiner` trait with three built-in implementations: CenterOfMass, Forstner, SaddlePoint. Each returns refined xy + score + status.
-4. **Descriptor generation** (`core/descriptor.rs`) -- Converts raw corners to `CornerDescriptor` with subpixel position, response strength, and orientation estimated from ring samples.
+The ChESS path computes the Bennett-Lasenby ring response
+`R = SR - DR - 16 * |mean_ring - mean_cross|` at radius 5 or 10. The
+Radon path computes `(max_alpha S_alpha - min_alpha S_alpha)^2` from
+four summed-area-table ray sums.
 
-## Multiscale Architecture
+## Public Configuration
 
-When `pyramid_levels > 1`, the detector follows a coarse-to-fine strategy:
+`DetectorConfig` is the compatibility surface. Cross-cutting fields sit
+at the top level:
 
-1. Build image pyramid via `box-image-pyramid` (2x box-filter downsample at each level)
-2. Detect corners on the smallest (coarsest) level
-3. Project each coarse detection to a region-of-interest (ROI) in the base image
-4. Run response computation and refinement within each ROI at full resolution
-5. Merge near-duplicate corners within `merge_radius`
-6. Generate descriptors at base resolution
+- `strategy`: `DetectionStrategy::Chess(ChessConfig)` or
+  `DetectionStrategy::Radon(RadonConfig)`.
+- `threshold`: `Threshold::Absolute(value)` or
+  `Threshold::Relative(fraction)`.
+- `multiscale`: `SingleScale` or `Pyramid { levels, min_size,
+  refinement_radius }`.
+- `upscale`: disabled or fixed integer pre-upscale.
+- `orientation_method`: `RingFit` or `DiskFit`.
+- `merge_radius`: duplicate-suppression distance in input pixels.
 
-`PyramidBuffers` allows reusing allocated memory across successive frames.
+Detector-specific fields live inside the active strategy. This avoids
+parallel knobs such as "detector mode" plus a stale strategy-specific
+configuration block.
 
-## Feature Gating Strategy
+## Refiners
 
-Performance choices are compile-time features. Behavioral choices are runtime configuration.
-
-| Feature | Type | Effect |
-|---------|------|--------|
-| `rayon` | Compile-time | Parallel response + refinement across rows |
-| `simd` | Compile-time | Portable SIMD inner loops (nightly only) |
-| `par_pyramid` | Compile-time | SIMD/rayon in pyramid downsampling |
-| `image` | Compile-time | `image::GrayImage` integration |
-| `ml-refiner` | Compile-time | ONNX ML refinement via `chess-corners-ml` |
-| `tracing` | Compile-time | Structured diagnostic spans |
-| `threshold_mode` | Runtime | Relative vs absolute threshold interpretation |
-| `threshold_value` | Runtime | Threshold value used by the selected mode |
-| `detector_mode` | Runtime | Semantic detector mode: canonical or broad response sampling |
-| `descriptor_mode` | Runtime | Descriptor/orientation sampling: follow detector, canonical, or broad |
-| `nms_radius` | Runtime | Non-maximum suppression radius |
-| `refiner.kind` | Runtime | Which subpixel refiner is active |
-| `pyramid_levels` | Runtime | Number of pyramid levels |
-
-All feature combinations produce numerically identical results (outputs sorted by stable keys when using rayon).
-
-## Refinement Trait Design
+Refinement is pluggable through `CornerRefiner`:
 
 ```rust
 pub trait CornerRefiner {
@@ -68,25 +68,47 @@ pub trait CornerRefiner {
 }
 ```
 
-- **Mutable self** allows internal scratch buffers without per-call allocation
-- **`RefineStatus` enum** (Accepted/Rejected/OutOfBounds/IllConditioned) enables post-hoc filtering
-- **`RefinerKind` enum** dispatches statically via match (no vtable overhead)
-- Configuration structs (`CenterOfMassConfig`, `ForstnerConfig`, `SaddlePointConfig`) are cheap to clone
+`ChessRefiner` carries `CenterOfMass`, `Förstner`, `SaddlePoint`, and
+optionally `Ml`. `RadonRefiner` carries `RadonPeak` and `CenterOfMass`.
+Each variant owns its tuning struct, so switching variants cannot leave
+old tuning fields active by accident.
 
-## ML Integration
+`RefineResult` reports the refined point, a refiner-specific score, and
+`RefineStatus` (`Accepted`, `Rejected`, `OutOfBounds`, or
+`IllConditioned`). Runtime refiners own their scratch buffers and reuse
+them across seeds.
 
-- Separate `chess-corners-ml` crate wrapping `tract-onnx`
-- ONNX model embedded in binary by default (`embed-model` feature)
-- Extracted to temp file on first use via `OnceLock`
-- Input: normalized u8 patches (/ 255.0) around each candidate
-- Output: `[dx, dy, conf_logit]` -- confidence currently unused
-- Slower than classical refiners (~23 ms vs ~0.6 ms) but more accurate on synthetic data
+## Feature Flags
 
-## Python Bindings
+Compile-time features control implementation paths and optional
+dependencies:
 
-- Mixed Rust/Python package built with `maturin`
-- Public package: pure-Python `chess_corners`
-- Private extension module: `chess_corners._native`
-- Input: 2D `uint8` NumPy array (must be C-contiguous)
-- Output: `(N, 4)` float32 array `[x, y, response, orientation]`
-- Public config is Python-native and uses the same flat schema as Rust and the CLI
+| Feature | Effect |
+|---------|--------|
+| `image` | `image::GrayImage` integration |
+| `rayon` | parallel response/refinement work |
+| `simd` | portable-SIMD inner loops where implemented |
+| `par_pyramid` | SIMD/Rayon pyramid downsampling |
+| `tracing` | structured diagnostic spans |
+| `ml-refiner` | ONNX-backed ML refinement |
+| `cli` | builds the CLI binary |
+| `radon-sat-u32` | lower-memory Radon SATs with an input-size cap |
+
+Feature combinations are expected to preserve numerical output. Parallel
+paths sort final outputs by stable keys before returning.
+
+## Bindings
+
+The Python package exposes a Python-native `chess_corners.Detector` and
+configuration classes that round-trip through the same JSON shape as the
+Rust facade. `Detector.detect(image)` accepts a 2D C-contiguous `uint8`
+NumPy array and returns a `float32 (N, 9)` array:
+
+```text
+x, y, response, contrast, fit_rms,
+axis0_angle, axis0_sigma, axis1_angle, axis1_sigma
+```
+
+The WebAssembly package exposes the same detector/configuration concepts
+for JavaScript and TypeScript, returning a `Float32Array` with the same
+stride-9 corner layout.

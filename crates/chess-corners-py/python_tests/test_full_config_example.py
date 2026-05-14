@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
+import tempfile
 from pathlib import Path
 
 import chess_corners
@@ -13,9 +15,40 @@ EXAMPLE_PATH = (
 CODE_EXAMPLE_PATH = (
     Path(__file__).resolve().parents[1] / "examples" / "run_with_code_config.py"
 )
-CONFIG_PATH = (
-    Path(__file__).resolve().parents[3] / "config" / "chess_algorithm_config_example.json"
-)
+
+
+# A pure detector-config JSON (no CLI runtime keys) exercising every
+# top-level branch of the 0.11.0 shape.
+SAMPLE_CONFIG = {
+    "strategy": {
+        "chess": {
+            "ring": "broad",
+            "descriptor_ring": "canonical",
+            "nms_radius": 3,
+            "min_cluster_size": 1,
+            "refiner": {
+                "forstner": {
+                    "radius": 2,
+                    "min_trace": 25.0,
+                    "min_det": 0.001,
+                    "max_condition_number": 50.0,
+                    "max_offset": 2.0,
+                },
+            },
+        },
+    },
+    "threshold": {"absolute": 0.5},
+    "multiscale": {
+        "pyramid": {
+            "levels": 3,
+            "min_size": 96,
+            "refinement_radius": 4,
+        },
+    },
+    "upscale": {"disabled": None},
+    "orientation_method": "ring_fit",
+    "merge_radius": 2.5,
+}
 
 
 def _load_example_module(path: Path):
@@ -34,18 +67,28 @@ def test_full_config_example_parser_is_lazy_about_pillow():
 
     assert before == after
 
-    cfg = module.load_chess_config(CONFIG_PATH)
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as tmp:
+        json.dump(SAMPLE_CONFIG, tmp)
+        tmp_path = Path(tmp.name)
+    try:
+        cfg = module.load_chess_config(tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
     assert cfg.strategy.kind == "chess"
     assert cfg.strategy.chess.ring is chess_corners.ChessRing.BROAD
-    assert cfg.descriptor_mode is chess_corners.DescriptorMode.CANONICAL
+    assert (
+        cfg.strategy.chess.descriptor_ring
+        is chess_corners.DescriptorRing.CANONICAL
+    )
     assert cfg.threshold.kind == "absolute"
     assert cfg.threshold.value == 0.5
-    assert cfg.refiner.kind is chess_corners.RefinementMethod.FORSTNER
-    assert cfg.refiner.forstner.max_offset == 2.0
+    assert cfg.strategy.chess.refiner.kind == "forstner"
+    assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
     ms = cfg.multiscale
-    assert ms is not None
-    assert ms.pyramid_levels == 3
-    assert ms.pyramid_min_size == 96
+    assert ms.kind == "pyramid"
+    assert ms.levels == 3
+    assert ms.min_size == 96
     assert ms.refinement_radius == 4
     assert cfg.merge_radius == 2.5
 
@@ -71,17 +114,18 @@ def test_code_config_example_is_lazy_about_pillow_and_builds_full_config():
     cfg = module.build_chess_config()
     assert cfg.strategy.kind == "chess"
     assert cfg.strategy.chess.ring is chess_corners.ChessRing.BROAD
-    assert cfg.descriptor_mode is chess_corners.DescriptorMode.CANONICAL
+    assert (
+        cfg.strategy.chess.descriptor_ring
+        is chess_corners.DescriptorRing.CANONICAL
+    )
     assert cfg.threshold.kind == "absolute"
     assert cfg.threshold.value == 0.5
-    assert cfg.refiner.kind is chess_corners.RefinementMethod.FORSTNER
-    assert cfg.refiner.center_of_mass.radius == 2
-    assert cfg.refiner.forstner.max_offset == 2.0
-    assert cfg.refiner.saddle_point.max_offset == 1.75
+    assert cfg.strategy.chess.refiner.kind == "forstner"
+    assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
     ms = cfg.multiscale
-    assert ms is not None
-    assert ms.pyramid_levels == 3
-    assert ms.pyramid_min_size == 96
+    assert ms.kind == "pyramid"
+    assert ms.levels == 3
+    assert ms.min_size == 96
 
 
 def test_public_package_exposes_py_typed():

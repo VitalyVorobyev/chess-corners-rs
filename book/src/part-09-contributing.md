@@ -27,6 +27,7 @@ templates.
 Pre-PR quality gates (also enforced in CI):
 
 ```bash
+python3 tools/check_doc_versions.py
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
