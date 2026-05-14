@@ -115,18 +115,13 @@ full whole-image SAT before peak detection — its win is on hostile
 imagery (heavy blur, low contrast), not on clean boards. Reproduce
 with `python tools/render_readme_perf.py`.
 
-**Threshold note.** ChESS uses `Threshold::Absolute(100.0)` for both
-single-scale and multiscale: the ChESS response is a dimensionful
-gray-level sum on the 16-sample ring (~600 at true corners, single
-digits at background) so one absolute value splits cleanly on both.
-Radon uses `Threshold::Relative(0.28)` for single-scale and
-`Threshold::Relative(0.34)` for multiscale — its heatmap is broader
-because rays integrate through the corner, so the relative-to-peak
-fraction is the natural knob, and the multiscale pipeline's
-cross-level merge shifts the operating point relative to single-scale.
-All four values were picked to land at precision = recall = 1 on
-this image, so the wall-time comparison reflects matched output, not
-matched threshold semantics.
+Thresholds used in the table above: `chess()` and `chess_multiscale()`
+both use `Threshold::Absolute(100.0)`; `radon()` uses
+`Threshold::Relative(0.28)` and `radon_multiscale()` uses
+`Threshold::Relative(0.34)`. Each value was tuned to recover exactly
+the 77 X-junctions on this image. ChESS and Radon respond at
+different scales, so the natural threshold type differs between
+them.
 
 Algorithm details, accuracy sweeps (vs blur, noise, cell size), and
 the cost of each refiner are measured in
@@ -312,13 +307,6 @@ Axis 0 lives in `[0, π)`; axis 1 lies in `(axis0, axis0 + π)`, with
 the CCW arc from axis 0 to axis 1 crossing a dark sector. Full
 derivation in
 [Part III §3.4](book/src/part-03-chess-detector.md#34-corner-descriptors).
-
-The two crops below show the `disk_fit` orientation method recovering
-both axes on a single chessboard corner under projective tilt: moderate
-(yaw 30°, pitch 20°, axes 19.6° from orthogonal) on the left, strong
-(yaw 55°, pitch 40°, axes 50.8° from orthogonal) on the right. Red is
-axis 0, green is axis 1. Gaussian blur and sensor noise are applied
-after the warp so the imagery matches a real camera capture.
 
 ![Projective-warp orientation overlays](book/src/img/readme_warp_overlays.png)
 
