@@ -92,8 +92,31 @@ let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&img)?;
 ```
 
-Algorithm details and the cost of each option are measured in
-[Part VIII](book/src/part-08-benchmarks.md).
+### Throughput on `testimages/mid.png` (1024×576)
+
+Wall time for `Detector::detect()` on the [`mid.png`](testimages/mid.png)
+test image at a matched relative threshold of 0.15, single-thread
+release build on an M-class CPU. Median + p95 over 50 runs after a
+5-run warmup so the pyramid / scratch buffers are amortised:
+
+| Config                       | Corners | Median | p95     |
+|------------------------------|--------:|-------:|--------:|
+| `DetectorConfig::chess()`              |     77  | 4.4 ms | 4.5 ms  |
+| `DetectorConfig::chess_multiscale()`   |     77  | 0.8 ms | 0.9 ms  |
+| `DetectorConfig::radon()`              |    230  | 28 ms  | 29 ms   |
+| `DetectorConfig::radon_multiscale()`   |    291  | 4.9 ms | 5.0 ms  |
+
+ChESS-multiscale is the default and the fastest path. Radon costs
+~5× more on this image because it accumulates a full whole-image
+SAT before peak detection — its win is on hostile imagery (heavy
+blur, low contrast), not on clean boards. Reproduce with
+`python tools/render_readme_perf.py`.
+
+Algorithm details, accuracy sweeps (vs blur, noise, cell size), and
+the cost of each refiner are measured in
+[Part VIII of the book](book/src/part-08-benchmarks.md) — including
+the full feature-flag matrix (`simd`, `rayon`, `par_pyramid`) on
+small / mid / large frames.
 
 ## Python quick start
 
@@ -273,6 +296,17 @@ Axis 0 lives in `[0, π)`; axis 1 lies in `(axis0, axis0 + π)`, with
 the CCW arc from axis 0 to axis 1 crossing a dark sector. Full
 derivation in
 [Part III §3.4](book/src/part-03-chess-detector.md#34-corner-descriptors).
+
+The two overlays below show the `disk_fit` orientation method
+recovering both axes per corner on synthetic chessboards under
+projective tilt. Red is axis 0, green is axis 1. At the image-edge
+corners the axes are visibly non-orthogonal — exactly what perspective
+foreshortening predicts:
+
+![Moderate projective tilt](book/src/img/readme_warp_moderate.png)
+![Strong projective tilt](book/src/img/readme_warp_strong.png)
+
+Reproduce with `python tools/render_readme_warp_overlays.py`.
 
 ## Feature flags
 
