@@ -147,7 +147,7 @@ while the geometric refiners are much cheaper per corner.
 Wall time for `Detector::detect()` on [`testimages/mid.png`](testimages/mid.png)
 (1024×576), single-thread release build on an M-class CPU. Each config
 uses a threshold tuned to emit the same 77 true X-junctions with zero
-false positives on this image. Median and p95 are over 50 runs after a
+false positives on this image. The median over 50 runs after a
 5-run warmup:
 
 | Config | Corners | Median |
