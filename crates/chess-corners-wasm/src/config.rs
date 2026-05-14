@@ -1842,20 +1842,6 @@ impl DetectorConfig {
         Self::chess()
     }
 
-    /// Deprecated — use `DetectorConfig.chessMultiscale()` instead.
-    ///
-    /// Logs a `console.warn` and returns the same config as
-    /// [`Self::chess_multiscale`].
-    #[wasm_bindgen(js_name = multiscale)]
-    pub fn multiscale_deprecated() -> Self {
-        #[cfg(target_arch = "wasm32")]
-        web_sys::console::warn_1(
-            &"DetectorConfig.multiscale() is deprecated; use DetectorConfig.chessMultiscale() instead"
-                .into(),
-        );
-        Self::chess_multiscale()
-    }
-
     // ---- Chainable builder methods ----
 
     /// Return a copy of this config with the threshold replaced.
@@ -2466,26 +2452,6 @@ mod tests {
         assert_eq!(
             std::mem::discriminant(&snap_compat.threshold),
             std::mem::discriminant(&snap_new.threshold)
-        );
-    }
-
-    #[test]
-    fn multiscale_delegates_to_chess_multiscale() {
-        // Deprecated shim must return an identical snapshot to chess_multiscale().
-        let snap_compat = DetectorConfig::multiscale_deprecated().snapshot();
-        let snap_new = DetectorConfig::chess_multiscale().snapshot();
-        assert!(matches!(
-            snap_compat.strategy,
-            RsDetectionStrategy::Chess(_)
-        ));
-        assert!(matches!(
-            snap_compat.multiscale,
-            RsMultiscaleConfig::Pyramid { .. }
-        ));
-        // Both snapshots must have the same multiscale discriminant.
-        assert_eq!(
-            std::mem::discriminant(&snap_compat.multiscale),
-            std::mem::discriminant(&snap_new.multiscale)
         );
     }
 
