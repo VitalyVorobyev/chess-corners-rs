@@ -29,9 +29,10 @@ jobs:
         uses: actions/configure-pages@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rust-docs
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Select nightly Rust toolchain
+        run: rustup override set nightly
 
       - name: Install mdBook
         uses: taiki-e/install-action@v2
