@@ -47,22 +47,40 @@ class Case:
     factory: Callable[[], cc.DetectorConfig]
 
 
-def _with_threshold(factory: Callable[[], cc.DetectorConfig]) -> Callable[[], cc.DetectorConfig]:
-    """Apply a matched relative threshold so the four cells are comparable."""
+# The relative threshold has detector-dependent semantics. ChESS peaks are
+# spike-like (~100× above background), so `relative(0.15)` is selective.
+# Radon's heatmap is broader (rays integrate through the corner) — at the
+# same relative value many sub-corner peaks and board-edge T-junctions
+# clear the threshold. The values below are picked so both detectors emit
+# the same 77 true X-junctions on `testimages/mid.png` with zero false
+# positives, making the wall-time comparison apples-to-apples.
+CHESS_THRESHOLD = 0.15
+RADON_THRESHOLD = 0.35
 
+
+def _chess_cfg(factory: Callable[[], cc.DetectorConfig]) -> Callable[[], cc.DetectorConfig]:
     def make() -> cc.DetectorConfig:
         cfg = factory()
-        cfg.threshold = cc.Threshold.relative(0.15)
+        cfg.threshold = cc.Threshold.relative(CHESS_THRESHOLD)
+        return cfg
+
+    return make
+
+
+def _radon_cfg(factory: Callable[[], cc.DetectorConfig]) -> Callable[[], cc.DetectorConfig]:
+    def make() -> cc.DetectorConfig:
+        cfg = factory()
+        cfg.threshold = cc.Threshold.relative(RADON_THRESHOLD)
         return cfg
 
     return make
 
 
 CASES = [
-    Case("ChESS — single-scale",     _with_threshold(cc.DetectorConfig.chess)),
-    Case("ChESS — 3-level pyramid",  _with_threshold(cc.DetectorConfig.chess_multiscale)),
-    Case("Radon — single-scale",     _with_threshold(cc.DetectorConfig.radon)),
-    Case("Radon — 3-level pyramid",  _with_threshold(cc.DetectorConfig.radon_multiscale)),
+    Case("ChESS — single-scale",     _chess_cfg(cc.DetectorConfig.chess)),
+    Case("ChESS — 3-level pyramid",  _chess_cfg(cc.DetectorConfig.chess_multiscale)),
+    Case("Radon — single-scale",     _radon_cfg(cc.DetectorConfig.radon)),
+    Case("Radon — 3-level pyramid",  _radon_cfg(cc.DetectorConfig.radon_multiscale)),
 ]
 
 

@@ -95,22 +95,33 @@ let corners = detector.detect(&img)?;
 ### Throughput on `testimages/mid.png` (1024×576)
 
 Wall time for `Detector::detect()` on the [`mid.png`](testimages/mid.png)
-test image at a matched relative threshold of 0.15, single-thread
-release build on an M-class CPU. Median + p95 over 50 runs after a
-5-run warmup so the pyramid / scratch buffers are amortised:
+test image, single-thread release build on an M-class CPU. Each
+config uses a detector-appropriate `Threshold::Relative(...)` so all
+four cells emit the same 77 true X-junctions with zero false
+positives — see note below. Median + p95 over 50 runs after a 5-run
+warmup so the pyramid / scratch buffers are amortised:
 
 | Config                       | Corners | Median | p95     |
 |------------------------------|--------:|-------:|--------:|
-| `DetectorConfig::chess()`              |     77  | 4.4 ms | 4.5 ms  |
-| `DetectorConfig::chess_multiscale()`   |     77  | 0.8 ms | 0.9 ms  |
-| `DetectorConfig::radon()`              |    230  | 28 ms  | 29 ms   |
-| `DetectorConfig::radon_multiscale()`   |    291  | 4.9 ms | 5.0 ms  |
+| `DetectorConfig::chess()`              |     77 | 4.4 ms | 4.6 ms |
+| `DetectorConfig::chess_multiscale()`   |     77 | 0.8 ms | 0.9 ms |
+| `DetectorConfig::radon()`              |     75 |  27 ms |  28 ms |
+| `DetectorConfig::radon_multiscale()`   |     77 |  3.0 ms | 3.0 ms |
 
 ChESS-multiscale is the default and the fastest path. Radon costs
-~5× more on this image because it accumulates a full whole-image
+~3.5× more on this image because it accumulates a full whole-image
 SAT before peak detection — its win is on hostile imagery (heavy
 blur, low contrast), not on clean boards. Reproduce with
 `python tools/render_readme_perf.py`.
+
+**Threshold note.** ChESS uses `Threshold::Relative(0.15)` and Radon
+uses `Threshold::Relative(0.35)`. The relative threshold expresses a
+fraction of the per-frame peak response; ChESS peaks are spike-like
+(~100× above background), while Radon's heatmap is broader because
+rays integrate through the corner — so the same numeric value admits
+many more candidates from Radon. The matched values above were
+picked to give both detectors the same recall on this image with
+zero false positives.
 
 Algorithm details, accuracy sweeps (vs blur, noise, cell size), and
 the cost of each refiner are measured in
