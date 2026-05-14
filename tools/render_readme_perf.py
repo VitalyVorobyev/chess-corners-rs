@@ -47,40 +47,45 @@ class Case:
     factory: Callable[[], cc.DetectorConfig]
 
 
-# The relative threshold has detector-dependent semantics. ChESS peaks are
-# spike-like (~100× above background), so `relative(0.15)` is selective.
-# Radon's heatmap is broader (rays integrate through the corner) — at the
-# same relative value many sub-corner peaks and board-edge T-junctions
-# clear the threshold. The values below are picked so both detectors emit
-# the same 77 true X-junctions on `testimages/mid.png` with zero false
-# positives, making the wall-time comparison apples-to-apples.
-CHESS_THRESHOLD = 0.15
-RADON_THRESHOLD = 0.35
+# Threshold choices have detector-dependent semantics, so each cell uses
+# the operating point that emits the same 77 true X-junctions on
+# `testimages/mid.png` with zero false positives. This makes the wall-time
+# comparison apples-to-apples (matched precision = recall = 1).
+#
+# - ChESS responses are dimensionful gray-level sums on the 16-sample ring;
+#   they spike sharply at true X-junctions (~600+ here) and stay near
+#   single-digit at background noise. A single Threshold::Absolute(100.0)
+#   splits cleanly on both single-scale and multiscale.
+# - Radon's heatmap is broader because rays integrate through the corner.
+#   The multiscale pipeline's cross-level merge shifts the operating point
+#   relative to single-scale, so each variant needs its own relative value
+#   to land at precision = recall = 1.
+CHESS_ABS_THRESHOLD = 100.0
+RADON_SINGLE_RELATIVE = 0.28
+RADON_MULTI_RELATIVE = 0.34
 
 
-def _chess_cfg(factory: Callable[[], cc.DetectorConfig]) -> Callable[[], cc.DetectorConfig]:
+def _abs(factory: Callable[[], cc.DetectorConfig], v: float) -> Callable[[], cc.DetectorConfig]:
     def make() -> cc.DetectorConfig:
         cfg = factory()
-        cfg.threshold = cc.Threshold.relative(CHESS_THRESHOLD)
+        cfg.threshold = cc.Threshold.absolute(v)
         return cfg
-
     return make
 
 
-def _radon_cfg(factory: Callable[[], cc.DetectorConfig]) -> Callable[[], cc.DetectorConfig]:
+def _rel(factory: Callable[[], cc.DetectorConfig], v: float) -> Callable[[], cc.DetectorConfig]:
     def make() -> cc.DetectorConfig:
         cfg = factory()
-        cfg.threshold = cc.Threshold.relative(RADON_THRESHOLD)
+        cfg.threshold = cc.Threshold.relative(v)
         return cfg
-
     return make
 
 
 CASES = [
-    Case("ChESS — single-scale",     _chess_cfg(cc.DetectorConfig.chess)),
-    Case("ChESS — 3-level pyramid",  _chess_cfg(cc.DetectorConfig.chess_multiscale)),
-    Case("Radon — single-scale",     _radon_cfg(cc.DetectorConfig.radon)),
-    Case("Radon — 3-level pyramid",  _radon_cfg(cc.DetectorConfig.radon_multiscale)),
+    Case("ChESS — single-scale",     _abs(cc.DetectorConfig.chess,            CHESS_ABS_THRESHOLD)),
+    Case("ChESS — 3-level pyramid",  _abs(cc.DetectorConfig.chess_multiscale, CHESS_ABS_THRESHOLD)),
+    Case("Radon — single-scale",     _rel(cc.DetectorConfig.radon,            RADON_SINGLE_RELATIVE)),
+    Case("Radon — 3-level pyramid",  _rel(cc.DetectorConfig.radon_multiscale, RADON_MULTI_RELATIVE)),
 ]
 
 

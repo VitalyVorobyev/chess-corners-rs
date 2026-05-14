@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """Render single-corner chessboard crops under projective warp with detector overlays.
 
-Generates:
+Generates a single ``book/src/img/readme_warp_overlays.png`` that places two
+crops side-by-side: a moderate projective tilt (yaw 30°, pitch 20°) on the
+left and a stronger tilt (yaw 55°, pitch 40°) on the right. Each crop shows
+one detected corner with its two measured grid axes drawn on top.
 
-- ``book/src/img/readme_warp_moderate.png`` — single chessboard corner under
-  a moderate projective tilt (yaw 30°, pitch 20°).
-- ``book/src/img/readme_warp_strong.png`` — single corner under a much
-  stronger tilt (yaw 55°, pitch 40°).
-
-Each PNG shows one detected corner with its two measured grid axes drawn on
-top. The axes are **not** assumed orthogonal — under projective warp they
-tilt independently, and the overlay shows the detector recovering that tilt.
+The axes are **not** assumed orthogonal — under projective warp they tilt
+independently, and the overlay shows the detector recovering that tilt.
 Gaussian blur is applied after the warp so the image looks like a slightly
 defocused camera capture rather than a synthetic checkerboard.
 
@@ -201,7 +198,7 @@ def draw_axis(ax, cx: float, cy: float, theta: float, length: float, **kwargs) -
     )
 
 
-def render_case(case: WarpCase, rng: np.random.Generator) -> None:
+def render_case(case: WarpCase, rng: np.random.Generator, ax) -> float:
     tex = chessboard_texture()
     H = texture_to_image_homography(case.yaw, case.pitch, case.roll, case.z)
     img = warp_perspective(tex, H, IMG_W, IMG_H)
@@ -216,15 +213,10 @@ def render_case(case: WarpCase, rng: np.random.Generator) -> None:
     cx, cy = float(picked[0]), float(picked[1])
     a0, a1 = float(picked[5]), float(picked[7])
 
-    # Integer crop window centred on the corner; axes get re-expressed
-    # relative to the crop.
     x0 = int(round(cx)) - CROP // 2
     y0 = int(round(cy)) - CROP // 2
     crop = img[y0 : y0 + CROP, x0 : x0 + CROP]
 
-    delta_deg = abs(np.degrees(((a1 - a0) - np.pi / 2.0 + np.pi / 2.0) % np.pi - np.pi / 2.0))
-
-    fig, ax = plt.subplots(figsize=(4.4, 4.4))
     ax.imshow(crop, cmap="gray", interpolation="nearest", vmin=0, vmax=255)
     ax.set_xticks([])
     ax.set_yticks([])
@@ -240,18 +232,26 @@ def render_case(case: WarpCase, rng: np.random.Generator) -> None:
     ax.set_xlim(-0.5, CROP - 0.5)
     ax.set_ylim(CROP - 0.5, -0.5)
 
-    out = BOOK_IMG / f"readme_warp_{case.name}.png"
-    fig.tight_layout(pad=0)
-    fig.savefig(out, dpi=150, bbox_inches="tight", pad_inches=0)
-    plt.close(fig)
-    print(f"wrote {out}  (axis split {delta_deg:.1f}° from orthogonal)")
+    delta_deg = abs(np.degrees(((a1 - a0) - np.pi / 2.0 + np.pi / 2.0) % np.pi - np.pi / 2.0))
+    return delta_deg
 
 
 def main() -> None:
     BOOK_IMG.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed=20260514)
-    for case in CASES:
-        render_case(case, rng)
+
+    fig, axes = plt.subplots(1, len(CASES), figsize=(4.4 * len(CASES), 4.4))
+    splits = []
+    for ax, case in zip(axes, CASES):
+        splits.append(render_case(case, rng, ax))
+
+    out = BOOK_IMG / "readme_warp_overlays.png"
+    fig.tight_layout(pad=0.4)
+    fig.savefig(out, dpi=150, bbox_inches="tight", pad_inches=0.05)
+    plt.close(fig)
+    for case, delta in zip(CASES, splits):
+        print(f"  {case.name:<8}  axis split {delta:.1f}° from orthogonal")
+    print(f"wrote {out}")
 
 
 if __name__ == "__main__":

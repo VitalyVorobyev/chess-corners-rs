@@ -96,32 +96,37 @@ let corners = detector.detect(&img)?;
 
 Wall time for `Detector::detect()` on the [`mid.png`](testimages/mid.png)
 test image, single-thread release build on an M-class CPU. Each
-config uses a detector-appropriate `Threshold::Relative(...)` so all
-four cells emit the same 77 true X-junctions with zero false
-positives — see note below. Median + p95 over 50 runs after a 5-run
-warmup so the pyramid / scratch buffers are amortised:
+config uses the threshold that emits the same 77 true X-junctions
+with zero false positives (precision = recall = 1), so the
+wall-times are apples-to-apples — see note below. Median + p95 over
+50 runs after a 5-run warmup so the pyramid / scratch buffers are
+amortised:
 
-| Config                       | Corners | Median | p95     |
-|------------------------------|--------:|-------:|--------:|
-| `DetectorConfig::chess()`              |     77 | 4.4 ms | 4.6 ms |
-| `DetectorConfig::chess_multiscale()`   |     77 | 0.8 ms | 0.9 ms |
-| `DetectorConfig::radon()`              |     75 |  27 ms |  28 ms |
-| `DetectorConfig::radon_multiscale()`   |     77 |  3.0 ms | 3.0 ms |
+| Config                                 | Corners | Median  | p95     |
+|----------------------------------------|--------:|--------:|--------:|
+| `DetectorConfig::chess()`              |      77 |  4.5 ms |  4.6 ms |
+| `DetectorConfig::chess_multiscale()`   |      77 |  0.8 ms |  0.9 ms |
+| `DetectorConfig::radon()`              |      77 |   28 ms |   29 ms |
+| `DetectorConfig::radon_multiscale()`   |      77 |  3.0 ms |  3.1 ms |
 
-ChESS-multiscale is the default and the fastest path. Radon costs
-~3.5× more on this image because it accumulates a full whole-image
-SAT before peak detection — its win is on hostile imagery (heavy
-blur, low contrast), not on clean boards. Reproduce with
-`python tools/render_readme_perf.py`.
+ChESS-multiscale is the default and the fastest path. Radon-multiscale
+is ~3.5× more expensive on this clean image because it accumulates a
+full whole-image SAT before peak detection — its win is on hostile
+imagery (heavy blur, low contrast), not on clean boards. Reproduce
+with `python tools/render_readme_perf.py`.
 
-**Threshold note.** ChESS uses `Threshold::Relative(0.15)` and Radon
-uses `Threshold::Relative(0.35)`. The relative threshold expresses a
-fraction of the per-frame peak response; ChESS peaks are spike-like
-(~100× above background), while Radon's heatmap is broader because
-rays integrate through the corner — so the same numeric value admits
-many more candidates from Radon. The matched values above were
-picked to give both detectors the same recall on this image with
-zero false positives.
+**Threshold note.** ChESS uses `Threshold::Absolute(100.0)` for both
+single-scale and multiscale: the ChESS response is a dimensionful
+gray-level sum on the 16-sample ring (~600 at true corners, single
+digits at background) so one absolute value splits cleanly on both.
+Radon uses `Threshold::Relative(0.28)` for single-scale and
+`Threshold::Relative(0.34)` for multiscale — its heatmap is broader
+because rays integrate through the corner, so the relative-to-peak
+fraction is the natural knob, and the multiscale pipeline's
+cross-level merge shifts the operating point relative to single-scale.
+All four values were picked to land at precision = recall = 1 on
+this image, so the wall-time comparison reflects matched output, not
+matched threshold semantics.
 
 Algorithm details, accuracy sweeps (vs blur, noise, cell size), and
 the cost of each refiner are measured in
@@ -308,14 +313,14 @@ the CCW arc from axis 0 to axis 1 crossing a dark sector. Full
 derivation in
 [Part III §3.4](book/src/part-03-chess-detector.md#34-corner-descriptors).
 
-The two overlays below show the `disk_fit` orientation method
-recovering both axes per corner on synthetic chessboards under
-projective tilt. Red is axis 0, green is axis 1. At the image-edge
-corners the axes are visibly non-orthogonal — exactly what perspective
-foreshortening predicts:
+The two crops below show the `disk_fit` orientation method recovering
+both axes on a single chessboard corner under projective tilt: moderate
+(yaw 30°, pitch 20°, axes 19.6° from orthogonal) on the left, strong
+(yaw 55°, pitch 40°, axes 50.8° from orthogonal) on the right. Red is
+axis 0, green is axis 1. Gaussian blur and sensor noise are applied
+after the warp so the imagery matches a real camera capture.
 
-![Moderate projective tilt](book/src/img/readme_warp_moderate.png)
-![Strong projective tilt](book/src/img/readme_warp_strong.png)
+![Projective-warp orientation overlays](book/src/img/readme_warp_overlays.png)
 
 Reproduce with `python tools/render_readme_warp_overlays.py`.
 
