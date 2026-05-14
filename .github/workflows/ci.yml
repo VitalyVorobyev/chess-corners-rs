@@ -15,14 +15,6 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         toolchain: [stable, nightly]
 
-    # Override rust-toolchain.toml (which pins nightly for local dev) so the
-    # matrix cells actually test the intended channel. Without this, the
-    # toolchain file silently shadows the matrix entry — and on macos-latest
-    # (Homebrew rustup with self-update disabled) the resulting auto-install
-    # of the missing nightly toolchain fails with a `rustup-init` usage error.
-    env:
-      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
-
     steps:
       - uses: actions/checkout@v6
 
@@ -35,19 +27,16 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
+          components: ${{ matrix.toolchain == 'stable' && 'rustfmt' || 'clippy' }}
+
+      - name: Select matrix Rust toolchain
+        run: rustup override set ${{ matrix.toolchain }}
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
+          cache-bin: false
           cache-on-failure: true
-
-      - name: Add rustfmt (stable runs the fmt gate)
-        if: matrix.toolchain == 'stable'
-        run: rustup component add rustfmt
-
-      - name: Add clippy (nightly runs the clippy gate)
-        if: matrix.toolchain == 'nightly'
-        run: rustup component add clippy
 
       - name: check documented crate versions
         if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
@@ -102,11 +91,6 @@ jobs:
     name: MSRV check (Rust 1.88)
     runs-on: ubuntu-latest
 
-    # Override rust-toolchain.toml so the MSRV gate actually exercises Rust
-    # 1.88 instead of falling back to the nightly channel pinned for local dev.
-    env:
-      RUSTUP_TOOLCHAIN: "1.88"
-
     steps:
       - uses: actions/checkout@v6
 
@@ -115,9 +99,13 @@ jobs:
         with:
           toolchain: "1.88"
 
+      - name: Select MSRV Rust toolchain
+        run: rustup override set 1.88
+
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
+          cache-bin: false
           cache-on-failure: true
 
       - name: Build (no-default-features + rayon)
@@ -161,9 +149,13 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Select stable Rust toolchain
+        run: rustup override set stable
+
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
+          cache-bin: false
           cache-on-failure: true
 
       - name: Install wasm-pack

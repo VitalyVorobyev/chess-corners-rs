@@ -29,9 +29,10 @@ jobs:
         uses: actions/configure-pages@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rust-docs
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Select nightly Rust toolchain
+        run: rustup override set nightly
 
       - name: Install mdBook
         uses: taiki-e/install-action@v2
@@ -41,6 +42,7 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
+          cache-bin: false
           cache-on-failure: true
 
       - name: Build documentation
