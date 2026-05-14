@@ -17,9 +17,7 @@ img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.DetectorConfig.chess_multiscale()
 cfg.threshold = chess_corners.Threshold.relative(0.15)
-chess = cfg.strategy.chess
-chess.refiner = chess_corners.ChessRefiner.forstner()
-cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
 corners = detector.detect(img)
@@ -70,17 +68,32 @@ cfg.multiscale = chess_corners.MultiscaleConfig.pyramid(
     levels=3, min_size=128, refinement_radius=3,
 )
 
-# Detector-specific knobs live inside the strategy:
-chess = cfg.strategy.chess      # None unless strategy.kind == "chess"
-chess.ring = chess_corners.ChessRing.BROAD
-chess.descriptor_ring = chess_corners.DescriptorRing.FOLLOW_DETECTOR
-chess.nms_radius = 2
-chess.min_cluster_size = 2
-cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+# Detector-specific knobs live inside the strategy. Nested getters
+# return the live shared object, so direct attribute assignment
+# propagates back to `cfg` — no rebuild needed:
+cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
+cfg.strategy.chess.descriptor_ring = chess_corners.DescriptorRing.FOLLOW_DETECTOR
+cfg.strategy.chess.nms_radius = 2
+cfg.strategy.chess.min_cluster_size = 2
 
-# Or switch to the Radon strategy:
+# Switch the active strategy by assigning a new one:
 cfg.strategy = chess_corners.DetectionStrategy.from_radon(
     chess_corners.RadonConfig()
+)
+```
+
+For one-shot configuration, the chainable `with_chess(**kwargs)` /
+`with_radon(**kwargs)` builders return a new config with only the
+named fields replaced:
+
+```python
+cfg = (
+    chess_corners.DetectorConfig.chess_multiscale()
+    .with_chess(
+        refiner=chess_corners.ChessRefiner.forstner(),
+        ring=chess_corners.ChessRing.BROAD,
+        nms_radius=2,
+    )
 )
 ```
 
@@ -88,15 +101,12 @@ Refiners are per-detector: `ChessRefiner` carries one of
 `center_of_mass`, `forstner`, `saddle_point`, or `ml` (with the
 `ml-refiner` feature). `RadonRefiner` carries one of `radon_peak` or
 `center_of_mass`. The active variant's tuning is reachable via the
-`payload` property; switching variants rebuilds via the
-classmethod factory:
+`payload` property:
 
 ```python
 fcfg = chess_corners.ForstnerConfig()
 fcfg.max_offset = 2.0
-chess = cfg.strategy.chess
-chess.refiner = chess_corners.ChessRefiner.forstner(fcfg)
-cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner(fcfg)
 
 assert cfg.strategy.chess.refiner.kind == "forstner"
 assert cfg.strategy.chess.refiner.payload.max_offset == 2.0

@@ -3,19 +3,26 @@
 //! [`Detector`] is the primary entry point for the `chess-corners`
 //! crate. It owns the [`DetectorConfig`] and the scratch buffers
 //! (pyramid, upscale, …) required to run detection without
-//! re-allocating across frames.
+//! re-allocating across frames. It dispatches to either the ChESS or
+//! the Radon strategy depending on the active [`DetectorConfig::strategy`].
 //!
-//! ```no_run
-//! use chess_corners::{DetectorConfig, Detector};
-//! use image::io::Reader as ImageReader;
+//! ```
+//! use chess_corners::{Detector, DetectorConfig};
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let img = ImageReader::open("board.png")?.decode()?.to_luma8();
+//! // 8×8 black/white checkerboard of 16-pixel squares (128×128).
+//! let mut img = vec![0u8; 128 * 128];
+//! for y in 0..128 {
+//!     for x in 0..128 {
+//!         if ((x / 16) + (y / 16)) % 2 == 0 {
+//!             img[y * 128 + x] = 255;
+//!         }
+//!     }
+//! }
 //!
 //! let mut detector = Detector::new(DetectorConfig::chess_multiscale())?;
-//! let corners = detector.detect(&img)?;
-//! println!("found {} corners", corners.len());
-//! # Ok(()) }
+//! let corners = detector.detect_u8(&img, 128, 128)?;
+//! assert!(!corners.is_empty());
+//! # Ok::<(), chess_corners::ChessError>(())
 //! ```
 
 use box_image_pyramid::PyramidBuffers;

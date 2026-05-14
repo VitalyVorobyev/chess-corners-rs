@@ -206,10 +206,9 @@ img = np.zeros((128, 128), dtype=np.uint8)
 cfg = chess_corners.DetectorConfig.chess_multiscale()
 cfg.threshold = chess_corners.Threshold.relative(0.15)
 
-# Refiner switching: rebuild the typed config tree.
-chess = cfg.strategy.chess
-chess.refiner = chess_corners.ChessRefiner.forstner()
-cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+# Nested getters return the live shared object, so direct attribute
+# assignment propagates back to `cfg` — no rebuild needed:
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
 corners = detector.detect(img)
@@ -240,14 +239,24 @@ pattern applies to `MultiscaleConfig.single_scale()` /
 `.saddle_point(...)` / `.ml()`, and `RadonRefiner.radon_peak(...)` /
 `.center_of_mass(...)`.
 
-Note: editing a nested object reached via a getter — for example
-`cfg.strategy.chess.refiner = ...` — operates on a clone. To commit
-the change back to `cfg`, rebuild the strategy and assign it:
+Nested getters (`cfg.strategy`, `cfg.strategy.chess`, `cfg.threshold`,
+`cfg.multiscale`, …) all return the live shared object held by the
+parent — direct attribute assignment is enough:
 
 ```python
-chess = cfg.strategy.chess
-chess.refiner = chess_corners.ChessRefiner.forstner()
-cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
+cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
+```
+
+For chainable single-expression edits, use the `with_chess(**kwargs)` /
+`with_radon(**kwargs)` builders, which return a new config with only
+the named fields replaced:
+
+```python
+cfg = cfg.with_chess(
+    refiner=chess_corners.ChessRefiner.forstner(),
+    ring=chess_corners.ChessRing.BROAD,
+)
 ```
 
 The Radon strategy is selected the same way:
@@ -261,9 +270,7 @@ through the same `Detector(cfg).detect(img)` call once the active ChESS
 refiner is the `ml` variant:
 
 ```python
-chess = cfg.strategy.chess
-chess.refiner = chess_corners.ChessRefiner.ml()
-cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.ml()
 ```
 
 ## 2.4 JavaScript / WebAssembly

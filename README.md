@@ -108,10 +108,7 @@ import chess_corners
 img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.DetectorConfig.chess_multiscale()
-
-chess = cfg.strategy.chess
-chess.refiner = chess_corners.ChessRefiner.forstner()
-cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
 corners = detector.detect(img)
@@ -252,8 +249,7 @@ each detected corner:
 `strategy.chess.ring` selects the ChESS sampling ring:
 
 - `canonical` — radius-5 ring (paper default).
-- `broad` — radius-10 ring; wider support window for low-resolution
-  or heavily blurred imagery.
+- `broad` — radius-10 ring; wider support window for heavily blurred imagery.
 
 `strategy.chess.descriptor_ring` defaults to `follow_detector`; set
 it to `canonical` or `broad` to sample the descriptor ring at a
