@@ -8,9 +8,9 @@ corner pipeline. All plots are reproducible from the commands at the
 end of the chapter.
 
 All absolute numbers are measured on a MacBook Pro M4 with a release
-build of the current tree. Hardware changes absolute timings;
-relative ordering between refiners is stable across machines we
-have tested.
+build of the current tree. Hardware changes absolute timings. Treat
+the relative ordering as a property of these fixtures and this
+implementation, not as a promise for every camera dataset.
 
 ## 7.1 The benchmark fixture
 
@@ -91,16 +91,15 @@ where a refiner is usable without per-scene tuning.
 - **Förstner** is gradient-based. Gaussian smoothing flattens the
   gradient magnitudes its structure tensor depends on, so its error
   grows roughly linearly in `σ_blur`.
-- Every other refiner stays inside the shipping band up to
-  `σ_blur = 2.5 px` — heavier blur than most real camera systems
-  produce.
-- **RadonPeak** and **cv2.cornerSubPix** are the most blur-robust:
-  both integrate over neighborhoods that remain informative even
-  when the step edge is smoothed.
+- Every other refiner stays inside the plotted 0.05–0.10 px band up to
+  `σ_blur = 2.5 px` on this fixture.
+- **RadonPeak** and **cv2.cornerSubPix** have the lowest blur-row errors
+  in this plot. Both integrate over neighborhoods that still contain
+  useful signal after the step edge is smoothed.
 
-The Radon detector (not shown on this plot — it is a detector, not a
-refiner) inherits this blur tolerance because RadonPeak is exactly
-its per-candidate response.
+The Radon detector is not shown on this plot because it is a detector,
+not a refiner. It uses the same response family as RadonPeak, but
+detector-level recall and precision are measured separately.
 
 ## 7.4 Accuracy vs additive noise
 
@@ -108,13 +107,12 @@ Log-y axis, same shaded band as §7.3.
 
 ![Accuracy vs additive noise σ](img/bench/accuracy_vs_noise.png)
 
-This is the regime where the ML refiner wins. At `σ_noise ≥ 8` gray
-levels (common in low-light scenes) the ONNX v4 model is the most
-accurate refiner in the plot, ahead of every hand-coded method. The
-mechanism is that the CNN was trained with noise augmentation over
-`σ ∈ [0, 10]` and its early convolutional layers act as a learned
-denoiser. Refiners that fit a local quadratic or Radon structure
-take the noise in at face value.
+This is the regime where the ML refiner has the lowest mean error in
+the plot. At `σ_noise ≥ 8` gray levels, the ONNX v4 model is ahead of
+the hand-coded methods on this synthetic fixture. The model was trained
+with noise augmentation over `σ ∈ [0, 10]`; that is the strongest
+supported explanation for the result here. Validate this separately on
+real low-light frames before relying on it as a general rule.
 
 ## 7.5 Accuracy vs cell size
 
@@ -156,7 +154,7 @@ The Pareto frontier, fast-to-slow:
 | `SaddlePoint`       | ~120 ns       | 0.11 px               | Stable across conditions; the no-surprise default.                    |
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.05 px               | OpenCV's refiner. Comparable accuracy to RadonPeak on clean data.     |
 | `RadonPeak`         | ~17 µs        | 0.049 px              | Lowest clean/blur error. ~140× SaddlePoint cost.                      |
-| `ML (ONNX v4)`      | ~250 µs (b=1) | 0.09 px               | Best on noise-heavy scenes. ONNX runtime batches in production.       |
+| `ML (ONNX v4)`      | ~250 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row in this fixture.               |
 
 The OpenCV timing in earlier revisions of this chapter was reported
 at ~300 µs because the measurement loop included fixture construction;
@@ -192,22 +190,23 @@ Observations:
 
 **Feature flag guidance:**
 
-- Enable `simd` on any target that supports portable SIMD. It is
-  the single largest win, regardless of image size.
-- Add `rayon` for images ≥ 1080p. For smaller images, thread-startup
-  overhead makes `rayon` slightly slower than scalar.
-- Multiscale is a good default. Single-scale is only worthwhile when
-  you want maximum seed stability and can afford 3–5× the wall time.
+- Enable `simd` when you are on nightly Rust and the target supports
+  portable SIMD. It is the largest ChESS speedup in the table above.
+- Add `rayon` for images ≥ 1080p; on the small image in this benchmark,
+  thread overhead can cancel the benefit.
+- Multiscale is the faster preset in this table. Use single-scale when
+  you specifically want to compare against the full-resolution detector
+  path.
 
 ### 7.7.1 Whole-image Radon detector
 
-The Duda–Frese Radon path (`DetectorConfig::radon()`) is an alternative
-detector for frames where ChESS's 16-sample ring fails — heavy
-defocus, motion blur, or low-contrast scenes. In practice the Radon
-pipeline is several times slower than the ChESS pipeline at the same
-resolution on this workload — pick it for **robustness on hostile
-imagery**, not for throughput. For large frames, `DetectorConfig::radon_multiscale()`
-reduces cost by coarse-seeding before the base-level response.
+The Duda-Frese Radon path (`DetectorConfig::radon()`) is an alternative
+detector for frames where ChESS's 16-sample ring does not produce enough
+seeds in the repository fixtures: heavy blur, low contrast, or small
+cells. In this workload the Radon pipeline is several times slower than
+the ChESS pipeline at the same resolution. For large frames,
+`DetectorConfig::radon_multiscale()` can reduce cost by seeding on a
+coarser level before refining in the input image.
 
 Wall times on the same three test images, release build, averaged
 over 10 runs (milliseconds), 8-core M-class CPU:
@@ -249,7 +248,7 @@ What was changed, in order:
    distributions. This is the single largest pipeline-level win
    (1920×1080 synth dropped from 665 ms to 185 ms with all
    features enabled).
-5. **Row-parallel NMS + peak-fit** in `detect_corners_from_radon`
+5. **Row-parallel NMS + peak-fit** in `detect_peaks_from_radon`
    under `rayon`, with thread-local accumulators concatenated in
    row order to keep the output deterministic.
 
@@ -330,9 +329,10 @@ When a frame returns fewer corners than expected:
    the refiner's thresholds are firing. Swap via
    `DetectorConfig.refiner.kind` or relax the specific rejection
    (e.g. raise `SaddlePointConfig.max_offset`).
-3. If accuracy is fine but wall time is large, `refine` almost
-   always dominates — switch RadonPeak / ML to a structure-tensor
-   refiner for 100–1000× the throughput at a bounded accuracy cost.
+3. If accuracy is fine but wall time is large, inspect the `refine`
+   span. On the measured refiner benchmark, replacing RadonPeak / ML
+   with a structure-tensor refiner is much cheaper per corner, with the
+   accuracy tradeoff shown in §7.2–§7.6.
 
 ## 7.10 Integration recipes
 
@@ -342,7 +342,7 @@ When a frame returns fewer corners than expected:
 use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 
 let cfg = DetectorConfig::chess_multiscale()
-    .with_chess(|c| c.refiner = ChessRefiner::saddle_point()); // stable and fast
+    .with_chess(|c| c.refiner = ChessRefiner::saddle_point());
 
 let mut detector = Detector::new(cfg)?;
 
@@ -399,9 +399,9 @@ let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&image)?;
 ```
 
-The Radon detector remains selective on cells down to ~4 physical
-pixels and on Gaussian blurs up to `σ ≈ 2.5 px`, where the ChESS
-ring begins to fail (see [Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)).
+In the synthetic sweeps, the Radon detector remains usable on smaller
+cells and heavier blur than the default ChESS ring (see
+[Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)).
 
 ### Blurry / low-contrast imagery on large frames — Radon multiscale
 

@@ -1,182 +1,122 @@
-# Detector comparison — ChESS ring vs whole-image Radon
+# Detector Comparison: ChESS vs Radon
 
-This document explains when to pick `DetectionStrategy::Chess` — the
-classic ChESS ring kernel — versus `DetectionStrategy::Radon` — the
-Duda-Frese whole-image localized Radon detector. It is the companion
-to [`refiner-comparison.md`](refiner-comparison.md), which covers the
-subpixel refinement stage.
+This document explains the practical difference between the two detector
+families exposed by `DetectorConfig`:
 
-The two detectors consume the same `DetectorConfig` surface. Switching
-between them is a strategy assignment:
+- `DetectionStrategy::Chess(ChessConfig)` computes the ChESS 16-sample
+  ring response.
+- `DetectionStrategy::Radon(RadonConfig)` computes a localized
+  Duda-Frese-style ray-sum response from summed-area tables.
 
-```rust
-use chess_corners::{DetectionStrategy, DetectorConfig, RadonConfig};
+Both paths return `CornerDescriptor` values in input-image coordinates,
+so downstream code can usually switch strategies without changing its
+output handling.
 
-let mut cfg = DetectorConfig::default();
-cfg.strategy = DetectionStrategy::Radon(RadonConfig::default());
-// Or use the presets: DetectorConfig::radon() / DetectorConfig::radon_multiscale().
-```
+## Short Guide
 
-Both return corners in base-image coordinates and both emit the same
-`CornerDescriptor` struct, so callers downstream (calibration,
-tracking, UI overlays) do not care which path produced the corners.
+| Situation | Start with |
+|-----------|------------|
+| Normal high-contrast printed board | `DetectorConfig::chess_multiscale()` |
+| Small cells near the ChESS ring support | `DetectorConfig::radon()` or `radon_multiscale()` |
+| Synthetic blur + low-contrast fixture used in this repo | `DetectorConfig::radon()` |
+| Large clean frame with tight latency budget | `DetectorConfig::chess_multiscale()` |
+| Offline calibration where detector cost is less important | Compare both on the target images |
 
-## TL;DR
+The important qualification is that these are starting points. The repo
+has tests and benchmarks for specific synthetic fixtures; it does not
+claim that one detector dominates on every camera, lens, board material,
+or lighting setup.
 
-| Scenario                                               | Pick         |
-|--------------------------------------------------------|--------------|
-| High-contrast calibration board, well-focused          | **Canonical** |
-| You need to recover corners at cell ≲ 2·ring_radius    | **Radon**    |
-| Heavy motion blur (camera shake, rolling shutter)      | **Radon**    |
-| Low-contrast targets (printed in grey, screen glare)   | **Radon**    |
-| HD / 4K frame, real-time budget                        | **Canonical** |
-| Offline, accuracy over latency                         | **Radon** (with `image_upsample=2`) |
+## Why Both Exist
 
-ChESS stays the default. Radon earns its keep when ChESS's 16-sample
-ring kernel fails to pick up a usable signal.
+ChESS samples a fixed ring around every candidate pixel. It is cheap and
+selective when the ring lands on a well-resolved chessboard corner. The
+same fixed support can become a poor match when:
 
-## Why the two paths coexist
+- the cell size is close to the ring diameter,
+- blur flattens the alternating bright/dark pattern around the ring,
+- low contrast pushes the response toward the noise floor.
 
-The ChESS kernel computes, at every pixel, a single statistic built
-from the difference between "same-side" and "neighbouring" ring
-samples. On a clean corner at the right scale it gives a razor-sharp
-local maximum. But the recipe is brittle:
-
-- **Blur.** Gaussian smoothing spreads the bimodal intensity
-  signature around the ring into near-uniform grey, and the SR − DR
-  term collapses into the noise floor.
-- **Low contrast.** The raw magnitude of `SR − DR − 16·|μₙ − μₗ|`
-  scales with intensity difference across the ring. A 30-grey-level
-  target (e.g. 108..138) yields responses an order of magnitude
-  weaker than a 200-level target.
-- **Small cells.** At `cell ≲ 2·ring_radius` the fixed-radius
-  sampling ring crosses into the neighbouring cells; the ring is no
-  longer sampling a single corner.
-
-Radon sidesteps all three problems: its response is
-`R(x, y) = (maxₐ Sₐ − minₐ Sₐ)²` where each `Sₐ` is a ray integral
-across 4 angles. Blur distributes intensity but does not cancel the
-max/min contrast across perpendicular rays. Low contrast scales the
-response linearly but preserves peak location. And rays are
-parameterised by `ray_radius` in working-resolution pixels
-independently of the board cell.
-
-## Accuracy
-
-The facade-level integration test
-[`crates/chess-corners/tests/radon_pipeline.rs`](../crates/chess-corners/tests/radon_pipeline.rs)
-exercises both modes end-to-end through `find_chess_corners`:
-
-| Fixture (129×129, cell=10)              | ChESS default | Radon (`image_upsample=2`) |
-|-----------------------------------------|---------------|----------------------------|
-| Clean (contrast 200, no blur)           | ≳80 % recall  | ≳80 % recall               |
-| Hostile (σ=2.5 blur, contrast 30)       | ~0–40 corners | **Recovers the board**    |
-
-On the clean board, both modes produce corners with subpixel
-accuracy (the pipeline test locks ≤ 0.2 px mean residual to the
-nearest grid intersection). The hostile fixture is where Radon
-earns its keep: with the parameters above ChESS produces only a
-handful of corners while Radon recovers the full grid minus the
-image-border band — see the test assertion:
-
-```rust
-assert!(
-    radon_corners.len() > chess_corners.len() + 8,
-    "Radon must beat ChESS+8 on hostile fixture"
-);
-```
-
-For the per-refiner subpixel accuracy once corners are found, see
-[`refiner-comparison.md`](refiner-comparison.md). The detector and
-refiner choices are independent: each detector strategy has its own
-`refiner` field carrying only the refiner variants that apply
-(`ChessRefiner` for ChESS, `RadonRefiner` for Radon). On a Radon
-strategy the detector's 3-point Gaussian peak fit supplies the
-subpixel refinement directly; the `RadonRefiner` selects an optional
-post-refinement step (`RadonPeak` is the default).
-
-## Throughput
-
-Measured by the Criterion bench at
-[`crates/chess-corners-core/benches/radon_response.rs`](../crates/chess-corners-core/benches/radon_response.rs)
-on a single core. Indicative numbers on a MacBook Pro M-series (your
-mileage will vary, but relative scale is stable):
-
-| Image size  | ChESS response | Radon `up=1` | Radon `up=2` |
-|-------------|----------------|--------------|--------------|
-| 640 × 480   | ~0.5 ms        | 2.8 ms       | 14 ms        |
-| 1280 × 720  | ~1.5 ms        | 8.7 ms       | 48 ms        |
-| 1920 × 1080 | ~3.5 ms        | 19 ms        | ~110 ms      |
-
-ChESS is the latency winner by a factor of 5–15×. Radon at `up=1` is
-comfortable for calibration-rate (1–10 Hz) work on HD; at `up=2` it
-is offline territory on full-HD frames.
-
-Reproduce:
-
-```sh
-cargo bench --bench radon_response \
-    -- --warm-up-time 1 --measurement-time 3
-```
-
-## Picking parameters
-
-The two knobs that matter for the Radon detector are:
-
-- **`image_upsample`**: `1` operates on the input pixel grid; `2`
-  (paper default, recommended) bilinearly upsamples first and
-  doubles response resolution before peak fit. Values `≥ 3` are
-  clamped to `2` (see
-  [`chess_corners_core::MAX_IMAGE_UPSAMPLE`](../crates/chess-corners-core/src/radon_detector.rs)).
-- **`ray_radius`**: half-length of each ray in working-resolution
-  pixels. At `image_upsample=2` the paper default is 4 (2 physical
-  pixels on each side of the centre).
-
-The detector is otherwise self-tuning: NMS radius 4 and
-`min_cluster_size=2` filter out isolated noise peaks; a 1 %
-relative threshold rejects the intensity-scaled non-corner
-background. You can tighten `nms_radius` or raise `threshold_abs`
-if you need stricter filtering (e.g. dense corners in a small
-image), but the defaults work on everything the test suite throws
-at them.
-
-## Pipeline details
-
-On a `DetectionStrategy::Radon` call, the facade pipeline runs:
+Radon uses four ray sums through each candidate:
 
 ```text
-u8 image ──► [optional 2× bilinear upsample]
-                      │
-                      ▼
-       [4 summed-area tables: row / col / ±diag]
-                      │
-                      ▼
-       [Radon response R(x, y) = (maxₐ Sₐ − minₐ Sₐ)²]
-                      │
-                      ▼
-       [box blur, threshold, NMS, min-cluster]
-                      │
-                      ▼
-       [3-point Gaussian peak fit → subpixel]
-                      │
-                      ▼
-       CornerDescriptor in input-pixel coordinates
+R(x, y) = (max_alpha S_alpha - min_alpha S_alpha)^2
 ```
 
-Multiscale Radon (coarse Radon + fine Radon across a pyramid) is
-explicitly out of scope for M2 — at single scale the detector already
-recovers corners across a 5–40 px cell range, and the SAT-based O(1)
-ray sum makes the dense response cheap enough at base resolution.
-Callers who want a pyramid today can still run the classic coarse-
-to-fine path and flip to Radon on the base level by calling
-`detect_corners_from_radon` directly.
+Those sums are computed from four summed-area tables, so the ray length
+does not add a per-pixel loop. The tradeoff is memory and setup cost:
+Radon builds SAT buffers and a dense response map before peak detection.
 
-## See also
+## Evidence In The Repository
 
-- [`proposal-radon-detector.md`](proposal-radon-detector.md) — design
-  notes and roadmap (M1 through M3).
-- [`refiner-comparison.md`](refiner-comparison.md) — per-refiner
-  subpixel accuracy and throughput.
+The relevant tests are:
+
+- [`crates/chess-corners-core/tests/radon_vs_chess.rs`](../crates/chess-corners-core/tests/radon_vs_chess.rs)
+  — compares raw ChESS/Radon response paths on a synthetic
+  low-contrast, blurred board.
 - [`crates/chess-corners/tests/radon_pipeline.rs`](../crates/chess-corners/tests/radon_pipeline.rs)
-  — facade-level end-to-end test (the contract covered in this
-  document).
+  — verifies the public `Detector` facade routes the Radon strategy
+  end-to-end and returns descriptors in base-image coordinates.
+
+The hostile fixture is intentionally narrow:
+
+```text
+129x129 image, cell = 10 px,
+contrast = 108..138,
+Gaussian blur sigma = 2.5 px
+```
+
+The contract is relative: Radon must recover substantially more corners
+than the default ChESS path on that fixture, and it must recover at
+least 60% of the expected interior grid intersections. On a clean
+high-contrast fixture, both paths must recover most corners.
+
+For measured wall time and broader synthetic sweeps, see
+[Part VIII of the book](../book/src/part-08-benchmarks.md).
+
+## Configuration
+
+Switching strategies is explicit:
+
+```rust
+use chess_corners::{Detector, DetectorConfig};
+
+let cfg = DetectorConfig::radon();
+let mut detector = Detector::new(cfg)?;
+let corners = detector.detect(&img)?;
+```
+
+`DetectorConfig::radon_multiscale()` combines the Radon response with
+the same coarse-to-fine pyramid machinery used by the ChESS preset.
+This can reduce cost on some larger frames because the detector can seed
+at a coarser level and refine in the input image.
+
+The two Radon fields most callers tune first are:
+
+- `image_upsample`: `1` uses the input grid; `2` bilinearly upsamples
+  before building SATs. Values above `2` are clamped by the core.
+- `ray_radius`: half-length of each ray in working-resolution pixels.
+
+Thresholds are detector-specific in scale. ChESS presets use an
+absolute threshold by default; Radon presets use a relative threshold
+because the squared ray-range response has a different magnitude.
+
+## Core API
+
+The low-level Radon API lives in `chess_corners_core::detect::radon`:
+
+```rust
+use chess_corners_core::{
+    detect_peaks_from_radon, radon_response_u8,
+    RadonBuffers, RadonDetectorParams,
+};
+
+let mut buffers = RadonBuffers::new();
+let params = RadonDetectorParams::default();
+let response = radon_response_u8(&img_u8, width, height, &params, &mut buffers);
+let peaks = detect_peaks_from_radon(&response, &params);
+```
+
+Most applications should use the facade `Detector` API instead. The
+core functions are useful when you need response maps, custom filtering,
+or test fixtures around the detector internals.

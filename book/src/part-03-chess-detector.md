@@ -4,9 +4,10 @@ ChESS (Chess-board Extraction by Subtraction and Summation,
 Bennett & Lasenby, 2013) is a ring-based corner detector specialized
 for chessboard X-junctions. Given an 8-bit grayscale image, it produces
 a dense response map; positive values mark chessboard-like corners,
-other structure (edges, blobs, flat regions) is suppressed. The
-detector runs at typical camera resolutions in single-digit milliseconds
-with the `simd` or `rayon` features enabled.
+while edges, blobs, and flat regions should have lower response on the
+ideal checkerboard model. The benchmark chapter reports single-digit
+millisecond timings for the measured camera-sized test images with the
+`simd` or `rayon` features enabled.
 
 This part covers the ChESS pipeline end-to-end: the ring geometry,
 the response formula, the dense response computation over the image,
@@ -14,7 +15,9 @@ the detection pipeline (threshold + NMS + cluster filter + subpixel
 refinement), and the corner descriptor that both detectors (ChESS here
 and [Radon in Part IV](part-04-radon-detector.md)) feed into.
 
-The code lives in `crates/chess-corners-core/src/{ring,response,detect,descriptor}.rs`.
+The core ChESS code lives under
+`crates/chess-corners-core/src/detect/chess/` and the descriptor code
+under `crates/chess-corners-core/src/orientation/`.
 Feature flags (`std`, `rayon`, `simd`, `tracing`) only affect
 performance and observability, not the numerical output.
 
@@ -146,8 +149,8 @@ Regardless of the path, the function:
   accesses are in bounds,
 - writes responses into a `ResponseMap { w, h, data }` in row‑major
   order,
-- guarantees that the scalar, parallel, and SIMD variants produce the
-  same numerical result up to small floating‑point differences.
+- keeps the scalar, parallel, and SIMD variants within the documented
+  deterministic-output contract.
 
 ### 3.2.3 ROI support with `Roi`
 

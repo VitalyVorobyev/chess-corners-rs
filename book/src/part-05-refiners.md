@@ -66,7 +66,7 @@ negative pixel can't push the centroid outside the window.
 | Input            | Response map                                    |
 | Default `radius` | 2 (5×5 window)                                  |
 | Typical cost     | ~20 ns per corner                               |
-| Strengths        | Fastest option; closed-form; always converges   |
+| Strengths        | Cheapest option in the benchmark; closed-form   |
 | Weaknesses       | Centroid bias when the response is asymmetric;  |
 |                  | fails when `radius` crosses neighboring corners |
 
@@ -108,8 +108,8 @@ Rejections:
 | Weaknesses       | Relies on sharp gradients — blur flattens `M`   |
 
 Good pick for clean calibration frames where image edges are sharp.
-Gaussian blur at σ ≳ 1 px flattens the gradient magnitudes and this
-refiner degrades roughly linearly with σ.
+In the synthetic blur sweep in Part VIII, Gaussian blur flattens the
+gradient magnitudes and this refiner's error increases with σ.
 
 Reference: Förstner & Gülch, 1987, *"A fast operator for detection
 and precise location of distinct points, corners and centres of
@@ -135,11 +135,13 @@ rejects:
 | Input            | Image                                           |
 | Default `radius` | 2 (5×5 patch)                                   |
 | Typical cost     | ~120 ns per corner                              |
-| Strengths        | Blur-robust; no gradient required               |
+| Strengths        | No gradient required; low error in the blur sweep |
 | Weaknesses       | Parabolic model is approximate on sharp edges   |
 
-A reasonable default when you don't know in advance whether frames
-will be sharp or blurred. Stable across the full blur sweep in Part VIII.
+A reasonable default when you do not know in advance whether frames
+will be sharp or blurred. In Part VIII's synthetic blur sweep it stays
+inside the same error band as the other non-Förstner geometric
+refiners.
 
 ## 5.5 RadonPeak
 
@@ -156,12 +158,12 @@ the underlying formulas — this refiner shares all of them.
 | Input            | Image                                           |
 | Default settings | `ray_radius = 2`, `patch_radius = 3`, `image_upsample = 2` |
 | Typical cost     | ~17 µs per corner                               |
-| Strengths        | Lowest error on clean and blurred imagery       |
+| Strengths        | Lowest clean/blurred error in the benchmark     |
 | Weaknesses       | 100–1000× slower than the structure-tensor refiners |
 
-The accuracy ceiling of the library on clean and blurred data. Choose
-it when a calibration budget accommodates an extra few ms per frame
-and accuracy is the priority.
+This is the lowest-error option on the clean and blurred synthetic rows
+reported in Part VIII. Choose it when that extra accuracy matters more
+than the added per-corner cost.
 
 If you are already running the Radon *detector* (Part IV), its built-in
 peak fit gives you the same refinement implicitly, and this refiner
@@ -259,13 +261,12 @@ v3 swapped to hard cells only and hit ~0.6 px on `tanh` inputs — the
 opposite distribution failure.
 
 v4 is the mixed dataset (50/50) plus retuned offsets and augmentations.
-It is robust across both distributions and best-in-class on noise-heavy
-scenes (`σ ≥ 8` gray levels) per the measurements in Part VIII. It does
-not beat `RadonPeak` on clean or mildly blurred data; the gap appears
-to be a training-signal limit (neither a wider CNN nor a softargmax
-head closed it in our sweeps), not a capacity ceiling. Closing the
-gap would likely require distillation from `RadonPeak` or orders of
-magnitude more training data.
+In the Part VIII synthetic benchmark it avoids the earlier tanh /
+hard-cell mismatch and has the lowest mean error on the heaviest noise
+row (`σ = 10` gray levels). It does not beat `RadonPeak` on clean or
+mildly blurred data. The current evidence is that the training setup did
+not learn the hand-designed RadonPeak structure; neither a wider CNN nor
+a softargmax head closed that gap in the sweeps.
 
 ### 5.6.4 ONNX export and inference
 
@@ -288,11 +289,11 @@ The measurement-driven comparison lives in Part VIII. In short:
 
 - Budget matters more than anything else: the structure-tensor
   refiners are 100–1000× faster than RadonPeak and ML.
-- RadonPeak gives the lowest error on clean and blurred frames at
-  calibration rates.
-- ML wins on noise-heavy scenes (`σ ≥ 8`).
-- SaddlePoint is a blur- and condition-robust default when you don't
-  know the scene in advance.
+- RadonPeak gives the lowest error on the clean and blurred synthetic
+  rows, at a much higher per-corner cost.
+- ML has the lowest mean error on the heaviest synthetic noise row.
+- SaddlePoint is a conservative default when you want image-patch
+  refinement without the cost of RadonPeak or ML.
 
 The refiner is selected through the strategy's `refiner` field.
 For ChESS: `DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner())`.

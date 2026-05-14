@@ -378,14 +378,13 @@ equally to both detectors.
 - **Multiscale**:
   - Use `levels` in the range 2–4 for most use cases.
   - More levels mean:
-    - coarser initial detection (smaller image yields fewer, more
-      robust coarse corners),
+    - coarser initial detection on a smaller image,
     - more refinement work at the base level,
-    - potentially better robustness when the board is small or heavily
-      blurred.
+    - a different seed/refine tradeoff that should be measured on the
+      target image set.
 
-As a rule of thumb, start with `levels = 3` and adjust only if you
-have specific performance or robustness requirements.
+As a rule of thumb, start with `levels = 3` and adjust only if your
+measurements show a recall or latency problem.
 
 ### 7.3.2 `min_size` and pyramid coverage
 
@@ -400,8 +399,8 @@ Recommendations:
   per square on the chessboard. If your board is already small in the
   base image, a too‑aggressive `min_size` may collapse the pyramid and
   give you no coarse‑to‑fine benefit.
-- For high‑resolution inputs (e.g., 4K), a `min_size` around 128 or
-  256 usually works well.
+- For high-resolution inputs (for example 4K), `min_size` values around
+  128 or 256 are useful starting points, but they are not universal.
 
 ### 7.3.3 ROI radius
 
@@ -437,8 +436,8 @@ only the stronger one is kept.
 
 Guidelines:
 
-- For typical calibration boards, values around 1.5–2.5 pixels are
-  common.
+- Values around 1.5–2.5 pixels are useful starting points for ordinary
+  printed calibration boards.
 - If your detector tends to produce duplicate corners around the same
   junction (e.g., because the ROI refinement finds multiple close
   maxima), increase `merge_radius`.

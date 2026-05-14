@@ -53,12 +53,11 @@ impl Default for Threshold {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum ChessRing {
-    /// Paper-default radius-5 ring (16 samples). Fast and stable for cell
-    /// pitches `≥ ~12 px`.
+    /// Paper-default radius-5 ring (16 samples).
     #[default]
     Canonical,
-    /// Radius-10 ring. Larger support window; useful for low-resolution or
-    /// heavily blurred imagery where the canonical ring under-samples.
+    /// Radius-10 ring. Larger support window for callers that want the
+    /// detector to sample farther from the candidate center.
     Broad,
 }
 
@@ -91,13 +90,11 @@ pub enum DescriptorRing {
 #[non_exhaustive]
 pub enum ChessRefiner {
     /// Center-of-mass (intensity centroid) refinement on the response
-    /// map. Fast and stable; the library default.
+    /// map. Cheapest refiner in the shipped benchmark; the library default.
     CenterOfMass(CenterOfMassConfig),
-    /// Förstner structure-tensor refinement on the image patch. More
-    /// accurate than center-of-mass on anisotropic corners.
+    /// Förstner structure-tensor refinement on the image patch.
     Forstner(ForstnerConfig),
-    /// Quadratic surface fit at the saddle point. Very accurate on
-    /// clean, symmetric chessboard corners.
+    /// Quadratic surface fit at the saddle point.
     SaddlePoint(SaddlePointConfig),
     /// ML-backed subpixel refinement. Runs a small ONNX model on a
     /// normalized intensity patch around each candidate. Requires the
@@ -113,7 +110,7 @@ impl Default for ChessRefiner {
 }
 
 impl ChessRefiner {
-    /// Center-of-mass refinement with default tuning. Fast and stable; the library default.
+    /// Center-of-mass refinement with default tuning.
     pub fn center_of_mass() -> Self {
         Self::CenterOfMass(CenterOfMassConfig::default())
     }
@@ -136,8 +133,7 @@ impl ChessRefiner {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum RadonRefiner {
-    /// Radon-projection refinement along candidate axes. Robust to
-    /// heavy blur and low contrast.
+    /// Radon-projection refinement along candidate axes.
     RadonPeak(RadonPeakConfig),
     /// Center-of-mass refinement on the response map. A faster
     /// alternative when the Radon peak quality is already high.
@@ -151,7 +147,7 @@ impl Default for RadonRefiner {
 }
 
 impl RadonRefiner {
-    /// Radon-projection refinement with default tuning. Robust to heavy blur and low contrast.
+    /// Radon-projection refinement with default tuning.
     pub fn radon_peak() -> Self {
         Self::RadonPeak(RadonPeakConfig::default())
     }
@@ -367,8 +363,7 @@ impl Default for DetectorConfig {
 }
 
 impl DetectorConfig {
-    /// Single-scale ChESS preset. Recommended for images where the cell
-    /// size comfortably exceeds the canonical ring's ~12 px support.
+    /// Single-scale ChESS preset.
     pub fn chess() -> Self {
         Self {
             strategy: DetectionStrategy::Chess(ChessConfig::default()),
@@ -380,8 +375,7 @@ impl DetectorConfig {
         }
     }
 
-    /// Three-level coarse-to-fine ChESS preset. Recommended for images
-    /// ≥ 1 MP or with cell sizes varying significantly across the frame.
+    /// Three-level coarse-to-fine ChESS preset.
     pub fn chess_multiscale() -> Self {
         Self {
             multiscale: MultiscaleConfig::pyramid_default(),
@@ -389,8 +383,7 @@ impl DetectorConfig {
         }
     }
 
-    /// Whole-image Radon detector preset. Useful for heavy blur, low
-    /// contrast, or cells smaller than the ChESS ring support.
+    /// Whole-image Radon detector preset.
     /// Single-scale; use [`Self::radon_multiscale`] for coarse-to-fine
     /// Radon detection on larger frames.
     pub fn radon() -> Self {
@@ -402,10 +395,9 @@ impl DetectorConfig {
         }
     }
 
-    /// Coarse-to-fine Radon preset. Useful for blurry / low-contrast
-    /// imagery on large frames where the SAT-based response benefits
-    /// from coarse seeding. Single-scale Radon ([`Self::radon`]) remains
-    /// the right pick for small frames or tight per-frame latency budgets.
+    /// Coarse-to-fine Radon preset. Measure against [`Self::radon`] on
+    /// your target frame sizes; this preset trades more configuration
+    /// machinery for less full-resolution detector work on large frames.
     pub fn radon_multiscale() -> Self {
         Self {
             strategy: DetectionStrategy::Radon(RadonConfig::default()),

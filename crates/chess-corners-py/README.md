@@ -134,9 +134,9 @@ Enums:
 - `PeakFitMode`: `PARABOLIC`, `GAUSSIAN`
 - `OrientationMethod`: `RING_FIT`, `DISK_FIT`
 
-`ChessRing.BROAD` uses the wider, blur-tolerant detector sampling
-pattern. Leave `descriptor_ring` at `FOLLOW_DETECTOR` unless you have
-a reason to override descriptor sampling separately.
+`ChessRing.BROAD` uses the wider radius-10 detector sampling pattern.
+Leave `descriptor_ring` at `FOLLOW_DETECTOR` unless you have a reason
+to override descriptor sampling separately.
 
 ## JSON helpers and printing
 

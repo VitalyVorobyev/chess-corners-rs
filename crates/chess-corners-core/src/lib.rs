@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
-//! Core primitives for computing ChESS responses and extracting subpixel corners.
+//! Core primitives for ChESS/Radon response computation, subpixel
+//! refinement, and corner descriptors.
 //!
 //! The crate is organized along the three orthogonal axes the
 //! detector pipeline composes:

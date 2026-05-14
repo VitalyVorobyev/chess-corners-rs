@@ -8,11 +8,13 @@
 //!
 //! - **ChESS** (Chess-board Extraction by Subtraction and Summation)
 //!   — a dense ring-difference response with NMS and a pluggable
-//!   subpixel refiner. The default; fast and accurate on
-//!   well-resolved corners.
+//!   subpixel refiner. This is the default path and the fastest preset
+//!   in the repository's clean-image benchmark.
 //! - **Radon** — a whole-image Duda-Frese accumulator that scores
-//!   corners by summing ray intensities through each pixel. Robust on
-//!   blur, low contrast, and rotated boards where ChESS underperforms.
+//!   corners by summing ray intensities through each pixel. It is useful
+//!   when the ChESS ring does not produce enough seeds, especially in
+//!   the small-cell, blur, and low-contrast fixtures covered by the
+//!   tests.
 //!
 //! The [`Detector`] struct ties together the active strategy, the
 //! orientation fit, and the multiscale / upscale scratch buffers
@@ -88,8 +90,8 @@
 //!
 //! ## Radon strategy
 //!
-//! Switch to the whole-image Radon detector when ChESS misses corners
-//! on blurred or low-contrast boards. The strategy lives inside
+//! Switch to the whole-image Radon detector when ChESS misses corners on
+//! the images you care about. The strategy lives inside
 //! [`DetectorConfig::strategy`]; pick a Radon preset to get sensible
 //! defaults:
 //!
@@ -138,11 +140,10 @@
 //! patches (uint8 / 255.0) centered at each candidate. The model
 //! predicts `[dx, dy, conf_logit]`, but the confidence output is
 //! currently ignored; the offsets are applied directly. Current
-//! benchmarks are synthetic; real-world accuracy still needs
+//! accuracy benchmarks are synthetic; real-world accuracy still needs
 //! validation. Per-refiner cost is measured in Part VIII §7.6 of the
-//! book; the ML path is significantly slower than the hand-coded
-//! refiners and best used when its accuracy advantage on noise-heavy
-//! scenes (Part VIII §7.4) actually matters.
+//! book. The ML path is slower than the hand-coded refiners and should
+//! be chosen only after measuring that its behavior helps your data.
 //!
 //! ## Python and JavaScript bindings
 //!

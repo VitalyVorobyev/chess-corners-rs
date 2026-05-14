@@ -47,6 +47,7 @@ jobs:
         env:
           RUSTDOCFLAGS: "-D warnings"
         run: |
+          python3 tools/check_doc_versions.py
           cargo doc --workspace --all-features --no-deps
           echo '<meta http-equiv="refresh" content="0; url=chess_corners/index.html">' > target/doc/index.html
           mdbook build book

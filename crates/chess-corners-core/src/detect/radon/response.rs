@@ -2,15 +2,16 @@
 //!
 //! Computes the dense `R(x, y) = (max_α S_α − min_α S_α)²` response
 //! over four ray angles using summed-area tables for `O(1)` per-pixel
-//! ray sums. Optional 2× bilinear upsampling at the entry boosts
-//! accuracy on small chessboard cells.
+//! ray sums. Optional 2× bilinear upsampling matches the paper-style
+//! working grid used by the facade preset.
 //!
 //! # SAT element type
 //!
-//! Summed-area tables default to `i64`, which is always safe. Enable
-//! the `radon-sat-u32` crate feature to switch to `u32`, which halves
-//! SAT memory and widens SIMD lanes at the cost of a ~16 MP image-size
-//! cap (`255 · W · H ≤ u32::MAX`).
+//! Summed-area tables default to `i64`, which leaves far more headroom
+//! than `u32` for normal image sizes. Enable the `radon-sat-u32` crate
+//! feature to switch to `u32`, which halves SAT memory and widens SIMD
+//! lanes at the cost of a ~16 MP image-size cap
+//! (`255 · W · H ≤ u32::MAX`).
 
 use serde::{Deserialize, Serialize};
 
@@ -60,8 +61,7 @@ pub struct RadonDetectorParams {
     /// Half-size of the box blur applied to the response map. `0`
     /// disables blurring; `1` yields a 3×3 box.
     pub response_blur_radius: u32,
-    /// Peak-fit mode for the 3-point subpixel refinement. Gaussian
-    /// (log-space) is more stable at near-plateau peaks.
+    /// Peak-fit mode for the 3-point subpixel refinement.
     pub peak_fit: PeakFitMode,
     /// Relative response threshold as a fraction of the map's max
     /// value. Used when `threshold_abs` is `None`.

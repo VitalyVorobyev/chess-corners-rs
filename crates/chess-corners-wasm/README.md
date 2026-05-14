@@ -242,7 +242,7 @@ detector.applyConfig(snapshot);
 | `i + 7` | `axis1_angle` | Second grid axis, radians in `(axis0, axis0 + π)` |
 | `i + 8` | `axis1_sigma` | 1σ uncertainty of `axis1_angle` |
 
-Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector of the corner. The two grid axes are not assumed orthogonal, so the layout correctly captures projective warp.
+Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector of the corner. The two grid axes are not assumed orthogonal, so the layout can represent projective warp instead of forcing a right-angle model.
 
 **Response map** (`response` / `response_rgba`): `Float32Array` in row-major order, dimensions available via `response_width()` / `response_height()`.
 

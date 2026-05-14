@@ -102,10 +102,9 @@ by the factor before returning.
 ### Advanced
 
 - **Refiner** — pick the subpixel refiner.
-  `ChessRefiner.withCenterOfMass(...)` is the default, fastest, and
-  least precise. `ChessRefiner.withForstner(...)` uses the structure
-  tensor of the ring-sampled image and is typically the most accurate
-  for distorted boards. `ChessRefiner.withSaddlePoint(...)` fits a
+  `ChessRefiner.withCenterOfMass(...)` is the default and cheapest
+  benchmarked option. `ChessRefiner.withForstner(...)` uses a local
+  structure-tensor solve. `ChessRefiner.withSaddlePoint(...)` fits a
   quadratic surface.
 - **Auto rerun** — re-runs detection whenever a slider changes.
 

@@ -8,9 +8,8 @@
 //!   map. Cheap; the library default.
 //! - [`forstner`] — gradient structure-tensor refinement on the image
 //!   intensity patch.
-//! - [`saddle_point`] — quadratic surface fit, robust to mild blur.
-//! - [`radon_peak`] — Radon-projection refiner along candidate axes;
-//!   robust to blur and low contrast.
+//! - [`saddle_point`] — quadratic surface fit on the image patch.
+//! - [`radon_peak`] — Radon-projection refiner along candidate axes.
 
 use crate::imageview::ImageView;
 use crate::ResponseMap;

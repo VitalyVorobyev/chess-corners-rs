@@ -89,7 +89,7 @@ impl ChessDetector {
         }
     }
 
-    /// Create a detector with the recommended multiscale preset.
+    /// Create a detector with the ChESS multiscale preset.
     pub fn multiscale() -> Self {
         Self {
             inner: RsDetector::new(RsDetectorConfig::chess_multiscale())

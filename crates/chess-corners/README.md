@@ -105,7 +105,7 @@ Each detection is a `CornerDescriptor` with:
 - `contrast` — fitted bright/dark amplitude `|A|` in gray levels.
 - `fit_rms` — RMS residual of the two-axis fit in gray levels.
 - `axes[0]`, `axes[1]` — the two local grid axes with per-axis 1σ
-  angular uncertainty from the Gauss–Newton covariance
+  angular uncertainty from the Gauss-Newton covariance
   (`σθᵢ = √((SSR / 12) · (JᵀJ)⁻¹[i,i])`). Axes are not assumed
   orthogonal; `axes[0].angle ∈ [0, π)` and `axes[1].angle ∈
   (axes[0].angle, axes[0].angle + π)`, with the CCW arc between them
@@ -162,8 +162,9 @@ let _ = detector.detect(&img).unwrap();
 # }
 ```
 
-The ML path is slower than the classic refiners and falls back to the
-classic CenterOfMass refiner at coarse pyramid levels.
+The ML path is slower than the classic refiners in the shipped
+benchmark and falls back to the classic CenterOfMass refiner at coarse
+pyramid levels.
 
 ## Examples
 

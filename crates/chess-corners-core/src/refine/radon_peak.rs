@@ -25,19 +25,17 @@
 //! 3. Locate the discrete argmax. Reject border hits.
 //! 4. Fit a parabola in `x` and `y` through the argmax and its two
 //!    neighbours along each axis. By default the fit is performed on
-//!    `log(response)` ("Gaussian peak fit", paper §3.1 step 8), which
-//!    is robust to mild plateauing of the raw response.
+//!    `log(response)` ("Gaussian peak fit", paper §3.1 step 8).
 //!
 //! The returned offset is in the seed's pixel frame; callers do not
 //! need to know about the response-grid density.
 //!
 //! # Status
 //!
-//! The refiner is expected to recover sub-0.1 px accuracy on clean
-//! chessboard patches with the default configuration. Noise-tolerance
-//! follows the paper's empirical behaviour — smoothing of the response
-//! map is what makes the peak fit stable rather than the ray
-//! integration alone.
+//! The repository benchmarks report sub-0.1 px mean error for this
+//! refiner on the clean and blurred synthetic rows. Noise behavior is
+//! measured separately; do not treat the local response smoothing as a
+//! general guarantee for all image noise distributions.
 
 use serde::{Deserialize, Serialize};
 
@@ -436,9 +434,9 @@ mod tests {
 
     #[test]
     fn compare_clean_accuracy_vs_saddlepoint() {
-        // Contract: RadonPeak must be competitive with (ideally better
-        // than) SaddlePoint on clean inputs now that the paper's full
-        // pipeline is implemented.
+        // Regression contract for this synthetic clean patch:
+        // RadonPeak should stay close to SaddlePoint and currently beats
+        // it on this fixture.
         use crate::refine::{SaddlePointConfig, SaddlePointRefiner};
         let truth = (TEST_CENTER + 0.35, TEST_CENTER + 0.8);
         let img = synthetic_chessboard(TEST_SIZE, TEST_CELL, truth, 30, 230);

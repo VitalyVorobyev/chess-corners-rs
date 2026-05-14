@@ -57,12 +57,11 @@ use search::best_disk_fit;
 const LAZY_DISK_REL_RMS_MAX: f32 = 0.04;
 
 /// Lazy-disk gate band on `line_separation(theta1, theta2)` in degrees.
-/// Genuine projective corners under realistic skew sit between roughly
-/// 65° and 115° separation; the disk fit's wins are concentrated
-/// outside that band (extreme skew, mis-converged baselines that snap
-/// to near-parallel axes). [70°, 110°] keeps clean orthogonal corners
-/// fully inside while leaving a 20° margin on each side so suspect
-/// corners with mis-aligned legacy axes still enter the disk path.
+/// The disk-sector benchmark concentrates the useful disk-fit cases
+/// outside this band: extreme skew and mis-converged baselines that snap
+/// to near-parallel axes. [70°, 110°] keeps clean orthogonal corners
+/// inside the lazy path while leaving margin for suspect corners with
+/// mis-aligned legacy axes.
 const LAZY_DISK_SEP_DEG_MIN: f32 = 70.0;
 const LAZY_DISK_SEP_DEG_MAX: f32 = 110.0;
 
@@ -239,10 +238,10 @@ mod tests {
         assert!((fit.rms - fallback.rms).abs() < 1e-6);
     }
 
-    /// Headline guarantee from the bench REPORT: extreme axis-skew
-    /// (30°/150° crossing — 30° between lines) should recover within
-    /// a few degrees. The legacy fit collapses to ≈21° error here;
-    /// the disk fit must clear ≤5°.
+    /// Regression fixture from the disk-sector benchmark: extreme
+    /// axis-skew (30°/150° crossing — 30° between lines) must recover
+    /// within a few degrees. The legacy fit collapsed to ≈21° error on
+    /// this case when the test was added; the disk fit must clear ≤5°.
     #[test]
     fn recovers_extreme_skew_30_150() {
         let size = 41usize;

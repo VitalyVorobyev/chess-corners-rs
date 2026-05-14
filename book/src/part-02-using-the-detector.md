@@ -113,9 +113,10 @@ let corners = detector.detect(&img)?;
 with the paper's published defaults. The output type is the same
 `Vec<CornerDescriptor>`.
 
-Pick Radon when ChESS's 16-sample ring fails — heavy motion blur, strong
-defocus, low contrast, or cells smaller than roughly `2·ring_radius`.
-For throughput, ChESS is faster; see
+Try Radon when ChESS's 16-sample ring does not seed enough corners,
+especially on the small-cell, blur, and low-contrast cases covered by
+the repository tests. For throughput, ChESS is faster in the measured
+fixtures; see
 [Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon).
 
 ### 2.2.3 Swapping the subpixel refiner
@@ -436,9 +437,9 @@ The ML path:
 
 The algorithm and its limits are covered in
 [Part V §5.6](part-05-refiners.md#56-ml-onnx-model). The ML refiner
-is not a direct replacement for RadonPeak: on clean and lightly
-blurred data RadonPeak is more accurate; ML wins on noise-heavy
-scenes.
+is not a direct replacement for RadonPeak: in the Part VIII synthetic
+benchmark, RadonPeak has lower clean/blurred error and ML has lower
+mean error on the heaviest noise row.
 
 The ML refiner lives on the ChESS strategy only — `RadonRefiner` does
 not list an `Ml` variant.

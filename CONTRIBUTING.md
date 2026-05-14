@@ -61,6 +61,7 @@ cargo test -p chess-corners-core --tests --features "rayon,simd"
 To build the Rust API docs and the mdBook locally:
 
 ```bash
+python3 tools/check_doc_versions.py
 cargo doc --workspace --all-features --no-deps
 mdbook build book
 ```

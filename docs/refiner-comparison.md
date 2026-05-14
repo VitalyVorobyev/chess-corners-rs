@@ -41,34 +41,28 @@ mean per condition is **bolded**.
 | noise σ=10       | 0.123 / 0.272      | 0.201 / 0.474    | 0.126 / 0.257    | 0.128 / 0.302          | **0.101** / 0.200   |
 
 Cells are `mean / worst` px; accept rate is 36/36 for every refiner in
-every condition. `RadonPeak` wins mean-error on clean and blurred
-inputs; the ML refiner wins under heavy noise (σ=10). All five
-refiners come in under the ~0.13 px mean-error bar on clean cell=8.
-The ML model (v4 ONNX) is trained on a mixed tanh + AA-hard-cell
-distribution so it handles both regimes without the 0.5 px
-distribution-mismatch failure that bit v2 on this fixture.
+every condition. In this fixture, `RadonPeak` has the lowest mean error
+on the clean and blurred rows, and the ML refiner has the lowest mean
+error on the heaviest noise row (`σ=10`). All five refiners come in
+under the ~0.13 px mean-error bar on clean cell=8. The ML model (v4
+ONNX) is trained on a mixed tanh + AA-hard-cell distribution, which
+avoids the 0.5 px hard-cell mismatch seen with the older v2 fixture.
 
-**Why ML loses to RadonPeak on clean data.** We tried three
+**Why ML trails RadonPeak on clean data.** We tried three
 architectures (~180K → 730K → 50K-param soft-argmax) on the same
 synthetic data; all converged to the same ~0.14 px plateau on the
-held-out hard-cell val set, ~0.09 px on the Rust benchmark. The gap
-to RadonPeak is a **learning gap, not an information gap** — a CNN
-is mathematically capable of computing any deterministic function
-of the 21 × 21 patch, including RadonPeak's own algorithm, but
-discovering that structure from generic smooth-L1 / MSE regression
-on 200K patches has not been enough to match a hand-designed
-algorithm built specifically for the task. RadonPeak encodes a
-strong geometric prior (4-angle Radon response, Gaussian log peak
-fit) as closed-form operations; the ML refiner has to learn the
-equivalent structure through gradient descent, and current
-training regime does not get there.
+held-out hard-cell val set, ~0.09 px on the Rust benchmark. The
+evidence points to the training setup rather than ONNX export or patch
+normalization: RadonPeak encodes a specific geometric prior (4-angle
+Radon response, Gaussian log peak fit) as closed-form operations, while
+the ML refiner has to learn an equivalent mapping from data. The current
+training regime did not close that gap.
 
-The ML refiner remains useful where classical refiners struggle
-(heavy noise, see σ=10 row) and as a single deployable ONNX
-artifact for callers who prefer a learned component over a
-hand-tuned pipeline. See `docs/proposal-ml-refiner-v3.md` for the
-architecture exploration and the honest accounting of what we
-tried.
+The ML refiner remains useful in the measured heavy-noise row and as a
+single deployable ONNX artifact for callers who prefer a learned
+component over a hand-tuned pipeline. See
+`docs/proposal-ml-refiner-v3.md` for the architecture exploration and
+the accounting of what was tried.
 
 The `Forstner / SaddlePoint / RadonPeak` rows are identical between
 `clean (cell=5)` and `clean (cell=8)` because they're all local
@@ -92,16 +86,13 @@ precedes the timed loop.
 
 ## Per-refiner takeaways
 
-- **RadonPeak** — most accurate, ~300× slower than SaddlePoint but
-  still sub-20 µs per corner. Comfortable for calibration-rate
-  workloads (thousands of corners per image). This is the refiner we
-  actively tuned against the paper in this round, and its accuracy
-  floor (`mean < 0.05` px on clean cell=8) is asserted in the benchmark
-  to guard against regression.
-- **SaddlePoint** — the accuracy/speed sweet spot. 0.12 µs, under
-  0.12 px mean on clean input, stable across all conditions. This is
-  the right default unless the extra RadonPeak accuracy matters or the
-  workload is ~million-corners-per-second throughput.
+- **RadonPeak** — lowest mean error in the clean and blurred rows,
+  ~300× slower than SaddlePoint but still sub-20 µs per corner in this
+  harness. Its clean-cell floor (`mean < 0.05` px on clean cell=8) is
+  asserted in the benchmark to guard against regression.
+- **SaddlePoint** — 0.12 µs in this harness, under 0.12 px mean on the
+  clean row, and below 0.13 px mean in every row above. It is a good
+  default when you want image-patch refinement without RadonPeak's cost.
 - **CenterOfMass** — the fastest, but **only when the ChESS ring
   matches the cell size**. At cell=5 with the default radius-5 ring,
   the ring crosses into neighbouring cells and the response centroid
@@ -112,18 +103,17 @@ precedes the timed loop.
 - **Forstner** — middle of the pack on clean inputs, but degrades
   sharply under blur (mean 0.27 px at σ=1.5) because Gaussian smoothing
   collapses the gradient magnitudes its structure tensor depends on.
-  Good pick only on sharp, high-contrast imagery.
-- **ML (ONNX) v3** — the retrained model. Reaches 0.08–0.10 px
-  across all conditions and **wins under heavy noise (σ=10)**.
+  Consider it when the input edges are sharp and high contrast.
+- **ML (ONNX) v4** — the shipped mixed-fixture model. Reaches
+  0.09–0.12 px mean across the rows above and has the lowest mean error
+  under heavy noise (`σ=10`) in this benchmark.
   Retrained on AA-hard-cell synthetic data matching this fixture
-  (`tools/ml_refiner/configs/synth_v5.yaml`), replacing the v2
+  (`tools/ml_refiner/configs/synth_v6.yaml`), replacing the v2
   tanh-saddle training that produced the ~0.5 px
   distribution-mismatch failure. Still ~15× slower than `RadonPeak`
-  per corner in the batch=1 harness; use when you want one
-  refiner that stays under 0.1 px across the full noise/blur
-  envelope, or for GPU/NPU-heavy deployments where ONNX
-  inference can batch better than the CPU-bound hand-rolled
-  refiners.
+  per corner in the batch=1 harness; use it when the measured noise
+  behavior matters or when a deployable learned component is a better
+  integration fit than a CPU-only geometric refiner.
 
 ## Notes on the measurement
 
@@ -131,17 +121,17 @@ precedes the timed loop.
   refiner, averaged. Warm-up call before the timed loop.
 - **Accuracy** — one sample per offset (refiners are deterministic),
   36 offsets per condition.
-- **ML batching** — ONNX inference runs at batch=1 here. The
-  production facade batches candidates, so a real pipeline will see
-  2–5× better amortised cost per corner for the ML refiner.
+- **ML batching** — ONNX inference runs at batch=1 here. The detector
+  facade batches candidates, so measure end-to-end cost on your target
+  workload rather than extrapolating directly from this row.
 - **Noise/blur recipe** — blur is a separable Gaussian; noise is
   additive PCG+Box-Muller Gaussian, seeded deterministically.
 
 ## Follow-up ideas
 
-- Retrain or fine-tune the ML refiner on the AA-rendered chessboard
-  distribution and re-run the comparison; the current 0.5 px result
-  is a distribution-mismatch artefact, not a capacity limit.
+- Fine-tune the ML refiner on additional AA-rendered chessboard data
+  and re-run the comparison; the older v2 0.5 px hard-cell result was
+  a distribution-mismatch artifact, not evidence from the v4 model.
 - Wire `tools/synthimages.py` output (full-image OpenCV renders with
   pose, blur, noise, vignetting, JSON ground truth) into a Rust
   integration benchmark to validate the comparison on realistic
