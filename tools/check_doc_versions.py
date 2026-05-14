@@ -4,7 +4,7 @@
 The workspace version is the source of truth. Public install snippets
 should use the semver-compatible `major.minor` form:
 
-    chess-corners = "0.11"
+    chess-corners = "0.10"
 
 That avoids patch-release churn while still forcing docs to update for
 minor releases. Historical changelogs and proposal documents are not

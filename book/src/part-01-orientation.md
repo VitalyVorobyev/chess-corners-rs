@@ -164,7 +164,7 @@ at the same site:
 
 ```toml
 [dependencies]
-chess-corners = "0.11"
+chess-corners = "0.10"
 image = "0.25"      # if you want GrayImage integration
 ```
 
