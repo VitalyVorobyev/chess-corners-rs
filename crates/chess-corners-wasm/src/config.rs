@@ -2404,7 +2404,7 @@ mod tests {
         ));
     }
 
-    // ---- New 0.11.0 API ----
+    // ---- New 0.10.0 API ----
 
     #[test]
     fn chess_preset_is_single_scale() {

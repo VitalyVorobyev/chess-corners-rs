@@ -2957,16 +2957,16 @@ impl DetectorConfig {
         data: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let dict = require_dict(data, "config")?;
-        // descriptor_mode was removed in 0.11.0 — fail loudly with a
+        // descriptor_mode was removed in 0.10.0 — fail loudly with a
         // specific message so callers know exactly what to change.
         if dict.get_item("descriptor_mode")?.is_some() {
             return Err(config_error(
-                "descriptor_mode moved into strategy.chess.descriptor_ring in 0.11.0",
+                "descriptor_mode moved into strategy.chess.descriptor_ring in 0.10.0",
             ));
         }
         if dict.get_item("refiner")?.is_some() {
             return Err(config_error(
-                "refiner moved into strategy.{chess,radon}.refiner in 0.11.0",
+                "refiner moved into strategy.{chess,radon}.refiner in 0.10.0",
             ));
         }
         reject_unknown_keys(

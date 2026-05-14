@@ -248,7 +248,7 @@ Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector
 
 ## Binary size
 
-~196 KB raw, ~70 KB gzipped (single-scale, no parallelism, no SIMD, measured on 0.11.0).
+~196 KB raw, ~70 KB gzipped (single-scale, no parallelism, no SIMD, measured on 0.10.0).
 
 ## License
 
