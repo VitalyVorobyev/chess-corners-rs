@@ -15,6 +15,14 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         toolchain: [stable, nightly]
 
+    # Override rust-toolchain.toml (which pins nightly for local dev) so the
+    # matrix cells actually test the intended channel. Without this, the
+    # toolchain file silently shadows the matrix entry — and on macos-latest
+    # (Homebrew rustup with self-update disabled) the resulting auto-install
+    # of the missing nightly toolchain fails with a `rustup-init` usage error.
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
+
     steps:
       - uses: actions/checkout@v6
 
@@ -87,6 +95,12 @@ jobs:
   msrv:
     name: MSRV check (Rust 1.88)
     runs-on: ubuntu-latest
+
+    # Override rust-toolchain.toml so the MSRV gate actually exercises Rust
+    # 1.88 instead of falling back to the nightly channel pinned for local dev.
+    env:
+      RUSTUP_TOOLCHAIN: "1.88"
+
     steps:
       - uses: actions/checkout@v6
 
