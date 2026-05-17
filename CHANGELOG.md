@@ -5,11 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.
 
-- [0.10.0](docs/changelog/0.10.0.md) - 2026-05-14
+- [0.11.0](docs/changelog/0.11.0.md) — 2026-05-17
+- [0.10.0](docs/changelog/0.10.0.md) — 2026-05-14
 - [0.9.0](docs/changelog/0.9.0.md) — 2026-05-10
 - [0.8.0](docs/changelog/0.8.0.md) — 2026-04-28
 - [0.7.0](docs/changelog/0.7.0.md) — 2026-04-26

@@ -24,8 +24,8 @@
 pub mod config;
 
 use chess_corners::{
-    chess_response_u8, radon_heatmap_u8, Detector as RsDetector,
-    DetectorConfig as RsDetectorConfig, ResponseMap,
+    diagnostics::{chess_response_u8, radon_heatmap_u8, ResponseMap},
+    Detector as RsDetector, DetectorConfig as RsDetectorConfig,
 };
 use wasm_bindgen::prelude::*;
 
@@ -60,12 +60,13 @@ pub struct ChessDetector {
     last_response: Option<ResponseMap>,
     last_radon_response: Option<ResponseMap>,
     /// Working-to-input scale factor cached at the moment
-    /// `radon_heatmap` produced `last_radon_response`. Returning a
-    /// cached value (instead of recomputing from the live config)
-    /// keeps `radon_heatmap_width` / `_height` / `_scale` mutually
-    /// consistent if the caller mutates the detector's upscale or
-    /// the Radon `image_upsample` between the heatmap call and the
-    /// accessor calls. `0` until the first heatmap is computed.
+    /// `diagnostics_radon_heatmap` produced `last_radon_response`.
+    /// Returning a cached value (instead of recomputing from the live
+    /// config) keeps `diagnostics_radon_heatmap_width` / `_height` /
+    /// `_scale` mutually consistent if the caller mutates the
+    /// detector's upscale or the Radon `image_upsample` between the
+    /// heatmap call and the accessor calls. `0` until the first
+    /// heatmap is computed.
     last_radon_scale: u32,
 }
 
@@ -171,12 +172,28 @@ impl ChessDetector {
         self.detect(&gray, width, height)
     }
 
-    // ---- Response map ----
+    // ---- Diagnostics: response map ----
+    //
+    // The `diagnostics_*` methods below are opt-in diagnostics. They
+    // expose intermediate detector data — raw response maps and Radon
+    // heatmaps — for debugging and visualization (e.g. rendering a
+    // heatmap onto a canvas). They are *not* part of the normal
+    // detection result; the primary output is the `Float32Array`
+    // returned by `detect` / `detect_rgba`.
 
     /// Compute the raw ChESS response map from grayscale pixels.
     ///
+    /// Opt-in diagnostic: this is intermediate detector data for
+    /// debugging and visualization, not part of the normal detection
+    /// result (use `detect` / `detect_rgba` for that).
+    ///
     /// Returns a `Float32Array` in row-major order (width x height).
-    pub fn response(&mut self, pixels: &[u8], width: u32, height: u32) -> js_sys::Float32Array {
+    pub fn diagnostics_response(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> js_sys::Float32Array {
         let params = self.inner.config().to_chess_params();
         let resp = chess_response_u8(pixels, width as usize, height as usize, &params);
         let arr = js_sys::Float32Array::new_with_length(resp.data().len() as u32);
@@ -186,42 +203,53 @@ impl ChessDetector {
     }
 
     /// Compute the response map from RGBA pixels.
-    pub fn response_rgba(
+    ///
+    /// Opt-in diagnostic: intermediate detector data for debugging and
+    /// visualization, not part of the normal detection result.
+    pub fn diagnostics_response_rgba(
         &mut self,
         pixels: &[u8],
         width: u32,
         height: u32,
     ) -> js_sys::Float32Array {
         let gray = rgba_to_gray(pixels, width, height);
-        self.response(&gray, width, height)
+        self.diagnostics_response(&gray, width, height)
     }
 
     /// Width of the last computed response map.
-    pub fn response_width(&self) -> u32 {
+    ///
+    /// Opt-in diagnostic: companion accessor for `diagnostics_response`.
+    pub fn diagnostics_response_width(&self) -> u32 {
         self.last_response.as_ref().map_or(0, |r| r.width() as u32)
     }
 
     /// Height of the last computed response map.
-    pub fn response_height(&self) -> u32 {
+    ///
+    /// Opt-in diagnostic: companion accessor for `diagnostics_response`.
+    pub fn diagnostics_response_height(&self) -> u32 {
         self.last_response.as_ref().map_or(0, |r| r.height() as u32)
     }
 
-    // ---- Radon heatmap ----
+    // ---- Diagnostics: Radon heatmap ----
 
     /// Compute the whole-image Radon detector heatmap from grayscale
     /// pixels.
     ///
+    /// Opt-in diagnostic: intermediate detector data for debugging and
+    /// visualization, not part of the normal detection result.
+    ///
     /// Returns the dense `(max_α S_α − min_α S_α)²` Radon response as a
     /// row-major `Float32Array` at *working resolution* — that is,
     /// `width * upscale * radon_image_upsample` by the same in `y`.
-    /// Use [`Self::radon_heatmap_width`] / [`Self::radon_heatmap_height`]
-    /// to get the actual dimensions, and [`Self::radon_heatmap_scale`]
-    /// for the working-to-input scale factor.
+    /// Use [`Self::diagnostics_radon_heatmap_width`] /
+    /// [`Self::diagnostics_radon_heatmap_height`] to get the actual
+    /// dimensions, and [`Self::diagnostics_radon_heatmap_scale`] for the
+    /// working-to-input scale factor.
     ///
     /// Honours the current detector configuration. The active strategy
     /// does not need to be Radon to call this — the heatmap is always
     /// computable from the current effective Radon params.
-    pub fn radon_heatmap(
+    pub fn diagnostics_radon_heatmap(
         &mut self,
         pixels: &[u8],
         width: u32,
@@ -249,25 +277,34 @@ impl ChessDetector {
 
     /// Compute the Radon heatmap from RGBA pixels (e.g. from canvas
     /// `getImageData`). Converts to grayscale internally.
-    pub fn radon_heatmap_rgba(
+    ///
+    /// Opt-in diagnostic: intermediate detector data for debugging and
+    /// visualization, not part of the normal detection result.
+    pub fn diagnostics_radon_heatmap_rgba(
         &mut self,
         pixels: &[u8],
         width: u32,
         height: u32,
     ) -> Result<js_sys::Float32Array, JsValue> {
         let gray = rgba_to_gray(pixels, width, height);
-        self.radon_heatmap(&gray, width, height)
+        self.diagnostics_radon_heatmap(&gray, width, height)
     }
 
     /// Width of the last computed Radon heatmap (working resolution).
-    pub fn radon_heatmap_width(&self) -> u32 {
+    ///
+    /// Opt-in diagnostic: companion accessor for
+    /// `diagnostics_radon_heatmap`.
+    pub fn diagnostics_radon_heatmap_width(&self) -> u32 {
         self.last_radon_response
             .as_ref()
             .map_or(0, |r| r.width() as u32)
     }
 
     /// Height of the last computed Radon heatmap (working resolution).
-    pub fn radon_heatmap_height(&self) -> u32 {
+    ///
+    /// Opt-in diagnostic: companion accessor for
+    /// `diagnostics_radon_heatmap`.
+    pub fn diagnostics_radon_heatmap_height(&self) -> u32 {
         self.last_radon_response
             .as_ref()
             .map_or(0, |r| r.height() as u32)
@@ -275,17 +312,20 @@ impl ChessDetector {
 
     /// Working-to-input scale factor for the last computed Radon heatmap.
     ///
+    /// Opt-in diagnostic: companion accessor for
+    /// `diagnostics_radon_heatmap`.
+    ///
     /// Multiply input-pixel coordinates by this factor to land on the
     /// corresponding heatmap pixel; divide heatmap-pixel coordinates by
     /// it to recover input pixels. Equals
     /// `upscale_factor * radon_image_upsample` (clamped to the
     /// supported range) **as it was at the time of the last
-    /// `radon_heatmap` call** — mutating the detector's upscale or
-    /// the Radon image_upsample afterwards does not change this
-    /// value, so the trio of width / height / scale stays consistent
-    /// for overlay alignment. Returns `0` if no heatmap has been
-    /// computed yet.
-    pub fn radon_heatmap_scale(&self) -> u32 {
+    /// `diagnostics_radon_heatmap` call** — mutating the detector's
+    /// upscale or the Radon image_upsample afterwards does not change
+    /// this value, so the trio of width / height / scale stays
+    /// consistent for overlay alignment. Returns `0` if no heatmap has
+    /// been computed yet.
+    pub fn diagnostics_radon_heatmap_scale(&self) -> u32 {
         self.last_radon_scale
     }
 }

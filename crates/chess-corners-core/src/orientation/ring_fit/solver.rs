@@ -161,16 +161,16 @@ pub(super) fn degenerate_fit(centered_var: f32) -> TwoAxisFit {
 }
 
 /// Canonicalize `(θ₁, θ₂, A)` into the convention documented on
-/// [`crate::detect::CornerDescriptor`]. Returns `(θ₁, θ₂, |A|)` with:
+/// [`crate::CornerDescriptor`]. Returns `(θ₁, θ₂, |A|)` with:
 /// * `θ₁ ∈ [0, π)`
 /// * `θ₂ ∈ (θ₁, θ₁ + π) ⊂ [0, 2π)`
 /// * the sector `(θ₁, θ₂)` (CCW) is a dark sector of the corner.
 ///
 /// Both [`super::fit_ring`] and the full-disk estimator
 /// (`crate::orientation::disk_sector::fit`) route their raw `(θ₁, θ₂, A)`
-/// through this function, so the public [`crate::orientation::AxisFitResult`]
+/// through this function, so the public [`crate::AxisFitResult`]
 /// observes the same convention regardless of which
-/// [`crate::orientation::OrientationMethod`] produced it.
+/// [`crate::OrientationMethod`] produced it.
 ///
 /// # Implementation notes
 ///

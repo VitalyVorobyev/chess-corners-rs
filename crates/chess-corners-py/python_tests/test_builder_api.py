@@ -5,11 +5,8 @@ Covers:
 - Top-level chainable builders: with_threshold, with_multiscale, with_upscale,
   with_orientation_method, with_merge_radius
 - Strategy-nested builders: with_chess(**kwargs), with_radon(**kwargs)
-- Deprecation warnings on single_scale() and multiscale_preset()
 """
 from __future__ import annotations
-
-import warnings
 
 import pytest
 
@@ -197,18 +194,3 @@ def test_with_radon_on_chess_config_switches_strategy():
     radon_cfg = chess_cfg.with_radon(ray_radius=7)
     assert radon_cfg.strategy.kind == "radon"
     assert radon_cfg.strategy.radon.ray_radius == 7
-
-
-# ---------------------------------------------------------------------------
-# Deprecation warnings
-# ---------------------------------------------------------------------------
-
-
-def test_single_scale_classmethod_emits_deprecation_warning():
-    with pytest.warns(DeprecationWarning, match="single_scale.*deprecated"):
-        chess_corners.DetectorConfig.single_scale()
-
-
-def test_multiscale_preset_classmethod_emits_deprecation_warning():
-    with pytest.warns(DeprecationWarning, match="multiscale_preset.*deprecated"):
-        chess_corners.DetectorConfig.multiscale_preset()

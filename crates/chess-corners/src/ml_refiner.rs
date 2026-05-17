@@ -1,9 +1,9 @@
 //! ML subpixel refiner integration (feature-gated).
 
-use crate::{ImageView, RefineResult, RefineStatus, Refiner, RefinerKind};
-use chess_corners_core::detect::detect_corners_from_response_with_refiner;
-use chess_corners_core::detect::Corner;
-use chess_corners_core::{ChessParams, CornerRefiner, RefineContext, ResponseMap};
+use chess_corners_core::{
+    detect_corners_from_response_with_refiner, ChessParams, Corner, CornerRefiner, ImageView,
+    RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind, ResponseMap,
+};
 use chess_corners_ml::{MlModel, ModelSource};
 use log::{info, warn};
 use std::path::PathBuf;

@@ -50,17 +50,28 @@ impl PyramidBuffers {
     }
 }
 
-/// A single pyramid level. The `scale` is relative to the base image.
+/// A single level of a [`Pyramid`].
 #[non_exhaustive]
 pub struct PyramidLevel<'a> {
+    /// Image data for this level. Level 0 borrows the caller-supplied
+    /// base; subsequent levels are views into [`PyramidBuffers`].
     pub img: ImageView<'a>,
-    pub scale: f32, // relative to base (e.g. 1.0, 0.5, 0.25, ...)
+    /// Scale of this level relative to the base image. Level 0 is
+    /// always `1.0`; each subsequent level is half the previous
+    /// (i.e. `0.5`, `0.25`, …).
+    pub scale: f32,
 }
 
-/// A top-down pyramid where `levels[0]` is the base (full resolution).
+/// A top-down image pyramid produced by [`build_pyramid`].
+///
+/// `levels[0]` is always the base (full resolution, `scale = 1.0`).
+/// Each subsequent level is a 2× box-filter downsample of the previous.
+/// The number of levels is determined by [`PyramidParams::num_levels`]
+/// and [`PyramidParams::min_size`].
 #[non_exhaustive]
 pub struct Pyramid<'a> {
-    pub levels: Vec<PyramidLevel<'a>>, // levels[0] is base
+    /// Ordered pyramid levels from base (index 0) to coarsest.
+    pub levels: Vec<PyramidLevel<'a>>,
 }
 
 /// Parameters controlling pyramid generation.

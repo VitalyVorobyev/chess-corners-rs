@@ -6,6 +6,8 @@ This repository contains **three published crates**:
 * **`chess-corners-core`** — a *low-level*, performance-oriented core crate (almost internal; minimal deps; sharper edges).
 * **`box-image-pyramid`** — a small standalone crate for fixed 2x grayscale pyramid construction with reusable buffers.
 
+The remaining crates — **`chess-corners-ml`**, **`chess-corners-py`**, and **`chess-corners-wasm`** — are **not** published to crates.io and carry no crates.io semver contract. `chess-corners-ml` is an internal implementation crate (`publish = false`). `chess-corners-py` and `chess-corners-wasm` are distributed as a Python wheel and an npm package respectively.
+
 The codebase prioritizes:
 
 * **Determinism** (same inputs → same outputs)

@@ -8,9 +8,19 @@ use super::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the [`CenterOfMassRefiner`].
+///
+/// Controls the size of the weighted-centroid window. The centroid is
+/// computed over a `(2·radius+1)²` patch on the ChESS response map
+/// centered at the rounded seed position.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CenterOfMassConfig {
+    /// Half-width of the centroid window in response-map pixels.
+    /// Default is `2` (a 5×5 window). Increasing this value makes the
+    /// centroid less sensitive to single-pixel noise but may merge
+    /// energy from nearby corners.
+    ///
+    /// Advanced tuning. The default is appropriate for most scenes.
     pub radius: i32,
 }
 
@@ -20,12 +30,19 @@ impl Default for CenterOfMassConfig {
     }
 }
 
+/// Center-of-mass subpixel refiner.
+///
+/// Computes a response-weighted centroid in a `(2·radius+1)²` window
+/// around the seed position on the ChESS response map. Only positive
+/// response values contribute to the centroid. The cheapest built-in
+/// refiner and the library default.
 #[derive(Debug)]
 pub struct CenterOfMassRefiner {
     cfg: CenterOfMassConfig,
 }
 
 impl CenterOfMassRefiner {
+    /// Construct a refiner with the given configuration.
     pub fn new(cfg: CenterOfMassConfig) -> Self {
         Self { cfg }
     }

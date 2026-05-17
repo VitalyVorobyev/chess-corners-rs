@@ -1,7 +1,7 @@
 //! Public Radon-detector convenience functions.
 //!
 //! The whole-image Duda-Frese Radon detector lives in
-//! [`chess_corners_core::detect::radon`]; the corner-detection path is
+//! [`chess-corners-core`](chess_corners_core); the corner-detection path is
 //! exposed via [`crate::Detector`] when the active
 //! [`DetectorConfig::strategy`](crate::DetectorConfig::strategy) is
 //! [`DetectionStrategy::Radon`](crate::DetectionStrategy::Radon). This module

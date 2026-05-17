@@ -9,7 +9,8 @@
 //! base-image coordinates, and beats the ChESS default on a hostile
 //! fixture.
 
-use chess_corners::{DetectionStrategy, Detector, DetectorConfig, ImageView};
+use chess_corners::low_level::ImageView;
+use chess_corners::{DetectionStrategy, Detector, DetectorConfig};
 
 fn detect_view(view: ImageView<'_>, cfg: &DetectorConfig) -> Vec<chess_corners::CornerDescriptor> {
     let mut detector = Detector::new(*cfg).expect("config valid");

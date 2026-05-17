@@ -26,7 +26,7 @@ pub struct AxisFitResult {
     /// are gray levels.
     pub amp: f32,
     /// First axis direction, radians in `[0, π)` (line-direction
-    /// representative — see [`crate::detect::CornerDescriptor`]).
+    /// representative — see [`crate::CornerDescriptor`]).
     pub theta1: f32,
     /// Second axis direction, radians in `(theta1, theta1 + π) ⊂ [0, 2π)`.
     pub theta2: f32,

@@ -6,18 +6,18 @@
 //! (stage 2). Image-domain subpixel refinement (center-of-mass,
 //! Förstner, saddle-point, …) is **not** part of this trait — it runs
 //! detector-agnostically via
-//! [`crate::detect::refine_corners_on_image`].
+//! [`crate::unstable::refine_corners_on_image`].
 //!
 //! Two zero-sized implementors live alongside the trait:
 //!
 //! - [`ChessDetector`] — wraps the ChESS response kernel
-//!   ([`crate::detect::chess::response::chess_response_u8`]) and the
+//!   ([`crate::chess_response_u8`]) and the
 //!   threshold + NMS + cluster-filter stage
-//!   ([`crate::detect::detect_peaks_from_response`]).
+//!   ([`crate::unstable::detect_peaks_from_response`]).
 //! - [`RadonDetector`] — wraps the whole-image Duda-Frese Radon
-//!   response ([`crate::detect::radon::radon_response_u8`]) and the
+//!   response ([`crate::radon_response_u8`]) and the
 //!   threshold + NMS + 3-point Gaussian peak-fit stage
-//!   ([`crate::detect::radon::detect_peaks_from_radon`]).
+//!   ([`crate::detect_peaks_from_radon`]).
 //!
 //! The free functions named above remain public; the trait is an
 //! additive uniform interface, not a replacement.
@@ -31,14 +31,14 @@
 
 use super::{
     chess::{
-        detect::detect_peaks_from_response_with_refine_radius,
+        detect::{detect_peaks_from_response_with_refine_radius, refine_corners_on_image},
         response::{chess_response_u8, chess_response_u8_patch, Roi},
     },
     radon::{
         detect_peaks_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
         RadonResponseView,
     },
-    refine_corners_on_image, Corner,
+    Corner,
 };
 use crate::imageview::ImageView;
 use crate::refine::CornerRefiner;
@@ -55,7 +55,7 @@ use crate::{ChessParams, ResponseMap};
 /// Subpixel refinement on the *input image* (Förstner, saddle-point,
 /// center-of-mass, …) is NOT part of this trait — that runs as a
 /// post-detection stage via
-/// [`crate::detect::refine_corners_on_image`], which is
+/// [`crate::unstable::refine_corners_on_image`], which is
 /// detector-agnostic.
 ///
 /// # Toolchain
@@ -141,7 +141,7 @@ pub trait DenseDetector {
     /// Apply a detector-appropriate image-domain refinement step to
     /// the peaks produced by [`Self::detect_corners`].
     ///
-    /// The default subpixel refiners ([`crate::refine::Refiner`]
+    /// The default subpixel refiners ([`crate::Refiner`]
     /// variants) expect a [`ResponseMap`] (center-of-mass,
     /// Förstner) or an image patch (saddle-point, Radon-peak) keyed
     /// to the detector's response. ChESS forwards its
@@ -190,12 +190,12 @@ pub struct ChessBuffers {
 /// Zero-sized [`DenseDetector`] implementor for the ChESS kernel.
 ///
 /// Wraps the canonical 16-sample ring response
-/// ([`crate::detect::chess::response::chess_response_u8`]) and the
+/// ([`crate::chess_response_u8`]) and the
 /// threshold + NMS + cluster-filter peak detector
-/// ([`crate::detect::detect_peaks_from_response`]). Subpixel
+/// ([`crate::unstable::detect_peaks_from_response`]). Subpixel
 /// refinement (center-of-mass, Förstner, saddle-point) is a separate
 /// detector-agnostic stage; see
-/// [`crate::detect::refine_corners_on_image`].
+/// [`crate::unstable::refine_corners_on_image`].
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ChessDetector;
 
@@ -279,8 +279,8 @@ impl DenseDetector for ChessDetector {
 /// Zero-sized [`DenseDetector`] implementor for the whole-image
 /// Duda-Frese Radon kernel.
 ///
-/// Wraps [`crate::detect::radon::radon_response_u8`] (SAT-based dense
-/// response) and [`crate::detect::radon::detect_peaks_from_radon`]
+/// Wraps [`crate::radon_response_u8`] (SAT-based dense
+/// response) and [`crate::detect_peaks_from_radon`]
 /// (threshold, NMS, 3-point Gaussian peak-fit on the working-resolution
 /// map). Output [`Corner`] positions are in the input-image frame: the
 /// Radon peak detector divides by `image_upsample` internally.

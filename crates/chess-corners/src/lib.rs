@@ -168,16 +168,20 @@
 //! is a single [`Threshold`] enum (`Absolute` or `Relative`).
 //! [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
 //! and apply to both strategies. The detector translates this into
-//! the lower-level [`ChessParams`] / [`RadonDetectorParams`] structs
-//! internally.
+//! lower-level parameter structs internally; those structs
+//! (`ChessParams`, `RadonDetectorParams`) are exposed for hand-composed
+//! pipelines in [`low_level`].
 //!
-//! If you need raw response maps or more control, the most useful
-//! low-level primitives are re-exported here:
-//! [`chess_response_u8`], [`chess_response_u8_patch`], [`Roi`],
-//! [`detect_corners_from_response_with_refiner`], [`Corner`], and
-//! [`describe_corners`]. For deeper internals (ring offsets,
-//! SAT views, scalar reference paths) depend on `chess-corners-core`
-//! directly.
+//! Two opt-in channels sit alongside the primary [`Detector`] API for
+//! callers who need more than a finished detection result. The curated
+//! low-level surface for hand-composing the detection pipeline
+//! (response -> detect -> describe), including its parameter structs and
+//! scratch buffers, lives in [`low_level`]; intermediate response maps
+//! and Radon heatmaps for debugging and visualization live in
+//! [`diagnostics`]. Both carry a weaker stability promise than the
+//! facade root and are not needed by typical consumers. For deeper
+//! internals (ring offsets, SAT views, scalar reference paths) depend on
+//! `chess-corners-core` directly.
 //!
 //! # Features
 //!
@@ -212,54 +216,31 @@
 
 mod config;
 mod detector;
+pub mod diagnostics;
 mod error;
+pub mod low_level;
 #[cfg(feature = "ml-refiner")]
 mod ml_refiner;
 mod multiscale;
 mod radon;
 mod upscale;
 
-// Re-export a focused subset of core types for convenience. The facade also
-// surfaces the most useful low-level primitives (response, detect,
-// describe) below so callers composing custom pipelines don't need a
-// separate `chess-corners-core` dependency. Deeper internals (ring offsets,
-// SAT views, scalar reference paths) remain reachable only via a direct
-// `chess-corners-core` dep.
+// The crate root surfaces only the stable facade: the detector, its
+// configuration and result types, and errors. Diagnostic outputs are
+// reachable via [`diagnostics`]; low-level pipeline stages, parameter
+// structs, and scratch buffers via [`low_level`]; deeper internals
+// (ring offsets, SAT views, scalar reference paths) via a direct
+// `chess-corners-core` dependency.
 pub use crate::config::{
     ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy, DetectorConfig,
     MultiscaleConfig, RadonConfig, RadonRefiner, Threshold,
 };
 pub use crate::error::ChessError;
-pub use crate::upscale::{
-    rescale_descriptors_to_input, upscale_bilinear_u8, UpscaleBuffers, UpscaleConfig, UpscaleError,
-};
+pub use crate::upscale::{UpscaleConfig, UpscaleError};
 pub use chess_corners_core::{
-    AxisEstimate, AxisFitResult, CenterOfMassConfig, ChessParams, CornerDescriptor, CornerRefiner,
-    ForstnerConfig, ImageView, OrientationMethod, PeakFitMode, RadonBuffers, RadonDetectorParams,
-    RadonPeakConfig, RefineResult, RefineStatus, Refiner, RefinerKind, ResponseMap,
-    SaddlePointConfig,
+    AxisEstimate, CenterOfMassConfig, CornerDescriptor, ForstnerConfig, OrientationMethod,
+    PeakFitMode, RadonPeakConfig, SaddlePointConfig,
 };
-
-// Low-level building blocks for callers composing custom pipelines:
-// response → detect → describe. Surfaced from core's submodules.
-pub use chess_corners_core::detect::chess::response::{
-    chess_response_u8, chess_response_u8_patch, Roi,
-};
-pub use chess_corners_core::detect::Corner;
-pub use chess_corners_core::detect::{
-    detect_corners_from_response, detect_corners_from_response_with_refiner,
-};
-pub use chess_corners_core::orientation::describe_corners;
 
 // Primary detector entry point.
 pub use crate::detector::Detector;
-
-// Pyramid types remain re-exported because [`MultiscaleConfig::Pyramid`]
-// ultimately binds to [`PyramidParams`].
-pub use crate::multiscale::CoarseToFineParams;
-pub use box_image_pyramid::{ImageBuffer, PyramidBuffers, PyramidParams};
-
-// Radon-detector heatmap helpers (visualisation only).
-#[cfg(feature = "image")]
-pub use crate::radon::radon_heatmap_image;
-pub use crate::radon::radon_heatmap_u8;

@@ -3,19 +3,24 @@
 //! Core primitives for ChESS/Radon response computation, subpixel
 //! refinement, and corner descriptors.
 //!
-//! The crate is organized along the three orthogonal axes the
-//! detector pipeline composes:
-//!
-//! | Module | Description |
-//! |--------|-------------|
-//! | [`detect`] | Feature-detection pipelines. Two independent families share a common output type: [`detect::chess`] (ChESS response + NMS) and [`detect::radon`] (Radon SAT + peak detection). |
-//! | [`refine`] | Pluggable subpixel-refinement backends. The [`refine::CornerRefiner`] trait dispatches across center-of-mass, Förstner, saddle-point, and Radon-peak refiners. |
-//! | [`orientation`] | Two-axis orientation fit (`OrientationMethod::RingFit` ring fit, `OrientationMethod::DiskFit` full-disk crossing-line) shared between detectors. The [`orientation::describe_corners`] entry point produces [`CornerDescriptor`] values with subpixel position, two-axis orientation, per-axis 1σ uncertainty, contrast, and fit residual. |
-//! | [`imageview`] | Zero-copy [`ImageView`] into a borrowed grayscale buffer, with optional `origin` offset for pyramid/ROI support. |
+//! The crate exposes a deliberate low-level contract through its
+//! crate root: response computation ([`chess_response_u8`],
+//! [`radon_response_u8`]), corner detection ([`find_corners_u8`],
+//! [`detect_corners_from_response`]), pluggable subpixel refinement
+//! (the [`CornerRefiner`] trait and built-in refiners), the two-axis
+//! orientation fit ([`fit_axes_at_point`], [`describe_corners`]), and
+//! the [`ImageView`] borrowed-buffer type. The detector pipeline
+//! composes three orthogonal stages — detection, refinement, and
+//! orientation fit — all reachable from the crate root.
 //!
 //! Most users should work through the `chess-corners` facade crate rather than
 //! depending on `chess-corners-core` directly. Depend on this crate only when
 //! you need raw response maps, custom refiners, or the Radon detector primitives.
+//!
+//! Implementation-specific primitives that benches, experiments, and
+//! advanced callers occasionally need — ring offset tables, the Radon
+//! angular basis, the scalar reference response path — live under
+//! [`unstable`], which carries no semver guarantee.
 //!
 //! # Features
 //!
@@ -38,30 +43,36 @@
 //! - `rayon + simd` – rows are processed in parallel *and* each row uses the
 //!   SIMD‑accelerated inner loop.
 //!
-//! The detector in [`detect`] is independent of `rayon`/`simd`, and `tracing`
+//! The detector is independent of `rayon`/`simd`, and `tracing`
 //! only adds observability; none of these features change the numerical
 //! results, only performance and instrumentation.
 //!
 //! The ChESS idea is proposed in Bennett, Lasenby, *ChESS: A Fast and
 //! Accurate Chessboard Corner Detector*, CVIU 2014.
 
-pub mod detect;
-pub mod imageview;
-pub mod orientation;
-pub mod refine;
+mod detect;
+mod imageview;
+mod orientation;
+mod refine;
+
+pub mod unstable;
 
 use crate::detect::chess::ring::RingOffsets;
 use serde::{Deserialize, Serialize};
 
+pub use crate::detect::chess::response::{chess_response_u8, Roi};
 pub use crate::detect::dense::{ChessBuffers, ChessDetector, DenseDetector, RadonDetector};
-pub use crate::detect::radon::primitives::{fit_peak_frac, PeakFitMode};
+pub use crate::detect::radon::primitives::PeakFitMode;
 pub use crate::detect::radon::{
     detect_peaks_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
-    RadonResponseView, SatElem,
+    RadonResponseView,
 };
-pub use crate::detect::{AxisEstimate, Corner, CornerDescriptor};
+pub use crate::detect::{
+    detect_corners_from_response, detect_corners_from_response_with_refiner, find_corners_u8,
+    merge_corners_simple, AxisEstimate, Corner, CornerDescriptor,
+};
 pub use crate::orientation::{
-    fit_axes_at_point, fit_axes_from_samples, AxisFitResult, OrientationMethod,
+    describe_corners, fit_axes_at_point, fit_axes_from_samples, AxisFitResult, OrientationMethod,
 };
 pub use crate::refine::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,

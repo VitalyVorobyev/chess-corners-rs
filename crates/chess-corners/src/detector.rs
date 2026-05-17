@@ -210,36 +210,23 @@ impl Detector {
         )
     }
 
-    /// Compute the dense Radon response map for `img` at working
-    /// resolution. Convenience wrapper for visualisation; the detector
-    /// itself uses the response internally and never returns it.
+    /// Borrow a detector-bound diagnostics accessor.
     ///
-    /// # Errors
+    /// The returned [`DetectorDiagnostics`](crate::diagnostics::DetectorDiagnostics)
+    /// exposes intermediate
+    /// detector outputs — the dense ChESS response map and the Radon
+    /// heatmap — sourced from this detector's already-configured
+    /// [`DetectorConfig`], so a caller holding a configured `Detector`
+    /// need not re-supply a config to obtain diagnostic data.
     ///
-    /// Returns [`ChessError::DimensionMismatch`] if `img.len() !=
-    /// width * height`. Returns [`ChessError::Upscale`] if the upscale
-    /// configuration is invalid.
-    pub fn radon_heatmap_u8(
-        &mut self,
-        img: &[u8],
-        width: u32,
-        height: u32,
-    ) -> Result<chess_corners_core::ResponseMap, ChessError> {
-        crate::radon::radon_heatmap_u8(img, width, height, &self.cfg)
-    }
-
-    /// Compute the dense Radon response map from an
-    /// [`image::GrayImage`]. See [`Self::radon_heatmap_u8`].
-    ///
-    /// # Errors
-    ///
-    /// Inherits the error contract of [`Self::radon_heatmap_u8`].
-    #[cfg(feature = "image")]
-    pub fn radon_heatmap(
-        &mut self,
-        img: &image::GrayImage,
-    ) -> Result<chess_corners_core::ResponseMap, ChessError> {
-        self.radon_heatmap_u8(img.as_raw(), img.width(), img.height())
+    /// This is the detector-bound half of the diagnostics channel; the
+    /// free functions in [`crate::diagnostics`] serve stateless
+    /// callers. Both share the same **opt-in, looser-stability**
+    /// contract: diagnostic outputs are advisory and may change as the
+    /// detector internals evolve, independently of the
+    /// [`Detector::detect`] result contract.
+    pub fn diagnostics(&self) -> crate::diagnostics::DetectorDiagnostics<'_> {
+        crate::diagnostics::DetectorDiagnostics::new(self)
     }
 
     #[allow(clippy::too_many_arguments)]

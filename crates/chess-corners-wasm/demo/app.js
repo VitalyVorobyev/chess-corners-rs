@@ -153,7 +153,7 @@ function configureDetector(det) {
 // Render a working-resolution Radon heatmap into the main canvas at
 // input-image dimensions. The detector exposes the heatmap at
 // (width * upscale * radon_image_upsample) — we downsample by
-// `radon_heatmap_scale()` so the overlay aligns with corner overlays in
+// `diagnostics_radon_heatmap_scale()` so the overlay aligns with corner overlays in
 // input pixel space.
 function drawHeatmap(heatmap, hmW, hmH, scale) {
   // Find max for normalization.
@@ -276,10 +276,10 @@ function run() {
   let heatmapMs = 0;
   if (showHeatmap.checked) {
     const h0 = performance.now();
-    const heatmap = detector.radon_heatmap_rgba(currentRGBA, currentW, currentH);
-    const hmW = detector.radon_heatmap_width();
-    const hmH = detector.radon_heatmap_height();
-    const scale = detector.radon_heatmap_scale();
+    const heatmap = detector.diagnostics_radon_heatmap_rgba(currentRGBA, currentW, currentH);
+    const hmW = detector.diagnostics_radon_heatmap_width();
+    const hmH = detector.diagnostics_radon_heatmap_height();
+    const scale = detector.diagnostics_radon_heatmap_scale();
     heatmapMs = performance.now() - h0;
     // Black backdrop in case the heatmap dims fail to fully cover the canvas.
     canvas.width = currentW;

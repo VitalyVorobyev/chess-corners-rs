@@ -19,11 +19,9 @@ pub mod radon;
 
 pub(crate) use chess::detect::{count_positive_neighbors, is_local_max};
 pub use chess::detect::{
-    detect_corners_from_response, detect_corners_from_response_with_refiner,
-    detect_peaks_from_response, find_corners_u8, find_corners_u8_with_refiner,
-    merge_corners_simple, refine_corners_on_image,
+    detect_corners_from_response, detect_corners_from_response_with_refiner, find_corners_u8,
+    merge_corners_simple,
 };
-pub use dense::{ChessBuffers, ChessDetector, DenseDetector, RadonDetector};
 
 /// A detected corner candidate (subpixel position with raw response strength).
 #[derive(Clone, Debug)]
@@ -87,7 +85,7 @@ impl AxisEstimate {
 /// Each axis direction is signed as a `f32` in `[0, 2π)`; the axes are
 /// **not** assumed orthogonal (holds up under projective warp).
 ///
-/// All [`crate::orientation::OrientationMethod`] variants emit axes
+/// All [`crate::OrientationMethod`] variants emit axes
 /// under this same convention, so consumers may compare `axes[0]`
 /// (e.g. for slot-parity matching between cardinal grid neighbours)
 /// across methods without method-aware translation.
@@ -101,13 +99,14 @@ pub struct CornerDescriptor {
 
     /// Raw, **unnormalized** detector response at the detected peak. For
     /// the ChESS path this is `R = SR − DR − 16·MR`
-    /// (see [`chess::response::chess_response_u8`]). Units are 8-bit
+    /// (see [`chess_response_u8`](crate::chess_response_u8)). Units are 8-bit
     /// pixel sums; data-dependent. Do not interpret it as a probability,
     /// a contrast, or a normalized strength.
     pub response: f32,
 
     /// Bright/dark amplitude (`|A|`, ≥ 0) recovered by the two-axis
-    /// orientation fit (see [`crate::orientation`]). Units are gray
+    /// orientation fit (see [`describe_corners`](crate::describe_corners)).
+    /// Units are gray
     /// levels. Larger means a stronger bright/dark separation at the
     /// ring radius. This is an independent quantity from
     /// [`Self::response`] — they are computed by different estimators

@@ -5,7 +5,7 @@
 //! `disk_sector::fit` directly) but go through the public API to confirm the
 //! dispatch wiring and fallback paths are correct end-to-end.
 
-use chess_corners_core::orientation::{fit_axes_at_point, OrientationMethod};
+use chess_corners_core::{fit_axes_at_point, OrientationMethod};
 use core::f32::consts::PI;
 
 // ---------------------------------------------------------------------------

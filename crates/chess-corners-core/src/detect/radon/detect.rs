@@ -21,7 +21,7 @@ use rayon::prelude::*;
 /// stage. The output is already subpixel in the input-image frame
 /// (positions are divided by `image_upsample`). Image-domain
 /// refinement against the input pixels is the caller's choice and
-/// lives in [`crate::detect::refine_corners_on_image`].
+/// lives in [`crate::unstable::refine_corners_on_image`].
 pub fn detect_peaks_from_radon(
     resp: &RadonResponseView<'_>,
     params: &RadonDetectorParams,

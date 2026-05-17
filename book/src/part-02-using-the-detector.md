@@ -52,8 +52,6 @@ Four presets cover the common cases:
 | `DetectorConfig::radon()`                 | Radon    | Single-scale   |
 | `DetectorConfig::radon_multiscale()`      | Radon    | 3-level pyramid|
 
-`single_scale()` and `multiscale()` are deprecated aliases for the ChESS presets in Rust and JS. In Python the corresponding aliases are `single_scale()` and `multiscale_preset()`. All will be removed in 0.12.0.
-
 Three guarantees follow from this shape:
 
 1. **One place per knob.** `cfg.strategy.chess.ring = ChessRing::Broad`
@@ -226,10 +224,8 @@ print(corners.shape)   # (N, 9)
 
 The Python `DetectorConfig` mirrors the Rust type field-for-field and
 supports `to_dict()`, `from_dict()`, `to_json()`, `from_json()`,
-`pretty()`, and `print()`. The canonical factory methods are
-`chess()`, `chess_multiscale()`, `radon()`, and
-`radon_multiscale()`. The aliases `single_scale()` and
-`multiscale_preset()` are deprecated and will be removed in 0.12.0.
+`pretty()`, and `print()`. The factory methods are `chess()`,
+`chess_multiscale()`, `radon()`, and `radon_multiscale()`.
 
 Tagged enum classes follow the same idiom across the board: read
 `cfg.threshold.kind` / `cfg.threshold.value`, build a new one with
@@ -321,8 +317,8 @@ for (let i = 0; i < corners.length; i += 9) {
     console.log(`(${corners[i].toFixed(2)}, ${corners[i + 1].toFixed(2)})`);
 }
 
-// Raw response map, for heatmap visualisation.
-const response = detector.response_rgba(imageData.data, width, height);
+// Raw response map, for heatmap visualisation (opt-in diagnostic).
+const response = detector.diagnostics_response_rgba(imageData.data, width, height);
 ```
 
 `ChessDetector` reads and writes its full configuration through the
@@ -462,7 +458,8 @@ this factor to land on heatmap pixels.
 Rust:
 
 ```rust,no_run
-use chess_corners::{radon_heatmap_u8, DetectorConfig};
+use chess_corners::diagnostics::radon_heatmap_u8;
+use chess_corners::DetectorConfig;
 
 # fn run(img: &[u8], width: u32, height: u32) {
 let cfg = DetectorConfig::radon();
@@ -493,10 +490,10 @@ import init, { ChessDetector, DetectorConfig } from '@vitavision/chess-corners';
 await init();
 const det = ChessDetector.withConfig(DetectorConfig.radon());
 
-const heatmap = det.radon_heatmap(grayPixels, width, height);
-const w = det.radon_heatmap_width();
-const h = det.radon_heatmap_height();
-const scale = det.radon_heatmap_scale();  // working-to-input factor
+const heatmap = det.diagnostics_radon_heatmap(grayPixels, width, height);
+const w = det.diagnostics_radon_heatmap_width();
+const h = det.diagnostics_radon_heatmap_height();
+const scale = det.diagnostics_radon_heatmap_scale();  // working-to-input factor
 console.log('heatmap', w, 'x', h, 'scale', scale);
 ```
 

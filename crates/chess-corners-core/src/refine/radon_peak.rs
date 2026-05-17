@@ -108,7 +108,9 @@ impl RadonPeakConfig {
 
 /// Subpixel refiner built on a local Duda-Frese-style Radon response.
 ///
-/// See the [module docs](self) for the algorithm and attribution.
+/// Fits a Gaussian peak to a localized Radon response computed around
+/// the corner candidate. Selected through
+/// [`RefinerKind`](crate::RefinerKind).
 #[derive(Debug)]
 pub struct RadonPeakRefiner {
     cfg: RadonPeakConfig,
@@ -139,9 +141,19 @@ impl RadonPeakRefiner {
         &self.cfg
     }
 
-    /// Access the current response map (post-blur). Exposed for tests
-    /// and debugging. Caller must not rely on the internal layout beyond
-    /// row-major `side × side`.
+    /// Diagnostic accessor: returns the post-blur local Radon response
+    /// map and its side length from the most recent call to
+    /// [`CornerRefiner::refine`].
+    ///
+    /// The slice is row-major with dimensions `side × side`. The scale
+    /// at each grid position is `1 / image_upsample` physical pixels per
+    /// cell, so the map covers `2·patch_radius` × `2·patch_radius`
+    /// physical pixels around the seed.
+    ///
+    /// **Diagnostic / debugging only.** Do not depend on the internal
+    /// buffer layout or the exact numeric values in production code; they
+    /// may change without notice. If `refine` has not been called since
+    /// construction the buffer contains zeros.
     #[inline]
     pub fn response(&self) -> (&[f32], usize) {
         (&self.resp, self.side)

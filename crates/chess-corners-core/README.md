@@ -3,21 +3,22 @@
 Core primitives for computing ChESS / Radon responses and extracting
 subpixel chessboard corners.
 
-The crate is organised along the three orthogonal axes the detector
-pipeline composes:
+The crate exposes three orthogonal components via its crate root:
 
-- **Detection** (`detect` module) — two independent feature-detector
-  families share a common output type:
-  - [`detect::chess`] — ChESS response (16-sample ring) at radii 5 and 10,
-    NMS, cluster filtering.
-  - [`detect::radon`] — whole-image Duda-Frese localized Radon detector
-    with summed-area-table ray sums.
-- **Refinement** (`refine` module) — pluggable subpixel-refinement
-  backends: center-of-mass, Förstner, saddle-point, and Radon-peak.
-- **Orientation** (`orientation` module) — two-axis orientation fit at
-  each detected corner: ring-fit (parametric tanh model with robust
-  seeding and σ-LUT) and disk-sector full-disk crossing-line
-  estimator.
+- **Detection** — two independent feature-detector families share a
+  common output type:
+  - ChESS response (16-sample ring) at radii 5 and 10, NMS, cluster
+    filtering (`chess_response_u8`, `find_corners_u8`, and friends).
+  - Whole-image Duda-Frese localized Radon detector with
+    summed-area-table ray sums (`radon_response_u8`,
+    `detect_peaks_from_radon`, and friends).
+- **Refinement** — pluggable subpixel-refinement backends:
+  center-of-mass, Förstner, saddle-point, and Radon-peak
+  (`refine_corners_on_image`, `Refiner`, `RefinerKind`).
+- **Orientation** — two-axis orientation fit at each detected corner:
+  ring-fit (parametric tanh model with robust seeding and σ-LUT) and
+  disk-sector full-disk crossing-line estimator (`describe_corners`,
+  `OrientationMethod`).
 
 Rich corner descriptors carry both local grid axes with per-axis 1σ
 angular uncertainty (from the Gauss–Newton covariance
@@ -38,7 +39,7 @@ Basic usage:
 
 ```rust
 use chess_corners_core::{
-    detect::find_corners_u8, ChessParams, RefinerKind,
+    find_corners_u8, ChessParams, RefinerKind,
 };
 
 fn detect(img: &[u8], w: usize, h: usize) {

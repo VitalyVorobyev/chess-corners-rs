@@ -60,12 +60,18 @@ impl Default for ForstnerConfig {
     }
 }
 
+/// Förstner structure-tensor subpixel refiner.
+///
+/// Solves a weighted least-squares system on the image gradient
+/// structure tensor within a local window. Requires the image intensity
+/// patch (passed via [`RefineContext::image`]); ignores the response map.
 #[derive(Debug)]
 pub struct ForstnerRefiner {
     cfg: ForstnerConfig,
 }
 
 impl ForstnerRefiner {
+    /// Construct a refiner with the given configuration.
     pub fn new(cfg: ForstnerConfig) -> Self {
         Self { cfg }
     }

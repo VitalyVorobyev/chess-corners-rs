@@ -112,15 +112,20 @@ function processFrame() {
 processFrame();
 ```
 
-### Response map visualization
+### Response map visualization (diagnostics)
+
+The `diagnostics_*` methods expose intermediate detector data — raw
+response maps and Radon heatmaps — for debugging and visualization.
+They are opt-in and not part of the normal detection result, which is
+the `Float32Array` returned by `detect` / `detect_rgba`.
 
 ```js
 const detector = new ChessDetector();
 
 // Get the raw ChESS response as a Float32Array (row-major, width x height).
-const response = detector.response_rgba(imageData.data, width, height);
-const rWidth = detector.response_width();
-const rHeight = detector.response_height();
+const response = detector.diagnostics_response_rgba(imageData.data, width, height);
+const rWidth = detector.diagnostics_response_width();
+const rHeight = detector.diagnostics_response_height();
 
 // Render as a heatmap on a canvas.
 const out = ctx.createImageData(rWidth, rHeight);
@@ -216,15 +221,23 @@ detector.applyConfig(snapshot);
 | `detector.applyConfig(cfg)` | Replace the configuration with the given `DetectorConfig` |
 | `detect(pixels, w, h)` | Detect corners from grayscale `Uint8Array` |
 | `detect_rgba(pixels, w, h)` | Detect corners from RGBA `Uint8Array` |
-| `response(pixels, w, h)` | Compute response map from grayscale pixels |
-| `response_rgba(pixels, w, h)` | Compute response map from RGBA pixels |
-| `response_width()` | Width of the last computed response map |
-| `response_height()` | Height of the last computed response map |
-| `radon_heatmap(pixels, w, h)` | Compute the Radon heatmap from grayscale pixels |
-| `radon_heatmap_rgba(pixels, w, h)` | Compute the Radon heatmap from RGBA pixels |
-| `radon_heatmap_width()` | Width of the last computed Radon heatmap (working resolution) |
-| `radon_heatmap_height()` | Height of the last computed Radon heatmap |
-| `radon_heatmap_scale()` | Working-to-input scale factor for the last heatmap |
+
+#### Diagnostics
+
+Opt-in methods that expose intermediate detector data for debugging and
+visualization. They are not part of the normal detection result.
+
+| Method | Description |
+|--------|-------------|
+| `diagnostics_response(pixels, w, h)` | Compute response map from grayscale pixels |
+| `diagnostics_response_rgba(pixels, w, h)` | Compute response map from RGBA pixels |
+| `diagnostics_response_width()` | Width of the last computed response map |
+| `diagnostics_response_height()` | Height of the last computed response map |
+| `diagnostics_radon_heatmap(pixels, w, h)` | Compute the Radon heatmap from grayscale pixels |
+| `diagnostics_radon_heatmap_rgba(pixels, w, h)` | Compute the Radon heatmap from RGBA pixels |
+| `diagnostics_radon_heatmap_width()` | Width of the last computed Radon heatmap (working resolution) |
+| `diagnostics_radon_heatmap_height()` | Height of the last computed Radon heatmap |
+| `diagnostics_radon_heatmap_scale()` | Working-to-input scale factor for the last heatmap |
 
 ### Output format
 
@@ -244,7 +257,7 @@ detector.applyConfig(snapshot);
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector of the corner. The two grid axes are not assumed orthogonal, so the layout can represent projective warp instead of forcing a right-angle model.
 
-**Response map** (`response` / `response_rgba`): `Float32Array` in row-major order, dimensions available via `response_width()` / `response_height()`.
+**Response map** (`diagnostics_response` / `diagnostics_response_rgba`): `Float32Array` in row-major order, dimensions available via `diagnostics_response_width()` / `diagnostics_response_height()`.
 
 ## Binary size
 
