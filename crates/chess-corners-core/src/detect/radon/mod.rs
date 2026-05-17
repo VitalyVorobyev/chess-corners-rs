@@ -5,13 +5,13 @@
 //! data. The detector computes a dense 4-angle localized Radon response
 //! `R(x, y) = (max_α S_α − min_α S_α)²` using summed-area tables for
 //! `O(1)`-per-pixel ray sums, then applies the same peak-fit pipeline as
-//! [`crate::refine::radon_peak::RadonPeakRefiner`]: threshold / NMS /
+//! [`crate::RadonPeakRefiner`]: threshold / NMS /
 //! box-blur / 3-point Gaussian fit in x and y.
 //!
 //! Submodules:
 //!
 //! - [`primitives`] — angular basis, `fit_peak_frac`, `box_blur_inplace`
-//!   shared with [`crate::refine::radon_peak`].
+//!   shared with [`crate::RadonPeakRefiner`].
 //! - [`response`] — `radon_response_u8` and the SAT / response-map
 //!   buffers and types.
 //! - [`detect`] — `detect_peaks_from_radon` (peak detection on the
@@ -23,10 +23,7 @@ pub mod primitives;
 pub mod response;
 
 pub use detect::detect_peaks_from_radon;
-pub use response::{
-    radon_response_u8, RadonBuffers, RadonDetectorParams, RadonResponseView, SatElem,
-    MAX_IMAGE_UPSAMPLE,
-};
+pub use response::{radon_response_u8, RadonBuffers, RadonDetectorParams, RadonResponseView};
 
 #[cfg(test)]
 pub(super) mod test_fixtures {

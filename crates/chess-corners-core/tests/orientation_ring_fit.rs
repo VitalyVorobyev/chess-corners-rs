@@ -11,10 +11,8 @@
 //! - σ-LUT degenerate propagation: a flat ring remains degenerate under
 //!   RingFit.
 
-use chess_corners_core::detect::chess::ring::ring_offsets;
-use chess_corners_core::orientation::{
-    fit_axes_at_point, fit_axes_from_samples, OrientationMethod,
-};
+use chess_corners_core::unstable::ring_offsets;
+use chess_corners_core::{fit_axes_at_point, fit_axes_from_samples, OrientationMethod};
 use core::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
 const TANH_BETA: f32 = 4.0;

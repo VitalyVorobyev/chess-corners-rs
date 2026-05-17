@@ -1,5 +1,11 @@
 //! ONNX-backed ML refiner for ChESS corner candidates.
 //!
+//! **Internal crate — not published to crates.io.**
+//! `chess-corners-ml` is an implementation detail of the chess-corners
+//! workspace. It backs the optional `ml-refiner` feature of the
+//! `chess-corners` facade crate and is not a public API contract; its
+//! surface may change without semver consideration.
+//!
 //! This crate provides [`MlModel`], a thin wrapper around a
 //! [tract-onnx](https://docs.rs/tract-onnx) runtime that predicts
 //! subpixel `(dx, dy)` offsets for each corner candidate from a
@@ -29,6 +35,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
+#[cfg(feature = "embed-model")]
 use std::sync::OnceLock;
 use tract_onnx::prelude::tract_ndarray::{Array4, Ix2};
 use tract_onnx::prelude::*;

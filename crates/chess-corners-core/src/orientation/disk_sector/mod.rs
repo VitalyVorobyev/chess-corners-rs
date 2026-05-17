@@ -68,7 +68,7 @@ const LAZY_DISK_SEP_DEG_MAX: f32 = 110.0;
 /// Full-disk estimator used by the public image-side dispatcher.
 ///
 /// Returned axes follow the same canonical convention as
-/// [`crate::orientation::OrientationMethod::RingFit`]: `axes[0].angle ∈
+/// [`crate::OrientationMethod::RingFit`]: `axes[0].angle ∈
 /// [0, π)`, `axes[1].angle ∈ (axes[0].angle, axes[0].angle + π)`, and
 /// the CCW arc `(axes[0], axes[1])` is a *dark* sector. The
 /// per-candidate scorers in [`score::score_pair`] and

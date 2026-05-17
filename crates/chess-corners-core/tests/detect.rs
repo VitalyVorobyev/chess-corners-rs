@@ -1,11 +1,9 @@
 #[cfg(feature = "simd")]
-use chess_corners_core::detect::chess::response::chess_response_u8_scalar;
-use chess_corners_core::detect::chess::response::{
-    self, chess_response_u8, chess_response_u8_patch,
+use chess_corners_core::unstable::chess_response_u8_scalar;
+use chess_corners_core::unstable::{chess_response_u8_patch, ring_offsets, RING10, RING5};
+use chess_corners_core::{
+    chess_response_u8, detect_corners_from_response, find_corners_u8, ChessParams, ResponseMap, Roi,
 };
-use chess_corners_core::detect::chess::ring::{ring_offsets, RING10, RING5};
-use chess_corners_core::detect::{detect_corners_from_response, find_corners_u8};
-use chess_corners_core::{ChessParams, ResponseMap};
 
 fn idx(w: usize, x: usize, y: usize) -> usize {
     y * w + x
@@ -173,7 +171,7 @@ fn patch_response_matches_full_map_slice() {
 
     let full = chess_response_u8(img.as_raw(), w, h, &params);
 
-    let roi = response::Roi::new(5, 7, 37, 29).unwrap();
+    let roi = Roi::new(5, 7, 37, 29).unwrap();
     let patch = chess_response_u8_patch(img.as_raw(), w, h, &params, roi);
 
     assert_eq!(patch.width(), roi.x1() - roi.x0());

@@ -53,8 +53,8 @@ re-allocate.
 | `DetectorConfig::radon()`              | Radon    | Single-scale    |
 | `DetectorConfig::radon_multiscale()`   | Radon    | 3-level pyramid |
 
-`single_scale()` and `multiscale()` are deprecated aliases for `chess()` and
-`chess_multiscale()` respectively, and will be removed in 0.12.0.
+Use `chess()` and `chess_multiscale()` for single-scale and multiscale
+ChESS detection respectively.
 
 ## Public config shape
 

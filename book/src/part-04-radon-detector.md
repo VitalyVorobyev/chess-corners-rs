@@ -70,9 +70,10 @@ independent of `r`:
 | `diag_neg_cumsum`| `T[y][x] = T[y-1][x+1] + I[y][x]` (NE-SW)               | `S_{3π/4}` (anti-diag)   |
 
 Each SAT is built in one pass over the image. A ray sum then costs two
-table lookups: `S = T[end] − T[one past start]`. See
-`chess_corners_core::detect::radon::response::build_cumsums` for the
-construction and `compute_response` for the lookup pattern.
+table lookups: `S = T[end] − T[one past start]`. The construction
+logic and the lookup pattern are in the Radon response source inside
+`chess-corners-core` (see `chess_corners_core::unstable` for the
+sub-stage entry points exposed without semver guarantees).
 
 ### SAT element type
 
@@ -94,7 +95,7 @@ controls this:
   SATs are built; all subsequent steps run at the higher resolution.
   This is the paper default and the facade preset value.
 
-Higher factors are clamped to 2 (`MAX_IMAGE_UPSAMPLE`). The response
+Higher factors are clamped to 2 (`chess_corners_core::unstable::MAX_IMAGE_UPSAMPLE`). The response
 map and detected peaks live at working resolution; the detector
 divides peak coordinates by `image_upsample` before returning them,
 so output coordinates are always in the input pixel frame.
@@ -174,7 +175,7 @@ the `DetectorConfig.strategy` enum picks one.
 
 ### Core crate
 
-`chess_corners_core::detect::radon` exposes the pipeline at two levels.
+`chess_corners_core` exposes the Radon pipeline at two levels.
 
 **Low-level** — response map only:
 

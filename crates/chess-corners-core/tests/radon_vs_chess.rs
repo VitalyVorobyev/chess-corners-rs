@@ -1,7 +1,7 @@
 //! ChESS-hostile fixture test.
 //!
 //! The Radon detector was added because there are frames where the
-//! ChESS ring kernel in [`chess_response_u8`](chess_corners_core::detect::chess::response::chess_response_u8)
+//! ChESS ring kernel in [`chess_response_u8`](chess_corners_core::chess_response_u8)
 //! produces no useful signal — heavy blur or low contrast dilutes the
 //! bimodal 5 px ring that ChESS's `SR − DR − 16·|μₙ − μₗ|` formula
 //! depends on. This test constructs such a fixture and asserts that
@@ -14,8 +14,8 @@
 //! keep.
 
 use chess_corners_core::{
-    detect::chess::response::chess_response_u8, detect::detect_corners_from_response,
-    detect_peaks_from_radon, radon_response_u8, ChessParams, RadonBuffers, RadonDetectorParams,
+    chess_response_u8, detect_corners_from_response, detect_peaks_from_radon, radon_response_u8,
+    ChessParams, RadonBuffers, RadonDetectorParams,
 };
 
 /// Render a chessboard, then simulate a hostile capture: heavy
@@ -140,10 +140,8 @@ fn radon_beats_chess_on_blurred_low_contrast_board() {
     let chess_corners = detect_corners_from_response(&chess_resp, &chess_params);
 
     // Radon detector.
-    let radon_params = RadonDetectorParams {
-        image_upsample: 2,
-        ..RadonDetectorParams::default()
-    };
+    let mut radon_params = RadonDetectorParams::default();
+    radon_params.image_upsample = 2;
     let mut buffers = RadonBuffers::new();
     let resp = radon_response_u8(&img, SIZE, SIZE, &radon_params, &mut buffers);
     let radon_corners = detect_peaks_from_radon(&resp, &radon_params);
@@ -192,10 +190,8 @@ fn both_paths_agree_on_clean_fixture() {
     let chess_resp = chess_response_u8(&img, SIZE, SIZE, &chess_params);
     let chess_corners = detect_corners_from_response(&chess_resp, &chess_params);
 
-    let radon_params = RadonDetectorParams {
-        image_upsample: 2,
-        ..RadonDetectorParams::default()
-    };
+    let mut radon_params = RadonDetectorParams::default();
+    radon_params.image_upsample = 2;
     let mut buffers = RadonBuffers::new();
     let resp = radon_response_u8(&img, SIZE, SIZE, &radon_params, &mut buffers);
     let radon_corners = detect_peaks_from_radon(&resp, &radon_params);

@@ -1,7 +1,7 @@
 //! Public Radon-detector convenience functions.
 //!
 //! The whole-image Duda-Frese Radon detector lives in
-//! [`chess_corners_core::detect::radon`]; the corner-detection path is
+//! [`chess-corners-core`](chess_corners_core); the corner-detection path is
 //! exposed via [`crate::Detector`] when the active
 //! [`DetectorConfig::strategy`](crate::DetectorConfig::strategy) is
 //! [`DetectionStrategy::Radon`](crate::DetectionStrategy::Radon). This module
@@ -14,7 +14,7 @@
 //! Use [`ResponseMap::width`] / [`ResponseMap::height`] for the actual
 //! dimensions; the working-to-input scale factor is
 //! `cfg.upscale.effective_factor() *
-//! cfg.to_radon_detector_params().image_upsample.clamp(1, 2)` (the
+//! low_level::to_radon_detector_params(cfg).image_upsample.clamp(1, 2)` (the
 //! Radon-side factor lives in the [`RadonConfig`](crate::RadonConfig)
 //! payload of [`DetectionStrategy::Radon`](crate::DetectionStrategy)).
 
@@ -59,7 +59,7 @@ pub fn radon_heatmap_u8(
     let view = ImageView::from_u8_slice(src_w, src_h, img).expect("dimensions were checked above");
 
     let factor = cfg.upscale.effective_factor();
-    let radon_params = cfg.to_radon_detector_params();
+    let radon_params = cfg.radon_detector_params();
     let mut rb = RadonBuffers::new();
 
     if factor <= 1 {
@@ -127,7 +127,7 @@ mod tests {
 
         let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
 
-        let radon_params = cfg.to_radon_detector_params();
+        let radon_params = cfg.radon_detector_params();
         let mut rb = CoreRadonBuffers::new();
         let view = core_radon(&img, w, h, &radon_params, &mut rb);
         assert_eq!(map.width(), view.width());
@@ -142,7 +142,7 @@ mod tests {
         let (w, h) = (96usize, 72usize);
         let img = synthetic_board(w, h);
         let cfg = DetectorConfig::radon();
-        let upsample = cfg.to_radon_detector_params().image_upsample.clamp(1, 2) as usize;
+        let upsample = cfg.radon_detector_params().image_upsample.clamp(1, 2) as usize;
 
         let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
         assert_eq!(map.width(), w * upsample);
@@ -168,7 +168,7 @@ mod tests {
         let img = synthetic_board(w, h);
         let mut cfg = DetectorConfig::radon();
         cfg.upscale = UpscaleConfig::fixed(2);
-        let radon_upsample = cfg.to_radon_detector_params().image_upsample.clamp(1, 2) as usize;
+        let radon_upsample = cfg.radon_detector_params().image_upsample.clamp(1, 2) as usize;
 
         let map = radon_heatmap_u8(&img, w as u32, h as u32, &cfg).unwrap();
         // Working resolution = input × upscale × radon_image_upsample.

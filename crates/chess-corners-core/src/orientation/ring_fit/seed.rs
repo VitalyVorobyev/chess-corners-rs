@@ -2,6 +2,7 @@
 //! deterministic seed grid, and the cached canonical seed models for
 //! the radius-5 ring.
 
+#[cfg(feature = "std")]
 use super::TANH_BETA;
 use core::f32::consts::PI;
 #[cfg(feature = "std")]
@@ -29,6 +30,7 @@ pub(super) struct SeedCandidate {
     pub rms: f32,
 }
 
+#[cfg(feature = "std")]
 #[derive(Clone, Copy, Debug)]
 pub(super) struct SeedModel {
     pub theta1: f32,

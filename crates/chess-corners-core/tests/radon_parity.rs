@@ -97,17 +97,15 @@ fn axial_ray_sums_match_refiner_at_image_upsample_1() {
     let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
 
     let ray_radius: u32 = 2;
-    let params = RadonDetectorParams {
-        ray_radius,
-        image_upsample: 1,
-        response_blur_radius: 0,
-        peak_fit: PeakFitMode::Gaussian,
-        threshold_abs: Some(0.0),
-        threshold_rel: 0.0,
-        nms_radius: 1,
-        min_cluster_size: 0,
-        ..RadonDetectorParams::default()
-    };
+    let mut params = RadonDetectorParams::default();
+    params.ray_radius = ray_radius;
+    params.image_upsample = 1;
+    params.response_blur_radius = 0;
+    params.peak_fit = PeakFitMode::Gaussian;
+    params.threshold_abs = Some(0.0);
+    params.threshold_rel = 0.0;
+    params.nms_radius = 1;
+    params.min_cluster_size = 0;
     let mut buffers = RadonBuffers::new();
     let detector_resp = radon_response_u8(&img, SIZE, SIZE, &params, &mut buffers);
 
@@ -173,10 +171,8 @@ fn detector_peak_matches_refiner_peak_on_clean_corner() {
     let img = synthetic_chessboard_aa(SIZE, CELL, offset, 30, 230);
     let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
 
-    let det_params = RadonDetectorParams {
-        image_upsample: 2,
-        ..RadonDetectorParams::default()
-    };
+    let mut det_params = RadonDetectorParams::default();
+    det_params.image_upsample = 2;
     let mut buffers = RadonBuffers::new();
     let resp = radon_response_u8(&img, SIZE, SIZE, &det_params, &mut buffers);
     let detector_corners = chess_corners_core::detect_peaks_from_radon(&resp, &det_params);

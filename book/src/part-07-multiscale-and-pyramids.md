@@ -72,7 +72,7 @@ pub trait DenseDetector {
 that want to extend the pipeline with a custom response kernel.
 Subpixel image-domain refinement (Förstner, saddle-point, …) is
 **not** part of the trait — it runs detector-agnostically via
-`chess_corners_core::detect::refine_corners_on_image`.
+`chess_corners_core::refine_corners_on_image`.
 
 The `chess-corners` facade routes the active `DetectorConfig::strategy`
 variant to the corresponding `DenseDetector` implementor at the start of

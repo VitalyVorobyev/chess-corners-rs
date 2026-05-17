@@ -48,6 +48,7 @@ pub type SatElem = u32;
 /// Configuration for the whole-image Radon detector.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct RadonDetectorParams {
     /// Half-length of each ray in **working-resolution** pixels (i.e.
     /// post-upsample). The ray has `2·ray_radius + 1` samples. Paper
@@ -56,7 +57,7 @@ pub struct RadonDetectorParams {
     /// Image-level supersampling factor. `1` operates on the input
     /// pixel grid; `2` bilinearly upsamples first (paper default).
     /// M1 supports the set `{1, 2}`; values `>= 3` are clamped to `2`
-    /// (see [`MAX_IMAGE_UPSAMPLE`]). Higher factors are future work.
+    /// (see [`MAX_IMAGE_UPSAMPLE`](crate::unstable::MAX_IMAGE_UPSAMPLE)). Higher factors are future work.
     pub image_upsample: u32,
     /// Half-size of the box blur applied to the response map. `0`
     /// disables blurring; `1` yields a 3×3 box.
@@ -109,7 +110,8 @@ pub const MAX_IMAGE_UPSAMPLE: u32 = 2;
 impl RadonDetectorParams {
     /// Clamp `image_upsample` into the supported set `{1, 2}`.
     /// Values outside that range are silently clamped — callers can
-    /// detect truncation by comparing against [`MAX_IMAGE_UPSAMPLE`].
+    /// detect truncation by comparing against
+    /// [`MAX_IMAGE_UPSAMPLE`](crate::unstable::MAX_IMAGE_UPSAMPLE).
     #[inline]
     pub(crate) fn image_upsample_clamped(&self) -> u32 {
         self.image_upsample.clamp(1, MAX_IMAGE_UPSAMPLE)

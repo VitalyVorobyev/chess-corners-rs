@@ -158,7 +158,12 @@ impl Detector {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
-    /// Compute the dense Radon response heatmap.
+    /// Return the intermediate dense Radon-response heatmap for an image.
+    ///
+    /// This exposes the per-pixel Radon response that the detector
+    /// computes internally as opt-in diagnostic evidence for debugging
+    /// and visualization. It is not part of the normal detection result
+    /// returned by `detect`.
     fn radon_heatmap<'py>(
         &mut self,
         py: Python<'py>,
@@ -176,7 +181,11 @@ impl Detector {
             .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
 
         let map = py
-            .detach(|| self.inner.radon_heatmap_u8(slice, width_u32, height_u32))
+            .detach(|| {
+                self.inner
+                    .diagnostics()
+                    .radon_heatmap_u8(slice, width_u32, height_u32)
+            })
             .map_err(|e: chess_corners_rs::ChessError| PyValueError::new_err(e.to_string()))?;
 
         let arr = Array2::from_shape_vec((map.height(), map.width()), map.data().to_vec())

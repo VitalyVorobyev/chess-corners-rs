@@ -5,8 +5,8 @@
 //! Run with `cargo run --release -p chess-corners-core --example
 //! orientation_methods_bench`.
 
-use chess_corners_core::orientation::OrientationMethod;
-use chess_corners_core::{detect::Corner, orientation::describe_corners};
+use chess_corners_core::OrientationMethod;
+use chess_corners_core::{describe_corners, Corner};
 use std::hint::black_box;
 use std::time::Instant;
 

@@ -222,6 +222,22 @@ impl MultiscaleConfig {
 /// clustering thresholds (in input-image pixels), and the subpixel
 /// refiner. Multiscale and upscale live at the top level of
 /// [`DetectorConfig`] and apply to both strategies.
+///
+/// # Common knobs
+///
+/// - [`ring`](ChessConfig::ring) — choose the detector kernel radius.
+/// - [`descriptor_ring`](ChessConfig::descriptor_ring) — choose the
+///   descriptor sampling radius.
+/// - [`refiner`](ChessConfig::refiner) — select and configure the
+///   subpixel refinement backend.
+///
+/// # Advanced tuning
+///
+/// [`nms_radius`](ChessConfig::nms_radius) and
+/// [`min_cluster_size`](ChessConfig::min_cluster_size) control NMS and
+/// peak filtering. The defaults work well across a wide range of image
+/// scales. Reduce `nms_radius` when corners are packed tightly; increase
+/// `min_cluster_size` to suppress isolated noise peaks.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 #[non_exhaustive]
@@ -232,10 +248,18 @@ pub struct ChessConfig {
     /// Descriptor sampling ring. Independent of the detector ring;
     /// `FollowDetector` mirrors the detector's choice.
     pub descriptor_ring: DescriptorRing,
-    /// Non-maximum-suppression half-radius, in input-image pixels.
+    /// Advanced tuning. Non-maximum-suppression half-radius in
+    /// input-image pixels. Only the highest-response pixel within this
+    /// radius is kept. Default is `2` (5×5 suppression window).
+    /// Reduce when corners are closer together than `2·nms_radius`
+    /// pixels; increase to suppress near-duplicate detections on
+    /// blurry images.
     pub nms_radius: u32,
-    /// Minimum count of positive-response neighbours in the NMS window
-    /// required to accept a peak.
+    /// Advanced tuning. Minimum number of positive-response neighbours
+    /// within the NMS window that a candidate must have to be accepted.
+    /// Default is `2`. Increase to require a stronger local cluster of
+    /// response, suppressing isolated noise peaks at the cost of
+    /// potentially missing weak corners near image boundaries.
     pub min_cluster_size: u32,
     /// Subpixel refiner. Each variant carries its tuning struct.
     pub refiner: ChessRefiner,
@@ -259,27 +283,55 @@ impl Default for ChessConfig {
 /// All radii and counts are in **working-resolution** pixels (i.e.
 /// after `image_upsample`). Multiscale and upscale live at the top
 /// level of [`DetectorConfig`] and apply to both strategies.
+///
+/// # Common knobs
+///
+/// - [`refiner`](RadonConfig::refiner) — select and configure the
+///   subpixel refinement backend.
+/// - [`image_upsample`](RadonConfig::image_upsample) — `2` (the default)
+///   reproduces the paper's 2× supersampled detection; `1` is faster but
+///   less accurate on low-resolution inputs.
+///
+/// # Advanced tuning
+///
+/// The remaining fields control low-level detection behaviour. The
+/// defaults reproduce the paper's recommended settings and work well
+/// for typical camera images. Adjust them only when you have a specific
+/// reason (e.g. a non-standard image resolution or SNR budget).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 #[non_exhaustive]
 pub struct RadonConfig {
-    /// Half-length of each ray (working-resolution pixels). The ray has
-    /// `2·ray_radius + 1` samples. Paper default at `image_upsample = 2`
-    /// is `ray_radius = 4`.
+    /// Advanced tuning. Half-length of each Radon ray in
+    /// working-resolution pixels. The ray has `2·ray_radius + 1`
+    /// samples. Paper default at `image_upsample = 2` is `ray_radius = 4`.
+    /// Shorter rays are faster but integrate less signal; longer rays are
+    /// more discriminating but may cross into neighbouring cells.
     pub ray_radius: u32,
-    /// Image-level supersampling factor. `1` operates on the input grid;
-    /// `2` bilinearly upsamples first (paper default). Values ≥ 3 are
-    /// clamped to 2 by the core detector.
+    /// Image-level supersampling factor applied before ray integration.
+    /// `1` operates on the input grid; `2` (paper default) is equivalent
+    /// to bilinearly upsampling the input first, giving sub-pixel ray
+    /// positioning. Values ≥ 3 are clamped to 2 by the core detector.
     pub image_upsample: u32,
-    /// Half-size of the box blur applied to the response map. `0` disables
-    /// blurring; `1` yields a 3×3 box.
+    /// Advanced tuning. Half-size of the box blur applied to the Radon
+    /// response map after integration. `0` disables blurring; `1`
+    /// (default) yields a 3×3 box, smoothing quantisation noise in the
+    /// response. Increase only on very high-SNR images where extra
+    /// smoothing is unwanted.
     pub response_blur_radius: u32,
-    /// Peak-fit mode for the 3-point subpixel refinement.
+    /// Advanced tuning. Peak-fit mode for the 3-point subpixel
+    /// refinement of the response-map argmax. `Gaussian` (default) fits
+    /// on log-response (more accurate near the peak); `Parabolic` fits
+    /// directly on the response values. See [`PeakFitMode`].
     pub peak_fit: PeakFitMode,
-    /// Non-maximum-suppression half-radius, in working-resolution pixels.
+    /// Advanced tuning. Non-maximum-suppression half-radius in
+    /// working-resolution pixels. Default is `4`. See
+    /// [`ChessConfig::nms_radius`] for guidance; note that these pixels
+    /// are at working resolution (after `image_upsample`).
     pub nms_radius: u32,
-    /// Minimum count of positive-response neighbours in the NMS window
-    /// required to accept a peak.
+    /// Advanced tuning. Minimum number of positive-response neighbours
+    /// within the NMS window that a candidate must have to be accepted.
+    /// Default is `2`. See [`ChessConfig::min_cluster_size`] for guidance.
     pub min_cluster_size: u32,
     /// Subpixel refiner. Each variant carries its tuning struct.
     pub refiner: RadonRefiner,
@@ -336,6 +388,28 @@ impl Default for DetectionStrategy {
 /// The detector translates this into the low-level [`ChessParams`] /
 /// [`RadonDetectorParams`] consumed by `chess-corners-core` at the detection
 /// boundary.
+///
+/// # Common knobs
+///
+/// These fields are the primary surface for most callers:
+///
+/// - [`strategy`](DetectorConfig::strategy) — choose ChESS or Radon and
+///   configure its parameters.
+/// - [`threshold`](DetectorConfig::threshold) — control how many corners are
+///   returned: lower `Relative` fraction or `Absolute` floor → more
+///   candidates; higher → fewer, stronger ones.
+/// - [`multiscale`](DetectorConfig::multiscale) — enable coarse-to-fine
+///   pyramid detection (`Pyramid`) or keep it off (`SingleScale`).
+/// - [`upscale`](DetectorConfig::upscale) — pre-pipeline integer bilinear
+///   upscaling for low-resolution inputs where corners have fewer than 5 px
+///   of ring support. `Disabled` by default.
+/// - [`orientation_method`](DetectorConfig::orientation_method) — how corner
+///   axis orientations are estimated when building descriptors.
+///
+/// # Advanced tuning
+///
+/// - [`merge_radius`](DetectorConfig::merge_radius) — duplicate-suppression
+///   radius across pyramid levels. See the field docs below.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 #[non_exhaustive]
@@ -351,8 +425,14 @@ pub struct DetectorConfig {
     pub upscale: UpscaleConfig,
     /// Orientation-fit method used when building corner descriptors.
     pub orientation_method: OrientationMethod,
-    /// Merge radius (base-image pixels) for cross-level / cross-seed
-    /// duplicate suppression. Honoured by both detectors.
+    /// Advanced tuning. Merge radius in base-image pixels for
+    /// cross-level and cross-seed duplicate suppression. After seeds
+    /// detected at coarser pyramid levels are refined into the base
+    /// image, any two refined positions within this radius are merged
+    /// into a single output corner. Default is `3.0` px. Increase if
+    /// you see duplicate detections near the same physical corner;
+    /// decrease if distinct corners closer than `2·merge_radius` pixels
+    /// are being merged.
     pub merge_radius: f32,
 }
 
@@ -469,8 +549,8 @@ impl DetectorConfig {
     /// When the active strategy is [`DetectionStrategy::Radon`], the
     /// ChESS-specific fields fall back to their [`ChessParams::default()`]
     /// values; callers should route through
-    /// [`Self::to_radon_detector_params`] instead.
-    pub fn to_chess_params(&self) -> ChessParams {
+    /// [`Self::radon_detector_params`] instead.
+    pub(crate) fn chess_params(&self) -> ChessParams {
         let mut params = ChessParams::default();
         if let DetectionStrategy::Chess(chess) = &self.strategy {
             params.use_radius10 = matches!(chess.ring, ChessRing::Broad);
@@ -495,8 +575,8 @@ impl DetectorConfig {
     /// When the active strategy is [`DetectionStrategy::Chess`], the
     /// Radon-specific fields fall back to their
     /// [`RadonDetectorParams::default()`] values; callers should route
-    /// through [`Self::to_chess_params`] instead.
-    pub fn to_radon_detector_params(&self) -> RadonDetectorParams {
+    /// through [`Self::chess_params`] instead.
+    pub(crate) fn radon_detector_params(&self) -> RadonDetectorParams {
         let mut params = RadonDetectorParams::default();
         if let DetectionStrategy::Radon(radon) = &self.strategy {
             params.ray_radius = radon.ray_radius;
@@ -515,7 +595,7 @@ impl DetectorConfig {
     /// the multiscale pipeline. Returns `None` when [`Self::multiscale`]
     /// is [`MultiscaleConfig::SingleScale`]. Both ChESS and Radon honour
     /// the same top-level multiscale settings.
-    pub fn to_coarse_to_fine_params(&self) -> Option<CoarseToFineParams> {
+    pub(crate) fn coarse_to_fine_params(&self) -> Option<CoarseToFineParams> {
         let MultiscaleConfig::Pyramid {
             levels,
             min_size,
@@ -651,9 +731,9 @@ mod tests {
         assert_eq!(cfg.upscale, UpscaleConfig::Disabled);
         assert_eq!(cfg.threshold, Threshold::Absolute(0.0));
         assert_eq!(cfg.merge_radius, 3.0);
-        assert!(cfg.to_coarse_to_fine_params().is_none());
+        assert!(cfg.coarse_to_fine_params().is_none());
 
-        let params = cfg.to_chess_params();
+        let params = cfg.chess_params();
         assert!(!params.use_radius10);
         assert_eq!(params.descriptor_use_radius10, None);
         assert_eq!(params.threshold_abs, Some(0.0));
@@ -671,7 +751,7 @@ mod tests {
             threshold: Threshold::Relative(0.15),
             ..DetectorConfig::chess()
         };
-        let params = cfg.to_chess_params();
+        let params = cfg.chess_params();
         assert_eq!(params.threshold_abs, None);
         assert!((params.threshold_rel - 0.15).abs() < f32::EPSILON);
     }
@@ -682,7 +762,7 @@ mod tests {
             threshold: Threshold::Absolute(7.5),
             ..DetectorConfig::chess()
         };
-        let params = cfg.to_chess_params();
+        let params = cfg.chess_params();
         assert_eq!(params.threshold_abs, Some(7.5));
     }
 
@@ -702,7 +782,7 @@ mod tests {
         assert_eq!(refinement_radius, 3);
 
         let cf = cfg
-            .to_coarse_to_fine_params()
+            .coarse_to_fine_params()
             .expect("chess_multiscale config must produce CoarseToFineParams");
         assert_eq!(cf.pyramid.num_levels, 3);
         assert_eq!(cf.pyramid.min_size, 128);
@@ -726,9 +806,9 @@ mod tests {
         );
         assert_eq!(cfg.threshold, Threshold::Relative(0.01));
         assert_eq!(cfg.multiscale, MultiscaleConfig::SingleScale);
-        assert!(cfg.to_coarse_to_fine_params().is_none());
+        assert!(cfg.coarse_to_fine_params().is_none());
 
-        let radon_params = cfg.to_radon_detector_params();
+        let radon_params = cfg.radon_detector_params();
         assert_eq!(radon_params.ray_radius, 4);
         assert_eq!(radon_params.image_upsample, 2);
         assert_eq!(radon_params.threshold_abs, None);
@@ -757,7 +837,7 @@ mod tests {
         assert_eq!(refinement_radius, 3);
 
         let cf = cfg
-            .to_coarse_to_fine_params()
+            .coarse_to_fine_params()
             .expect("radon_multiscale config must produce CoarseToFineParams");
         assert_eq!(cf.pyramid.num_levels, 3);
         assert_eq!(cf.pyramid.min_size, 128);
@@ -780,7 +860,7 @@ mod tests {
             ..DetectorConfig::chess()
         };
 
-        let params = cfg.to_chess_params();
+        let params = cfg.chess_params();
         assert!(params.use_radius10);
         assert_eq!(params.descriptor_use_radius10, Some(false));
         assert_eq!(
@@ -801,7 +881,7 @@ mod tests {
             }),
             ..DetectorConfig::radon()
         };
-        let params = cfg.to_radon_detector_params();
+        let params = cfg.radon_detector_params();
         assert_eq!(
             params.refiner,
             RefinerKind::CenterOfMass(CenterOfMassConfig::default())

@@ -10,7 +10,7 @@
 //! 3. The detector candidate is then handed to a refiner from
 //!    [`crate::refine`] and an orientation fit from
 //!    [`crate::orientation`] to produce a final
-//!    [`crate::detect::CornerDescriptor`].
+//!    [`crate::CornerDescriptor`].
 
 pub mod detect;
 pub mod response;

@@ -15,11 +15,8 @@
 //! ```
 
 use chess_corners_core::{
-    refine::{
-        CornerRefiner, ForstnerConfig, ForstnerRefiner, RadonPeakConfig, RadonPeakRefiner,
-        RefineContext, RefineStatus, SaddlePointConfig, SaddlePointRefiner,
-    },
-    ImageView,
+    CornerRefiner, ForstnerConfig, ForstnerRefiner, ImageView, RadonPeakConfig, RadonPeakRefiner,
+    RefineContext, RefineStatus, SaddlePointConfig, SaddlePointRefiner,
 };
 
 /// Anti-aliased synthetic chessboard renderer. Shares the supersampling

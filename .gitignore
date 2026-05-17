@@ -16,3 +16,4 @@ tools/ml_refiner/runs/**/*.npz
 REVIEW.md
 out
 crates/chess-corners/tests/snapshots/actual/
+API_REVISION.md

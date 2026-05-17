@@ -25,10 +25,8 @@ use chess_corners::{
     RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
     Threshold as RsThreshold, UpscaleConfig as RsUpscaleConfig,
 };
-use std::ffi::CString;
-
 use pyo3::create_exception;
-use pyo3::exceptions::{PyDeprecationWarning, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString, PyType};
 
@@ -2685,28 +2683,6 @@ impl DetectorConfig {
     #[classmethod]
     fn radon_multiscale(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
         Self::from_rs(py, RsDetectorConfig::radon_multiscale())
-    }
-
-    /// Deprecated. Use `DetectorConfig.chess()` instead.
-    #[classmethod]
-    fn single_scale(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
-        let msg = CString::new(
-            "DetectorConfig.single_scale() is deprecated; use DetectorConfig.chess() instead",
-        )
-        .unwrap();
-        PyErr::warn(py, &py.get_type::<PyDeprecationWarning>(), &msg, 1)?;
-        Self::from_rs(py, RsDetectorConfig::chess())
-    }
-
-    /// Deprecated. Use `DetectorConfig.chess_multiscale()` instead.
-    #[classmethod]
-    fn multiscale_preset(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
-        let msg = CString::new(
-            "DetectorConfig.multiscale_preset() is deprecated; use DetectorConfig.chess_multiscale() instead",
-        )
-        .unwrap();
-        PyErr::warn(py, &py.get_type::<PyDeprecationWarning>(), &msg, 1)?;
-        Self::from_rs(py, RsDetectorConfig::chess_multiscale())
     }
 
     // ---- chainable builder methods ----

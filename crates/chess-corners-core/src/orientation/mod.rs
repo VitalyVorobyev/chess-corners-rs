@@ -16,7 +16,7 @@
 //! breaking SemVer thanks to the `#[non_exhaustive]` attribute.
 
 mod api;
-pub mod descriptor;
+mod descriptor;
 mod disk_sector;
 mod ring_fit;
 
@@ -33,7 +33,7 @@ pub use descriptor::describe_corners;
 /// projective skew (axis separation far from 90°).
 ///
 /// All variants emit `axes[0]` and `axes[1]` under the same canonical
-/// convention documented on [`crate::detect::CornerDescriptor`]:
+/// convention documented on [`crate::CornerDescriptor`]:
 /// `axes[0].angle ∈ [0, π)`, `axes[1].angle ∈ (axes[0].angle,
 /// axes[0].angle + π)`, and the CCW arc `(axes[0], axes[1])` is a *dark*
 /// sector of the corner. Downstream consumers can therefore compare
@@ -75,7 +75,7 @@ pub enum OrientationMethod {
     ///
     /// Output axes use the same canonical convention as [`Self::RingFit`]
     /// — see the type-level doc comment above and
-    /// [`crate::detect::CornerDescriptor`].
+    /// [`crate::CornerDescriptor`].
     DiskFit,
 }
 

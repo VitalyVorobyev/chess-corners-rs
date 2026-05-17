@@ -421,7 +421,7 @@ optimisation or topology reasoning at this stage.
 You get `CornerDescriptor` values when you use the high‑level APIs:
 
 - `chess-corners-core` users can run the response and detector
-  stages manually and then call `orientation::describe_corners`.
+  stages manually and then call `chess_corners_core::describe_corners`.
 - `chess-corners` users get `Vec<CornerDescriptor>` directly from
   the [`Detector`](https://docs.rs/chess-corners) struct's `detect`,
   `detect_u8`, or `detect_view` methods.

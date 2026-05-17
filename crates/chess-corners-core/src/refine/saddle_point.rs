@@ -10,12 +10,36 @@ use super::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the [`SaddlePointRefiner`].
+///
+/// All thresholds below are advanced tuning knobs. The defaults are
+/// appropriate for most scenes; adjust only if you observe excessive
+/// rejection or acceptance of clearly-wrong refinements.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SaddlePointConfig {
+    /// Half-size of the image patch used for the surface fit
+    /// (full patch is `2·radius+1` × `2·radius+1`). Default is `2`
+    /// (5×5 patch).
+    ///
+    /// Advanced tuning.
     pub radius: i32,
+    /// The Hessian determinant of the fitted quadratic must be more
+    /// negative than `-det_margin` (i.e. `det(H) < -det_margin`) for
+    /// a saddle to be confirmed. Increase to require a sharper saddle
+    /// before accepting.
+    ///
+    /// Advanced tuning.
     pub det_margin: f32,
+    /// Maximum displacement (pixels) from the seed to the fitted
+    /// stationary point. Refinements with a larger displacement are
+    /// rejected. Mirrors `ForstnerConfig::max_offset`.
+    ///
+    /// Advanced tuning.
     pub max_offset: f32,
+    /// Minimum absolute value of `det(H)`. Rejects near-flat surfaces
+    /// where the determinant is too close to zero to be meaningful.
+    ///
+    /// Advanced tuning.
     pub min_abs_det: f32,
 }
 
@@ -30,6 +54,15 @@ impl Default for SaddlePointConfig {
     }
 }
 
+/// Saddle-point quadratic-surface subpixel refiner.
+///
+/// Fits a 2nd-order surface to the image patch and locates the saddle
+/// (the unique stationary point where the Hessian is indefinite). The
+/// refiner requires the image intensity patch (passed via
+/// [`RefineContext::image`]); it ignores the response map.
+///
+/// Reuses a fixed-size `6×6` scratch matrix across calls so there is no
+/// per-corner allocation.
 #[derive(Debug)]
 pub struct SaddlePointRefiner {
     cfg: SaddlePointConfig,
@@ -38,6 +71,7 @@ pub struct SaddlePointRefiner {
 }
 
 impl SaddlePointRefiner {
+    /// Construct a refiner with the given configuration.
     pub fn new(cfg: SaddlePointConfig) -> Self {
         Self {
             cfg,
