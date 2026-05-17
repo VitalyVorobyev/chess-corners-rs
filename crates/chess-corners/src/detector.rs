@@ -26,13 +26,13 @@
 //! ```
 
 use box_image_pyramid::PyramidBuffers;
-use chess_corners_core::{ChessBuffers, CornerDescriptor, ImageView, RadonBuffers};
+use chess_corners_core::{ChessBuffers, RadonBuffers};
 
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
 use crate::multiscale;
 use crate::upscale::{self, UpscaleBuffers};
-use crate::{ChessError, DetectorConfig};
+use crate::{low_level::ImageView, ChessError, CornerDescriptor, DetectorConfig};
 
 /// High-level chessboard-corner detector.
 ///
@@ -188,26 +188,6 @@ impl Detector {
     #[cfg(feature = "image")]
     pub fn detect(&mut self, img: &image::GrayImage) -> Result<Vec<CornerDescriptor>, ChessError> {
         self.detect_u8(img.as_raw(), img.width(), img.height())
-    }
-
-    /// Detect chessboard corners from a borrowed [`ImageView`].
-    ///
-    /// Lower-level than [`Self::detect_u8`] / [`Self::detect`]:
-    /// upscaling is not applied here. Use this when you have a
-    /// pre-upscaled image or you don't want the upscale pipeline at
-    /// all.
-    pub fn detect_view(&mut self, view: ImageView<'_>) -> Vec<CornerDescriptor> {
-        Self::detect_view_inner(
-            &self.cfg,
-            &mut self.pyramid,
-            &mut self.chess_buffers,
-            &mut self.radon_buffers,
-            #[cfg(feature = "ml-refiner")]
-            &mut self.ml_state,
-            #[cfg(feature = "ml-refiner")]
-            &self.ml_params,
-            view,
-        )
     }
 
     /// Borrow a detector-bound diagnostics accessor.

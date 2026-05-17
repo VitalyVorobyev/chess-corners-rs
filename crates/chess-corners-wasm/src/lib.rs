@@ -25,7 +25,7 @@ pub mod config;
 
 use chess_corners::{
     diagnostics::{chess_response_u8, radon_heatmap_u8, ResponseMap},
-    Detector as RsDetector, DetectorConfig as RsDetectorConfig,
+    low_level, Detector as RsDetector, DetectorConfig as RsDetectorConfig,
 };
 use wasm_bindgen::prelude::*;
 
@@ -172,6 +172,17 @@ impl ChessDetector {
         self.detect(&gray, width, height)
     }
 
+    /// Camel-case alias for JavaScript callers.
+    #[wasm_bindgen(js_name = detectRgba)]
+    pub fn detect_rgba_alias(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<js_sys::Float32Array, JsValue> {
+        self.detect_rgba(pixels, width, height)
+    }
+
     // ---- Diagnostics: response map ----
     //
     // The `diagnostics_*` methods below are opt-in diagnostics. They
@@ -194,12 +205,23 @@ impl ChessDetector {
         width: u32,
         height: u32,
     ) -> js_sys::Float32Array {
-        let params = self.inner.config().to_chess_params();
+        let params = low_level::to_chess_params(self.inner.config());
         let resp = chess_response_u8(pixels, width as usize, height as usize, &params);
         let arr = js_sys::Float32Array::new_with_length(resp.data().len() as u32);
         arr.copy_from(resp.data());
         self.last_response = Some(resp);
         arr
+    }
+
+    /// Camel-case alias for JavaScript callers.
+    #[wasm_bindgen(js_name = diagnosticsResponse)]
+    pub fn diagnostics_response_alias(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> js_sys::Float32Array {
+        self.diagnostics_response(pixels, width, height)
     }
 
     /// Compute the response map from RGBA pixels.
@@ -216,6 +238,17 @@ impl ChessDetector {
         self.diagnostics_response(&gray, width, height)
     }
 
+    /// Camel-case alias for JavaScript callers.
+    #[wasm_bindgen(js_name = diagnosticsResponseRgba)]
+    pub fn diagnostics_response_rgba_alias(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> js_sys::Float32Array {
+        self.diagnostics_response_rgba(pixels, width, height)
+    }
+
     /// Width of the last computed response map.
     ///
     /// Opt-in diagnostic: companion accessor for `diagnostics_response`.
@@ -223,11 +256,23 @@ impl ChessDetector {
         self.last_response.as_ref().map_or(0, |r| r.width() as u32)
     }
 
+    /// Camel-case alias for JavaScript callers.
+    #[wasm_bindgen(js_name = diagnosticsResponseWidth)]
+    pub fn diagnostics_response_width_alias(&self) -> u32 {
+        self.diagnostics_response_width()
+    }
+
     /// Height of the last computed response map.
     ///
     /// Opt-in diagnostic: companion accessor for `diagnostics_response`.
     pub fn diagnostics_response_height(&self) -> u32 {
         self.last_response.as_ref().map_or(0, |r| r.height() as u32)
+    }
+
+    /// Camel-case alias for JavaScript callers.
+    #[wasm_bindgen(js_name = diagnosticsResponseHeight)]
+    pub fn diagnostics_response_height_alias(&self) -> u32 {
+        self.diagnostics_response_height()
     }
 
     // ---- Diagnostics: Radon heatmap ----
@@ -264,15 +309,23 @@ impl ChessDetector {
         // even if the caller mutates upscale / Radon image_upsample
         // after this call.
         let upscale = self.inner.config().upscale.effective_factor().max(1);
-        let radon_up = self
-            .inner
-            .config()
-            .to_radon_detector_params()
+        let radon_up = low_level::to_radon_detector_params(self.inner.config())
             .image_upsample
             .clamp(1, 2);
         self.last_radon_scale = upscale * radon_up;
         self.last_radon_response = Some(resp);
         Ok(arr)
+    }
+
+    /// Camel-case alias for JavaScript callers.
+    #[wasm_bindgen(js_name = diagnosticsRadonHeatmap)]
+    pub fn diagnostics_radon_heatmap_alias(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<js_sys::Float32Array, JsValue> {
+        self.diagnostics_radon_heatmap(pixels, width, height)
     }
 
     /// Compute the Radon heatmap from RGBA pixels (e.g. from canvas
@@ -290,6 +343,17 @@ impl ChessDetector {
         self.diagnostics_radon_heatmap(&gray, width, height)
     }
 
+    /// Camel-case alias for JavaScript callers.
+    #[wasm_bindgen(js_name = diagnosticsRadonHeatmapRgba)]
+    pub fn diagnostics_radon_heatmap_rgba_alias(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<js_sys::Float32Array, JsValue> {
+        self.diagnostics_radon_heatmap_rgba(pixels, width, height)
+    }
+
     /// Width of the last computed Radon heatmap (working resolution).
     ///
     /// Opt-in diagnostic: companion accessor for
@@ -300,6 +364,12 @@ impl ChessDetector {
             .map_or(0, |r| r.width() as u32)
     }
 
+    /// Camel-case alias for JavaScript callers.
+    #[wasm_bindgen(js_name = diagnosticsRadonHeatmapWidth)]
+    pub fn diagnostics_radon_heatmap_width_alias(&self) -> u32 {
+        self.diagnostics_radon_heatmap_width()
+    }
+
     /// Height of the last computed Radon heatmap (working resolution).
     ///
     /// Opt-in diagnostic: companion accessor for
@@ -308,6 +378,12 @@ impl ChessDetector {
         self.last_radon_response
             .as_ref()
             .map_or(0, |r| r.height() as u32)
+    }
+
+    /// Camel-case alias for JavaScript callers.
+    #[wasm_bindgen(js_name = diagnosticsRadonHeatmapHeight)]
+    pub fn diagnostics_radon_heatmap_height_alias(&self) -> u32 {
+        self.diagnostics_radon_heatmap_height()
     }
 
     /// Working-to-input scale factor for the last computed Radon heatmap.
@@ -327,6 +403,12 @@ impl ChessDetector {
     /// been computed yet.
     pub fn diagnostics_radon_heatmap_scale(&self) -> u32 {
         self.last_radon_scale
+    }
+
+    /// Camel-case alias for JavaScript callers.
+    #[wasm_bindgen(js_name = diagnosticsRadonHeatmapScale)]
+    pub fn diagnostics_radon_heatmap_scale_alias(&self) -> u32 {
+        self.diagnostics_radon_heatmap_scale()
     }
 }
 

@@ -549,8 +549,8 @@ impl DetectorConfig {
     /// When the active strategy is [`DetectionStrategy::Radon`], the
     /// ChESS-specific fields fall back to their [`ChessParams::default()`]
     /// values; callers should route through
-    /// [`Self::to_radon_detector_params`] instead.
-    pub fn to_chess_params(&self) -> ChessParams {
+    /// [`Self::radon_detector_params`] instead.
+    pub(crate) fn chess_params(&self) -> ChessParams {
         let mut params = ChessParams::default();
         if let DetectionStrategy::Chess(chess) = &self.strategy {
             params.use_radius10 = matches!(chess.ring, ChessRing::Broad);
@@ -575,8 +575,8 @@ impl DetectorConfig {
     /// When the active strategy is [`DetectionStrategy::Chess`], the
     /// Radon-specific fields fall back to their
     /// [`RadonDetectorParams::default()`] values; callers should route
-    /// through [`Self::to_chess_params`] instead.
-    pub fn to_radon_detector_params(&self) -> RadonDetectorParams {
+    /// through [`Self::chess_params`] instead.
+    pub(crate) fn radon_detector_params(&self) -> RadonDetectorParams {
         let mut params = RadonDetectorParams::default();
         if let DetectionStrategy::Radon(radon) = &self.strategy {
             params.ray_radius = radon.ray_radius;
@@ -595,7 +595,7 @@ impl DetectorConfig {
     /// the multiscale pipeline. Returns `None` when [`Self::multiscale`]
     /// is [`MultiscaleConfig::SingleScale`]. Both ChESS and Radon honour
     /// the same top-level multiscale settings.
-    pub fn to_coarse_to_fine_params(&self) -> Option<CoarseToFineParams> {
+    pub(crate) fn coarse_to_fine_params(&self) -> Option<CoarseToFineParams> {
         let MultiscaleConfig::Pyramid {
             levels,
             min_size,
@@ -731,9 +731,9 @@ mod tests {
         assert_eq!(cfg.upscale, UpscaleConfig::Disabled);
         assert_eq!(cfg.threshold, Threshold::Absolute(0.0));
         assert_eq!(cfg.merge_radius, 3.0);
-        assert!(cfg.to_coarse_to_fine_params().is_none());
+        assert!(cfg.coarse_to_fine_params().is_none());
 
-        let params = cfg.to_chess_params();
+        let params = cfg.chess_params();
         assert!(!params.use_radius10);
         assert_eq!(params.descriptor_use_radius10, None);
         assert_eq!(params.threshold_abs, Some(0.0));
@@ -751,7 +751,7 @@ mod tests {
             threshold: Threshold::Relative(0.15),
             ..DetectorConfig::chess()
         };
-        let params = cfg.to_chess_params();
+        let params = cfg.chess_params();
         assert_eq!(params.threshold_abs, None);
         assert!((params.threshold_rel - 0.15).abs() < f32::EPSILON);
     }
@@ -762,7 +762,7 @@ mod tests {
             threshold: Threshold::Absolute(7.5),
             ..DetectorConfig::chess()
         };
-        let params = cfg.to_chess_params();
+        let params = cfg.chess_params();
         assert_eq!(params.threshold_abs, Some(7.5));
     }
 
@@ -782,7 +782,7 @@ mod tests {
         assert_eq!(refinement_radius, 3);
 
         let cf = cfg
-            .to_coarse_to_fine_params()
+            .coarse_to_fine_params()
             .expect("chess_multiscale config must produce CoarseToFineParams");
         assert_eq!(cf.pyramid.num_levels, 3);
         assert_eq!(cf.pyramid.min_size, 128);
@@ -806,9 +806,9 @@ mod tests {
         );
         assert_eq!(cfg.threshold, Threshold::Relative(0.01));
         assert_eq!(cfg.multiscale, MultiscaleConfig::SingleScale);
-        assert!(cfg.to_coarse_to_fine_params().is_none());
+        assert!(cfg.coarse_to_fine_params().is_none());
 
-        let radon_params = cfg.to_radon_detector_params();
+        let radon_params = cfg.radon_detector_params();
         assert_eq!(radon_params.ray_radius, 4);
         assert_eq!(radon_params.image_upsample, 2);
         assert_eq!(radon_params.threshold_abs, None);
@@ -837,7 +837,7 @@ mod tests {
         assert_eq!(refinement_radius, 3);
 
         let cf = cfg
-            .to_coarse_to_fine_params()
+            .coarse_to_fine_params()
             .expect("radon_multiscale config must produce CoarseToFineParams");
         assert_eq!(cf.pyramid.num_levels, 3);
         assert_eq!(cf.pyramid.min_size, 128);
@@ -860,7 +860,7 @@ mod tests {
             ..DetectorConfig::chess()
         };
 
-        let params = cfg.to_chess_params();
+        let params = cfg.chess_params();
         assert!(params.use_radius10);
         assert_eq!(params.descriptor_use_radius10, Some(false));
         assert_eq!(
@@ -881,7 +881,7 @@ mod tests {
             }),
             ..DetectorConfig::radon()
         };
-        let params = cfg.to_radon_detector_params();
+        let params = cfg.radon_detector_params();
         assert_eq!(
             params.refiner,
             RefinerKind::CenterOfMass(CenterOfMassConfig::default())

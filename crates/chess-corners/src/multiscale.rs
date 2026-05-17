@@ -10,8 +10,8 @@
 //!
 //! The generic driver [`detect_multiscale`] is parameterised over
 //! [`DenseDetector`], so both the ChESS and Radon detectors flow
-//! through the same orchestrator. The dispatch in
-//! [`crate::Detector::detect_view`] selects the detector ZST per
+//! through the same orchestrator. The dispatch behind
+//! [`crate::Detector::detect_u8`] selects the detector ZST per
 //! [`crate::DetectionStrategy`]. End users should reach detection
 //! through [`crate::Detector`].
 
@@ -420,11 +420,11 @@ pub(crate) fn detect_with_buffers(
     chess_buffers: &mut ChessBuffers,
     radon_buffers: &mut RadonBuffers,
 ) -> Vec<CornerDescriptor> {
-    let multiscale = cfg.to_coarse_to_fine_params();
+    let multiscale = cfg.coarse_to_fine_params();
 
     match &cfg.strategy {
         DetectionStrategy::Chess(_) => {
-            let chess_params = cfg.to_chess_params();
+            let chess_params = cfg.chess_params();
             let refiner_kind = chess_params.refiner.clone();
             let shape = DetectorShape {
                 refiner_kind: &refiner_kind,
@@ -443,7 +443,7 @@ pub(crate) fn detect_with_buffers(
             )
         }
         DetectionStrategy::Radon(_) => {
-            let radon_params = cfg.to_radon_detector_params();
+            let radon_params = cfg.radon_detector_params();
             let refiner_kind = radon_params.refiner.clone();
             // Radon strategies don't carry a descriptor-ring knob;
             // descriptors sample the canonical r=5 ring downstream.
@@ -498,7 +498,7 @@ pub(crate) fn detect_with_ml(
 
     let _ = (radon_buffers,); // unused on the ChESS branch but kept in the signature for symmetry.
 
-    let params = cfg.to_chess_params();
+    let params = cfg.chess_params();
     let ml_border = ml_refiner::patch_radius(ml);
     coarse_to_fine_with_ml(
         base,
@@ -529,7 +529,7 @@ where
     R: FnMut(&ResponseMap, &ChessParams, Option<ImageView<'_>>) -> Vec<Corner>,
 {
     // Single-scale ChESS+ML.
-    let Some(cf) = cfg.to_coarse_to_fine_params() else {
+    let Some(cf) = cfg.coarse_to_fine_params() else {
         let detector = ChessDetector;
         let resp = detector.compute_response(base, params, chess_buffers);
         let view = ImageView::from_u8_slice(base.width, base.height, base.data)
@@ -664,7 +664,7 @@ mod tests {
     fn chess_config_multiscale_preset_has_expected_pyramid() {
         let cfg = DetectorConfig::chess_multiscale();
         let cf = cfg
-            .to_coarse_to_fine_params()
+            .coarse_to_fine_params()
             .expect("chess_multiscale preset must produce CoarseToFineParams");
         assert_eq!(cf.pyramid.num_levels, 3);
         assert_eq!(cf.pyramid.min_size, 128);

@@ -27,9 +27,6 @@ pub use chess_corners_core::ResponseMap;
 /// Compute the dense ChESS response map for an 8-bit grayscale image.
 pub use chess_corners_core::chess_response_u8;
 
-/// Compute the ChESS response over a sub-rectangle of an 8-bit image.
-pub use chess_corners_core::unstable::chess_response_u8_patch;
-
 /// Compute the Radon corner heatmap for an 8-bit grayscale buffer.
 pub use crate::radon::radon_heatmap_u8;
 
@@ -80,8 +77,7 @@ impl<'a> DetectorDiagnostics<'a> {
     ///
     /// This mirrors the free function [`chess_response_u8`] but sources
     /// [`ChessParams`](chess_corners_core::ChessParams) from the bound
-    /// detector via
-    /// [`DetectorConfig::to_chess_params`](crate::DetectorConfig::to_chess_params).
+    /// detector.
     ///
     /// # Errors
     ///
@@ -102,7 +98,7 @@ impl<'a> DetectorDiagnostics<'a> {
                 actual: img.len(),
             });
         }
-        let params = self.detector.config().to_chess_params();
+        let params = self.detector.config().chess_params();
         Ok(chess_response_u8(img, w, h, &params))
     }
 

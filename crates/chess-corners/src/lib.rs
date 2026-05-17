@@ -116,7 +116,7 @@
 //!
 //! ## ML refiner (feature `ml-refiner`)
 //!
-//! Pick the ML pipeline by selecting [`ChessRefiner::Ml`] inside the
+//! Pick the ML pipeline by selecting `ChessRefiner::Ml` inside the
 //! ChESS strategy. The example is marked `no_run` because loading the
 //! embedded ONNX model on first use is not appropriate for a doctest:
 //!

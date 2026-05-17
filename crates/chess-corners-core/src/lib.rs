@@ -1,4 +1,3 @@
-#![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 //! Core primitives for ChESS/Radon response computation, subpixel
 //! refinement, and corner descriptors.
@@ -24,8 +23,8 @@
 //!
 //! # Features
 //!
-//! - `std` *(default)* – enables use of the Rust standard library. When
-//!   disabled, the crate is `no_std` + `alloc`.
+//! - `std` *(default)* – compatibility feature reserved for future use.
+//!   The current detector implementation requires the Rust standard library.
 //! - `rayon` – parallelizes the dense response computation and Radon accumulation
 //!   over image rows using the `rayon` crate. Does not change numerical results.
 //! - `simd` – enables a SIMD‑accelerated inner loop for the ChESS response

@@ -140,10 +140,8 @@ fn radon_beats_chess_on_blurred_low_contrast_board() {
     let chess_corners = detect_corners_from_response(&chess_resp, &chess_params);
 
     // Radon detector.
-    let radon_params = RadonDetectorParams {
-        image_upsample: 2,
-        ..RadonDetectorParams::default()
-    };
+    let mut radon_params = RadonDetectorParams::default();
+    radon_params.image_upsample = 2;
     let mut buffers = RadonBuffers::new();
     let resp = radon_response_u8(&img, SIZE, SIZE, &radon_params, &mut buffers);
     let radon_corners = detect_peaks_from_radon(&resp, &radon_params);
@@ -192,10 +190,8 @@ fn both_paths_agree_on_clean_fixture() {
     let chess_resp = chess_response_u8(&img, SIZE, SIZE, &chess_params);
     let chess_corners = detect_corners_from_response(&chess_resp, &chess_params);
 
-    let radon_params = RadonDetectorParams {
-        image_upsample: 2,
-        ..RadonDetectorParams::default()
-    };
+    let mut radon_params = RadonDetectorParams::default();
+    radon_params.image_upsample = 2;
     let mut buffers = RadonBuffers::new();
     let resp = radon_response_u8(&img, SIZE, SIZE, &radon_params, &mut buffers);
     let radon_corners = detect_peaks_from_radon(&resp, &radon_params);

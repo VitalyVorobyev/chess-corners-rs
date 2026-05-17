@@ -27,8 +27,9 @@ amplitude, and the RMS fit residual.
 
 Feature flags:
 
-- `std` *(default)* – use the Rust standard library; disabling this
-  yields `no_std` + `alloc`.
+- `std` *(default)* – compatibility feature reserved for future use.
+  The current detector implementation requires the Rust standard
+  library.
 - `rayon` – parallelize response computation over image rows.
 - `simd` – portable-SIMD acceleration of the response kernel
   (nightly only).

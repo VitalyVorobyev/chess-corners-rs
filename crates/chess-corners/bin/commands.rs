@@ -405,6 +405,7 @@ pub fn load_config(path: &Path) -> Result<DetectionConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chess_corners::low_level;
     use chess_corners::RadonConfig;
     use std::path::PathBuf;
 
@@ -499,10 +500,9 @@ mod tests {
     // CLI override returns to being a no-op for one strategy variant.
     #[test]
     fn nms_and_cluster_fields_exist_on_both_strategies() {
-        let _chess_nms: u32 = DetectorConfig::chess().to_chess_params().nms_radius;
-        let _radon_nms: u32 = DetectorConfig::radon()
-            .to_radon_detector_params()
-            .nms_radius;
+        let _chess_nms: u32 = low_level::to_chess_params(&DetectorConfig::chess()).nms_radius;
+        let _radon_nms: u32 =
+            low_level::to_radon_detector_params(&DetectorConfig::radon()).nms_radius;
         let _radon_cluster: u32 = RadonConfig::default().min_cluster_size;
     }
 

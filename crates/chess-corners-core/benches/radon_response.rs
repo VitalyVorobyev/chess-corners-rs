@@ -45,10 +45,8 @@ fn bench_radon_response(c: &mut Criterion) {
         let img = synth_chessboard(w, h);
         group.throughput(Throughput::Elements((w * h) as u64));
         for up in [1u32, 2u32] {
-            let params = RadonDetectorParams {
-                image_upsample: up,
-                ..RadonDetectorParams::default()
-            };
+            let mut params = RadonDetectorParams::default();
+            params.image_upsample = up;
             group.bench_function(format!("{}x{}_up{}", w, h, up), |b| {
                 b.iter_batched(
                     RadonBuffers::new,

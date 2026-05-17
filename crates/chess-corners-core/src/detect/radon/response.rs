@@ -48,6 +48,7 @@ pub type SatElem = u32;
 /// Configuration for the whole-image Radon detector.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct RadonDetectorParams {
     /// Half-length of each ray in **working-resolution** pixels (i.e.
     /// post-upsample). The ray has `2·ray_radius + 1` samples. Paper

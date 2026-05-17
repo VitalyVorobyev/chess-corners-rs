@@ -4,17 +4,23 @@
 //! already exercises the raw Radon detector (`radon_response_u8`,
 //! `detect_peaks_from_radon`). This file is the facade-level twin:
 //! it verifies that selecting [`DetectionStrategy::Radon`] and driving
-//! the public `Detector::detect_view` entry point routes through the
+//! the public `Detector::detect_u8` entry point routes through the
 //! Radon path end-to-end, produces `CornerDescriptor` values in
 //! base-image coordinates, and beats the ChESS default on a hostile
 //! fixture.
 
-use chess_corners::low_level::ImageView;
 use chess_corners::{DetectionStrategy, Detector, DetectorConfig};
 
-fn detect_view(view: ImageView<'_>, cfg: &DetectorConfig) -> Vec<chess_corners::CornerDescriptor> {
+fn detect_u8(
+    img: &[u8],
+    width: usize,
+    height: usize,
+    cfg: &DetectorConfig,
+) -> Vec<chess_corners::CornerDescriptor> {
     let mut detector = Detector::new(*cfg).expect("config valid");
-    detector.detect_view(view)
+    detector
+        .detect_u8(img, width as u32, height as u32)
+        .expect("image dimensions match")
 }
 
 /// Narrow-contrast, heavily-blurred chessboard — the fixture style
@@ -122,13 +128,12 @@ fn radon_mode_beats_chess_default_end_to_end() {
     const CELL: usize = 10;
     let offset = (13.4, 14.7);
     let img = hostile_chessboard(SIZE, CELL, offset);
-    let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
 
     // Baseline: default facade config — ChESS canonical ring, zero
     // threshold, CenterOfMass refiner. This is what most users would
     // reach for first.
     let chess_cfg = DetectorConfig::default();
-    let chess_corners = detect_view(view, &chess_cfg);
+    let chess_corners = detect_u8(&img, SIZE, SIZE, &chess_cfg);
 
     // Radon preset: `DetectorConfig::radon()` selects the Radon strategy
     // and keeps single-scale.
@@ -136,7 +141,7 @@ fn radon_mode_beats_chess_default_end_to_end() {
     if let DetectionStrategy::Radon(radon) = &mut radon_cfg.strategy {
         radon.image_upsample = 2;
     }
-    let radon_corners = detect_view(view, &radon_cfg);
+    let radon_corners = detect_u8(&img, SIZE, SIZE, &radon_cfg);
 
     let expected = expected_corner_count(SIZE, CELL, offset, 20);
     eprintln!(
@@ -182,10 +187,9 @@ fn radon_mode_agrees_with_chess_on_clean_fixture() {
     const CELL: usize = 10;
     let offset = (13.4, 14.7);
     let img = aa_chessboard(SIZE, CELL, offset, 30, 230);
-    let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
 
-    let chess_corners = detect_view(view, &DetectorConfig::default());
-    let radon_corners = detect_view(view, &DetectorConfig::radon());
+    let chess_corners = detect_u8(&img, SIZE, SIZE, &DetectorConfig::default());
+    let radon_corners = detect_u8(&img, SIZE, SIZE, &DetectorConfig::radon());
 
     let expected = expected_corner_count(SIZE, CELL, offset, 20);
     // Both paths should land within 20 % of the ground truth count.
@@ -218,9 +222,8 @@ fn radon_mode_corners_are_subpixel_accurate() {
     const CELL: usize = 10;
     let offset = (13.4, 14.7);
     let img = aa_chessboard(SIZE, CELL, offset, 30, 230);
-    let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
 
-    let corners = detect_view(view, &DetectorConfig::radon());
+    let corners = detect_u8(&img, SIZE, SIZE, &DetectorConfig::radon());
     assert!(!corners.is_empty(), "Radon found no corners on clean board");
 
     let mut total_err = 0.0f64;

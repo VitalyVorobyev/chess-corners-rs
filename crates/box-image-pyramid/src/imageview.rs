@@ -53,8 +53,9 @@ pub struct ImageBuffer {
 impl ImageBuffer {
     /// Allocate a zero-filled buffer with the given dimensions.
     ///
-    /// Uses [`usize::saturating_mul`] so very large dimensions produce a
-    /// zero-length buffer rather than overflowing.
+    /// Uses [`usize::saturating_mul`], so multiplication never wraps.
+    /// Extremely large dimensions may still request an impractically
+    /// large allocation.
     pub fn new(width: usize, height: usize) -> Self {
         Self {
             width,
