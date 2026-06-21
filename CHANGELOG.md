@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## 0.11.1
+
+### Changed
+
+- Bump `numpy` to `0.29` and `pyo3` to `0.29`
+
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.
