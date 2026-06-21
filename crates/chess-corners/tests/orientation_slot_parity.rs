@@ -18,6 +18,21 @@
 //! inversion in `DiskFit` would push that fraction up and collapse the
 //! board's Canonical/Swapped split — the failure this test exists to catch.
 //!
+//! ## Only disk-path corners carry signal
+//!
+//! On a full frame the descriptor stage runs the (expensive) full-disk
+//! estimator on at most the strongest `FULL_DISK_MAX_FULL_IMAGE_CORNERS`
+//! candidates and leaves the rest on the `RingFit` fallback (see
+//! `chess-corners-core/src/orientation/descriptor.rs`). Fallback corners
+//! are bit-identical to the `RingFit` run by construction, so including
+//! them in the denominator would dilute the swap fraction to the point
+//! where even a *total* inversion of every disk-path corner stays under
+//! any small all-corner threshold. The swap fraction is therefore computed
+//! **only over corners where `DiskFit` actually produced a result** (its
+//! axes differ from `RingFit`'s) — exactly the set where an antipodal-sector
+//! inversion can manifest. The test also asserts that set is non-trivially
+//! large, so it retains power to fail.
+//!
 //! The per-method global split (≈50/50 for a consistent fitter) is also
 //! computed and printed for diagnosis; run with `-- --nocapture` to see it.
 #![cfg(feature = "image")]
@@ -62,11 +77,18 @@ fn detect(image: &str, method: OrientationMethod) -> Vec<CornerDescriptor> {
 }
 
 /// Match DiskFit corners to RingFit corners by nearest position (≤ 0.5 px)
-/// and, among corners where both methods recovered the same line *pair*
-/// (nearest line within `SET_TOL`), report the fraction where DiskFit's
-/// `axes[0]` is the *other* line than RingFit's `axes[0]`.
+/// and, among **disk-path** corners (DiskFit result differs from RingFit's)
+/// where both methods recovered the same line *pair* (nearest line within
+/// `SET_TOL`), report the fraction where DiskFit's `axes[0]` is the *other*
+/// line than RingFit's `axes[0]`.
 struct SwapStats {
+    /// Corners where DiskFit's axes differ from RingFit's (disk path ran
+    /// and was accepted) — the only corners that can carry an inversion.
+    disk_path: usize,
+    /// Disk-path corners where both methods agree on the line *set* (so a
+    /// disagreement is a slot swap, not a genuine line-direction change).
     counted: usize,
+    /// Disk-path, line-set-agreeing corners whose `axes[0]` is swapped.
     swapped: usize,
 }
 
@@ -82,8 +104,13 @@ impl SwapStats {
 
 const SET_TOL: f32 = 15.0_f32 * (PI / 180.0); // 15° — line-pair agreement gate
 const MATCH_PX: f32 = 0.5; // position-match radius
+/// A corner is "disk-path" when any axis differs from the RingFit run by
+/// more than this. Fallback corners are bit-identical (Δ = 0); even the
+/// finest disk refinement step (0.25°) moves an angle far past this floor.
+const INFLUENCE_TOL: f32 = 1.0e-3;
 
 fn swap_stats(ring: &[CornerDescriptor], disk: &[CornerDescriptor]) -> SwapStats {
+    let mut disk_path = 0usize;
     let mut counted = 0usize;
     let mut swapped = 0usize;
     for d in disk {
@@ -103,6 +130,16 @@ fn swap_stats(ring: &[CornerDescriptor], disk: &[CornerDescriptor]) -> SwapStats
             continue;
         };
 
+        // Skip corners DiskFit left on the RingFit fallback: identical to
+        // the RingFit run, so they carry no slot-ordering signal and only
+        // dilute the fraction.
+        let differs = line_delta(d.axes[0].angle, r.axes[0].angle) > INFLUENCE_TOL
+            || line_delta(d.axes[1].angle, r.axes[1].angle) > INFLUENCE_TOL;
+        if !differs {
+            continue;
+        }
+        disk_path += 1;
+
         let to_r0 = line_delta(d.axes[0].angle, r.axes[0].angle);
         let to_r1 = line_delta(d.axes[0].angle, r.axes[1].angle);
         // Only judge corners where the two methods agree on the line set.
@@ -114,7 +151,11 @@ fn swap_stats(ring: &[CornerDescriptor], disk: &[CornerDescriptor]) -> SwapStats
             swapped += 1;
         }
     }
-    SwapStats { counted, swapped }
+    SwapStats {
+        disk_path,
+        counted,
+        swapped,
+    }
 }
 
 /// Global Canonical/Swapped split: cluster `axes[0].angle` (a line angle,
@@ -150,11 +191,19 @@ fn minority_split(corners: &[CornerDescriptor]) -> (f32, usize, usize) {
     (minority, n0, n1)
 }
 
-/// Maximum tolerated swapped fraction. A consistent DiskFit sits near 0;
-/// the reported defect drives it well above 0.5 on the affected subset.
-/// 0.10 is a wide guard band that a coherent inversion cannot satisfy
-/// while staying immune to the handful of genuinely ambiguous corners.
+/// Maximum tolerated swapped fraction *over disk-path corners*. A
+/// consistent DiskFit sits at 0; a coherent antipodal inversion drives it
+/// to ≈1.0 (every accepted disk fit flips). 0.10 is a wide guard band that
+/// an inversion cannot satisfy while tolerating a handful of genuinely
+/// ambiguous near-parallel corners.
 const MAX_SWAPPED_FRACTION: f32 = 0.10;
+
+/// Minimum disk-path corners required for the assertion to have power. Far
+/// below the per-frame disk cap (`FULL_DISK_MAX_FULL_IMAGE_CORNERS = 80`),
+/// so a healthy run clears it comfortably while a future change that stops
+/// running the disk path at all is caught as a vacuous test instead of a
+/// silent pass.
+const MIN_DISK_PATH_CORNERS: usize = 20;
 
 fn check_image(image: &str) {
     let ring = detect(image, OrientationMethod::RingFit);
@@ -174,25 +223,29 @@ fn check_image(image: &str) {
     let (disk_split, dn0, dn1) = minority_split(&disk);
 
     println!(
-        "[{image}] corners={} | DiskFit vs RingFit slot swap: {}/{} = {:.3} | \
-         global split  RingFit {rn0}/{rn1} (minority {ring_split:.3})  \
+        "[{image}] corners={} | disk-path={} | DiskFit vs RingFit slot swap: \
+         {}/{} = {:.3} | global split  RingFit {rn0}/{rn1} (minority {ring_split:.3})  \
          DiskFit {dn0}/{dn1} (minority {disk_split:.3})",
         ring.len(),
+        stats.disk_path,
         stats.swapped,
         stats.counted,
         stats.fraction(),
     );
 
     assert!(
-        stats.counted > 0,
-        "{image}: no comparable corners (line sets never agreed)"
+        stats.counted >= MIN_DISK_PATH_CORNERS,
+        "{image}: only {} comparable disk-path corners (need ≥ {}); the test \
+         would be vacuous — DiskFit may have stopped taking the disk path.",
+        stats.counted,
+        MIN_DISK_PATH_CORNERS,
     );
     assert!(
         stats.fraction() < MAX_SWAPPED_FRACTION,
         "{image}: DiskFit axis-slot ordering disagrees with RingFit on \
-         {}/{} ({:.1}%) of corners (limit {:.0}%). DiskFit is picking the \
-         wrong antipodal dark sector, collapsing the global axes[0]/axes[1] \
-         ordering (DiskFit global minority {:.3} vs RingFit {:.3}).",
+         {}/{} ({:.1}%) of disk-path corners (limit {:.0}%). DiskFit is \
+         picking the wrong antipodal dark sector, collapsing the global \
+         axes[0]/axes[1] ordering (DiskFit global minority {:.3} vs RingFit {:.3}).",
         stats.swapped,
         stats.counted,
         stats.fraction() * 100.0,

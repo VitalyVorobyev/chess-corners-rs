@@ -11,20 +11,28 @@ A permanent slot-parity diagnostic was added in `chess-corners`
 (`crates/chess-corners/tests/orientation_slot_parity.rs`) and run against the
 current code (0.11.0). Detection runs before orientation, so `RingFit` and
 `DiskFit` produce identical corner *positions*; the test position-matches them
-and measures (a) the per-corner fraction whose `DiskFit` `axes[0]` is the *other*
-line than `RingFit`'s, and (b) each method's global Canonical/Swapped split via
-closed-form clustering of `axes[0]` angles.
+and measures (a) the slot-swap fraction over **disk-path corners** — those where
+`DiskFit`'s axes actually differ from `RingFit`'s — i.e. whose `DiskFit` `axes[0]`
+is the *other* line than `RingFit`'s, and (b) each method's global
+Canonical/Swapped split via closed-form clustering of `axes[0]` angles.
+
+The denominator is restricted to disk-path corners on purpose: the descriptor
+stage runs the full-disk estimator on at most the strongest
+`FULL_DISK_MAX_FULL_IMAGE_CORNERS = 80` candidates per frame and leaves the rest
+on the `RingFit` fallback (bit-identical to the `RingFit` run), so an all-corner
+fraction would dilute even a total inversion below any small threshold.
 
 Result on the public test images:
 
-| Image | Corners | DiskFit↔RingFit slot swaps | Global minority split (RingFit / DiskFit) |
-|---|---|---|---|
-| mid   | 1199 | 0 / 1197 (0.0%) | 0.495 / 0.493 |
-| large | 2142 | 0 / 2142 (0.0%) | 0.497 / 0.497 |
+| Image | Corners | Disk-path corners | Slot swaps (disk-path) | Global minority split (RingFit / DiskFit) |
+|---|---|---|---|---|
+| mid   | 1199 | 77 | 0 (0.0%) | 0.495 / 0.493 |
+| large | 2142 | 70 | 0 (0.0%) | 0.497 / 0.497 |
 
-Zero slot disagreements across ~3,300 corners, and both methods sit at the
-≈50/50 a consistent fitter must produce. **The reported 62/15 ≈ 80/20 collapse
-does not reproduce.** It is not a live defect in 0.11.0.
+Zero slot disagreements across every corner that actually ran the disk estimator,
+and both methods sit at the ≈50/50 a consistent fitter must produce. **The
+reported 62/15 ≈ 80/20 collapse does not reproduce.** It is not a live defect in
+0.11.0.
 
 Why the current code is consistent (static analysis confirming the measurement):
 both methods route their raw `(theta, theta', amp)` through a single
