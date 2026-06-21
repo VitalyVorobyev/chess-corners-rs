@@ -26,6 +26,7 @@
 ## Algorithm
 
 - [ ] Adaptive refinement selection: choose refiner per-corner based on local image context (e.g., low contrast vs. high gradient)
+- [x] Investigate reported `DiskFit` antipodal axis-slot inversion (TASK-002): not reproducible on 0.11.0 (0 slot swaps vs `RingFit` on mid/large, ≈50/50 split for both); added permanent guard `crates/chess-corners/tests/orientation_slot_parity.rs`. See `docs/TASK-002-diskfit-antipodal-sector/README.md`.
 
 ## Documentation
 
