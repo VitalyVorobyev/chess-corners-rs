@@ -85,3 +85,8 @@ required-features = ["image"]
 name = "bench_sweep"
 path = "examples/bench_sweep.rs"
 required-features = []
+
+[[example]]
+name = "perf_overlay"
+path = "examples/perf_overlay.rs"
+required-features = ["image"]

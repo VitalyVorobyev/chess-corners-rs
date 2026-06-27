@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "cpu": "Apple M4 Pro",
+    "rustc": "1.97.0-nightly",
+    "git_sha": "da8c14dce",
+    "features": "simd",
+    "threads": "single",
+    "repeats": 60,
+    "warmup": 8,
+    "generated": "2026-06-27",
+    "source": "scripts/gen-perf-data.sh",
+    "note": "Public testimages/ only. Each figure is the p50 over the measured iterations of the single-scale ChESS pipeline, decomposed into its four stages: response (dense ChESS response map), detection (threshold + non-maximum suppression + cluster filter), refinement (image-domain subpixel), and orientation (two-axis fit + descriptor assembly). total_ms is the sum of the four stage p50s; throughput is whole-pipeline megapixels per second. The default detector accepts every positive-response saddle point, so corner counts include background texture and the per-corner orientation stage carries most of the cost. Built with the simd feature, single-threaded."
+  },
+  "images": [
+    {
+      "label": "Marker board (small)",
+      "file": "testimages/small.png",
+      "img": "./img/small.png",
+      "width": 720,
+      "height": 540,
+      "corner_count": 514,
+      "total_ms": 2.6839,
+      "throughput_mpix_s": 144.86,
+      "stages": {
+        "response": 0.5282,
+        "detection": 0.4668,
+        "refinement": 0.0103,
+        "orientation": 1.6786
+      },
+      "note": "A 0.39 MP marker board viewed obliquely, with the lower region out of focus. The ChESS detector fires on every saddle-shaped junction, including blurred and out-of-board texture, so most of the cost falls in the per-corner orientation fit."
+    },
+    {
+      "label": "Chessboard (mid)",
+      "file": "testimages/mid.png",
+      "img": "./img/mid.png",
+      "width": 1024,
+      "height": 576,
+      "corner_count": 1199,
+      "total_ms": 4.6036,
+      "throughput_mpix_s": 128.12,
+      "stages": {
+        "response": 0.5302,
+        "detection": 0.7338,
+        "refinement": 0.0274,
+        "orientation": 3.3122
+      },
+      "note": "A 0.59 MP chessboard photographed against a textured wall. Board X-junctions and wall texture both yield positive responses under the default permissive threshold, so the orientation stage dominates the whole-pipeline time."
+    },
+    {
+      "label": "Marker board (large)",
+      "file": "testimages/large.png",
+      "img": "./img/large.png",
+      "width": 2048,
+      "height": 1536,
+      "corner_count": 2142,
+      "total_ms": 10.6503,
+      "throughput_mpix_s": 295.37,
+      "stages": {
+        "response": 2.8481,
+        "detection": 3.173,
+        "refinement": 0.05,
+        "orientation": 4.5792
+      },
+      "note": "A 3.1 MP marker board. Response and detection scale with the pixel count while orientation scales with the corner count, so the three heavy stages are closer in size here than on the smaller frames. The committed preview is downscaled to 1024 px wide; detection runs on the full-resolution image."
+    }
+  ]
+}
