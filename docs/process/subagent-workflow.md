@@ -6,7 +6,7 @@ conversation's context lean while still using the right model for each
 slice of work.
 
 It is the everyday-work counterpart to
-[`docs/review-workflow.md`](review-workflow.md), which documents the
+[`review-workflow.md`](review-workflow.md), which documents the
 release-time `/rust-workspace-review` 3-agent pipeline. The dispatch
 ideas are the same — Sonnet for mechanical work, Opus for judgement —
 just generalised away from the release pipeline so they apply to any
@@ -35,9 +35,9 @@ in their prompt. Brief them well — see "Briefing checklist" below.
 
 Two project-local agents codify the convention:
 
-- [`quick-implementer`](../.claude/agents/quick-implementer.md) — runs
+- [`quick-implementer`](../../.claude/agents/quick-implementer.md) — runs
   on **Sonnet**. Default for most dispatched work.
-- [`deep-implementer`](../.claude/agents/deep-implementer.md) — runs
+- [`deep-implementer`](../../.claude/agents/deep-implementer.md) — runs
   on **Opus**. Reserved for non-trivial implementation.
 
 Dispatch by name from the main conversation:
@@ -112,7 +112,7 @@ Dispatch here when at least one of the following is true:
   pass-through can miss.
 - **Domain depth matters more than throughput.** Anything that should
   be cross-checked against the
-  [calibration-target-detector](../.claude/agents/calibration-target-detector.md)
+  [calibration-target-detector](../../.claude/agents/calibration-target-detector.md)
   knowledge base or the disclosure / evidence-driven debugging rules
   in `.claude/CLAUDE.md`.
 
@@ -221,7 +221,7 @@ prevent.
   Reviewer is Opus, Architect is the main conversation. The named
   agents in this doc are siblings, not replacements.
 - The
-  [`calibration-target-detector`](../.claude/agents/calibration-target-detector.md)
+  [`calibration-target-detector`](../../.claude/agents/calibration-target-detector.md)
   domain agent stays the right call for vision-specific design,
   debugging, and review work — its persistent memory at
   `.claude/agent-memory/calibration-target-detector/` carries

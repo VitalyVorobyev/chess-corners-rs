@@ -3,7 +3,7 @@
 # Replaces the v2/v3/v4 tanh-saddle renderer with AA-rasterised hard
 # cells, so the training distribution matches the chessboard fixture
 # that `crates/chess-corners/tests/refiner_benchmark.rs` evaluates
-# against (see docs/proposal-ml-refiner-v3.md for the full rationale).
+# against (see docs/reference/refiner-comparison.md for the comparison).
 #
 # Key differences from v2:
 #   - render_mode: hard_cells (new), instead of the tanh saddle.

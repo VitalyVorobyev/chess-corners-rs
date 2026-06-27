@@ -6,6 +6,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **chess-corners-rs** is a high-performance Rust implementation of the ChESS (Chess-board Extraction by Subtraction and Summation) corner detector. It detects chessboard corners in images with subpixel accuracy. Includes Python bindings via PyO3/maturin and WebAssembly bindings via wasm-bindgen/wasm-pack.
 
+## Project planning & knowledge base
+
+The internal knowledge base lives under [`docs/`](docs/README.md) (not
+published; design rationale is allowed there). Consult it before large work:
+
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — milestones toward `v1.0.0`. Current
+  order: **M2 performance (leads) → M3 API v1.0 freeze → M4 site ∥ M5
+  C++/vcpkg**; the doc sweep and SOLID/DRY cleanup run continuously.
+- [`docs/BACKLOG.md`](docs/BACKLOG.md) — task registry (`<WS>-NN` IDs,
+  priority, status, deps). Keep it in sync with the ROADMAP and update status
+  as work lands.
+- [`docs/design/algorithms-index.md`](docs/design/algorithms-index.md) — map
+  of every atomic algorithm and the pipeline DAG.
+- [`docs/design/`](docs/README.md) — per-workstream RFCs (`api-v1.0`,
+  `cpp-vcpkg-bindings`, `site-architecture`, `perf-profiling`).
+
+Ground perf and algorithm conclusions in **measured data** (benches,
+flamegraphs), not assertion.
+
 ## Build & Test Commands
 
 ```bash
@@ -222,7 +241,7 @@ drop A — even if it has been there for a while. Diagnostic-only paths
 
 ## Subagent-driven workflow
 
-**Read [`docs/subagent-workflow.md`](docs/subagent-workflow.md)
+**Read [`docs/process/subagent-workflow.md`](docs/process/subagent-workflow.md)
 first.** It is the canonical guide for when and how to dispatch work
 in this workspace. Two named agents live under `.claude/agents/`:
 

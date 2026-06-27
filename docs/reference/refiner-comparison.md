@@ -2,7 +2,7 @@
 
 This document reports the results of the unified cross-refiner
 benchmark at
-[`crates/chess-corners/tests/refiner_benchmark.rs`](../crates/chess-corners/tests/refiner_benchmark.rs).
+[`crates/chess-corners/tests/refiner_benchmark.rs`](../../crates/chess-corners/tests/refiner_benchmark.rs).
 It measures the five refiners shipped by this workspace on a common
 synthetic fixture and reports both subpixel accuracy and per-corner
 throughput so they can be compared at a glance.
@@ -60,9 +60,8 @@ training regime did not close that gap.
 
 The ML refiner remains useful in the measured heavy-noise row and as a
 single deployable ONNX artifact for callers who prefer a learned
-component over a hand-tuned pipeline. See
-`docs/proposal-ml-refiner-v3.md` for the architecture exploration and
-the accounting of what was tried.
+component over a hand-tuned pipeline. See Part V of the book for the
+ML refiner architecture.
 
 The `Forstner / SaddlePoint / RadonPeak` rows are identical between
 `clean (cell=5)` and `clean (cell=8)` because they're all local

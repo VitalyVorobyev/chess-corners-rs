@@ -51,10 +51,10 @@ Radon builds SAT buffers and a dense response map before peak detection.
 
 The relevant tests are:
 
-- [`crates/chess-corners-core/tests/radon_vs_chess.rs`](../crates/chess-corners-core/tests/radon_vs_chess.rs)
+- [`crates/chess-corners-core/tests/radon_vs_chess.rs`](../../crates/chess-corners-core/tests/radon_vs_chess.rs)
   — compares raw ChESS/Radon response paths on a synthetic
   low-contrast, blurred board.
-- [`crates/chess-corners/tests/radon_pipeline.rs`](../crates/chess-corners/tests/radon_pipeline.rs)
+- [`crates/chess-corners/tests/radon_pipeline.rs`](../../crates/chess-corners/tests/radon_pipeline.rs)
   — verifies the public `Detector` facade routes the Radon strategy
   end-to-end and returns descriptors in base-image coordinates.
 
@@ -72,7 +72,7 @@ least 60% of the expected interior grid intersections. On a clean
 high-contrast fixture, both paths must recover most corners.
 
 For measured wall time and broader synthetic sweeps, see
-[Part VIII of the book](../book/src/part-08-benchmarks.md).
+[Part VIII of the book](../../book/src/part-08-benchmarks.md).
 
 ## Configuration
 
