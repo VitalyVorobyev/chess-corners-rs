@@ -4,6 +4,7 @@ members = [
   "crates/box-image-pyramid",
   "crates/chess-corners-core",
   "crates/chess-corners",
+  "crates/chess-corners-capi",
   "crates/chess-corners-ml",
   "crates/chess-corners-py",
   "crates/chess-corners-wasm",
