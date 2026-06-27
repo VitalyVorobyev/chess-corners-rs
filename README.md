@@ -13,6 +13,7 @@ Part of the [vitavision.dev](https://vitavision.dev/) computer-vision atlas.
 [![CI](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/ci.yml)
 [![Security audit](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/audit.yml/badge.svg)](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/audit.yml)
 [![Docs](https://github.com/VitalyVorobyev/chess-corners-rs/actions/workflows/docs.yml/badge.svg)](https://vitalyvorobyev.github.io/chess-corners-rs/)
+[![Live demo](https://img.shields.io/badge/demo-live-2ea44f)](https://vitalyvorobyev.github.io/chess-corners-rs/demo/)
 
 Rust workspace for detecting chessboard X-junctions: the points where
 four alternating dark and bright cells meet. The main crate returns
