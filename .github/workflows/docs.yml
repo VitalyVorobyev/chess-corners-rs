@@ -30,14 +30,26 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
 
       - name: Select nightly Rust toolchain
-        run: rustup override set nightly
+        run: |
+          rustup override set nightly
+          rustup target add wasm32-unknown-unknown
 
       - name: Install mdBook
         uses: taiki-e/install-action@v2
         with:
           tool: mdbook
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
@@ -54,11 +66,23 @@ jobs:
           echo '<meta http-equiv="refresh" content="0; url=chess_corners/index.html">' > target/doc/index.html
           mdbook build book
 
+      - name: Build demo (WASM + Vite)
+        run: |
+          ./scripts/build-wasm.sh
+          cd demo
+          bun install --frozen-lockfile
+          bun run build
+
       - name: Assemble Pages artifact
         run: |
-          mkdir -p public/api
-          rsync -a target/doc/ public/api/
-          rsync -a book/book/ public/
+          # Landing page (.github/pages/index.html) is the site root; it also
+          # carries img/ and the performance/ report. mdBook moves off the root
+          # into /book/ so the landing page can own /.
+          mkdir -p public/api public/book public/demo
+          rsync -a .github/pages/ public/
+          rsync -a target/doc/    public/api/
+          rsync -a book/book/     public/book/
+          rsync -a demo/dist/     public/demo/
 
       - name: Upload artifact for Pages
         uses: actions/upload-pages-artifact@v3
