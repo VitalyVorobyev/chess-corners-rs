@@ -4,14 +4,17 @@ Milestones toward `v1.0.0` and the supporting deliverables. Each milestone
 lists its goal, the tasks that satisfy it (IDs from [`BACKLOG.md`](BACKLOG.md)),
 its dependencies, and the exit criteria that close it.
 
-**Sequencing:** `M1 → M2 → M3 → (M4 ∥ M5)`. The doc/comment sweep (`SWEEP-*`)
-and the SOLID/DRY cleanup (`SOLID-*`) are **continuous**, folded into the
-M2/M3 windows.
+**Sequencing:** `M1 → M2 → M3 (API surface) → M4 site → M5 C++/vcpkg → tag 1.0.0`.
+The API *surface* freezes in M3, but the `1.0.0` **release** (version bump,
+`cargo-semver-checks`, tag → crates.io/PyPI/npm publish) is deferred to the
+end so the site and C++ bindings ship in the first release. The doc/comment
+sweep (`SWEEP-*`) and the SOLID/DRY cleanup (`SOLID-*`) are **continuous**,
+folded into the M2/M3 windows.
 
 ```
-M1 planning ──► M2 perf ──► M3 API v1.0 ──┬──► M4 site
-   (done)        (leads)      (freeze)     └──► M5 C++/vcpkg
-                          SWEEP-* / SOLID-* run continuously
+M1 ──► M2 ──► M3 API surface ──► M4 site ──► M5 C++/vcpkg ──► tag 1.0.0
+(done) (done)   (frozen)        (current)                     (release)
+                     SWEEP-* / SOLID-* run continuously
 ```
 
 ---
@@ -49,28 +52,34 @@ fold in `SOLID-01`.
 - CI bench gate live (≤2% p95 drift); baseline `metrics.json` captured.
 - A documented verdict on whether/what to optimize (`PERF-10`).
 
-## M3 — API `v1.0.0` freeze & release
+## M3 — API `v1.0.0` surface freeze
 
-**Goal.** Freeze a minimal, clear, semver-stable surface and tag `1.0.0`. See
-[`design/api-v1.0.md`](design/api-v1.0.md).
+**Goal.** Freeze a minimal, clear, semver-stable surface. See
+[`design/api-v1.0.md`](design/api-v1.0.md). **Status:** surface freeze
+**done** (API-01..07 landed, all gates green on PR #63); the release steps
+`API-08` (`cargo-semver-checks` CI) and `API-09` (version bump + tag) are
+**deferred to after M4 + M5** so 1.0.0 ships with the site and C++ bindings.
 
-**Tasks.** `API-01..09`; fold in `SWEEP-01`. **Depends on:** M2 (so hot-path
-reshaping happens before the surface freezes).
+**Tasks.** `API-01..07` (done); `API-08`/`API-09` (deferred to release); fold
+in `SWEEP-01`. **Depends on:** M2 (so hot-path reshaping happens before the
+surface freezes).
 
 **Exit criteria.**
-- `contrast`/`fit_rms` removed from `CornerDescriptor` across all bindings + snapshot.
-- `nms_radius`/`min_cluster_size` deduplicated; `ChessParams`/`RefinerKind` hidden.
-- `ChessRefiner::Ml` honesty resolved; Python `.pyi` parity shipped.
-- `#[non_exhaustive]`/sealed-trait policy applied; `cargo-semver-checks` in CI.
-- All gates green; `1.0.0` tagged with migration notes.
+- ✅ `contrast`/`fit_rms` removed from `CornerDescriptor` across all bindings + snapshot.
+- ✅ `nms_radius`/`min_cluster_size` deduplicated; `ChessParams`/`RefinerKind` hidden in `unstable`.
+- ✅ `ChessRefiner::Ml` honesty resolved; Python `.pyi` parity + guard test shipped.
+- ✅ `#[non_exhaustive]`/sealed-trait policy applied; MSRV stated; binding discriminants pinned.
+- ⏳ (release) `cargo-semver-checks` in CI; `1.0.0` tagged with migration notes — after M5.
 
-## M4 — GitHub Pages site
+## M4 — GitHub Pages site  ·  *current*
 
 **Goal.** A unified site: landing → book → API → demo → performance. See
-[`design/site-architecture.md`](design/site-architecture.md).
+[`design/site-architecture.md`](design/site-architecture.md). The existing
+`.github/pages/` is a raw copy from the sibling `calib-targets-rs` and is
+being adapted to chess-corners (content, demo, perf data), not rebuilt.
 
-**Tasks.** `SITE-01..06`. **Depends on:** M3 (demo/docs target frozen API);
-consumes M2's `PERF-09` baselines.
+**Tasks.** `SITE-01..06`. **Depends on:** M3 surface freeze (demo/docs target
+the frozen API); consumes M2's measured perf baselines.
 
 **Exit criteria.**
 - Landing page at `/`; book at `/book/`; rustdoc at `/api/`; WASM demo at

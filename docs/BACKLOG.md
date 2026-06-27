@@ -43,12 +43,12 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
-| SITE-01 | P1 | todo | M4 | — | Landing page `.github/pages/index.html` (rewrite calib-targets copy → chess-corners, 4 cards) |
+| SITE-01 | P1 | in-progress | M4 | — | Landing page `.github/pages/index.html` (rewrite calib-targets copy → chess-corners, 4 cards) |
 | SITE-02 | P1 | todo | M4 | SITE-01,03,04 | Rework `docs.yml` → assemble `public/{,/api,/book,/demo,/performance}` (book → `/book/`) |
-| SITE-03 | P1 | todo | M4 | M3 | WASM demo (`demo/`, Vite+React+Bun) + `scripts/build-wasm.sh` |
-| SITE-04 | P2 | todo | M4 | PERF-09 | `scripts/gen-perf-data.sh` → `performance/data.json` + overlays + `performance/index.html` |
+| SITE-03 | P1 | in-progress | M4 | M3 | WASM demo (`demo/`, Vite+React+Bun) + `scripts/build-wasm.sh` |
+| SITE-04 | P2 | in-progress | M4 | — | `scripts/gen-perf-data.sh` → `performance/data.json` + overlays + `performance/index.html` (uses real M2 baselines; PERF-09 not a hard dep) |
 | SITE-05 | P2 | todo | M4 | SITE-02 | `scripts/build-site.sh` (one-command local build) |
-| SITE-06 | P3 | todo | M4 | SITE-02 | Update README/book cross-links for `/book/` move; vitavision.dev linkage |
+| SITE-06 | P3 | in-progress | M4 | SITE-02 | Update README/book cross-links for `/book/` move; vitavision.dev linkage |
 
 ## CPP — C++ bindings via vcpkg  ·  M5 (dep M3)  ·  [design](design/cpp-vcpkg-bindings.md)
 
