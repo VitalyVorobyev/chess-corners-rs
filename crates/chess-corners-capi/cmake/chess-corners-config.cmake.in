@@ -1,0 +1,35 @@
+@PACKAGE_INIT@
+
+# Package config for chess-corners. Recreates the imported target
+# `chess-corners::chess-corners` pointing at the installed library + headers.
+
+set(_chess_corners_libdir "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@")
+set(_chess_corners_includedir "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@")
+set(_chess_corners_lib "${_chess_corners_libdir}/@CC_LIB_FILENAME@")
+
+if(NOT EXISTS "${_chess_corners_lib}")
+  set(chess-corners_FOUND FALSE)
+  set(chess-corners_NOT_FOUND_MESSAGE
+      "chess-corners library not found: ${_chess_corners_lib}")
+  return()
+endif()
+
+if(NOT TARGET chess-corners::chess-corners)
+  add_library(chess-corners::chess-corners @CC_IMPORTED_TYPE@ IMPORTED)
+  set_target_properties(chess-corners::chess-corners PROPERTIES
+    IMPORTED_LOCATION "${_chess_corners_lib}"
+    INTERFACE_INCLUDE_DIRECTORIES "${_chess_corners_includedir}")
+
+  set(_chess_corners_iface_libs "@CC_INTERFACE_LINK_LIBRARIES@")
+  if(_chess_corners_iface_libs)
+    set_property(TARGET chess-corners::chess-corners PROPERTY
+      INTERFACE_LINK_LIBRARIES "${_chess_corners_iface_libs}")
+  endif()
+endif()
+
+# A shared library installed outside a system prefix is resolved at runtime via
+# rpath. CMake adds the directory automatically for the build tree; consumers
+# that install their own binary should add ${_chess_corners_libdir} to their
+# INSTALL_RPATH (or set DYLD_LIBRARY_PATH / LD_LIBRARY_PATH).
+
+check_required_components(chess-corners)

@@ -1,0 +1,71 @@
+name: cpp
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ '*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  cpp-bindings:
+    name: C/C++ bindings (${{ matrix.linkage }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - linkage: static
+            shared: "OFF"
+          - linkage: shared
+            shared: "ON"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Select nightly Rust toolchain
+        run: rustup override set nightly
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          cache-on-failure: true
+
+      - name: Header drift gate
+        run: cargo run -p chess-corners-capi --bin generate-ffi-header --features generate-header -- --check
+
+      - name: Build capi crate
+        run: cargo build --release -p chess-corners-capi
+
+      - name: Configure + build capi CMake project
+        run: |
+          cmake -S crates/chess-corners-capi -B build/capi \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=${{ matrix.shared }} \
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/build/prefix"
+          cmake --build build/capi
+
+      - name: Run C/C++ smoke tests (ctest)
+        run: ctest --test-dir build/capi --output-on-failure
+
+      - name: Install package to temp prefix
+        run: cmake --install build/capi
+
+      - name: Configure + build example via find_package
+        run: |
+          cmake -S crates/chess-corners-capi/examples/cpp -B build/example \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${{ github.workspace }}/build/prefix"
+          cmake --build build/example
+
+      - name: Run example test (ctest)
+        run: ctest --test-dir build/example --output-on-failure
+
+      - name: pkg-config sanity check
+        run: |
+          PKG_CONFIG_PATH="${{ github.workspace }}/build/prefix/lib/pkgconfig" \
+            pkg-config --cflags --libs chess-corners

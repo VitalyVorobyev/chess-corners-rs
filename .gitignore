@@ -24,3 +24,6 @@ crates/chess-corners/tests/snapshots/actual/
 demo/pkg/
 demo/dist/
 demo/node_modules/
+
+# CMake out-of-source build trees (C/C++ bindings: cpp.yml + build-site flows)
+/build/

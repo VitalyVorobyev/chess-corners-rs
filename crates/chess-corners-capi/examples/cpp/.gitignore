@@ -1,0 +1,4 @@
+# CMake out-of-source build trees (configure with `-B <dir>` ideally outside
+# the source tree; this guards an accidental in-tree build).
+build/
+cmake-build-*/
