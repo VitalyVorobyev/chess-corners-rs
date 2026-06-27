@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>chess-corners-rs</title>
+        <meta
+            name="description"
+            content="High-performance ChESS + Radon chessboard-corner detector with subpixel accuracy — Rust, with Python and WebAssembly bindings."
+        />
+        <link rel="icon" type="image/svg+xml" href="./img/vv-logo.svg" />
+        <style>
+            :root {
+                color-scheme: dark;
+                --bg: #060a14;
+                --blue: #5b9dff;
+                --amber: #f2a93d;
+                --teal: #33c6e3;
+                --green: #3ddc84;
+                --ink: #d8e3f2;
+                --muted: #8294b0;
+                --card: #0b1426;
+                --edge: #1b2740;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                margin: 0;
+                min-height: 100%;
+            }
+            body {
+                background:
+                    radial-gradient(
+                        1100px 700px at 14% -10%,
+                        rgba(91, 157, 255, 0.14),
+                        transparent 60%
+                    ),
+                    radial-gradient(
+                        1000px 720px at 102% 112%,
+                        rgba(242, 169, 61, 0.1),
+                        transparent 60%
+                    ),
+                    var(--bg);
+                color: var(--ink);
+                font:
+                    16px/1.6 ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    "Segoe UI",
+                    Roboto,
+                    sans-serif;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 6vh 24px;
+            }
+            main {
+                width: 100%;
+                max-width: 880px;
+            }
+            .brand {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                margin: 0 0 18px;
+            }
+            .brand img {
+                width: 46px;
+                height: 46px;
+                border-radius: 11px;
+            }
+            .tag {
+                letter-spacing: 0.28em;
+                text-transform: uppercase;
+                font-size: 12px;
+                color: var(--muted);
+                margin: 0;
+            }
+            h1 {
+                margin: 0 0 14px;
+                font-size: clamp(38px, 8.4vw, 70px);
+                font-weight: 700;
+                line-height: 1.02;
+                letter-spacing: -0.01em;
+                background: linear-gradient(
+                    96deg,
+                    var(--blue),
+                    #eef4fb 54%,
+                    var(--amber)
+                );
+                -webkit-background-clip: text;
+                background-clip: text;
+                color: transparent;
+            }
+            .lede {
+                margin: 0 0 38px;
+                max-width: 62ch;
+                color: var(--ink);
+            }
+            .lede b {
+                color: #eef4fb;
+                font-weight: 600;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+                gap: 16px;
+            }
+            a.card {
+                display: block;
+                padding: 22px;
+                border: 1px solid var(--edge);
+                border-radius: 14px;
+                background: linear-gradient(180deg, var(--card), #070d18);
+                text-decoration: none;
+                color: var(--ink);
+                transition:
+                    transform 0.15s ease,
+                    border-color 0.15s ease,
+                    box-shadow 0.15s ease;
+            }
+            a.card:hover {
+                transform: translateY(-3px);
+                border-color: rgba(91, 157, 255, 0.5);
+                box-shadow: 0 12px 42px rgba(91, 157, 255, 0.13);
+            }
+            a.card .h {
+                font-size: 19px;
+                font-weight: 650;
+                margin: 0 0 6px;
+            }
+            a.card.guide .h {
+                color: var(--blue);
+            }
+            a.card.api .h {
+                color: var(--teal);
+            }
+            a.card.demo .h {
+                color: var(--amber);
+            }
+            a.card.perf .h {
+                color: var(--green);
+            }
+            a.card p {
+                margin: 0;
+                font-size: 14px;
+                color: var(--muted);
+            }
+            a.card code {
+                color: #c6d4e8;
+                font-size: 0.9em;
+            }
+            footer {
+                margin-top: 40px;
+                padding-top: 18px;
+                border-top: 1px solid var(--edge);
+                font-size: 13px;
+                color: var(--muted);
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px 18px;
+            }
+            footer a {
+                color: var(--blue);
+                text-decoration: none;
+            }
+            footer a:hover {
+                text-decoration: underline;
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <div class="brand">
+                <img src="./img/vv-logo.svg" alt="vitavision" />
+                <p class="tag">Rust · Python · WebAssembly</p>
+            </div>
+            <h1>chess-corners-rs</h1>
+            <p class="lede">
+                <b>High-performance chessboard-corner detection in Rust.</b>
+                Detects X-junctions — points where four alternating dark and
+                bright cells meet — with subpixel accuracy. Two detector
+                families: <b>ChESS</b> ring response and <b>Radon</b> ray-sum
+                response. Ships as Rust crates, a Python package, and a
+                WebAssembly module.
+            </p>
+            <nav class="grid">
+                <a class="card guide" href="./book/">
+                    <p class="h">Guide</p>
+                    <p>
+                        The mdBook: algorithms, the ChESS and Radon pipeline
+                        internals, orientation methods, and a getting-started
+                        tutorial.
+                    </p>
+                </a>
+                <a class="card api" href="./api/">
+                    <p class="h">API reference</p>
+                    <p>
+                        Generated <code>cargo doc</code> for the workspace
+                        crates — the facade, the core, and optional ML refiner.
+                    </p>
+                </a>
+                <a class="card demo" href="./demo/">
+                    <p class="h">Demo</p>
+                    <p>
+                        Detect corners in your browser via WebAssembly. Load a
+                        sample image and tune detector parameters live.
+                    </p>
+                </a>
+                <a class="card perf" href="./performance/">
+                    <p class="h">Performance</p>
+                    <p>
+                        Per-image, per-stage detection timings on sample boards
+                        — where the milliseconds go, measured rather than
+                        claimed.
+                    </p>
+                </a>
+            </nav>
+            <footer>
+                <span
+                    >Source on
+                    <a
+                        href="https://github.com/VitalyVorobyev/chess-corners-rs"
+                        >GitHub</a
+                    ></span
+                >
+                <span>·</span>
+                <span><a href="https://vitavision.dev/">vitavision.dev</a></span>
+            </footer>
+        </main>
+    </body>
+</html>
