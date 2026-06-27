@@ -86,17 +86,22 @@ the frozen API); consumes M2's measured perf baselines.
   `/demo/`; performance report at `/performance/`.
 - `docs.yml` assembles and deploys all four; `scripts/build-site.sh` reproduces locally.
 
-## M5 — C++ bindings via vcpkg  ·  *current*
+## M5 — C++ bindings via vcpkg  ·  *done*
 
 **Goal.** A vcpkg-installable C/C++ binding. See
-[`design/cpp-vcpkg-bindings.md`](design/cpp-vcpkg-bindings.md).
+[`design/cpp-vcpkg-bindings.md`](design/cpp-vcpkg-bindings.md). **Status:**
+build work **done** (CPP-01..07); the vcpkg port ships as a verified-locally
+draft whose registry finalization (real `v1.0.0` tag + SHA512 + cross-platform
+`vcpkg install`) folds into the release phase — see `ports/README.md`.
 
 **Tasks.** `CPP-01..07`. **Depends on:** M3 (C ABI maps the frozen descriptor).
 
 **Exit criteria.**
-- `chess-corners-capi` crate + generated header + C++ convenience header.
-- CMake `find_package(chess-corners)` works; vcpkg overlay port installs.
-- C/C++ smoke + parity test in CI; example consumer builds.
+- ✅ `chess-corners-capi` crate + generated header + C++ convenience header.
+- ✅ CMake `find_package(chess-corners)` works (static+shared, verified locally);
+  ⏳ vcpkg overlay port install verified at release (needs the tag + vcpkg).
+- ✅ C/C++ smoke + Rust marshalling-parity test in CI; example consumer builds.
+- ✅ Book Part IX documents C++ usage.
 
 ## Continuous
 
