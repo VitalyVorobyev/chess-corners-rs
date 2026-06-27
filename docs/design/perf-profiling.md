@@ -36,6 +36,43 @@ End-to-end pipelines are benched, but several **atomic** hot paths
 | `PERF-04` | DiskFit gradient sampling (O2) | `core/src/orientation/disk_sector/` | disk accumulation vs RingFit on warped corners |
 | `PERF-05` | NMS scaling (D1) | `core/src/detect/chess/detect.rs` | throughput vs NMS radius {1,2,4,8} on dense response maps |
 
+## Measured baseline (PERF-01, PERF-02)
+
+First baselines on synthetic 8-bit chessboards (criterion median, single
+thread; `crates/chess-corners-core/benches/{chess_response,radon_response}.rs`,
+shared board from `benches/common/`). Reproduce with
+`cargo bench -p chess-corners-core --bench chess_response` (add
+`--features simd`) and `--bench radon_response` (add `--features radon-sat-u32`).
+
+**PERF-01 — ChESS response kernel (scalar vs SIMD):**
+
+| size | scalar | simd | speedup |
+|------|--------|------|---------|
+| 256² | 162 Mpix/s (405 µs) | 599 Mpix/s (109 µs) | 3.70× |
+| 512² | 157 Mpix/s (1.67 ms) | 611 Mpix/s (429 µs) | 3.89× |
+| 1024² | 155 Mpix/s (6.77 ms) | 621 Mpix/s (1.69 ms) | 4.01× |
+
+**PERF-02 — Radon SAT response (i64 vs u32 SAT), throughput per base-input pixel:**
+
+| size / upsample | i64 | u32 | u32 win |
+|-----------------|-----|-----|---------|
+| 1024², up=1 | 121 Mpix/s (8.64 ms) | 132 Mpix/s (7.93 ms) | +8.9% |
+| 1024², up=2 | 22.4 Mpix/s (46.9 ms) | 25.5 Mpix/s (41.1 ms) | +14.0% |
+
+**Findings (these drive PERF-10):**
+
+- Throughput is roughly **size-independent up to 1024²** (scalar ≈155–162,
+  SIMD ≈599–621 Mpix/s), so the ChESS kernel is compute-bound, not yet
+  memory-bound, at these sizes.
+- SIMD on the 16-sample ring delivers only **~3.7–4.0×**, not the 8–16× the
+  lane width suggests. The per-lane scalar local-mean (μₗ) loop and the
+  response write-back (`detect/chess/response.rs:508–524`) are unvectorized and
+  cap the gain — vectorizing that gather/write-back is the lever.
+- The u32-SAT win (~9–16%) **collapses toward noise at upsample=2**, which
+  proves SAT construction is *not* the upsample=2 bottleneck; the
+  per-output-pixel angular sampling is. Aim "SAT SIMD prefix-sum" work at
+  upsample=1, and target angular sampling for upsample=2.
+
 ## Stage 2 — flamegraph automation (`PERF-07`)
 
 There is **no** flamegraph/`perf record` automation today. Add a script under

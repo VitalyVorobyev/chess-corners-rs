@@ -40,6 +40,10 @@ image.workspace = true
 serde_json.workspace = true
 
 [[bench]]
+name = "chess_response"
+harness = false
+
+[[bench]]
 name = "descriptor_fit"
 harness = false
 

@@ -12,8 +12,8 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
-| PERF-01 | P1 | todo | M2 | — | Criterion microbench: ChESS ring kernel (scalar + SIMD) — `core/.../detect/chess/response.rs` |
-| PERF-02 | P1 | todo | M2 | — | Bench: Radon SAT construction, i64 vs u32, 1k²/2k² — `core/.../detect/radon/response.rs` |
+| PERF-01 | P1 | done | M2 | — | Criterion microbench: ChESS ring kernel (scalar + SIMD) — `benches/chess_response.rs`. Baseline: scalar ≈155 / SIMD ≈621 Mpix/s @1024² (3.7–4.0×). |
+| PERF-02 | P1 | done | M2 | — | Bench: Radon SAT, i64 vs u32 @1024² — `benches/radon_response.rs`. u32 win +9–16% @up=1, collapses @up=2. |
 | PERF-03 | P2 | todo | M2 | — | Bench: RingFit GN per-iteration / convergence — `core/.../orientation/ring_fit/` |
 | PERF-04 | P2 | todo | M2 | — | Bench: DiskFit gradient sampling vs RingFit on warped corners |
 | PERF-05 | P2 | todo | M2 | — | Bench: NMS scaling with radius {1,2,4,8} on dense maps — `core/.../detect/chess/detect.rs` |
@@ -21,7 +21,7 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | PERF-07 | P1 | todo | M2 | — | Flamegraph automation script under `tools/` (cargo-flamegraph wrapper) |
 | PERF-08 | P1 | todo | M2 | PERF-01..05 | CI bench gate: baseline compare, fail on >2% p95 regression |
 | PERF-09 | P2 | todo | M2 | PERF-08 | Capture baseline `metrics.json` (feeds SITE-04) |
-| PERF-10 | P2 | todo | M2 | PERF-01,02,07 | Optimize confirmed bottleneck (rayon tiling / SAT SIMD prefix / batch refine) — guarded ≤2% p95 |
+| PERF-10 | P2 | todo | M2 | PERF-01,02,07 | Optimize confirmed bottlenecks (evidence): (a) vectorize per-lane μₗ loop + response write-back in ChESS SIMD path (`response.rs:508–524`) — caps gain at ~4×; (b) angular sampling at upsample=2 in Radon (u32-SAT win collapses there). Guarded ≤2% p95 |
 
 ## API — v1.0 stabilization  ·  M3  ·  [design](design/api-v1.0.md)
 
@@ -72,7 +72,7 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
-| SOLID-01 | P2 | todo | M2 | — | Extract shared test utilities: `gaussian_blur` (dup ×5), bilinear patch extraction, synthetic chessboard, `ClassicRefiners` trait |
+| SOLID-01 | P2 | in-progress | M2 | — | Extract shared test utilities: `gaussian_blur` (dup ×5), bilinear patch extraction, synthetic chessboard, `ClassicRefiners` trait. Started: shared `benches/common/synth_chessboard` (de-dups the Radon bench copy). |
 | SOLID-02 | P3 | todo | — | — | Evaluate `Refiner` enum dispatch boilerplate (`refine/mod.rs`) — refactor or accept |
 | SOLID-03 | P3 | todo | M2 | SOLID-01 | Merge duplicate synthetic-chessboard generators into one fixture |
 
