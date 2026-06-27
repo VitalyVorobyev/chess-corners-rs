@@ -222,7 +222,7 @@ impl Detector {
         #[cfg(feature = "ml-refiner")]
         if Self::is_ml_refiner(cfg) {
             if ml_state.is_none() {
-                let fallback = chess_corners_core::RefinerKind::CenterOfMass(
+                let fallback = chess_corners_core::unstable::RefinerKind::CenterOfMass(
                     chess_corners_core::CenterOfMassConfig::default(),
                 );
                 *ml_state = Some(ml_refiner::MlRefinerState::new(ml_params, &fallback));

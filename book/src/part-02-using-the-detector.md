@@ -135,10 +135,10 @@ Each refiner variant carries its tuning struct inline:
 ```rust
 use chess_corners::{ChessRefiner, ForstnerConfig};
 
-let f = ForstnerConfig {
-    max_offset: 2.0,
-    ..ForstnerConfig::default()
-};
+// The per-refiner config structs are `#[non_exhaustive]`: start from
+// `Default` and set only the fields you care about.
+let mut f = ForstnerConfig::default();
+f.max_offset = 2.0;
 let refiner = ChessRefiner::Forstner(f);
 ```
 

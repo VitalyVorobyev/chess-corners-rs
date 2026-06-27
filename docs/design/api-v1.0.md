@@ -81,10 +81,29 @@ strategy structs keep only strategy-specific knobs (`ray_radius`,
 
 ### API-03 — Hide internal types leaking at the core root
 
-`ChessParams` and `RefinerKind` are public at the `chess-corners-core` root
-but are internal translation/dispatch details. Make them `pub(crate)` or move
-under a clearly unstable namespace. Audit all `pub use` in `core/src/lib.rs`
-and `chess-corners/src/lib.rs` for the same pattern (the 0.11 audit listed
+**Status: landed.** `ChessParams` and `RefinerKind` moved off the
+`chess-corners-core` crate root into `chess_corners_core::unstable`
+(they cannot be `pub(crate)` because the facade, benches, and core
+integration tests consume them across the crate boundary). The facade
+re-exports both unchanged at `chess_corners::low_level`. The internal
+Radon primitives `ANGLES` / `DIR_COS` / `DIR_SIN` / `fit_peak_frac` /
+`box_blur_inplace` and the `SatElem` SAT element type are now
+`pub(crate)` (no external consumer); the `detect::chess::ring` and
+`detect::radon::primitives` stage modules became `pub(crate) mod`
+(`orientation::descriptor` was already private). Kept in `unstable`
+because in-repo consumers (benches / core tests / facade) still use
+them: the ring tables (`RING5` / `RING10` / `ring_offsets` /
+`RingOffsets`), `chess_response_u8_scalar`, `chess_response_u8_patch`,
+`detect_peaks_from_response{,_with_refine_radius}`,
+`find_corners_u8_with_refiner`, `refine_corners_on_image`, and
+`MAX_IMAGE_UPSAMPLE`. The facade crate root was already curated in #60
+(no buffers / low-level fns leak there); nothing to move.
+
+Original task: `ChessParams` and `RefinerKind` are public at the
+`chess-corners-core` root but are internal translation/dispatch
+details. Make them `pub(crate)` or move under a clearly unstable
+namespace. Audit all `pub use` in `core/src/lib.rs` and
+`chess-corners/src/lib.rs` for the same pattern (the 0.11 audit listed
 `RING5/RING10`, `SatElem`, `box_blur_inplace`, `fit_peak_frac`,
 stage modules `detect::chess::ring`, `orientation::descriptor`, etc.).
 
@@ -114,13 +133,45 @@ whether to align factory names (binding-breaking) now or document the mapping.
 
 ### API-06 — `#[non_exhaustive]` & sealed-trait policy
 
-Write down and apply, uniformly:
-- `#[non_exhaustive]` on every public enum/struct that may grow (configs,
-  `CornerDescriptor`, `RefineStatus`, …) so additions stay non-breaking.
-- Seal `DenseDetector` and `CornerRefiner` if external implementations are
-  **not** a supported extension point (they currently look implementable);
-  if they *are* supported, document the stability contract instead.
-- State MSRV and the nightly-only `simd` boundary explicitly.
+**Status: landed.**
+
+- `#[non_exhaustive]` added to `CenterOfMassConfig`, `ForstnerConfig`,
+  `SaddlePointConfig` (they were the only refiner configs missing it;
+  `RadonPeakConfig` already had it), to the `RingOffsets` enum, and to
+  `ChessBuffers` — the one scratch-buffer carrier with a public field
+  (`response`), where a future internal scratch field would otherwise
+  break external literal construction; `#[non_exhaustive]` keeps that
+  additive while leaving `response` readable.
+  Already covered: `ChessParams`, `RefinerKind`, `Refiner`,
+  `RefineStatus`, `RefineResult`, `RefineContext`, `OrientationMethod`,
+  `PeakFitMode`, `Corner`, `AxisEstimate`, `CornerDescriptor`,
+  `AxisFitResult`, `RadonDetectorParams`, and every facade config /
+  result / error enum. **Deliberately skipped** (noted for the freeze):
+  types whose fields are all private so external literal construction is
+  already impossible (`ResponseMap`, `ImageView` — private `origin`,
+  `Roi`, the runtime refiner structs, `Detector`,
+  `DetectorDiagnostics`); the zero-sized sealed detector markers
+  `ChessDetector` / `RadonDetector`; and the all-private scratch-buffer
+  carriers `RadonBuffers` / `UpscaleBuffers` (built via `Default`, so
+  new fields are already additive).
+- `DenseDetector` and `CornerRefiner` are **sealed** via a private
+  `mod private { pub trait Sealed {} }` supertrait, impl'd only for the
+  in-crate types (`ChessDetector` / `RadonDetector`; the four built-in
+  refiners plus the `Refiner` dispatcher). The rustdoc on each trait
+  documents the seal. To make the `CornerRefiner` seal possible, the
+  facade's only external impl — a no-op refiner in the ML path — was
+  removed: it was provably equivalent to a direct
+  `unstable::detect_peaks_from_response_with_refine_radius` call, so the
+  facade now calls that (behaviour-identical, net LOC down).
+- MSRV stated: `rust-version = "1.88"` was already set in
+  `[workspace.package]`; the crate-root docs and READMEs now state that
+  the default/stable build needs Rust ≥ 1.88 and that the `simd` feature
+  needs nightly.
+
+Original task: write down and apply, uniformly: `#[non_exhaustive]` on
+every public enum/struct that may grow; seal `DenseDetector` /
+`CornerRefiner` if external implementations are not a supported
+extension point; state MSRV and the nightly-only `simd` boundary.
 
 ### API-07 — Binding unknown-variant handling
 

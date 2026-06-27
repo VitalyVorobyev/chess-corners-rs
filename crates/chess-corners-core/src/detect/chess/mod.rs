@@ -14,4 +14,4 @@
 
 pub mod detect;
 pub mod response;
-pub mod ring;
+pub(crate) mod ring;

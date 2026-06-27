@@ -36,10 +36,11 @@
 use std::time::Instant;
 
 use chess_corners::low_level::ImageView;
+use chess_corners_core::unstable::ChessParams;
 use chess_corners_core::{
-    chess_response_u8, CenterOfMassConfig, CenterOfMassRefiner, ChessParams, CornerRefiner,
-    ForstnerConfig, ForstnerRefiner, RadonPeakConfig, RadonPeakRefiner, RefineContext,
-    RefineStatus, ResponseMap, SaddlePointConfig, SaddlePointRefiner,
+    chess_response_u8, CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig,
+    ForstnerRefiner, RadonPeakConfig, RadonPeakRefiner, RefineContext, RefineStatus, ResponseMap,
+    SaddlePointConfig, SaddlePointRefiner,
 };
 
 // ---------------------------------------------------------------------------

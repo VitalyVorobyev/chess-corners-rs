@@ -17,8 +17,8 @@
 
 mod common;
 
-use chess_corners_core::unstable::detect_peaks_from_response_with_refine_radius;
-use chess_corners_core::{chess_response_u8, ChessParams};
+use chess_corners_core::chess_response_u8;
+use chess_corners_core::unstable::{detect_peaks_from_response_with_refine_radius, ChessParams};
 use common::synth_chessboard;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;

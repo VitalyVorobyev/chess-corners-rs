@@ -18,8 +18,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   axis1_sigma]`); the CLI JSON `corners` entries drop the two fields.
   Migration: use `response` for per-corner strength and `axes[i].sigma`
   for per-axis confidence.
+- **Breaking:** the low-level Radon primitives (`ANGLES`, `DIR_COS`,
+  `DIR_SIN`, `fit_peak_frac`, `box_blur_inplace`, and the `SatElem`
+  summed-area-table element type) are no longer re-exported from
+  `chess_corners_core::unstable`; they are now crate-internal.
+  Detection results are unchanged.
 
 ### Changed
+
+- **Breaking:** `ChessParams` and `RefinerKind` moved off the
+  `chess-corners-core` crate root into the unstable, no-semver-guarantee
+  `chess_corners_core::unstable` namespace, where they are documented as
+  implementation-level translation types. The `chess-corners` facade
+  still re-exports both unchanged at `chess_corners::low_level`.
+- **Breaking:** the classic refiner config structs `CenterOfMassConfig`,
+  `ForstnerConfig`, and `SaddlePointConfig` (matching `RadonPeakConfig`),
+  and the `ChessBuffers` scratch carrier, are now `#[non_exhaustive]`, so
+  future tuning knobs and scratch fields stay additive. Construct them
+  from `Default::default()` and assign fields instead of using
+  struct-literal or `..` update syntax across the crate boundary
+  (`ChessBuffers` is built via `ChessBuffers::default()`; its `response`
+  field stays readable).
+- **Breaking:** the `DenseDetector` and `CornerRefiner` traits are now
+  sealed and cannot be implemented outside `chess-corners-core`; they
+  are not public extension points. Select a refinement backend through
+  `RefinerKind` / the detector configuration.
+- Documented the minimum supported Rust version: the default (stable)
+  build needs Rust ≥ 1.88; the `simd` feature needs a nightly toolchain.
 
 - **Breaking:** the `nms_radius` and `min_cluster_size` detection knobs
   are no longer duplicated on each strategy config. They now live once

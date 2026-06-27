@@ -110,7 +110,7 @@ impl RadonPeakConfig {
 ///
 /// Fits a Gaussian peak to a localized Radon response computed around
 /// the corner candidate. Selected through
-/// [`RefinerKind`](crate::RefinerKind).
+/// [`RefinerKind`](crate::unstable::RefinerKind).
 #[derive(Debug)]
 pub struct RadonPeakRefiner {
     cfg: RadonPeakConfig,

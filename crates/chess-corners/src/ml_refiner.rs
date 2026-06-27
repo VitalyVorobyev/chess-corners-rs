@@ -1,8 +1,8 @@
 //! ML subpixel refiner integration (feature-gated).
 
 use chess_corners_core::{
-    detect_corners_from_response_with_refiner, ChessParams, Corner, CornerRefiner, ImageView,
-    RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind, ResponseMap,
+    unstable::{detect_peaks_from_response_with_refine_radius, ChessParams, RefinerKind},
+    Corner, CornerRefiner, ImageView, RefineContext, RefineStatus, Refiner, ResponseMap,
 };
 use chess_corners_ml::{MlModel, ModelSource};
 use log::{info, warn};
@@ -93,8 +93,11 @@ pub(crate) fn detect_corners_with_ml(
     image: Option<ImageView<'_>>,
     state: &mut MlRefinerState,
 ) -> Vec<Corner> {
-    let mut noop = NoopRefiner::new(patch_radius(&state.params));
-    let candidates = detect_corners_from_response_with_refiner(resp, params, image, &mut noop);
+    // Seed candidates without applying a classic refiner — the ML model
+    // performs the subpixel refinement below. The refine border is set to
+    // the ML patch radius so every accepted peak has full patch support.
+    let candidates =
+        detect_peaks_from_response_with_refine_radius(resp, params, patch_radius(&state.params));
 
     if candidates.is_empty() {
         return candidates;
@@ -425,26 +428,6 @@ fn apply_fallback(
     }
 }
 
-struct NoopRefiner {
-    radius: i32,
-}
-
-impl NoopRefiner {
-    fn new(radius: i32) -> Self {
-        Self { radius }
-    }
-}
-
-impl CornerRefiner for NoopRefiner {
-    fn radius(&self) -> i32 {
-        self.radius
-    }
-
-    fn refine(&mut self, seed_xy: [f32; 2], _ctx: RefineContext<'_>) -> RefineResult {
-        RefineResult::accepted(seed_xy, 0.0)
-    }
-}
-
 pub(crate) fn extract_patch_u8_to_f32(
     view: ImageView<'_>,
     x: f32,
@@ -564,7 +547,9 @@ mod tests {
         resp.data_mut()[idx(18, 16)] = 5.0;
 
         let mut params = ChessParams::default();
-        params.refiner = RefinerKind::CenterOfMass(crate::CenterOfMassConfig { radius: 1 });
+        let mut com = crate::CenterOfMassConfig::default();
+        com.radius = 1;
+        params.refiner = RefinerKind::CenterOfMass(com);
 
         let ml_params = MlRefinerParams {
             model_path: Some(PathBuf::from("missing.onnx")),

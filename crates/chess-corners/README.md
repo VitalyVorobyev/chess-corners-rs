@@ -121,7 +121,11 @@ leave a stale per-refiner config behind:
 use chess_corners::{ChessRefiner, DetectorConfig, ForstnerConfig};
 
 let cfg = DetectorConfig::chess().with_chess(|c| {
-    c.refiner = ChessRefiner::Forstner(ForstnerConfig { max_offset: 2.0, ..ForstnerConfig::default() });
+    // `ForstnerConfig` is `#[non_exhaustive]`: start from `Default` and
+    // set the fields you need.
+    let mut forstner = ForstnerConfig::default();
+    forstner.max_offset = 2.0;
+    c.refiner = ChessRefiner::Forstner(forstner);
 });
 ```
 
@@ -180,3 +184,8 @@ pyramid levels.
 - `tracing`: structured spans
 - `ml-refiner`: ONNX-backed ML refinement
 - `cli`: build the `chess-corners` binary
+
+The default (stable) build requires Rust **1.88** or newer
+(`rust-version` in `Cargo.toml`). The `simd` feature uses
+`portable_simd` and needs a nightly toolchain; every other feature
+builds on stable.

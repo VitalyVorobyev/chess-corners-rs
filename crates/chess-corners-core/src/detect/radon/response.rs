@@ -39,11 +39,11 @@ const RADON_LANES: usize = 8;
 /// Summed-area-table element type. Gated by the `radon-sat-u32`
 /// crate feature.
 #[cfg(not(feature = "radon-sat-u32"))]
-pub type SatElem = i64;
+pub(crate) type SatElem = i64;
 
 /// Summed-area-table element type (feature `radon-sat-u32`).
 #[cfg(feature = "radon-sat-u32")]
-pub type SatElem = u32;
+pub(crate) type SatElem = u32;
 
 /// Configuration for the whole-image Radon detector.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

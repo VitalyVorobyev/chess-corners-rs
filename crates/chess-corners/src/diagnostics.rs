@@ -76,8 +76,8 @@ impl<'a> DetectorDiagnostics<'a> {
     /// [`ResponseMap`] therefore has the same dimensions as the input.
     ///
     /// This mirrors the free function [`chess_response_u8`] but sources
-    /// [`ChessParams`](chess_corners_core::ChessParams) from the bound
-    /// detector.
+    /// [`ChessParams`](chess_corners_core::unstable::ChessParams) from the
+    /// bound detector.
     ///
     /// # Errors
     ///

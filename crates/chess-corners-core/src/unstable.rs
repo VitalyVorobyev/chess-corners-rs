@@ -2,12 +2,13 @@
 //! advanced use.
 //!
 //! The items re-exported here are the detector's internal scaffolding:
-//! ring offset tables, the Radon angular basis, the scalar reference
-//! response path, sub-stage detection entry points, and similar
-//! low-level building blocks. They are made reachable so that
-//! benchmarks, accuracy experiments, and advanced callers can drive
-//! the pipeline at a finer granularity than the curated crate-root
-//! surface allows.
+//! ring offset tables, the scalar reference response path, sub-stage
+//! detection entry points, and the ChESS parameter / refiner-selector
+//! translation types (`ChessParams`, `RefinerKind`) that the
+//! `chess-corners` facade maps its configuration onto. They are made
+//! reachable so that benchmarks, accuracy experiments, and advanced
+//! callers can drive the pipeline at a finer granularity than the
+//! curated crate-root surface allows.
 //!
 //! # Stability
 //!
@@ -19,6 +20,16 @@
 //! [`find_corners_u8`](crate::find_corners_u8),
 //! [`describe_corners`](crate::describe_corners), and the refiner and
 //! orientation types) instead.
+
+/// Low-level ChESS detection parameters consumed by the response and
+/// detection stages. The `chess-corners` facade translates its detector
+/// configuration into this type internally.
+pub use crate::params::ChessParams;
+
+/// Serializable selector for the built-in subpixel refiner variants.
+/// Construct a runtime [`Refiner`](crate::Refiner) from one via
+/// [`Refiner::from_kind`](crate::Refiner::from_kind).
+pub use crate::refine::RefinerKind;
 
 /// Ring offset table for the canonical radius-5 sampling ring.
 pub use crate::detect::chess::ring::RING5;
@@ -52,24 +63,6 @@ pub use crate::detect::chess::detect::find_corners_u8_with_refiner;
 
 /// Refine an existing set of corner candidates against an image.
 pub use crate::detect::chess::detect::refine_corners_on_image;
-
-/// Number of Radon projection angles in the localized Radon basis.
-pub use crate::detect::radon::primitives::ANGLES;
-
-/// Cosine components of the Radon projection directions.
-pub use crate::detect::radon::primitives::DIR_COS;
-
-/// Sine components of the Radon projection directions.
-pub use crate::detect::radon::primitives::DIR_SIN;
-
-/// Three-point subpixel peak fit along one axis.
-pub use crate::detect::radon::primitives::fit_peak_frac;
-
-/// In-place separable box blur over a response buffer.
-pub use crate::detect::radon::primitives::box_blur_inplace;
-
-/// Summed-area-table element type used by the Radon response path.
-pub use crate::detect::radon::response::SatElem;
 
 /// Largest supported integer image-upsample factor for the Radon
 /// detector.

@@ -207,6 +207,13 @@
 //! The library API is stable across feature combinations; features
 //! only affect performance and observability, not numerical results.
 //!
+//! # Minimum supported Rust version
+//!
+//! The default (stable) build requires Rust **1.88** or newer, as
+//! declared by `rust-version` in `Cargo.toml`. The optional `simd`
+//! feature uses `portable_simd` and therefore requires a **nightly**
+//! toolchain; every other feature builds on stable.
+//!
 //! # References
 //!
 //! - Bennett, Lasenby. *ChESS: A Fast and Accurate Chessboard Corner

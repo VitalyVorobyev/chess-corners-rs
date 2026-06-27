@@ -13,9 +13,10 @@
 //! corners under hostile conditions, proving the code path earns its
 //! keep.
 
+use chess_corners_core::unstable::ChessParams;
 use chess_corners_core::{
     chess_response_u8, detect_corners_from_response, detect_peaks_from_radon, radon_response_u8,
-    ChessParams, RadonBuffers, RadonDetectorParams,
+    RadonBuffers, RadonDetectorParams,
 };
 
 /// Render a chessboard, then simulate a hostile capture: heavy

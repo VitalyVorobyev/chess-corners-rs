@@ -1,7 +1,8 @@
 use box_image_pyramid::PyramidParams;
 use chess_corners_core::{
-    CenterOfMassConfig, ChessParams, ForstnerConfig, OrientationMethod, PeakFitMode,
-    RadonDetectorParams, RadonPeakConfig, RefinerKind, SaddlePointConfig,
+    unstable::{ChessParams, RefinerKind},
+    CenterOfMassConfig, ForstnerConfig, OrientationMethod, PeakFitMode, RadonDetectorParams,
+    RadonPeakConfig, SaddlePointConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -874,14 +875,15 @@ mod tests {
 
     #[test]
     fn broad_ring_and_forstner_refiner_propagate_to_params() {
+        // `ForstnerConfig` is `#[non_exhaustive]`; build via `Default`
+        // and set the field under test.
+        let mut forstner = ForstnerConfig::default();
+        forstner.max_offset = 2.0;
         let cfg = DetectorConfig {
             strategy: DetectionStrategy::Chess(ChessConfig {
                 ring: ChessRing::Broad,
                 descriptor_ring: DescriptorRing::Canonical,
-                refiner: ChessRefiner::Forstner(ForstnerConfig {
-                    max_offset: 2.0,
-                    ..ForstnerConfig::default()
-                }),
+                refiner: ChessRefiner::Forstner(forstner),
                 ..ChessConfig::default()
             }),
             ..DetectorConfig::chess()
@@ -890,13 +892,7 @@ mod tests {
         let params = cfg.chess_params();
         assert!(params.use_radius10);
         assert_eq!(params.descriptor_use_radius10, Some(false));
-        assert_eq!(
-            params.refiner,
-            RefinerKind::Forstner(ForstnerConfig {
-                max_offset: 2.0,
-                ..ForstnerConfig::default()
-            })
-        );
+        assert_eq!(params.refiner, RefinerKind::Forstner(forstner));
     }
 
     #[test]

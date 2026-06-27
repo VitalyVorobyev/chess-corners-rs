@@ -15,10 +15,10 @@ use rayon::prelude::*;
 
 /// Number of discrete ray angles. The paper samples
 /// `{0, π/4, π/2, 3π/4}`.
-pub const ANGLES: usize = 4;
+pub(crate) const ANGLES: usize = 4;
 
 /// `cos α` for the four ray angles, in order.
-pub const DIR_COS: [f32; ANGLES] = [
+pub(crate) const DIR_COS: [f32; ANGLES] = [
     1.0,
     core::f32::consts::FRAC_1_SQRT_2,
     0.0,
@@ -26,7 +26,7 @@ pub const DIR_COS: [f32; ANGLES] = [
 ];
 
 /// `sin α` for the four ray angles, in order.
-pub const DIR_SIN: [f32; ANGLES] = [
+pub(crate) const DIR_SIN: [f32; ANGLES] = [
     0.0,
     core::f32::consts::FRAC_1_SQRT_2,
     1.0,
@@ -56,7 +56,7 @@ pub enum PeakFitMode {
 /// fallback. A denominator near zero (flat or rising slope at the
 /// "peak") returns 0.0 rather than diverging.
 #[inline]
-pub fn fit_peak_frac(y_minus: f32, y_c: f32, y_plus: f32, mode: PeakFitMode) -> f32 {
+pub(crate) fn fit_peak_frac(y_minus: f32, y_c: f32, y_plus: f32, mode: PeakFitMode) -> f32 {
     let (ym, y0, yp) = match mode {
         PeakFitMode::Gaussian if y_minus > 0.0 && y_c > 0.0 && y_plus > 0.0 => {
             (y_minus.ln(), y_c.ln(), y_plus.ln())
@@ -82,7 +82,13 @@ pub fn fit_peak_frac(y_minus: f32, y_c: f32, y_plus: f32, mode: PeakFitMode) -> 
 /// independently so whole-image response maps (typically rectangular
 /// at camera resolution) and the refiner's square local response
 /// patch share the same implementation.
-pub fn box_blur_inplace(resp: &mut [f32], scratch: &mut [f32], w: usize, h: usize, radius: usize) {
+pub(crate) fn box_blur_inplace(
+    resp: &mut [f32],
+    scratch: &mut [f32],
+    w: usize,
+    h: usize,
+    radius: usize,
+) {
     debug_assert_eq!(resp.len(), w * h);
     debug_assert_eq!(scratch.len(), w * h);
     if radius == 0 {

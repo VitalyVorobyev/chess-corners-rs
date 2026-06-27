@@ -15,9 +15,8 @@
 //! bench gives the reader a single number to reason about whole-image
 //! latency on 640×480 / 1280×720 / 1920×1080 frames.
 
-use chess_corners_core::{
-    chess_response_u8, radon_response_u8, ChessParams, RadonBuffers, RadonDetectorParams,
-};
+use chess_corners_core::unstable::ChessParams;
+use chess_corners_core::{chess_response_u8, radon_response_u8, RadonBuffers, RadonDetectorParams};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use std::hint::black_box;
 
