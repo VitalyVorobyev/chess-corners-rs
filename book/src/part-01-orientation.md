@@ -127,8 +127,6 @@ facade. Fields:
 |-----------------|--------------------|-------------------------------------------------------------------------|
 | `x`, `y`        | `f32`              | Subpixel position in input image pixels.                                |
 | `response`      | `f32`              | Raw detector response at the peak. Scale is detector-specific.          |
-| `contrast`      | `f32` (≥ 0)        | Bright/dark amplitude from the ring intensity fit (gray levels).        |
-| `fit_rms`       | `f32` (≥ 0)        | RMS residual of that fit (gray levels).                                 |
 | `axes[0, 1]`    | `[AxisEstimate; 2]`| The two local grid axis directions, each with a 1σ angular uncertainty. |
 
 The two axes are **not** assumed orthogonal — projective warp or

@@ -263,9 +263,8 @@ refiner are in [Part VIII](part-08-benchmarks.md).
 Raw corners (position + strength) are enough for many applications,
 but the core crate also offers a richer `CornerDescriptor` that fits
 a parametric intensity model to the 16-sample ring around each corner.
-The fit yields both local grid axes **independently**, their per-axis
-1σ angular uncertainty, a bright/dark contrast amplitude, and the RMS
-fit residual — all in one pass.
+The fit yields both local grid axes **independently** and their
+per-axis 1σ angular uncertainty — all in one pass.
 
 Both the ChESS detector and the Radon detector produce
 `CornerDescriptor` values via the same `describe_corners`
@@ -280,8 +279,6 @@ pub struct CornerDescriptor {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub contrast: f32,
-    pub fit_rms: f32,
     pub axes: [AxisEstimate; 2],
 }
 
@@ -297,11 +294,6 @@ Fields:
 - `response` – raw, unnormalized ChESS response
   `R = SR − DR − 16·MR` at the detected peak. Units are 8‑bit pixel
   sums; the paper's contract is `R > 0`.
-- `contrast` – fitted bright/dark amplitude `|A|` in gray levels.
-  Independent from `response` and not comparable to it.
-- `fit_rms` – root‑mean‑squared residual of the two‑axis intensity
-  fit (gray levels). Smaller means the ring sampled cleanly through
-  a chessboard‑like corner.
 - `axes[0]`, `axes[1]` – the two local grid axis directions and
   their 1σ uncertainties.
 
@@ -429,12 +421,13 @@ You get `CornerDescriptor` values when you use the high‑level APIs:
 For many tasks, `x`, `y`, and `response` are enough. When you need
 more insight into local structure — grid fitting, lens‑distortion
 modelling, calibration with per‑corner weights, or outlier rejection
-before bundle adjustment — `axes`, `sigma`, `contrast`, and `fit_rms`
-are the extra handles you get "for free" with each detection.
+before bundle adjustment — the two `axes` and their per‑axis 1σ
+uncertainty are the extra handles you get "for free" with each
+detection.
 
-The `axes`, `sigma_theta1`, `sigma_theta2`, `amp`, and `fit_rms`
-fields are produced by an orientation method shared with the Radon
-detector. See [Part VI: Orientation methods](part-06-orientation-methods.md)
+The `axes` and their per‑axis `sigma` values are produced by an
+orientation method shared with the Radon detector. See
+[Part VI: Orientation methods](part-06-orientation-methods.md)
 for the API surface, the two available algorithms (`RingFit` and
 `DiskFit`), and step-by-step descriptions of each.
 

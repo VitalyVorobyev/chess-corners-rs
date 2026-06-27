@@ -102,8 +102,6 @@ Each detection is a `CornerDescriptor` with:
 - `x`, `y` — subpixel position.
 - `response` — raw unnormalized detector response (the ChESS paper's
   score for ChESS, `(max α S_α − min α S_α)²` for Radon).
-- `contrast` — fitted bright/dark amplitude `|A|` in gray levels.
-- `fit_rms` — RMS residual of the two-axis fit in gray levels.
 - `axes[0]`, `axes[1]` — the two local grid axes with per-axis 1σ
   angular uncertainty from the Gauss-Newton covariance
   (`σθᵢ = √((SSR / 12) · (JᵀJ)⁻¹[i,i])`). Axes are not assumed

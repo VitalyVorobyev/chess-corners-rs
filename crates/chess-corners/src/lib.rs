@@ -152,7 +152,7 @@
 //! - `crates/chess-corners-py` (PyO3 / maturin) exposes a
 //!   `chess_corners.Detector` class whose `detect(image)` method
 //!   accepts a 2D `uint8` NumPy array and returns a `float32`
-//!   `(N, 9)` array with columns `[x, y, response, contrast, fit_rms,
+//!   `(N, 7)` array with columns `[x, y, response,
 //!   axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`. See its
 //!   README for usage and configuration details.
 //! - `crates/chess-corners-wasm` (wasm-bindgen / wasm-pack) exposes

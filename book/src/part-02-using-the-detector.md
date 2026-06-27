@@ -211,14 +211,14 @@ cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
 corners = detector.detect(img)
-print(corners.shape)   # (N, 9)
+print(corners.shape)   # (N, 7)
 ```
 
 `Detector(cfg).detect(image)` accepts a 2D `uint8` array shaped
-`(H, W)` and returns a `float32` array with stride 9 per corner:
+`(H, W)` and returns a `float32` array with stride 7 per corner:
 
 ```
-[x, y, response, contrast, fit_rms,
+[x, y, response,
  axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]
 ```
 
@@ -312,8 +312,8 @@ const detector = ChessDetector.withConfig(cfg);
 const imageData = ctx.getImageData(0, 0, width, height);
 const corners = detector.detect_rgba(imageData.data, width, height);
 
-// corners is Float32Array, stride 9 per corner — same layout as Python.
-for (let i = 0; i < corners.length; i += 9) {
+// corners is Float32Array, stride 7 per corner — same layout as Python.
+for (let i = 0; i < corners.length; i += 7) {
     console.log(`(${corners[i].toFixed(2)}, ${corners[i + 1].toFixed(2)})`);
 }
 

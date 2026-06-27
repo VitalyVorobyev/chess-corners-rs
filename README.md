@@ -104,8 +104,6 @@ Each Rust detection is a `CornerDescriptor`:
 |-------|---------|
 | `x`, `y` | Subpixel position in input-image pixels |
 | `response` | Raw detector response at the detected peak |
-| `contrast` | Bright/dark amplitude from the two-axis intensity fit |
-| `fit_rms` | RMS residual of that fit |
 | `axes[0]`, `axes[1]` | Two local grid-axis directions with per-axis 1σ uncertainty |
 
 The two axes are not forced to be orthogonal. This lets the descriptor
@@ -186,11 +184,11 @@ cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
 corners = detector.detect(img)
-print(corners.shape)  # (N, 9)
+print(corners.shape)  # (N, 7)
 ```
 
 The returned NumPy array is `float32` with columns:
-`x, y, response, contrast, fit_rms, axis0_angle, axis0_sigma,
+`x, y, response, axis0_angle, axis0_sigma,
 axis1_angle, axis1_sigma`.
 
 ## JavaScript / WebAssembly

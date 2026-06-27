@@ -33,7 +33,7 @@ For each detected corner it overlays:
 - an orange arrow along `axes[1].angle` (polar, dark sector runs CCW
   from axis 0 to axis 1).
 
-Hovering a corner shows its contrast, fit RMS, and both angles ± 1σ.
+Hovering a corner shows its response and both axis angles ± 1σ.
 
 ## Prerequisites
 

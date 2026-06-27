@@ -28,7 +28,7 @@ by" lists the downstream stages. Paths are relative to the repo root.
 | **O1** | RingFit two-axis orientation (Gauss-Newton + σ-LUT) | Orientation | `crates/chess-corners-core/src/orientation/ring_fit/` | VI | `rayon` | ring samples → 2 axes + σ | X1 |
 | **O2** | DiskFit two-axis orientation (full-disk, lazy RingFit fallback) | Orientation | `crates/chess-corners-core/src/orientation/disk_sector/` | VI | — | disk samples → 2 axes + σ | X1 |
 | **U1** | Per-axis σ uncertainty calibration LUT | Orientation helper | `crates/chess-corners-core/src/orientation/ring_fit/uncertainty.rs` | VI | — | `(amp, rms)` → σ correction | O1, O2 |
-| **X1** | Corner descriptors (axes, response, contrast/rms) | Descriptors | `crates/chess-corners-core/src/orientation/descriptor.rs` | VI | `rayon` | corners + image → `CornerDescriptor[]` | output |
+| **X1** | Corner descriptors (axes, response) | Descriptors | `crates/chess-corners-core/src/orientation/descriptor.rs` | VI | `rayon` | corners + image → `CornerDescriptor[]` | output |
 | **S1** | Box pyramid 2× downsample | Scale | `crates/box-image-pyramid/src/lib.rs` | VII | `par_pyramid` | `u8` image → pyramid levels | S3 |
 | **S2** | Integer bilinear upscale (×2/3/4) | Scale | `crates/chess-corners/src/upscale.rs` | VII | — | low-res `u8` → upscaled `u8` | S1, R1/R2 |
 | **S3** | Multiscale coarse-to-fine pipeline | Orchestration | `crates/chess-corners/src/multiscale.rs` | VII | — | image → `CornerDescriptor[]` | output |

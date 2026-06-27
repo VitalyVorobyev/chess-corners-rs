@@ -87,8 +87,6 @@ pub struct CornerOut {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub contrast: f32,
-    pub fit_rms: f32,
     pub axes: [AxisOut; 2],
 }
 
@@ -175,8 +173,6 @@ impl From<&CornerDescriptor> for CornerOut {
             x: c.x,
             y: c.y,
             response: c.response,
-            contrast: c.contrast,
-            fit_rms: c.fit_rms,
             axes: [AxisOut::from(&c.axes[0]), AxisOut::from(&c.axes[1])],
         }
     }

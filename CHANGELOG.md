@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 0.11.1
+### Removed
+
+- **Breaking:** dropped the `contrast` and `fit_rms` fields from
+  `CornerDescriptor`. The public descriptor is now
+  `{ x, y, response, axes }`, and a single `response` score is the
+  detection-strength contract. The Python `detect()` array is now
+  `(N, 7)` and the WebAssembly `Float32Array` uses stride 7
+  (`[x, y, response, axis0_angle, axis0_sigma, axis1_angle,
+  axis1_sigma]`); the CLI JSON `corners` entries drop the two fields.
+  Migration: use `response` for per-corner strength and `axes[i].sigma`
+  for per-axis confidence.
 
 ### Changed
 

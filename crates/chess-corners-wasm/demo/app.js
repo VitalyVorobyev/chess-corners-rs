@@ -16,17 +16,15 @@ import init, {
   UpscaleConfig,
 } from '../pkg/chess_corners_wasm.js';
 
-// Layout of each corner in the stride-9 Float32Array returned by `detect()`.
-const STRIDE = 9;
+// Layout of each corner in the stride-7 Float32Array returned by `detect()`.
+const STRIDE = 7;
 const IDX_X = 0,
       IDX_Y = 1,
       IDX_RESP = 2,
-      IDX_CONTRAST = 3,
-      IDX_RMS = 4,
-      IDX_A0_ANGLE = 5,
-      IDX_A0_SIGMA = 6,
-      IDX_A1_ANGLE = 7,
-      IDX_A1_SIGMA = 8;
+      IDX_A0_ANGLE = 3,
+      IDX_A0_SIGMA = 4,
+      IDX_A1_ANGLE = 5,
+      IDX_A1_SIGMA = 6;
 
 const AXIS0_COLOR = '#17a2b8';
 const AXIS1_COLOR = '#ff8c42';
@@ -72,7 +70,7 @@ let currentImageBitmap = null; // ImageBitmap or HTMLImageElement
 let currentRGBA = null;        // Uint8ClampedArray
 let currentW = 0;
 let currentH = 0;
-let lastCorners = null;        // Float32Array with stride-9 layout
+let lastCorners = null;        // Float32Array with stride-7 layout
 let cameraStream = null;
 let cameraVideo = null;
 let cameraRAF = 0;
@@ -439,8 +437,6 @@ function onCanvasMove(e) {
   const x = lastCorners[i + IDX_X];
   const y = lastCorners[i + IDX_Y];
   const resp = lastCorners[i + IDX_RESP];
-  const contrast = lastCorners[i + IDX_CONTRAST];
-  const rms = lastCorners[i + IDX_RMS];
   const a0 = lastCorners[i + IDX_A0_ANGLE];
   const s0 = lastCorners[i + IDX_A0_SIGMA];
   const a1 = lastCorners[i + IDX_A1_ANGLE];
@@ -448,8 +444,6 @@ function onCanvasMove(e) {
   hoverInfo.textContent =
     `(${x.toFixed(2)}, ${y.toFixed(2)})\n` +
     `response: ${resp.toFixed(2)}\n` +
-    `contrast: ${contrast.toFixed(1)}\n` +
-    `fit rms:  ${rms.toFixed(2)}\n` +
     `axis 0:   ${a0.toFixed(3)} ± ${s0.toFixed(3)} rad\n` +
     `axis 1:   ${a1.toFixed(3)} ± ${s1.toFixed(3)} rad`;
   hoverInfo.style.display = 'block';

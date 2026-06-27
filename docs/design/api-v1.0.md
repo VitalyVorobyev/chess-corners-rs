@@ -20,6 +20,10 @@ and leaked internal types make the surface harder to learn — tighten them.
 
 ### D1 — Drop `contrast` and `fit_rms` from `CornerDescriptor`
 
+**Status: landed (`API-01`).** Fields removed from the core struct,
+`new()` constructor, and the Python / WASM / CLI surfaces; snapshot
+debug-dump updated; docs swept.
+
 The public descriptor becomes:
 
 ```rust

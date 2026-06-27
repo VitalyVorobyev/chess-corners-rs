@@ -29,7 +29,7 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
-| API-01 | P0 | todo | M3 | — | Drop `contrast`/`fit_rms` from `CornerDescriptor` + `new()` + Py/WASM/CLI + snapshot |
+| API-01 | P0 | done | M3 | — | Dropped `contrast`/`fit_rms` from `CornerDescriptor` + `new()`, Py (9→7 cols), WASM (stride 9→7), CLI JSON, book/README/CHANGELOG. σ math intact; snapshot counts bit-stable; all gates + maturin/pytest(79)/wasm-pack green. Net −59 LOC. Ripple → TOOL-01. |
 | API-02 | P1 | todo | M3 | — | Deduplicate `nms_radius`/`min_cluster_size` across Chess/Radon configs |
 | API-03 | P1 | todo | M3 | — | Hide `ChessParams`, `RefinerKind` (and other internal leaks) from core root |
 | API-04 | P2 | todo | M3 | — | Resolve `ChessRefiner::Ml` silent CoM fallback (honor / post-step / gate out) |
@@ -104,6 +104,7 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | ML-03 | P2 | todo | PERF-10 | Optimize ML inference (~23 ms / 77 corners is too slow for real-time) |
 | ALGO-01 | P3 | todo | — | Adaptive per-corner refiner selection by local image context |
 | PY-01 | P3 | todo | — | Python batch processing with `PyramidBuffers` reuse across frames |
+| TOOL-01 | P3 | todo | API-01 | `tools/orientation_bench/` reads the old Python `(N,9)` layout positionally (`runner.py` row[3..8], `__main__.py` `corners[pi,4]`, `metrics.py`) and breaks after API-01 (now `(N,7)`). It *measured* `fit_rms`/`contrast` as metrics, so this is a semantic rework: drop those fit-residual metrics or source amp/rms via a diagnostics path. Local research tooling, outside the gates — not a 1.0 blocker. |
 | PERF-11 | P2 | todo | API-06, M5 | **Scheduled last (after M5).** Replace the nightly `core::simd` path with a single STABLE backend so the `simd` feature drops its nightly requirement. Spike compares `wide` (stable, compile-time) vs `pulp` (stable, runtime CPU dispatch — valuable for wheels/vcpkg binaries on unknown CPUs) and picks **one** — we do NOT maintain multiple selectable backends (DRY; they lower to the same instructions). Must stay bit-identical-or-within-tolerance to scalar (cf. PERF-10) + re-bench. Not a 1.0 blocker (stable build already uses the scalar path). |
 
 ## Closed

@@ -140,8 +140,8 @@ impl ChessDetector {
 
     /// Detect corners from grayscale u8 pixels.
     ///
-    /// Returns a `Float32Array` with stride 9 per corner:
-    /// `[x, y, response, contrast, fit_rms,
+    /// Returns a `Float32Array` with stride 7 per corner:
+    /// `[x, y, response,
     ///   axis0_angle, axis0_sigma, axis1_angle, axis1_sigma, ...]`.
     ///
     /// Throws a JS error string if the pixel buffer length does not match
@@ -412,9 +412,9 @@ impl ChessDetector {
     }
 }
 
-/// Flat array stride per corner: `[x, y, response, contrast, fit_rms,
+/// Flat array stride per corner: `[x, y, response,
 /// axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`.
-const CORNER_STRIDE: usize = 9;
+const CORNER_STRIDE: usize = 7;
 
 fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::Float32Array {
     let mut flat = Vec::with_capacity(corners.len() * CORNER_STRIDE);
@@ -422,8 +422,6 @@ fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::
         flat.push(c.x);
         flat.push(c.y);
         flat.push(c.response);
-        flat.push(c.contrast);
-        flat.push(c.fit_rms);
         flat.push(c.axes[0].angle);
         flat.push(c.axes[0].sigma);
         flat.push(c.axes[1].angle);

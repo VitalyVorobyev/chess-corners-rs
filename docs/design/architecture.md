@@ -102,13 +102,13 @@ paths sort final outputs by stable keys before returning.
 The Python package exposes a Python-native `chess_corners.Detector` and
 configuration classes that round-trip through the same JSON shape as the
 Rust facade. `Detector.detect(image)` accepts a 2D C-contiguous `uint8`
-NumPy array and returns a `float32 (N, 9)` array:
+NumPy array and returns a `float32 (N, 7)` array:
 
 ```text
-x, y, response, contrast, fit_rms,
+x, y, response,
 axis0_angle, axis0_sigma, axis1_angle, axis1_sigma
 ```
 
 The WebAssembly package exposes the same detector/configuration concepts
 for JavaScript and TypeScript, returning a `Float32Array` with the same
-stride-9 corner layout.
+stride-7 corner layout.

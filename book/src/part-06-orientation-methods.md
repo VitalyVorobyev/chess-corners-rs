@@ -3,11 +3,11 @@
 Both the [ChESS detector](part-03-chess-detector.md) and the
 [Radon detector](part-04-radon-detector.md) produce a list of corner
 candidates with subpixel positions. The descriptor pipeline lifts each
-position to a richer record that includes two grid-axis directions,
-their per-axis 1σ uncertainties, the corner contrast, and a fit
-residual. The "orientation method" is the algorithm that fits those
-axes from local image evidence — and because both detectors feed the
-same descriptor pipeline, the orientation method is detector-agnostic.
+position to a richer record that includes two grid-axis directions and
+their per-axis 1σ uncertainties. The "orientation method" is the
+algorithm that fits those axes from local image evidence — and because
+both detectors feed the same descriptor pipeline, the orientation
+method is detector-agnostic.
 
 This chapter covers the two methods exposed by the public API, when to
 use each, and how each one works step by step.

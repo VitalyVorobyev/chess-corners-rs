@@ -511,7 +511,6 @@ mod tests {
             best.axes
         );
         assert!(vert < 0.35, "vert line miss: {vert}, axes {:?}", best.axes);
-        assert!(best.contrast > 0.0);
 
         // Brightness shift stability: both axes survive a global
         // intensity offset.

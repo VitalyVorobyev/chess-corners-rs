@@ -20,7 +20,7 @@ def test_detector_basic():
     corners = detector.detect(img)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
-    assert corners.shape[1] == 9
+    assert corners.shape[1] == 7
     assert corners.shape[0] > 0
 
 
@@ -125,7 +125,7 @@ def test_typed_config_passes_through_ffi_directly():
     corners = chess_corners.Detector(cfg).detect(img)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
-    assert corners.shape[1] == 9
+    assert corners.shape[1] == 7
 
 
 def test_invalid_cfg_type_raises_type_error():
@@ -226,7 +226,7 @@ def test_detector_config_roundtrip():
     corners = detector.detect(img)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
-    assert corners.shape[1] == 9
+    assert corners.shape[1] == 7
 
 
 def test_radon_multiscale_classmethod():
@@ -244,5 +244,5 @@ def test_radon_multiscale_classmethod():
     corners = chess_corners.Detector(cfg).detect(img)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
-    assert corners.shape[1] == 9
+    assert corners.shape[1] == 7
     assert corners.shape[0] > 0, "radon_multiscale detector returned no corners"

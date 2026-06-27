@@ -78,8 +78,6 @@ pub fn describe_corners(
             x: c.x,
             y: c.y,
             response: c.strength,
-            contrast: fit.amp.max(0.0),
-            fit_rms: fit.rms,
             axes: [
                 AxisEstimate {
                     angle: fit.theta1,
