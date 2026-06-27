@@ -56,10 +56,10 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 |----|-----|--------|-----------|------|------|
 | CPP-01 | P2 | done | M5 | M3 | `chess-corners-capi` (publish=false, staticlib+cdylib+rlib): flat `cc_config` + presets, `cc_detect_u8`, `cc_result`/`cc_result_free` (lib-owned alloc), `cc_status`/`cc_status_str`, `cc_abi_version`. Panic-trapped at every boundary; tags are `uint32_t`+`#define` (no discriminant UB). Rust parity test (corner-by-corner vs `Detector::detect_u8`) + C smoke (49 corners on 8×8). |
 | CPP-02 | P2 | done | M5 | CPP-01 | `cbindgen.toml` + `generate-ffi-header` bin (with `--check` drift mode) → committed `include/chess_corners.h`. Intra-doc brackets stripped for a clean C header. |
-| CPP-03 | P2 | in-progress | M5 | CPP-02 | Hand-written C++ header `chess_corners.hpp` (RAII, `std::vector`) |
-| CPP-04 | P2 | in-progress | M5 | CPP-01 | CMake package config (`find_package(chess-corners)`) + pkg-config |
+| CPP-03 | P2 | done | M5 | CPP-02 | Header-only `chess_corners.hpp` (C++17): `Axis`/`Corner`/`Config` value types + presets, exception-safe `ResultGuard` RAII, `detect()` → `std::vector<Corner>` throwing `chess_corners::Error` (carries `cc_status`), `check_abi()` guard each call. Compiles clean under `-Wall -Wextra -Wpedantic -Wconversion -Wshadow`. |
+| CPP-04 | P2 | done | M5 | CPP-01 | `CMakeLists.txt` + package config: `find_package(chess-corners CONFIG)` → `chess-corners::chess-corners`. Builds the Rust lib, honours static/shared (`BUILD_SHARED_LIBS`/`VCPKG_LIBRARY_LINKAGE`), links `native-static-libs`, fixes macOS dylib install-name, emits relocatable pkg-config `.pc`. Verified both linkages. |
 | CPP-05 | P3 | todo | M5 | CPP-04 | vcpkg port (`vcpkg.json` + `portfile.cmake`); overlay first, then registry PR |
-| CPP-06 | P3 | in-progress | M5 | CPP-03 | C/C++ smoke + parity test + CI job + example consumer |
+| CPP-06 | P3 | done | M5 | CPP-03 | Self-contained C++ example (synthetic 8×8 → 49 corners) + C smoke wired as CTest; `.github/workflows/cpp.yml` matrix (static+shared): header-drift gate → build → ctest → install → example via `find_package`. (Rust marshalling parity already in CPP-01's `parity.rs`.) |
 | CPP-07 | P3 | todo | M5 | CPP-03 | Book chapter: C++ usage |
 
 ## SWEEP — dev-history/internal reference cleanup  ·  continuous → M3
