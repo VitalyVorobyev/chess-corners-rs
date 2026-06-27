@@ -125,11 +125,23 @@ post-refiner step in config, or gate the variant out entirely when
 
 ### API-05 — Python stub parity
 
-Runtime PyO3 exposes `Detector.config()` and `Detector.apply_config(...)`
-that the `.pyi` omits; factory names drift (`single_scale`/`multiscale_preset`
-vs Rust `chess`/`chess_multiscale`/`radon`/`radon_multiscale`). Ship complete
-`.pyi` stubs and a test that checks runtime methods against the stub. Decide
-whether to align factory names (binding-breaking) now or document the mapping.
+**Status: landed.** On inspection the gap had already been closed: the
+shipped `.pyi` documents every `Detector` method (`detect`, `config`,
+`apply_config`, `radon_heatmap`), and the `DetectorConfig` factory names
+already match Rust (`chess` / `chess_multiscale` / `radon` /
+`radon_multiscale`). The earlier "drift" note was stale —
+`MultiscaleConfig.single_scale()` is the faithful binding of the Rust
+`MultiscaleConfig::SingleScale` variant, not a divergent factory, and
+`multiscale_preset` does not exist. No factory rename was needed. Added a
+dependency-free pytest parity guard (`test_stub_parity.py`) that
+introspects the runtime `Detector` methods and asserts each appears in
+the stub's `class Detector:` block, so future drift fails CI (pytest
+82 → 83).
+
+Original task: runtime PyO3 exposes `Detector.config()` and
+`Detector.apply_config(...)` that the `.pyi` omits; factory names drift.
+Ship complete `.pyi` stubs and a test that checks runtime methods against
+the stub. Decide whether to align factory names or document the mapping.
 
 ### API-06 — `#[non_exhaustive]` & sealed-trait policy
 
@@ -175,10 +187,20 @@ extension point; state MSRV and the nightly-only `simd` boundary.
 
 ### API-07 — Binding unknown-variant handling
 
-Python and WASM both map unknown enum discriminants to a default
-(`OrientationMethod`→`RingFit`, `PeakFitMode`→`Gaussian`). Document this as
-intended, or harden to an error. Keep WASM discriminants contiguous and
-pinned so reordering is caught.
+**Status: landed (documented, not hardened — by design).** The "map
+unknown to default" only happens in the **core → binding** direction, as
+the forward-compat shim for `#[non_exhaustive]` core enums (a binding
+built against an older core still runs against a newer one). Hardening
+that path to an error would defeat forward-compat, so it stays a default
+and is now documented (WASM crate docs; Python keeps the same shim).
+**Caller** input is already strict: Python rejects unknown keys
+(`reject_unknown_keys`) and unknown enum members (PyO3 enum validation);
+WASM has no free-form options object — config is built through typed
+getters/setters and factory constructors, so there is no untyped key to
+misread. WASM discriminants were already explicit (`= 0/1/2`); a
+`cargo test` now pins all four `#[wasm_bindgen]` numeric enums
+(`ChessRing`, `DescriptorRing`, `PeakFitMode`, `OrientationMethod`) so a
+reorder — breaking for JS consumers — fails locally (28 → 29 tests).
 
 ### API-08 / API-09 — Enforcement & release
 
@@ -207,12 +229,14 @@ as part of M3 (these are additive and low-risk).
 1. `nms_radius`/`min_cluster_size` → **lift to a shared `DetectionParams`** reused by both strategies; strategy structs keep only strategy-specific knobs (API-02).
 2. `ChessRefiner::Ml` → **feature-gate the variant** (exists only with `ml-refiner`); drop the silent CenterOfMass fallback (API-04).
 3. `DenseDetector` / `CornerRefiner` → **seal both** — no external impls, so the trait signatures stay free to evolve post-1.0 (API-06).
-4. `chess-corners-ml` → **keep published, documented as advanced**; add it to the repo's published-crate list (AGENTS.md / README).
-
-Still open (decide during API-05): Python factory-name alignment
-(`single_scale`/`multiscale_preset` vs Rust `chess`/`chess_multiscale`/…) —
-align (binding-break) now, or document the mapping? **Default: document the
-mapping** unless a binding-break pass is explicitly wanted.
+4. `chess-corners-ml` → **keep published, documented as advanced** (it has
+   no `publish = false`; AGENTS.md was corrected from "three published
+   crates / ml is internal" to four, listing ml as advanced/optional).
+5. Python factory names → **no change needed** (resolved in API-05): the
+   `DetectorConfig` factories already match Rust
+   (`chess`/`chess_multiscale`/`radon`/`radon_multiscale`), and
+   `MultiscaleConfig.single_scale()` is the faithful binding of
+   `MultiscaleConfig::SingleScale`. The earlier drift note was stale.
 
 ## Verification (per phase)
 
