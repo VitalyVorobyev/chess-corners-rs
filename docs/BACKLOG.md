@@ -44,10 +44,10 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
 | SITE-01 | P1 | done | M4 | — | Landing page `.github/pages/index.html` adapted to chess-corners (title, description, 4 cards → /book//api//demo//performance/, GitHub link); dark theme unchanged; zero `calib` strings remain. |
-| SITE-02 | P1 | todo | M4 | SITE-01,03,04 | Rework `docs.yml` → assemble `public/{,/api,/book,/demo,/performance}` (book → `/book/`) |
+| SITE-02 | P1 | done | M4 | SITE-01,03,04 | Reworked `docs.yml`: nightly + wasm32 + wasm-pack + Bun; build demo; assemble `public/` = landing(/) + api(/api/) + book(/book/) + demo(/demo/) + perf (carried in `.github/pages/`). LFS checkout, `check_doc_versions.py`, `chess_corners` redirect preserved; deploy job unchanged. |
 | SITE-03 | P1 | done | M4 | M3 | Vite+React+Bun demo (`demo/`) over `@vitavision/chess-corners` WASM: load image → in-browser ChESS/Radon detect → overlay corners (response colormap) + two orientation axes + σ wedges + response/Radon heatmap; live controls (strategy/multiscale/threshold/refiner/orientation/NMS). `scripts/build-wasm.sh` builds pkg + sets npm name. Playwright-verified (0 console errors); artifacts gitignored. |
 | SITE-04 | P2 | done | M4 | — | `scripts/gen-perf-data.sh` + `gen_perf_data.py` + a `perf_overlay` example (4-stage decomposition, p50×60, corner-count faithfulness check) emit real `performance/data.json` + overlay PNGs on small/mid/large; rewrote `performance/index.html` for chess-corners (grep-clean of calib/charuco/puzzle). Example gated `required-features=["image"]`. |
-| SITE-05 | P2 | todo | M4 | SITE-02 | `scripts/build-site.sh` (one-command local build) |
+| SITE-05 | P2 | done | M4 | SITE-02 | `scripts/build-site.sh` reproduces the deployed tree locally (cargo doc → mdBook → build-wasm → bun build → assemble `public/`); verified end-to-end (all five sections present). |
 | SITE-06 | P3 | done | M4 | SITE-02 | `/book/`-move audit: README "Docs" badge → site root is valid as the new landing hub; no absolute book links in `book/src/` to repoint. Added a "Live demo" badge → `/demo/`. vitavision.dev linkage already present (README header + landing footer). |
 
 ## CPP — C++ bindings via vcpkg  ·  M5 (dep M3)  ·  [design](design/cpp-vcpkg-bindings.md)
