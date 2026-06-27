@@ -38,7 +38,7 @@ End-to-end pipelines are benched, but several **atomic** hot paths
 | `PERF-04` | DiskFit gradient sampling (O2) | `core/src/orientation/disk_sector/` | disk accumulation vs RingFit on warped corners |
 | `PERF-05` | NMS scaling (D1) | `core/src/detect/chess/detect.rs` | throughput vs NMS radius {1,2,4,8} on dense response maps |
 
-## Measured baseline (PERF-01, PERF-02)
+## Measured baseline (PERF-01–05)
 
 First baselines on synthetic 8-bit chessboards (criterion median, single
 thread; `crates/chess-corners-core/benches/{chess_response,radon_response}.rs`,
@@ -61,6 +61,29 @@ shared board from `benches/common/`). Reproduce with
 | 1024², up=1 | 121 Mpix/s (8.64 ms) | 132 Mpix/s (7.93 ms) | +8.9% |
 | 1024², up=2 | 22.4 Mpix/s (46.9 ms) | 25.5 Mpix/s (41.1 ms) | +14.0% |
 
+**PERF-03/04 — orientation fit, single corner (`fit_axes_at_point`):**
+
+| method | @corner | @edge | vs RingFit |
+|--------|---------|-------|------------|
+| RingFit | 2.59 µs | 3.26 µs | 1× |
+| DiskFit | 121.6 µs | 136.9 µs | 47× / 42× |
+
+**PERF-05 — NMS scaling at 1024² (radius sweep, one shared response map):**
+
+| NMS radius | 1 | 2 | 4 | 8 |
+|------------|---|---|---|---|
+| time | 766 µs | 836 µs | 995 µs | 1646 µs |
+
+> **Worst-case caveat (important).** The synthetic board has hard 40/215
+> steps, giving `rel_rms ≈ 0.47` even at a perfect 90° corner
+> (scale-invariant). That exceeds RingFit's robust-path trigger (0.12) and
+> DiskFit's lazy-gate threshold (0.04), so here RingFit *always* runs its slow
+> robust grid (its sub-µs fast-seed path is unreachable) and DiskFit *never*
+> short-circuits. The 47× ratio is therefore the full-disk-vs-robust-grid
+> worst case, **not** typical clean/soft-edge cost. Representative numbers need
+> a soft-edge (blurred) fixture, plus a warped corner for DiskFit's intended
+> case (tracked as PERF-12).
+
 **Findings (these drive PERF-10):**
 
 - Throughput is roughly **size-independent up to 1024²** (scalar ≈155–162,
@@ -74,6 +97,14 @@ shared board from `benches/common/`). Reproduce with
   proves SAT construction is *not* the upsample=2 bottleneck; the
   per-output-pixel angular sampling is. Aim "SAT SIMD prefix-sum" work at
   upsample=1, and target angular sampling for upsample=2.
+- NMS is **sub-quadratic**, not the feared O(n²): a 64× window-area increase
+  (r=1→8) costs only 2.15× time. The O(W·H) threshold/max scan dominates the
+  ~766 µs floor (`is_local_max` early-exits on slopes, so the `(2r+1)²` window
+  is paid only at sparse maxima). A PERF-10 NMS win must target the full scan,
+  not the window.
+- DiskFit costs ~42–47× RingFit *when it runs the full disk*; with soft edges
+  its lazy gate can fall back to RingFit, so the real-world ratio depends on
+  edge softness — measure on the PERF-12 fixture before acting.
 
 ## Stage 2 — flamegraph automation (`PERF-07` — already in place)
 

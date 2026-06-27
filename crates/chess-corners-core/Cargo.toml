@@ -48,6 +48,10 @@ name = "descriptor_fit"
 harness = false
 
 [[bench]]
+name = "nms_scaling"
+harness = false
+
+[[bench]]
 name = "radon_response"
 harness = false
 

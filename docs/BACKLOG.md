@@ -14,14 +14,15 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 |----|-----|--------|-----------|------|------|
 | PERF-01 | P1 | done | M2 | — | Criterion microbench: ChESS ring kernel (scalar + SIMD) — `benches/chess_response.rs`. Baseline: scalar ≈155 / SIMD ≈621 Mpix/s @1024² (3.7–4.0×). |
 | PERF-02 | P1 | done | M2 | — | Bench: Radon SAT, i64 vs u32 @1024² — `benches/radon_response.rs`. u32 win +9–16% @up=1, collapses @up=2. |
-| PERF-03 | P2 | todo | M2 | — | Bench: RingFit GN per-iteration / convergence — `core/.../orientation/ring_fit/` |
-| PERF-04 | P2 | todo | M2 | — | Bench: DiskFit gradient sampling vs RingFit on warped corners |
-| PERF-05 | P2 | todo | M2 | — | Bench: NMS scaling with radius {1,2,4,8} on dense maps — `core/.../detect/chess/detect.rs` |
+| PERF-03 | P2 | done | M2 | — | Bench RingFit fit (`descriptor_fit.rs::orientation_fit`): 2.59 µs@corner (robust-grid path; hard-edge worst case). |
+| PERF-04 | P2 | done | M2 | — | Bench DiskFit vs RingFit: 121.6 µs@corner = 47× RingFit when the full disk runs (hard-edge worst case; lazy gate never trips → PERF-12). |
+| PERF-05 | P2 | done | M2 | — | Bench NMS scaling (`nms_scaling.rs`) r=1/2/4/8 @1024²: 766→1646 µs. Sub-quadratic (64× area = 2.15× time); O(W·H) scan dominates. |
 | PERF-06 | P1 | done | M2 | — | Allocation audit: inner loops allocation-free (RadonPeak scratch reused; response kernels use reused buffers). Multiscale loop allocates 2 small `Vec<Corner>`/seed (`multiscale.rs:358,371`) but response-patch dominates — keep; optional `*_into` is PERF-10. |
 | PERF-07 | P1 | done | M2 | — | Flamegraph/profiling automation already exists: `tools/profile.sh` (cargo-flamegraph + samply over `profile_target`). Residual: document in book Part VIII (→ DOCS-03). |
 | PERF-08 | P1 | todo | M2 | PERF-01..05 | CI bench gate: baseline compare, fail on >2% p95 regression |
 | PERF-09 | P2 | todo | M2 | PERF-08 | Capture baseline `metrics.json` (feeds SITE-04) |
-| PERF-10 | P2 | todo | M2 | PERF-01,02,07 | Optimize confirmed bottlenecks (evidence): (a) vectorize per-lane μₗ loop + response write-back in ChESS SIMD path (`response.rs:508–524`) — caps gain at ~4×; (b) angular sampling at upsample=2 in Radon (u32-SAT win collapses there). Guarded ≤2% p95 |
+| PERF-10 | P2 | todo | M2 | PERF-01,02,07,12 | Optimize confirmed bottlenecks (evidence): (a) vectorize per-lane μₗ loop + response write-back in ChESS SIMD path (`response.rs:508–524`) — caps gain at ~4×; (b) Radon angular sampling at upsample=2 (u32-SAT win collapses there); (c) NMS O(W·H) scan, not the window. Guarded ≤2% p95 |
+| PERF-12 | P2 | todo | M2 | — | Add soft-edge (blurred) + warped-corner bench fixtures. Current `synth_chessboard` (hard 40/215 steps, rel_rms≈0.47) forces RingFit's robust path and blocks DiskFit's lazy gate, so the fast paths + DiskFit's intended warped case are unmeasured. Prereq for representative PERF-08/09/10 numbers. |
 
 ## API — v1.0 stabilization  ·  M3  ·  [design](design/api-v1.0.md)
 
@@ -72,7 +73,7 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
-| SOLID-01 | P2 | in-progress | M2 | — | Extract shared test utilities: `gaussian_blur` (dup ×5), bilinear patch extraction, synthetic chessboard, `ClassicRefiners` trait. Started: shared `benches/common/synth_chessboard` (de-dups the Radon bench copy). |
+| SOLID-01 | P2 | in-progress | M2 | — | Extract shared test utilities: `gaussian_blur` (dup ×5), bilinear patch extraction, synthetic chessboard, `ClassicRefiners` trait. Started: shared `benches/common/synth_chessboard` now used by `radon_response` + `descriptor_fit` (two duplicate generators removed). |
 | SOLID-02 | P3 | todo | — | — | Evaluate `Refiner` enum dispatch boilerplate (`refine/mod.rs`) — refactor or accept |
 | SOLID-03 | P3 | todo | M2 | SOLID-01 | Merge duplicate synthetic-chessboard generators into one fixture |
 
