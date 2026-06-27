@@ -54,8 +54,8 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
-| CPP-01 | P2 | todo | M5 | M3 | New `chess-corners-capi` crate: `extern "C"` (staticlib+cdylib) over the facade |
-| CPP-02 | P2 | todo | M5 | CPP-01 | `cbindgen.toml` + generated `include/chess_corners.h` (committed, CI-checked) |
+| CPP-01 | P2 | in-progress | M5 | M3 | New `chess-corners-capi` crate: `extern "C"` (staticlib+cdylib) over the facade |
+| CPP-02 | P2 | in-progress | M5 | CPP-01 | `cbindgen.toml` + generated `include/chess_corners.h` (committed, CI-checked) |
 | CPP-03 | P2 | todo | M5 | CPP-02 | Hand-written C++ header `chess_corners.hpp` (RAII, `std::vector`) |
 | CPP-04 | P2 | todo | M5 | CPP-01 | CMake package config (`find_package(chess-corners)`) + pkg-config |
 | CPP-05 | P3 | todo | M5 | CPP-04 | vcpkg port (`vcpkg.json` + `portfile.cmake`); overlay first, then registry PR |

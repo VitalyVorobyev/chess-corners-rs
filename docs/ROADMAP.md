@@ -71,7 +71,7 @@ surface freezes).
 - ✅ `#[non_exhaustive]`/sealed-trait policy applied; MSRV stated; binding discriminants pinned.
 - ⏳ (release) `cargo-semver-checks` in CI; `1.0.0` tagged with migration notes — after M5.
 
-## M4 — GitHub Pages site  ·  *current*
+## M4 — GitHub Pages site  ·  *done*
 
 **Goal.** A unified site: landing → book → API → demo → performance. See
 [`design/site-architecture.md`](design/site-architecture.md). The existing
@@ -86,7 +86,7 @@ the frozen API); consumes M2's measured perf baselines.
   `/demo/`; performance report at `/performance/`.
 - `docs.yml` assembles and deploys all four; `scripts/build-site.sh` reproduces locally.
 
-## M5 — C++ bindings via vcpkg
+## M5 — C++ bindings via vcpkg  ·  *current*
 
 **Goal.** A vcpkg-installable C/C++ binding. See
 [`design/cpp-vcpkg-bindings.md`](design/cpp-vcpkg-bindings.md).
