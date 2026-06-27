@@ -58,9 +58,9 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | CPP-02 | P2 | done | M5 | CPP-01 | `cbindgen.toml` + `generate-ffi-header` bin (with `--check` drift mode) → committed `include/chess_corners.h`. Intra-doc brackets stripped for a clean C header. |
 | CPP-03 | P2 | done | M5 | CPP-02 | Header-only `chess_corners.hpp` (C++17): `Axis`/`Corner`/`Config` value types + presets, exception-safe `ResultGuard` RAII, `detect()` → `std::vector<Corner>` throwing `chess_corners::Error` (carries `cc_status`), `check_abi()` guard each call. Compiles clean under `-Wall -Wextra -Wpedantic -Wconversion -Wshadow`. |
 | CPP-04 | P2 | done | M5 | CPP-01 | `CMakeLists.txt` + package config: `find_package(chess-corners CONFIG)` → `chess-corners::chess-corners`. Builds the Rust lib, honours static/shared (`BUILD_SHARED_LIBS`/`VCPKG_LIBRARY_LINKAGE`), links `native-static-libs`, fixes macOS dylib install-name, emits relocatable pkg-config `.pc`. Verified both linkages. |
-| CPP-05 | P3 | todo | M5 | CPP-04 | vcpkg port (`vcpkg.json` + `portfile.cmake`); overlay first, then registry PR |
+| CPP-05 | P3 | in-progress | M5 | CPP-04 | vcpkg port (`vcpkg.json` + `portfile.cmake`); overlay first, then registry PR |
 | CPP-06 | P3 | done | M5 | CPP-03 | Self-contained C++ example (synthetic 8×8 → 49 corners) + C smoke wired as CTest; `.github/workflows/cpp.yml` matrix (static+shared): header-drift gate → build → ctest → install → example via `find_package`. (Rust marshalling parity already in CPP-01's `parity.rs`.) |
-| CPP-07 | P3 | todo | M5 | CPP-03 | Book chapter: C++ usage |
+| CPP-07 | P3 | in-progress | M5 | CPP-03 | Book chapter: C++ usage |
 
 ## SWEEP — dev-history/internal reference cleanup  ·  continuous → M3
 
