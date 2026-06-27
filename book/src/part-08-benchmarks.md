@@ -469,5 +469,5 @@ tools/profile.sh samply chess testimages/large.png
 
 ---
 
-[Part IX](part-09-contributing.md) describes how to contribute
-code, tests, or datasets back to the project.
+Next: [Part IX](part-09-cpp-bindings.md) — using the detector from
+C and C++ through the stable C ABI.

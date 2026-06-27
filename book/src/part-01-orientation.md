@@ -146,7 +146,7 @@ details and the fit math are in
   [Part VIII](part-08-benchmarks.md) for measurements.
 - Orientation methods (`RingFit` / `DiskFit`): [Part VI](part-06-orientation-methods.md).
 - Multiscale pipeline and pyramid tuning: [Part VII](part-07-multiscale-and-pyramids.md).
-- To contribute: [Part IX](part-09-contributing.md).
+- To contribute: [Part X](part-10-contributing.md).
 
 Rust API documentation builds alongside this book and is published
 at the same site:

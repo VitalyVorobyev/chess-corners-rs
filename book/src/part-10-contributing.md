@@ -1,4 +1,4 @@
-# Part IX: Contributing
+# Part X: Contributing
 
 The workspace is a practical reference implementation rather than a
 one-off experiment. Contributions are welcome in three forms.
