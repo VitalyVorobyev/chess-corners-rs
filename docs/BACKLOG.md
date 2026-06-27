@@ -43,10 +43,10 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
-| SITE-01 | P1 | in-progress | M4 | — | Landing page `.github/pages/index.html` (rewrite calib-targets copy → chess-corners, 4 cards) |
+| SITE-01 | P1 | done | M4 | — | Landing page `.github/pages/index.html` adapted to chess-corners (title, description, 4 cards → /book//api//demo//performance/, GitHub link); dark theme unchanged; zero `calib` strings remain. |
 | SITE-02 | P1 | todo | M4 | SITE-01,03,04 | Rework `docs.yml` → assemble `public/{,/api,/book,/demo,/performance}` (book → `/book/`) |
 | SITE-03 | P1 | in-progress | M4 | M3 | WASM demo (`demo/`, Vite+React+Bun) + `scripts/build-wasm.sh` |
-| SITE-04 | P2 | in-progress | M4 | — | `scripts/gen-perf-data.sh` → `performance/data.json` + overlays + `performance/index.html` (uses real M2 baselines; PERF-09 not a hard dep) |
+| SITE-04 | P2 | done | M4 | — | `scripts/gen-perf-data.sh` + `gen_perf_data.py` + a `perf_overlay` example (4-stage decomposition, p50×60, corner-count faithfulness check) emit real `performance/data.json` + overlay PNGs on small/mid/large; rewrote `performance/index.html` for chess-corners (grep-clean of calib/charuco/puzzle). Example gated `required-features=["image"]`. |
 | SITE-05 | P2 | todo | M4 | SITE-02 | `scripts/build-site.sh` (one-command local build) |
 | SITE-06 | P3 | in-progress | M4 | SITE-02 | Update README/book cross-links for `/book/` move; vitavision.dev linkage |
 
