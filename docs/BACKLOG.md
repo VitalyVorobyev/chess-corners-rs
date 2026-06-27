@@ -17,8 +17,8 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | PERF-03 | P2 | todo | M2 | — | Bench: RingFit GN per-iteration / convergence — `core/.../orientation/ring_fit/` |
 | PERF-04 | P2 | todo | M2 | — | Bench: DiskFit gradient sampling vs RingFit on warped corners |
 | PERF-05 | P2 | todo | M2 | — | Bench: NMS scaling with radius {1,2,4,8} on dense maps — `core/.../detect/chess/detect.rs` |
-| PERF-06 | P1 | todo | M2 | — | Allocation audit: `refine/radon_peak.rs` + multiscale ROI; verify no per-corner allocs |
-| PERF-07 | P1 | todo | M2 | — | Flamegraph automation script under `tools/` (cargo-flamegraph wrapper) |
+| PERF-06 | P1 | done | M2 | — | Allocation audit: inner loops allocation-free (RadonPeak scratch reused; response kernels use reused buffers). Multiscale loop allocates 2 small `Vec<Corner>`/seed (`multiscale.rs:358,371`) but response-patch dominates — keep; optional `*_into` is PERF-10. |
+| PERF-07 | P1 | done | M2 | — | Flamegraph/profiling automation already exists: `tools/profile.sh` (cargo-flamegraph + samply over `profile_target`). Residual: document in book Part VIII (→ DOCS-03). |
 | PERF-08 | P1 | todo | M2 | PERF-01..05 | CI bench gate: baseline compare, fail on >2% p95 regression |
 | PERF-09 | P2 | todo | M2 | PERF-08 | Capture baseline `metrics.json` (feeds SITE-04) |
 | PERF-10 | P2 | todo | M2 | PERF-01,02,07 | Optimize confirmed bottlenecks (evidence): (a) vectorize per-lane μₗ loop + response write-back in ChESS SIMD path (`response.rs:508–524`) — caps gain at ~4×; (b) angular sampling at upsample=2 in Radon (u32-SAT win collapses there). Guarded ≤2% p95 |

@@ -19,6 +19,8 @@ output (baselines + a CI bench gate) also feeds the site's performance page
   `box-image-pyramid/benches/pyramid_perf.rs`.
 - **Python harness:** `tools/perf_bench.py` (feature combos `{simd, rayon,
   par_pyramid}` × `{multi, single, radon}` → JSON trace metrics).
+- **Flamegraph/profiling:** `tools/profile.sh` (cargo-flamegraph + samply over
+  the `profile_target` example) — see Stage 2.
 - **Accuracy guard:** `chess-corners/tests/perf_accuracy_guard.rs` (median
   error tracking); `refiner_benchmark.rs` (per-refiner throughput/latency).
 - **Feature flags:** `rayon`, `simd`, `par_pyramid`, `radon-sat-u32`.
@@ -73,20 +75,38 @@ shared board from `benches/common/`). Reproduce with
   per-output-pixel angular sampling is. Aim "SAT SIMD prefix-sum" work at
   upsample=1, and target angular sampling for upsample=2.
 
-## Stage 2 — flamegraph automation (`PERF-07`)
+## Stage 2 — flamegraph automation (`PERF-07` — already in place)
 
-There is **no** flamegraph/`perf record` automation today. Add a script under
-`tools/` (cargo-flamegraph wrapper) that profiles representative configs
-(single-scale ChESS, multiscale ChESS, Radon) on a standard image and emits
-SVGs to a known location, documented in the perf chapter (book Part VIII).
+Profiling automation already exists: `tools/profile.sh` wraps
+`cargo-flamegraph` and `samply` over the dedicated `profile_target` example
+(`crates/chess-corners/examples/profile_target.rs`), with `chess` / `radon` /
+`refiner` modes and timestamped SVG output under `testdata/out/profiles/`.
+Use it to confirm the PERF-10 hotspots:
+
+```sh
+tools/profile.sh chess   testimages/large.png   # ChESS multiscale
+tools/profile.sh radon   testimages/large.png   # whole-image Radon
+tools/profile.sh refiner saddle testimages/large.png
+```
+
+The only residual PERF-07 work is documentation — surface this in book
+Part VIII (tracked as DOCS-03).
 
 ## Stage 3 — allocation audit + targeted optimization
 
-- `PERF-06` — **Allocation audit.** Verify the "no per-corner allocations in
-  hot paths" invariant (`AGENTS.md`). Suspects: `core/src/refine/radon_peak.rs`
-  (localized Radon per seed) and multiscale ROI refinement
-  (`chess-corners/src/multiscale.rs`). Measure alloc count vs corner count on
-  256²/512²/1024² boards; reuse scratch buffers where it leaks.
+- `PERF-06` — **Allocation audit (done — invariant holds).** The genuine hot
+  paths are allocation-free per corner: `RadonPeakRefiner` sizes
+  `resp`/`blur_scratch` once in `new()` and the `refine()` loop only writes
+  into them (`refine/radon_peak.rs:119–136,236–251` — no `vec!`/`collect`);
+  the ChESS/Radon response kernels write into reused detector buffers. The
+  multiscale coarse-to-fine loop (`multiscale.rs:345–383`) *does* allocate
+  **two small `Vec<Corner>` per seed** — `detect_corners` (`:358`) and
+  `refine_peaks_on_image` (`:371`) return owned vectors — but the per-seed
+  `compute_response_patch` dominates that cost (PERF-01/02: response is
+  ms-scale; the vecs hold ~1 corner), and `refined`, the `Refiner`, and the
+  detector buffers are reused across seeds. Verdict: keep as-is; adding
+  `*_into` buffer-returning variants is a low-value PERF-10 follow-up, taken
+  only if a flamegraph later flags those allocations.
 - `PERF-10` — **Optimize confirmed bottlenecks** surfaced by Stages 1–2.
   Candidate levers (only after profiling justifies them):
   - rayon 2D tiling for R1 (current parallelism is row-by-row, not cache-tiled);
