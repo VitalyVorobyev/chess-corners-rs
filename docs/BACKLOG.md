@@ -31,10 +31,10 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 |----|-----|--------|-----------|------|------|
 | API-01 | P0 | done | M3 | — | Dropped `contrast`/`fit_rms` from `CornerDescriptor` + `new()`, Py (9→7 cols), WASM (stride 9→7), CLI JSON, book/README/CHANGELOG. σ math intact; snapshot counts bit-stable; all gates + maturin/pytest(79)/wasm-pack green. Net −59 LOC. Ripple → TOOL-01. |
 | API-02 | P1 | done | M3 | — | Lifted `nms_radius`/`min_cluster_size` to a shared `DetectionParams` on `DetectorConfig.detection` (Rust/Py/WASM/CLI/JSON); `with_detection` builders added; snapshot counts unchanged. |
-| API-03 | P1 | todo | M3 | — | Hide `ChessParams`, `RefinerKind` (and other internal leaks) from core root |
+| API-03 | P1 | done | M3 | — | Moved `ChessParams`/`RefinerKind` off the core root into `chess_corners_core::unstable` (facade still re-exports at `low_level`); demoted Radon primitives (`ANGLES`/`DIR_COS`/`DIR_SIN`, `fit_peak_frac`, `box_blur_inplace`, `SatElem`) and the `ring`/`primitives` stage modules to `pub(crate)`. Behavior-identical; snapshot counts unchanged. |
 | API-04 | P2 | done | M3 | — | Feature-gated `ChessRefiner::Ml` (already cfg-gated since 0.11.0); removed the `chess_refiner_to_kind` silent-mapping helper. Behavior byte-identical; no user-visible change. |
 | API-05 | P1 | todo | M3 | — | Ship Python `.pyi` parity (`config()`/`apply_config()`); stub-vs-runtime test |
-| API-06 | P1 | todo | M3 | — | Apply `#[non_exhaustive]` + sealed-trait policy; state MSRV |
+| API-06 | P1 | done | M3 | — | Sealed `DenseDetector`/`CornerRefiner` (private `Sealed` supertrait; removed the facade's only external impl, a no-op ML-seed refiner provably == a direct `detect_peaks_*` call); added `#[non_exhaustive]` to `CenterOfMassConfig`/`ForstnerConfig`/`SaddlePointConfig`/`RingOffsets`/`ChessBuffers`; documented MSRV (stable ≥ 1.88, `simd` = nightly). All gates + maturin/pytest(82)/wasm-pack green. |
 | API-07 | P2 | todo | M3 | API-06 | Binding unknown-variant handling: document/harden; pin WASM discriminants |
 | API-08 | P0 | todo | M3 | API-01..07 | Add `cargo-semver-checks` to CI with a 1.0 baseline |
 | API-09 | P0 | todo | M3 | API-08 | Tag `1.0.0` with migration notes |
