@@ -46,13 +46,16 @@ shared board from `benches/common/`). Reproduce with
 `cargo bench -p chess-corners-core --bench chess_response` (add
 `--features simd`) and `--bench radon_response` (add `--features radon-sat-u32`).
 
-**PERF-01 — ChESS response kernel (scalar vs SIMD):**
+**PERF-01 — ChESS response kernel (scalar vs SIMD, after PERF-10):**
 
-| size | scalar | simd | speedup |
+| size | scalar | SIMD | speedup |
 |------|--------|------|---------|
-| 256² | 162 Mpix/s (405 µs) | 599 Mpix/s (109 µs) | 3.70× |
-| 512² | 157 Mpix/s (1.67 ms) | 611 Mpix/s (429 µs) | 3.89× |
-| 1024² | 155 Mpix/s (6.77 ms) | 621 Mpix/s (1.69 ms) | 4.01× |
+| 256² | 162 Mpix/s | 978 Mpix/s | 6.03× |
+| 512² | 158 Mpix/s | 1041 Mpix/s | 6.61× |
+| 1024² | 155 Mpix/s | 1074 Mpix/s | 6.95× |
+
+(Pre-PERF-10 SIMD was 599–621 Mpix/s = 3.7–4.0×; vectorizing the per-lane
+μₗ/write-back tail lifted it to ~6–7× with **bit-identical** output.)
 
 **PERF-02 — Radon SAT response (i64 vs u32 SAT), throughput per base-input pixel:**
 
@@ -87,12 +90,13 @@ shared board from `benches/common/`). Reproduce with
 **Findings (these drive PERF-10):**
 
 - Throughput is roughly **size-independent up to 1024²** (scalar ≈155–162,
-  SIMD ≈599–621 Mpix/s), so the ChESS kernel is compute-bound, not yet
-  memory-bound, at these sizes.
-- SIMD on the 16-sample ring delivers only **~3.7–4.0×**, not the 8–16× the
-  lane width suggests. The per-lane scalar local-mean (μₗ) loop and the
-  response write-back (`detect/chess/response.rs:508–524`) are unvectorized and
-  cap the gain — vectorizing that gather/write-back is the lever.
+  SIMD ≈978–1074 Mpix/s after PERF-10), so the ChESS kernel is compute-bound,
+  not yet memory-bound, at these sizes.
+- **PERF-10 (done):** SIMD originally delivered only ~3.7–4.0× because the
+  per-lane local-mean (μₗ) loop + response write-back were unvectorized.
+  Replacing that tail with five contiguous cross-loads + a single vector store
+  lifted SIMD to **~6–7×** (978–1074 Mpix/s; kernel ~1.65× faster) with
+  **bit-identical** output (the 5-sample sum ≤1275 casts to f32 exactly; no FMA).
 - The u32-SAT win (~9–16%) **collapses toward noise at upsample=2**, which
   proves SAT construction is *not* the upsample=2 bottleneck; the
   per-output-pixel angular sampling is. Aim "SAT SIMD prefix-sum" work at
@@ -139,10 +143,11 @@ Part VIII (tracked as DOCS-03).
   `*_into` buffer-returning variants is a low-value PERF-10 follow-up, taken
   only if a flamegraph later flags those allocations.
 - `PERF-10` — **Optimize confirmed bottlenecks** surfaced by Stages 1–2.
-  Candidate levers (only after profiling justifies them):
-  - rayon 2D tiling for R1 (current parallelism is row-by-row, not cache-tiled);
-  - SIMD horizontal prefix-sum for the R2 SAT (currently scalar);
-  - batched refinement across corners (long-standing backlog item).
+  - **Done:** ChESS SIMD μₗ/write-back tail vectorized — 4×→~7×, bit-identical
+    (`detect/chess/response.rs`).
+  - Remaining candidate levers (PERF-13, only if profiling justifies): Radon
+    angular sampling at upsample=2; NMS O(W·H) scan; rayon 2D tiling for R1;
+    SIMD prefix-sum for the R2 SAT; batched refinement.
 
 ## Stage 4 — accuracy/perf guards (≤2% p95 drift)
 

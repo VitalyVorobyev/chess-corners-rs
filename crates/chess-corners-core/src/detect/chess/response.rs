@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use core::simd::Simd;
 
 #[cfg(feature = "simd")]
-use std::simd::prelude::{SimdInt, SimdUint};
+use std::simd::prelude::{SimdFloat, SimdInt, SimdUint};
 
 #[cfg(feature = "simd")]
 const LANES: usize = 16;
@@ -22,6 +22,9 @@ type I16s = Simd<i16, LANES>;
 
 #[cfg(feature = "simd")]
 type I32s = Simd<i32, LANES>;
+
+#[cfg(feature = "simd")]
+type F32s = Simd<f32, LANES>;
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
@@ -138,9 +141,10 @@ fn ring_from_params(params: &ChessParams) -> (RingOffsets, &'static [(i32, i32);
 ///   slices and processed in parallel using `rayon::par_chunks_mut`.
 /// - With the `simd` feature, the inner loop over `x` is rewritten to
 ///   operate on `LANES` pixels at a time using portable SIMD vectors
-///   (currently 16 lanes of `u8`). The ring samples are gathered into
-///   SIMD registers, `SR`/`DR`/`μₙ` are accumulated in integer vectors,
-///   and the final response is written back per lane.
+///   (currently 16 lanes of `u8`). The ring samples and the 5‑pixel
+///   local-mean cross are gathered into SIMD registers, `SR`/`DR`/`μₙ`/`μₗ`
+///   are accumulated in vector lanes, and the final response is stored a
+///   full vector at a time.
 /// - With both `rayon` and `simd` enabled, each row is processed in
 ///   parallel *and* each row uses the SIMD‑accelerated inner loop.
 ///
@@ -499,29 +503,34 @@ fn compute_row_range_simd(
             dr_v += (a - b).abs();
         }
 
-        // Convert vectors to scalar arrays for the MR step
-        let sr_arr = sr_v.cast::<f32>().to_array();
-        let dr_arr = dr_v.cast::<f32>().to_array();
-        let sum_ring_arr = sum_ring_v.cast::<f32>().to_array();
+        // Local mean of the 5-pixel cross for all LANES centers at once.
+        // Center/north/south lie at the lane columns; east/west are the
+        // same rows shifted by +/-1 column. Every term is therefore a
+        // contiguous LANES-wide run, so the cross reduces to five slice
+        // loads (the same bytes the scalar path read per lane) with no
+        // per-lane gather.
+        let row_c = y_usize * w + x;
+        let c_v = U8s::from_slice(&img[row_c..row_c + LANES]).cast::<i16>();
+        let n_v = U8s::from_slice(&img[row_c - w..row_c - w + LANES]).cast::<i16>();
+        let s_v = U8s::from_slice(&img[row_c + w..row_c + w + LANES]).cast::<i16>();
+        let e_v = U8s::from_slice(&img[row_c + 1..row_c + 1 + LANES]).cast::<i16>();
+        let w_v = U8s::from_slice(&img[row_c - 1..row_c - 1 + LANES]).cast::<i16>();
 
-        // Per-lane local mean + final response
-        for lane in 0..LANES {
-            let xx = x + lane;
-            let px = xx - x_start;
+        // Sum of the five 0..=255 samples fits in i16 (<= 1275) and is
+        // exact in f32, so casting the integer sum and dividing by 5.0
+        // reproduces the scalar `(c + n + s0 + e + w0) / 5.0` bit-for-bit.
+        let local_sum = c_v + n_v + s_v + e_v + w_v;
 
-            // center + 4-neighborhood (scalar) at base resolution
-            let c = img[y_usize * w + xx] as f32;
-            let n = img[(y_usize - 1) * w + xx] as f32;
-            let s0 = img[(y_usize + 1) * w + xx] as f32;
-            let e = img[y_usize * w + (xx + 1)] as f32;
-            let w0 = img[y_usize * w + (xx - 1)] as f32;
+        let mu_n = sum_ring_v.cast::<f32>() / F32s::splat(16.0);
+        let mu_l = local_sum.cast::<f32>() / F32s::splat(5.0);
+        let mr = (mu_n - mu_l).abs();
 
-            let mu_n = sum_ring_arr[lane] / 16.0;
-            let mu_l = (c + n + s0 + e + w0) / 5.0;
-            let mr = (mu_n - mu_l).abs();
-
-            dst_row[px] = sr_arr[lane] - dr_arr[lane] - 16.0 * mr;
-        }
+        // R = SR - DR - 16*MR, lane-wise in the same operation order as the
+        // scalar path (plain mul/sub, no fused multiply-add), stored to the
+        // contiguous output run.
+        let resp = sr_v.cast::<f32>() - dr_v.cast::<f32>() - F32s::splat(16.0) * mr;
+        let px = x - x_start;
+        resp.copy_to_slice(&mut dst_row[px..px + LANES]);
 
         x += LANES;
     }

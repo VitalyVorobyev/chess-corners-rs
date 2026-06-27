@@ -21,8 +21,9 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | PERF-07 | P1 | done | M2 | — | Flamegraph/profiling automation already exists: `tools/profile.sh` (cargo-flamegraph + samply over `profile_target`). Residual: document in book Part VIII (→ DOCS-03). |
 | PERF-08 | P1 | todo | M2 | PERF-01..05 | CI bench gate: baseline compare, fail on >2% p95 regression |
 | PERF-09 | P2 | todo | M2 | PERF-08 | Capture baseline `metrics.json` (feeds SITE-04) |
-| PERF-10 | P2 | todo | M2 | PERF-01,02,07,12 | Optimize confirmed bottlenecks (evidence): (a) vectorize per-lane μₗ loop + response write-back in ChESS SIMD path (`response.rs:508–524`) — caps gain at ~4×; (b) Radon angular sampling at upsample=2 (u32-SAT win collapses there); (c) NMS O(W·H) scan, not the window. Guarded ≤2% p95 |
-| PERF-12 | P2 | todo | M2 | — | Add soft-edge (blurred) + warped-corner bench fixtures. Current `synth_chessboard` (hard 40/215 steps, rel_rms≈0.47) forces RingFit's robust path and blocks DiskFit's lazy gate, so the fast paths + DiskFit's intended warped case are unmeasured. Prereq for representative PERF-08/09/10 numbers. |
+| PERF-10 | P2 | done | M2 | PERF-01 | Done (lever a): vectorized ChESS SIMD μₗ/write-back tail — SIMD **4×→~7×** (1074 Mpix/s @1024²), **bit-identical** output (verified, all equivalence/snapshot/accuracy-guard tests green). Remaining optional levers → PERF-13. |
+| PERF-12 | P2 | todo | M2 | — | Add soft-edge (blurred) + warped-corner bench fixtures. Current `synth_chessboard` (hard 40/215 steps, rel_rms≈0.47) forces RingFit's robust path and blocks DiskFit's lazy gate, so the fast paths + DiskFit's intended warped case are unmeasured. Prereq for representative PERF-08/09 numbers. |
+| PERF-13 | P3 | todo | — | PERF-12 | Optional further optimizations (only if profiling on PERF-12 fixtures justifies): Radon angular sampling @upsample=2; NMS O(W·H) scan; rayon 2D tiling for ChESS response; SIMD prefix-sum for Radon SAT. |
 
 ## API — v1.0 stabilization  ·  M3  ·  [design](design/api-v1.0.md)
 
