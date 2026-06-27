@@ -1,12 +1,13 @@
 # AGENTS.md — chess-corners
 
-This repository contains **three published crates**:
+This repository contains **four published crates**:
 
 * **`chess-corners`** — the *public*, user-facing API crate (stable surface, ergonomic types).
 * **`chess-corners-core`** — a *low-level*, performance-oriented core crate (almost internal; minimal deps; sharper edges).
 * **`box-image-pyramid`** — a small standalone crate for fixed 2x grayscale pyramid construction with reusable buffers.
+* **`chess-corners-ml`** — an *advanced, optional* crate providing ONNX-based ML refiner inference, reached through the facade's `ml-refiner` feature. Published for callers who opt into ML refinement; it pulls in the ONNX runtime, so it is not part of a default install. Keep its surface narrow and semver-clean.
 
-The remaining crates — **`chess-corners-ml`**, **`chess-corners-py`**, and **`chess-corners-wasm`** — are **not** published to crates.io and carry no crates.io semver contract. `chess-corners-ml` is an internal implementation crate (`publish = false`). `chess-corners-py` and `chess-corners-wasm` are distributed as a Python wheel and an npm package respectively.
+The remaining crates — **`chess-corners-py`** and **`chess-corners-wasm`** — are **not** published to crates.io (`publish = false`) and carry no crates.io semver contract; they are distributed as a Python wheel and an npm package respectively.
 
 The codebase prioritizes:
 
@@ -16,6 +17,13 @@ The codebase prioritizes:
 * **API stability** (small, well-documented public API in `chess-corners`)
 
 If you are an automated agent (Codex, etc.), follow these rules strictly.
+
+**Before large work, read the knowledge base** under
+[`docs/`](docs/README.md): `docs/ROADMAP.md` (milestones to `v1.0.0`),
+`docs/BACKLOG.md` (task registry), and the per-workstream RFCs plus the
+algorithm index in `docs/design/`. Route verbose / mechanical /
+long-running work to subagents per
+[`docs/process/subagent-workflow.md`](docs/process/subagent-workflow.md).
 
 ---
 
@@ -36,29 +44,57 @@ If you are an automated agent (Codex, etc.), follow these rules strictly.
 ### API exposure
 
 * `chess-corners` should re-export only what users need.
-* `chess-corners-core` can remain public, but treat it as “sharp tools”:
+* `chess-corners-core` is public but a “sharp tools” crate:
 
-  * fewer stability guarantees
-  * more `pub(crate)` where possible
+  * fewer stability guarantees; prefer `pub(crate)` where possible
   * minimal dependencies
+  * truly-internal items that benches, tests, and the facade still need
+    across the crate boundary live under `chess_corners_core::unstable`,
+    which carries **no semver guarantee**. `ChessParams` and
+    `RefinerKind` live there (the facade re-exports them at
+    `chess_corners::low_level`).
+* The `DenseDetector` and `CornerRefiner` traits are **sealed** — they
+  are not external extension points. Add a detector or refiner in-crate
+  (a new variant), never via a downstream `impl`.
 
 ---
 
 ## 2) Project goals and non-goals
 
+### What this crate does
+
+`chess-corners` detects chessboard **corners** with subpixel accuracy.
+It does **not** do board topology / grid fitting, ChArUco decoding, or
+camera calibration — those are downstream concerns. The pipeline:
+
+1. **Response** — dense per-pixel cornerness (the ChESS 16-sample ring,
+   or the Radon SAT detector), behind the `DenseDetector` trait.
+2. **Detection** — threshold → non-maximum suppression → cluster filter
+   (Radon adds a 3-point Gaussian peak fit).
+3. **Refinement** — one of four built-in subpixel refiners chosen via
+   `RefinerKind` (see §6).
+4. **Orientation** — two-axis grid-direction fit per corner (`RingFit`
+   default, or `DiskFit`) with calibrated per-axis uncertainty.
+5. **Descriptors** — the output `CornerDescriptor { x, y, response, axes }`.
+
+An optional coarse-to-fine **multiscale pyramid** and an optional
+integer **upscale** stage wrap the per-scale pipeline; both detectors
+run under the same orchestrator. See
+`docs/design/algorithms-index.md` for the full stage map.
+
 ### Goals
 
-* Fast and reliable chessboard / ChArUco-style corner detection.
-* Pluggable subpixel refinement + meaningful corner scoring.
-* Clear separation between:
-
-  * candidate generation
-  * refinement
-  * topology/grid fitting
+* Fast and reliable subpixel chessboard-corner detection.
+* A single clear corner-strength score (`response`) plus a two-axis
+  orientation estimate with meaningful uncertainty.
+* Clear separation between candidate generation, refinement, and
+  orientation / descriptor estimation.
 
 ### Non-goals (unless explicitly requested)
 
-* Heavy ML dependencies in default builds.
+* Board topology / grid fitting, ChArUco decoding, or full camera
+  calibration (downstream concerns).
+* Heavy ML dependencies in default builds (`ml-refiner` is opt-in).
 * Non-deterministic outputs.
 * Adding bulky dependencies to `chess-corners-core`.
 
@@ -66,20 +102,29 @@ If you are an automated agent (Codex, etc.), follow these rules strictly.
 
 ## 3) Build, test, and quality gates
 
-Before opening a PR, run:
+**Toolchain:** nightly is pinned via `rust-toolchain.toml` (the `simd`
+feature needs nightly `portable_simd`). The default/stable build has an
+MSRV of **Rust 1.88** (`rust-version` in `Cargo.toml`).
 
-* `cargo fmt --all`
+Before opening a PR, run the full gate sequence (CLAUDE.md is canonical):
+
+* `cargo fmt --all --check`
 * `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 * `cargo test --workspace --all-features`
+* `cargo doc --workspace --no-deps --all-features` (broken intra-doc
+  links and missing docs on public items are blocking)
+* `mdbook build book`
 
-Also check minimal builds where relevant:
+When the bindings change, also:
 
-* `cargo test -p chess-corners-core`
-* `cargo test -p chess-corners`
+* Python: `(cd crates/chess-corners-py && maturin develop --release)`
+  then `pytest crates/chess-corners-py/python_tests`
+* WASM: `wasm-pack build crates/chess-corners-wasm --target web`
 
-If benches exist and you touched hot-path code:
-
-* run the relevant bench target (only if requested or CI requires it)
+Minimal builds are still worth a spot check (`cargo test -p
+chess-corners-core`, `cargo test -p chess-corners`). If benches exist
+and you touched hot-path code, run the relevant bench target (only if
+requested or CI requires it).
 
 **Do not** introduce new warnings. Avoid `#[allow(...)]` unless justified in the PR.
 
@@ -142,19 +187,24 @@ Any change that could affect performance should include at least one of:
 
 ## 6) Subpixel refinement: required design pattern
 
-Refinement must be pluggable behind a trait, implemented in (or primarily used by) `chess-corners-core`,
-and exposed ergonomically in `chess-corners`.
+Refinement is selected via the `RefinerKind` config enum and dispatched
+through the `CornerRefiner` trait in `chess-corners-core`, exposed
+ergonomically in `chess-corners`. As of the v1.0 surface,
+**`CornerRefiner` is sealed**: downstream crates cannot add their own
+refiners. "Pluggable" therefore means *choose among the built-ins* — a
+new refiner is added as an in-crate variant, not via a downstream `impl`.
 
-**Trait shape (guideline):**
+**Trait shape:**
 
-* Input: image view + initial point + params (+ optional context like response/orientation)
+* Input: image / response view + initial point + params (+ optional context like orientation)
 * Output: refined point + score + status (accepted/rejected/out-of-bounds/ill-conditioned)
 
-Built-in refiners should include:
+The four built-in refiners:
 
-* **Center-of-mass** (legacy default; must preserve current results)
-* **Förstner**
-* **Saddle-point (quadratic fit)**
+* **CenterOfMass** (default; response-map centroid)
+* **Förstner** (structure-tensor)
+* **SaddlePoint** (quadratic Hessian fit)
+* **RadonPeak** (paired with the Radon detector)
 
 **Rule:** default settings must reproduce existing behavior unless the user opts in.
 
@@ -205,6 +255,14 @@ Guidance docs should include:
 
 * when to use which option (trade-offs)
 * default values and why they’re chosen
+
+**Public-surface hygiene (critical):** anything that renders in
+`cargo doc`, the book, the README, the CHANGELOG, or binding type stubs
+describes *what the code does*, not how it got there. No lineage names
+(`V1`, `Baseline`, “Phase N”), origin notes, or optimization narratives
+for brand-new features. Internal context belongs in commit messages or
+non-rendered `.rs` comments. CLAUDE.md is canonical on this; the user
+treats violations as a quality issue, so sweep the whole change.
 
 ---
 
