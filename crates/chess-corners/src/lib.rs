@@ -232,8 +232,8 @@ mod upscale;
 // (ring offsets, SAT views, scalar reference paths) via a direct
 // `chess-corners-core` dependency.
 pub use crate::config::{
-    ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, RadonConfig, RadonRefiner, Threshold,
+    ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionParams, DetectionStrategy,
+    DetectorConfig, MultiscaleConfig, RadonConfig, RadonRefiner, Threshold,
 };
 pub use crate::error::ChessError;
 pub use crate::upscale::{UpscaleConfig, UpscaleError};

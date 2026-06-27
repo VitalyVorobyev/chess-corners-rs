@@ -68,12 +68,11 @@ def detection_config(image_path: Path, threshold: float, output_json: Path) -> d
             "chess": {
                 "ring": "canonical",
                 "descriptor_ring": "follow_detector",
-                "nms_radius": 2,
-                "min_cluster_size": 2,
                 "refiner": {"center_of_mass": {}},
             }
         },
         "threshold": {"absolute": float(threshold)},
+        "detection": {"nms_radius": 2, "min_cluster_size": 2},
         "multiscale": "single_scale",
         "upscale": "disabled",
         "orientation_method": "ring_fit",

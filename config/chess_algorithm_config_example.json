@@ -3,8 +3,6 @@
     "chess": {
       "ring": "broad",
       "descriptor_ring": "canonical",
-      "nms_radius": 3,
-      "min_cluster_size": 1,
       "refiner": {
         "forstner": {
           "radius": 2,
@@ -18,6 +16,10 @@
   },
   "threshold": {
     "absolute": 0.5
+  },
+  "detection": {
+    "nms_radius": 3,
+    "min_cluster_size": 1
   },
   "multiscale": {
     "pyramid": {

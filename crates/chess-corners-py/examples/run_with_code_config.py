@@ -34,8 +34,8 @@ def build_chess_config() -> chess_corners.DetectorConfig:
     chess = cfg.strategy.chess
     chess.ring = chess_corners.ChessRing.BROAD
     chess.descriptor_ring = chess_corners.DescriptorRing.CANONICAL
-    chess.nms_radius = 3
-    chess.min_cluster_size = 1
+    cfg.detection.nms_radius = 3
+    cfg.detection.min_cluster_size = 1
 
     fcfg = chess_corners.ForstnerConfig()
     fcfg.radius = 3

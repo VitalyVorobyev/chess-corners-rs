@@ -228,26 +228,6 @@ fn chess_strategy_mut(cfg: &mut DetectorConfig) -> Option<&mut ChessConfig> {
     }
 }
 
-/// Apply an NMS-window override to whichever strategy variant is
-/// active. `nms_radius` and `min_cluster_size` are advertised by the
-/// CLI as generic detection overrides; both ChESS and Radon expose
-/// the same field names in their respective strategy payloads.
-fn apply_nms_radius(cfg: &mut DetectorConfig, v: u32) {
-    match &mut cfg.strategy {
-        DetectionStrategy::Chess(chess) => chess.nms_radius = v,
-        DetectionStrategy::Radon(radon) => radon.nms_radius = v,
-        _ => {}
-    }
-}
-
-fn apply_min_cluster_size(cfg: &mut DetectorConfig, v: u32) {
-    match &mut cfg.strategy {
-        DetectionStrategy::Chess(chess) => chess.min_cluster_size = v,
-        DetectionStrategy::Radon(radon) => radon.min_cluster_size = v,
-        _ => {}
-    }
-}
-
 fn apply_chess_refiner(cfg: &mut DetectorConfig, sel: ChessRefinerSel) {
     if let DetectionStrategy::Chess(chess) = &mut cfg.strategy {
         chess.refiner = match sel {
@@ -341,11 +321,13 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
             chess.descriptor_ring = v;
         }
     }
+    // NMS / clustering are shared detection knobs honoured by both
+    // strategies; they live on `DetectorConfig::detection`.
     if let Some(v) = nms_radius {
-        apply_nms_radius(&mut cfg.algorithm, v);
+        cfg.algorithm.detection.nms_radius = v;
     }
     if let Some(v) = min_cluster_size {
-        apply_min_cluster_size(&mut cfg.algorithm, v);
+        cfg.algorithm.detection.min_cluster_size = v;
     }
     if let Some(v) = chess_refiner {
         apply_chess_refiner(&mut cfg.algorithm, v);
@@ -402,7 +384,6 @@ pub fn load_config(path: &Path) -> Result<DetectionConfig> {
 mod tests {
     use super::*;
     use chess_corners::low_level;
-    use chess_corners::RadonConfig;
     use std::path::PathBuf;
 
     fn empty_overrides() -> DetectionOverrides {
@@ -415,12 +396,10 @@ mod tests {
         // Radon strategy, so the regression below tests the intended
         // dispatch path.
         assert!(matches!(algorithm.strategy, DetectionStrategy::Radon(_)));
-        // Pin the NMS / cluster fields away from defaults so the
+        // Pin the shared NMS / cluster fields away from defaults so the
         // override path is observable.
-        if let DetectionStrategy::Radon(ref mut radon) = algorithm.strategy {
-            radon.nms_radius = 7;
-            radon.min_cluster_size = 3;
-        }
+        algorithm.detection.nms_radius = 7;
+        algorithm.detection.min_cluster_size = 3;
         DetectionConfig {
             image: PathBuf::from("ignored.png"),
             output_json: None,
@@ -441,10 +420,11 @@ mod tests {
                 ..empty_overrides()
             },
         );
-        match cfg.algorithm.strategy {
-            DetectionStrategy::Radon(radon) => assert_eq!(radon.nms_radius, 11),
-            other => panic!("expected Radon strategy, got {other:?}"),
-        }
+        assert!(matches!(
+            cfg.algorithm.strategy,
+            DetectionStrategy::Radon(_)
+        ));
+        assert_eq!(cfg.algorithm.detection.nms_radius, 11);
     }
 
     #[test]
@@ -457,10 +437,11 @@ mod tests {
                 ..empty_overrides()
             },
         );
-        match cfg.algorithm.strategy {
-            DetectionStrategy::Radon(radon) => assert_eq!(radon.min_cluster_size, 5),
-            other => panic!("expected Radon strategy, got {other:?}"),
-        }
+        assert!(matches!(
+            cfg.algorithm.strategy,
+            DetectionStrategy::Radon(_)
+        ));
+        assert_eq!(cfg.algorithm.detection.min_cluster_size, 5);
     }
 
     #[test]
@@ -481,25 +462,34 @@ mod tests {
                 ..empty_overrides()
             },
         );
-        match cfg.algorithm.strategy {
-            DetectionStrategy::Chess(chess) => {
-                assert_eq!(chess.nms_radius, 9);
-                assert_eq!(chess.min_cluster_size, 4);
-            }
-            other => panic!("expected ChESS strategy, got {other:?}"),
-        }
+        assert!(matches!(
+            cfg.algorithm.strategy,
+            DetectionStrategy::Chess(_)
+        ));
+        assert_eq!(cfg.algorithm.detection.nms_radius, 9);
+        assert_eq!(cfg.algorithm.detection.min_cluster_size, 4);
     }
 
-    // The Radon detector exposes the same nms/cluster field names as
-    // the ChESS strategy. If a future Radon-side rename happens, this
-    // test will fail fast — better than a silent regression where the
-    // CLI override returns to being a no-op for one strategy variant.
+    // The shared detection knobs must reach both detectors' low-level
+    // params. If a future change drops the threading for one strategy,
+    // this fails fast — better than a silent CLI-override no-op.
     #[test]
-    fn nms_and_cluster_fields_exist_on_both_strategies() {
-        let _chess_nms: u32 = low_level::to_chess_params(&DetectorConfig::chess()).nms_radius;
-        let _radon_nms: u32 =
-            low_level::to_radon_detector_params(&DetectorConfig::radon()).nms_radius;
-        let _radon_cluster: u32 = RadonConfig::default().min_cluster_size;
+    fn shared_detection_params_reach_both_strategies() {
+        let cfg = DetectorConfig::chess().with_detection(|d| {
+            d.nms_radius = 5;
+            d.min_cluster_size = 3;
+        });
+        let chess = low_level::to_chess_params(&cfg);
+        assert_eq!(chess.nms_radius, 5);
+        assert_eq!(chess.min_cluster_size, 3);
+
+        let cfg = DetectorConfig::radon().with_detection(|d| {
+            d.nms_radius = 6;
+            d.min_cluster_size = 2;
+        });
+        let radon = low_level::to_radon_detector_params(&cfg);
+        assert_eq!(radon.nms_radius, 6);
+        assert_eq!(radon.min_cluster_size, 2);
     }
 
     fn detection_config_with_upscale(upscale: UpscaleConfig) -> DetectionConfig {

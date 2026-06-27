@@ -14,7 +14,7 @@ def test_detector_basic():
     img = _checkerboard(square_size=16, squares=8)
     cfg = chess_corners.DetectorConfig()
     cfg.threshold = chess_corners.Threshold.relative(0.1)
-    cfg.strategy.chess.min_cluster_size = 1
+    cfg.detection.min_cluster_size = 1
 
     detector = chess_corners.Detector(cfg)
     corners = detector.detect(img)

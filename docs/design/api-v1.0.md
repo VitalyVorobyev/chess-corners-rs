@@ -60,6 +60,15 @@ post-D1 `CornerDescriptor`, so M3 must complete before M5.
 
 ### API-02 — Deduplicate `nms_radius` / `min_cluster_size`
 
+**Status: landed.** Lifted into a shared `#[non_exhaustive]`
+`DetectionParams { nms_radius, min_cluster_size }` on
+`DetectorConfig.detection`; both strategy configs lost the duplicated
+fields. `chess_params()` / `radon_detector_params()` read the shared
+values; a `with_detection` builder was added to the Rust facade and the
+Python / WASM bindings (with a top-level `detection` JSON/dict object).
+The ChESS preset keeps `nms_radius = 2`; the Radon presets keep
+`nms_radius = 4`. Snapshot corner counts unchanged.
+
 Both `ChessConfig` and `RadonConfig` carry independent `nms_radius` and
 `min_cluster_size` with identical semantics at different nesting levels
 (`crates/chess-corners/src/config.rs`). Decide one of:
@@ -80,6 +89,14 @@ and `chess-corners/src/lib.rs` for the same pattern (the 0.11 audit listed
 stage modules `detect::chess::ring`, `orientation::descriptor`, etc.).
 
 ### API-04 — `ChessRefiner::Ml` honesty
+
+**Status: landed.** The variant is gated behind `ml-refiner` (since
+0.11.0) and the facade routes it to the ONNX path. The silent
+`Ml → CenterOfMass` translation was removed from `chess_params`; the ML
+path's coarse-level seed detection now falls through to the core default
+refiner explicitly, so no public `ChessRefiner::Ml` selection is ever
+silently downgraded to a classic refiner. Default-feature builds carry
+no `Ml` variant and no dead fallback.
 
 `ChessRefiner::Ml` (feature-gated) silently translates to
 `RefinerKind::CenterOfMass` in core (`config.rs:~636`), breaking the 1:1

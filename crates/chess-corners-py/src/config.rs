@@ -18,12 +18,13 @@ use std::collections::BTreeSet;
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
     ChessRefiner as RsChessRefiner, ChessRing as RsChessRing, DescriptorRing as RsDescriptorRing,
-    DetectionStrategy as RsDetectionStrategy, DetectorConfig as RsDetectorConfig,
-    ForstnerConfig as RsForstnerConfig, MultiscaleConfig as RsMultiscaleConfig,
-    OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
-    RadonConfig as RsRadonConfig, RadonPeakConfig as RsRadonPeakConfig,
-    RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
-    Threshold as RsThreshold, UpscaleConfig as RsUpscaleConfig,
+    DetectionParams as RsDetectionParams, DetectionStrategy as RsDetectionStrategy,
+    DetectorConfig as RsDetectorConfig, ForstnerConfig as RsForstnerConfig,
+    MultiscaleConfig as RsMultiscaleConfig, OrientationMethod as RsOrientationMethod,
+    PeakFitMode as RsPeakFitMode, RadonConfig as RsRadonConfig,
+    RadonPeakConfig as RsRadonPeakConfig, RadonRefiner as RsRadonRefiner,
+    SaddlePointConfig as RsSaddlePointConfig, Threshold as RsThreshold,
+    UpscaleConfig as RsUpscaleConfig,
 };
 use pyo3::create_exception;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -2061,8 +2062,6 @@ impl RadonRefiner {
 pub struct ChessConfig {
     pub(crate) ring: RsChessRing,
     pub(crate) descriptor_ring: RsDescriptorRing,
-    pub(crate) nms_radius: u32,
-    pub(crate) min_cluster_size: u32,
     pub(crate) refiner: Py<ChessRefiner>,
 }
 
@@ -2071,8 +2070,6 @@ impl ChessConfig {
         Ok(Self {
             ring: v.ring,
             descriptor_ring: v.descriptor_ring,
-            nms_radius: v.nms_radius,
-            min_cluster_size: v.min_cluster_size,
             refiner: Py::new(py, ChessRefiner::from_rs(v.refiner))?,
         })
     }
@@ -2081,8 +2078,6 @@ impl ChessConfig {
         let mut cfg = RsChessConfig::default();
         cfg.ring = self.ring;
         cfg.descriptor_ring = self.descriptor_ring;
-        cfg.nms_radius = self.nms_radius;
-        cfg.min_cluster_size = self.min_cluster_size;
         cfg.refiner = self.refiner.borrow(py).to_rs();
         cfg
     }
@@ -2114,24 +2109,6 @@ impl ChessConfig {
     }
 
     #[getter]
-    fn nms_radius(&self) -> u32 {
-        self.nms_radius
-    }
-    #[setter]
-    fn set_nms_radius(&mut self, v: u32) {
-        self.nms_radius = v;
-    }
-
-    #[getter]
-    fn min_cluster_size(&self) -> u32 {
-        self.min_cluster_size
-    }
-    #[setter]
-    fn set_min_cluster_size(&mut self, v: u32) {
-        self.min_cluster_size = v;
-    }
-
-    #[getter]
     fn refiner(&self, py: Python<'_>) -> Py<ChessRefiner> {
         self.refiner.clone_ref(py)
     }
@@ -2144,8 +2121,6 @@ impl ChessConfig {
         let d = PyDict::new(py);
         d.set_item("ring", chess_ring_str(self.ring))?;
         d.set_item("descriptor_ring", descriptor_ring_str(self.descriptor_ring))?;
-        d.set_item("nms_radius", self.nms_radius)?;
-        d.set_item("min_cluster_size", self.min_cluster_size)?;
         d.set_item("refiner", self.refiner.borrow(py).to_dict(py)?)?;
         Ok(d.unbind())
     }
@@ -2157,29 +2132,13 @@ impl ChessConfig {
         data: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let dict = require_dict(data, "chess")?;
-        reject_unknown_keys(
-            &dict,
-            &[
-                "ring",
-                "descriptor_ring",
-                "nms_radius",
-                "min_cluster_size",
-                "refiner",
-            ],
-            "chess",
-        )?;
+        reject_unknown_keys(&dict, &["ring", "descriptor_ring", "refiner"], "chess")?;
         let mut cfg = Self::from_rs(py, RsChessConfig::default())?;
         if let Some(s) = extract_string(&dict, "ring", "chess")? {
             cfg.ring = parse_chess_ring(&s, "chess.ring")?;
         }
         if let Some(s) = extract_string(&dict, "descriptor_ring", "chess")? {
             cfg.descriptor_ring = parse_descriptor_ring(&s, "chess.descriptor_ring")?;
-        }
-        if let Some(v) = extract_int(&dict, "nms_radius", "chess")? {
-            cfg.nms_radius = v as u32;
-        }
-        if let Some(v) = extract_int(&dict, "min_cluster_size", "chess")? {
-            cfg.min_cluster_size = v as u32;
         }
         if let Some(value) = dict.get_item("refiner")? {
             let cls = py.get_type::<ChessRefiner>();
@@ -2224,8 +2183,6 @@ pub struct RadonConfig {
     pub(crate) image_upsample: u32,
     pub(crate) response_blur_radius: u32,
     pub(crate) peak_fit: RsPeakFitMode,
-    pub(crate) nms_radius: u32,
-    pub(crate) min_cluster_size: u32,
     pub(crate) refiner: Py<RadonRefiner>,
 }
 
@@ -2236,8 +2193,6 @@ impl RadonConfig {
             image_upsample: v.image_upsample,
             response_blur_radius: v.response_blur_radius,
             peak_fit: v.peak_fit,
-            nms_radius: v.nms_radius,
-            min_cluster_size: v.min_cluster_size,
             refiner: Py::new(py, RadonRefiner::from_rs(v.refiner))?,
         })
     }
@@ -2248,8 +2203,6 @@ impl RadonConfig {
         cfg.image_upsample = self.image_upsample;
         cfg.response_blur_radius = self.response_blur_radius;
         cfg.peak_fit = self.peak_fit;
-        cfg.nms_radius = self.nms_radius;
-        cfg.min_cluster_size = self.min_cluster_size;
         cfg.refiner = self.refiner.borrow(py).to_rs();
         cfg
     }
@@ -2299,24 +2252,6 @@ impl RadonConfig {
     }
 
     #[getter]
-    fn nms_radius(&self) -> u32 {
-        self.nms_radius
-    }
-    #[setter]
-    fn set_nms_radius(&mut self, v: u32) {
-        self.nms_radius = v;
-    }
-
-    #[getter]
-    fn min_cluster_size(&self) -> u32 {
-        self.min_cluster_size
-    }
-    #[setter]
-    fn set_min_cluster_size(&mut self, v: u32) {
-        self.min_cluster_size = v;
-    }
-
-    #[getter]
     fn refiner(&self, py: Python<'_>) -> Py<RadonRefiner> {
         self.refiner.clone_ref(py)
     }
@@ -2331,8 +2266,6 @@ impl RadonConfig {
         d.set_item("image_upsample", self.image_upsample)?;
         d.set_item("response_blur_radius", self.response_blur_radius)?;
         d.set_item("peak_fit", peak_fit_mode_str(self.peak_fit))?;
-        d.set_item("nms_radius", self.nms_radius)?;
-        d.set_item("min_cluster_size", self.min_cluster_size)?;
         d.set_item("refiner", self.refiner.borrow(py).to_dict(py)?)?;
         Ok(d.unbind())
     }
@@ -2351,8 +2284,6 @@ impl RadonConfig {
                 "image_upsample",
                 "response_blur_radius",
                 "peak_fit",
-                "nms_radius",
-                "min_cluster_size",
                 "refiner",
             ],
             "radon",
@@ -2369,12 +2300,6 @@ impl RadonConfig {
         }
         if let Some(s) = extract_string(&dict, "peak_fit", "radon")? {
             cfg.peak_fit = parse_peak_fit_mode(&s, "radon.peak_fit")?;
-        }
-        if let Some(v) = extract_int(&dict, "nms_radius", "radon")? {
-            cfg.nms_radius = v as u32;
-        }
-        if let Some(v) = extract_int(&dict, "min_cluster_size", "radon")? {
-            cfg.min_cluster_size = v as u32;
         }
         if let Some(value) = dict.get_item("refiner")? {
             let cls = py.get_type::<RadonRefiner>();
@@ -2394,6 +2319,101 @@ impl RadonConfig {
         let value = json_loads(py, text)
             .map_err(|e| config_error(format!("failed to parse config JSON: {e}")))?;
         Self::from_dict(cls, py, &value)
+    }
+
+    #[pyo3(signature = (*, indent=2, sort_keys=true))]
+    fn pretty(&self, py: Python<'_>, indent: i64, sort_keys: bool) -> PyResult<String> {
+        self.to_json(py, Some(indent), sort_keys)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        self.pretty(py, 2, true)
+    }
+    fn __str__(&self, py: Python<'_>) -> PyResult<String> {
+        self.pretty(py, 2, true)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DetectionParams (shared NMS / clustering knobs)
+// ---------------------------------------------------------------------------
+
+/// Shared non-maximum-suppression and peak-clustering thresholds applied
+/// by both the ChESS and Radon detectors. Lives on
+/// [`DetectorConfig.detection`](DetectorConfig); set it via attribute
+/// access or `DetectorConfig.with_detection(...)`.
+#[pyclass(module = "chess_corners")]
+pub struct DetectionParams {
+    pub(crate) inner: RsDetectionParams,
+}
+
+impl DetectionParams {
+    fn from_rs(v: RsDetectionParams) -> Self {
+        Self { inner: v }
+    }
+
+    pub(crate) fn to_rs(&self) -> RsDetectionParams {
+        self.inner
+    }
+}
+
+#[pymethods]
+impl DetectionParams {
+    #[new]
+    fn py_new() -> Self {
+        Self::from_rs(RsDetectionParams::default())
+    }
+
+    #[getter]
+    fn nms_radius(&self) -> u32 {
+        self.inner.nms_radius
+    }
+    #[setter]
+    fn set_nms_radius(&mut self, v: u32) {
+        self.inner.nms_radius = v;
+    }
+
+    #[getter]
+    fn min_cluster_size(&self) -> u32 {
+        self.inner.min_cluster_size
+    }
+    #[setter]
+    fn set_min_cluster_size(&mut self, v: u32) {
+        self.inner.min_cluster_size = v;
+    }
+
+    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let d = PyDict::new(py);
+        d.set_item("nms_radius", self.inner.nms_radius)?;
+        d.set_item("min_cluster_size", self.inner.min_cluster_size)?;
+        Ok(d.unbind())
+    }
+
+    #[classmethod]
+    fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let dict = require_dict(data, "detection")?;
+        reject_unknown_keys(&dict, &["nms_radius", "min_cluster_size"], "detection")?;
+        let mut cfg = Self::py_new();
+        if let Some(v) = extract_int(&dict, "nms_radius", "detection")? {
+            cfg.inner.nms_radius = v as u32;
+        }
+        if let Some(v) = extract_int(&dict, "min_cluster_size", "detection")? {
+            cfg.inner.min_cluster_size = v as u32;
+        }
+        Ok(cfg)
+    }
+
+    #[pyo3(signature = (*, indent=None, sort_keys=true))]
+    fn to_json(&self, py: Python<'_>, indent: Option<i64>, sort_keys: bool) -> PyResult<String> {
+        let dict = self.to_dict(py)?;
+        json_dumps(py, dict.bind(py), indent, sort_keys)
+    }
+
+    #[classmethod]
+    fn from_json(cls: &Bound<'_, PyType>, py: Python<'_>, text: &str) -> PyResult<Self> {
+        let value = json_loads(py, text)
+            .map_err(|e| config_error(format!("failed to parse config JSON: {e}")))?;
+        Self::from_dict(cls, &value)
     }
 
     #[pyo3(signature = (*, indent=2, sort_keys=true))]
@@ -2614,6 +2634,7 @@ impl DetectionStrategy {
 pub struct DetectorConfig {
     pub(crate) strategy: Py<DetectionStrategy>,
     pub(crate) threshold: Py<Threshold>,
+    pub(crate) detection: Py<DetectionParams>,
     pub(crate) multiscale: Py<MultiscaleConfig>,
     pub(crate) upscale: Py<UpscaleConfig>,
     pub(crate) orientation_method: RsOrientationMethod,
@@ -2625,6 +2646,7 @@ impl DetectorConfig {
         Ok(Self {
             strategy: Py::new(py, DetectionStrategy::from_rs(py, src.strategy)?)?,
             threshold: Py::new(py, Threshold::from_rs(src.threshold))?,
+            detection: Py::new(py, DetectionParams::from_rs(src.detection))?,
             multiscale: Py::new(py, MultiscaleConfig::from_rs(src.multiscale))?,
             upscale: Py::new(py, UpscaleConfig::from_rs(src.upscale))?,
             orientation_method: src.orientation_method,
@@ -2646,6 +2668,7 @@ impl DetectorConfig {
         let mut cfg = RsDetectorConfig::default();
         cfg.strategy = self.strategy.borrow(py).to_rs(py);
         cfg.threshold = self.threshold.borrow(py).to_rs();
+        cfg.detection = self.detection.borrow(py).to_rs();
         cfg.multiscale = self.multiscale.borrow(py).to_rs();
         cfg.upscale = self.upscale.borrow(py).to_rs();
         cfg.orientation_method = self.orientation_method;
@@ -2727,17 +2750,11 @@ impl DetectorConfig {
     /// it is replaced with a default `ChessConfig` before applying kwargs.
     /// Top-level fields (threshold, multiscale, etc.) are preserved.
     ///
-    /// Accepted kwargs: `refiner`, `ring`, `descriptor_ring`, `nms_radius`,
-    /// `min_cluster_size`.
+    /// Accepted kwargs: `refiner`, `ring`, `descriptor_ring`. The shared
+    /// NMS / clustering knobs moved to `with_detection`.
     #[pyo3(signature = (**kwargs))]
     fn with_chess(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        const CHESS_FIELDS: &[&str] = &[
-            "refiner",
-            "ring",
-            "descriptor_ring",
-            "nms_radius",
-            "min_cluster_size",
-        ];
+        const CHESS_FIELDS: &[&str] = &["refiner", "ring", "descriptor_ring"];
 
         let mut cfg = self.clone_inner(py)?;
 
@@ -2768,12 +2785,6 @@ impl DetectorConfig {
                 let dr: DescriptorRing = v.extract()?;
                 chess.descriptor_ring = dr.into();
             }
-            if let Some(v) = kw.get_item("nms_radius")? {
-                chess.nms_radius = v.extract::<u32>()?;
-            }
-            if let Some(v) = kw.get_item("min_cluster_size")? {
-                chess.min_cluster_size = v.extract::<u32>()?;
-            }
         }
 
         let strategy = DetectionStrategy {
@@ -2791,7 +2802,8 @@ impl DetectorConfig {
     /// Top-level fields (threshold, multiscale, etc.) are preserved.
     ///
     /// Accepted kwargs: `refiner`, `ray_radius`, `image_upsample`,
-    /// `response_blur_radius`, `peak_fit`, `nms_radius`, `min_cluster_size`.
+    /// `response_blur_radius`, `peak_fit`. The shared NMS / clustering
+    /// knobs moved to `with_detection`.
     #[pyo3(signature = (**kwargs))]
     fn with_radon(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         const RADON_FIELDS: &[&str] = &[
@@ -2800,8 +2812,6 @@ impl DetectorConfig {
             "image_upsample",
             "response_blur_radius",
             "peak_fit",
-            "nms_radius",
-            "min_cluster_size",
         ];
 
         let mut cfg = self.clone_inner(py)?;
@@ -2837,12 +2847,6 @@ impl DetectorConfig {
                 let pf: PeakFitMode = v.extract()?;
                 radon.peak_fit = pf.into();
             }
-            if let Some(v) = kw.get_item("nms_radius")? {
-                radon.nms_radius = v.extract::<u32>()?;
-            }
-            if let Some(v) = kw.get_item("min_cluster_size")? {
-                radon.min_cluster_size = v.extract::<u32>()?;
-            }
         }
 
         let strategy = DetectionStrategy {
@@ -2851,6 +2855,37 @@ impl DetectorConfig {
             radon: Py::new(py, radon)?,
         };
         cfg.strategy = Py::new(py, strategy)?;
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` with the shared detection params
+    /// (NMS / clustering thresholds honoured by both strategies) updated
+    /// from the provided keyword arguments. Top-level fields and the
+    /// active strategy are preserved.
+    ///
+    /// Accepted kwargs: `nms_radius`, `min_cluster_size`.
+    #[pyo3(signature = (**kwargs))]
+    fn with_detection(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        const DETECTION_FIELDS: &[&str] = &["nms_radius", "min_cluster_size"];
+
+        let cfg = self.clone_inner(py)?;
+        if let Some(kw) = kwargs {
+            for key in kw.keys().iter() {
+                let key_str: String = key.extract()?;
+                if !DETECTION_FIELDS.contains(&key_str.as_str()) {
+                    return Err(PyTypeError::new_err(format!(
+                        "unexpected keyword argument: '{key_str}'"
+                    )));
+                }
+            }
+            let mut detection = cfg.detection.borrow_mut(py);
+            if let Some(v) = kw.get_item("nms_radius")? {
+                detection.inner.nms_radius = v.extract::<u32>()?;
+            }
+            if let Some(v) = kw.get_item("min_cluster_size")? {
+                detection.inner.min_cluster_size = v.extract::<u32>()?;
+            }
+        }
         Ok(cfg)
     }
 
@@ -2872,6 +2907,15 @@ impl DetectorConfig {
     #[setter]
     fn set_threshold(&mut self, v: Py<Threshold>) {
         self.threshold = v;
+    }
+
+    #[getter]
+    fn detection(&self, py: Python<'_>) -> Py<DetectionParams> {
+        self.detection.clone_ref(py)
+    }
+    #[setter]
+    fn set_detection(&mut self, v: Py<DetectionParams>) {
+        self.detection = v;
     }
 
     #[getter]
@@ -2916,6 +2960,7 @@ impl DetectorConfig {
         let d = PyDict::new(py);
         d.set_item("strategy", self.strategy.borrow(py).to_dict(py)?)?;
         d.set_item("threshold", self.threshold.borrow(py).to_dict(py)?)?;
+        d.set_item("detection", self.detection.borrow(py).to_dict(py)?)?;
         d.set_item("multiscale", self.multiscale.borrow(py).to_dict(py)?)?;
         d.set_item("upscale", self.upscale.borrow(py).to_dict(py)?)?;
         d.set_item(
@@ -2950,6 +2995,7 @@ impl DetectorConfig {
             &[
                 "strategy",
                 "threshold",
+                "detection",
                 "multiscale",
                 "upscale",
                 "orientation_method",
@@ -2965,6 +3011,10 @@ impl DetectorConfig {
         if let Some(value) = dict.get_item("threshold")? {
             let cls = py.get_type::<Threshold>();
             cfg.threshold = Py::new(py, Threshold::from_dict(&cls, &value)?)?;
+        }
+        if let Some(value) = dict.get_item("detection")? {
+            let cls = py.get_type::<DetectionParams>();
+            cfg.detection = Py::new(py, DetectionParams::from_dict(&cls, &value)?)?;
         }
         if let Some(value) = dict.get_item("multiscale")? {
             let cls = py.get_type::<MultiscaleConfig>();

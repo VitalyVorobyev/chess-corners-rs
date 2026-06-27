@@ -218,11 +218,13 @@ The main stages are:
      committing to a scene‑max policy.
 2. **Non‑maximum suppression (NMS)** – in a window of radius
    `nms_radius` around each pixel, we keep only local maxima and
-   suppress weaker neighbors.
+   suppress weaker neighbors. (`nms_radius` is set via
+   `DetectorConfig.detection`, shared with the Radon detector.)
 3. **Cluster filtering** – we require that each surviving corner have
    at least `min_cluster_size` positive‑response neighbors in its NMS
    window. This discards isolated noisy peaks that don’t belong to a
-   structured corner.
+   structured corner. (`min_cluster_size` is likewise on
+   `DetectorConfig.detection`.)
 
 The result of this stage is a set of raw corner candidates, each
 carrying:

@@ -4,8 +4,6 @@
     "chess": {
       "ring": "canonical",
       "descriptor_ring": "follow_detector",
-      "nms_radius": 2,
-      "min_cluster_size": 2,
       "refiner": {
         "center_of_mass": {
           "radius": 2
@@ -15,6 +13,10 @@
   },
   "threshold": {
     "absolute": 0.0
+  },
+  "detection": {
+    "nms_radius": 2,
+    "min_cluster_size": 2
   },
   "multiscale": "single_scale",
   "upscale": "disabled",

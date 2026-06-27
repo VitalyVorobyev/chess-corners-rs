@@ -30,9 +30,9 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
 | API-01 | P0 | done | M3 | — | Dropped `contrast`/`fit_rms` from `CornerDescriptor` + `new()`, Py (9→7 cols), WASM (stride 9→7), CLI JSON, book/README/CHANGELOG. σ math intact; snapshot counts bit-stable; all gates + maturin/pytest(79)/wasm-pack green. Net −59 LOC. Ripple → TOOL-01. |
-| API-02 | P1 | todo | M3 | — | Deduplicate `nms_radius`/`min_cluster_size` across Chess/Radon configs |
+| API-02 | P1 | done | M3 | — | Lifted `nms_radius`/`min_cluster_size` to a shared `DetectionParams` on `DetectorConfig.detection` (Rust/Py/WASM/CLI/JSON); `with_detection` builders added; snapshot counts unchanged. |
 | API-03 | P1 | todo | M3 | — | Hide `ChessParams`, `RefinerKind` (and other internal leaks) from core root |
-| API-04 | P2 | todo | M3 | — | Resolve `ChessRefiner::Ml` silent CoM fallback (honor / post-step / gate out) |
+| API-04 | P2 | done | M3 | — | Feature-gated `ChessRefiner::Ml` (already cfg-gated since 0.11.0); removed the `chess_refiner_to_kind` silent-mapping helper. Behavior byte-identical; no user-visible change. |
 | API-05 | P1 | todo | M3 | — | Ship Python `.pyi` parity (`config()`/`apply_config()`); stub-vs-runtime test |
 | API-06 | P1 | todo | M3 | — | Apply `#[non_exhaustive]` + sealed-trait policy; state MSRV |
 | API-07 | P2 | todo | M3 | API-06 | Binding unknown-variant handling: document/harden; pin WASM discriminants |

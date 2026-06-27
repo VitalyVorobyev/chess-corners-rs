@@ -112,12 +112,11 @@ def main() -> None:
                     "image_upsample": 2,
                     "response_blur_radius": 1,
                     "peak_fit": "gaussian",
-                    "nms_radius": 4,
-                    "min_cluster_size": 2,
                     "refiner": {"radon_peak": {}},
                 }
             }
             radon_cfg["threshold"] = {"relative": 0.01}
+            radon_cfg["detection"] = {"nms_radius": 4, "min_cluster_size": 2}
             radon_cfg["multiscale"] = "single_scale"
         configs.append((radon_cfg, "radon"))
 

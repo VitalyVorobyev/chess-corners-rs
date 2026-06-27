@@ -119,9 +119,11 @@ by the Radon refiner (see Part V):
    ChESS's `R > 0`; callers must pick a non-zero floor. Default is
    `threshold_rel = 0.01` (1% of the map maximum).
 3. **Non-maximum suppression.** Each surviving pixel must be the
-   strict maximum within a `(2·nms_radius + 1)²` window.
+   strict maximum within a `(2·nms_radius + 1)²` window. (`nms_radius`
+   is set via `DetectorConfig.detection`, shared with the ChESS detector.)
 4. **Cluster filter.** The pixel must have at least `min_cluster_size`
    positive neighbors in the NMS window. Rejects isolated noise.
+   (`min_cluster_size` is likewise on `DetectorConfig.detection`.)
 5. **3-point peak fit.** Given the NMS winner `R_c` at `(x, y)` and
    its four axial neighbors `R_{x±1}`, `R_{y±1}`, fit a 1D parabola
    along each axis to find the subpixel offset. The paper's
@@ -142,8 +144,8 @@ no iteration. Implementation: `radon::fit_peak_frac` in
 | `image_upsample`        | 2       | Paper default. Halves aliasing on the ray endpoints.                                                   |
 | `response_blur_radius`  | 1       | 3×3 box used by the preset and by the repository's Radon tests.                                        |
 | `threshold_rel`         | 0.01    | 1 % of `max(R)`. `R ≥ 0` means a strictly positive threshold is required; 0.01 is a conservative floor. |
-| `nms_radius`            | 4       | Matches `ray_radius` — local maxima should be at least one ray length apart.                           |
-| `min_cluster_size`      | 2       | Requires at least one supporting positive neighbor inside the NMS window.                              |
+| `nms_radius` (`detection`)      | 4       | Matches `ray_radius` — local maxima should be at least one ray length apart. Shared with ChESS; lives on `DetectorConfig.detection`. |
+| `min_cluster_size` (`detection`)| 2       | Requires at least one supporting positive neighbor inside the NMS window. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `peak_fit`              | Gaussian | Log-space 3-point fit used by the paper-style pipeline; parabolic fit is also available.              |
 
 ## 4.5 When to pick ChESS vs Radon

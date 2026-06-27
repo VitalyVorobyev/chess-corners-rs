@@ -24,8 +24,6 @@ SAMPLE_CONFIG = {
         "chess": {
             "ring": "broad",
             "descriptor_ring": "canonical",
-            "nms_radius": 3,
-            "min_cluster_size": 1,
             "refiner": {
                 "forstner": {
                     "radius": 2,
@@ -38,6 +36,7 @@ SAMPLE_CONFIG = {
         },
     },
     "threshold": {"absolute": 0.5},
+    "detection": {"nms_radius": 3, "min_cluster_size": 1},
     "multiscale": {
         "pyramid": {
             "levels": 3,
@@ -83,6 +82,8 @@ def test_full_config_example_parser_is_lazy_about_pillow():
     )
     assert cfg.threshold.kind == "absolute"
     assert cfg.threshold.value == 0.5
+    assert cfg.detection.nms_radius == 3
+    assert cfg.detection.min_cluster_size == 1
     assert cfg.strategy.chess.refiner.kind == "forstner"
     assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
     ms = cfg.multiscale

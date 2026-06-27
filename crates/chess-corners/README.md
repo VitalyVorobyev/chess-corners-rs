@@ -76,9 +76,11 @@ let cfg = DetectorConfig::chess()
     .with_chess(|c| {
         c.ring = ChessRing::Broad;
         c.descriptor_ring = DescriptorRing::FollowDetector;
-        c.nms_radius = 2;
-        c.min_cluster_size = 2;
         c.refiner = ChessRefiner::default();
+    })
+    .with_detection(|d| {
+        d.nms_radius = 2;
+        d.min_cluster_size = 2;
     });
 // Or switch to the Radon strategy:
 let cfg = cfg.with_radon(|_| {});

@@ -71,8 +71,8 @@ cfg.multiscale = chess_corners.MultiscaleConfig.pyramid(
 # propagates back to `cfg` — no rebuild needed:
 cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
 cfg.strategy.chess.descriptor_ring = chess_corners.DescriptorRing.FOLLOW_DETECTOR
-cfg.strategy.chess.nms_radius = 2
-cfg.strategy.chess.min_cluster_size = 2
+cfg.detection.nms_radius = 2
+cfg.detection.min_cluster_size = 2
 
 # Switch the active strategy by assigning a new one:
 cfg.strategy = chess_corners.DetectionStrategy.from_radon(
@@ -90,8 +90,8 @@ cfg = (
     .with_chess(
         refiner=chess_corners.ChessRefiner.forstner(),
         ring=chess_corners.ChessRing.BROAD,
-        nms_radius=2,
     )
+    .with_detection(nms_radius=2, min_cluster_size=2)
 )
 ```
 
@@ -171,8 +171,6 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
     "chess": {
       "ring": "broad",
       "descriptor_ring": "canonical",
-      "nms_radius": 3,
-      "min_cluster_size": 1,
       "refiner": {
         "forstner": {
           "radius": 3,
@@ -185,6 +183,7 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
     }
   },
   "threshold": { "absolute": 0.5 },
+  "detection": { "nms_radius": 3, "min_cluster_size": 1 },
   "multiscale": {
     "pyramid": {
       "levels": 3,
@@ -198,19 +197,20 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
 }
 ```
 
-Switch to the Radon strategy by replacing the `strategy` object:
+Switch to the Radon strategy by replacing the `strategy` object and setting the shared detection params:
 
 ```json
-"strategy": {
-  "radon": {
-    "ray_radius": 4,
-    "image_upsample": 2,
-    "response_blur_radius": 1,
-    "peak_fit": "gaussian",
-    "nms_radius": 4,
-    "min_cluster_size": 2,
-    "refiner": { "radon_peak": {} }
-  }
+{
+  "strategy": {
+    "radon": {
+      "ray_radius": 4,
+      "image_upsample": 2,
+      "response_blur_radius": 1,
+      "peak_fit": "gaussian",
+      "refiner": { "radon_peak": {} }
+    }
+  },
+  "detection": { "nms_radius": 4, "min_cluster_size": 2 }
 }
 ```
 

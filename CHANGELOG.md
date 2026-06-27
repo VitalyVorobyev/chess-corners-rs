@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** the `nms_radius` and `min_cluster_size` detection knobs
+  are no longer duplicated on each strategy config. They now live once
+  on `DetectorConfig.detection` as a shared `DetectionParams`, honoured
+  by both the ChESS and Radon detectors. Tune them with
+  `DetectorConfig::with_detection(|d| …)` (Rust),
+  `cfg.with_detection(nms_radius=…, min_cluster_size=…)` or
+  `cfg.detection.nms_radius` (Python), and
+  `cfg.withDetection({ nmsRadius, minClusterSize })` or
+  `cfg.detection.nmsRadius` (WebAssembly). JSON / dict configs move the
+  two keys out of `strategy.{chess,radon}` into a top-level `detection`
+  object. Detection results are unchanged.
 - Bump `numpy` to `0.29` and `pyo3` to `0.29`
 
 ## Past releases
