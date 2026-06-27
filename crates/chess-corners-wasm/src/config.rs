@@ -2816,4 +2816,30 @@ mod tests {
             "strategy must flip to Chess"
         );
     }
+
+    /// Pin the integer discriminants of every `#[wasm_bindgen]` numeric enum.
+    ///
+    /// wasm-bindgen exposes these values to JavaScript callers as plain
+    /// numbers, so reordering or renumbering a variant is a breaking change
+    /// for existing JS/TS consumers.  This test catches any accidental
+    /// reordering at `cargo test` time, before the WASM package is published.
+    #[test]
+    fn enum_discriminants_are_pinned() {
+        // ChessRing
+        assert_eq!(ChessRing::Canonical as u32, 0);
+        assert_eq!(ChessRing::Broad as u32, 1);
+
+        // DescriptorRing
+        assert_eq!(DescriptorRing::FollowDetector as u32, 0);
+        assert_eq!(DescriptorRing::Canonical as u32, 1);
+        assert_eq!(DescriptorRing::Broad as u32, 2);
+
+        // PeakFitMode
+        assert_eq!(PeakFitMode::Parabolic as u32, 0);
+        assert_eq!(PeakFitMode::Gaussian as u32, 1);
+
+        // OrientationMethod
+        assert_eq!(OrientationMethod::RingFit as u32, 0);
+        assert_eq!(OrientationMethod::DiskFit as u32, 1);
+    }
 }

@@ -20,6 +20,18 @@
 //! ```
 //!
 //! See [`config`] for the cell-sharing details.
+//!
+//! # Enum forward-compatibility
+//!
+//! When this binding receives a core enum value it does not yet recognise
+//! (possible because core enums are `#[non_exhaustive]` and may gain new
+//! variants in future releases), it maps the unknown value to the documented
+//! default for that enum — for example, an unknown `OrientationMethod` maps
+//! to `RingFit`.  This keeps existing JS consumers running against a newer
+//! core without breakage until the binding is updated to name the new variant.
+//! The config surface itself is built from typed getters/setters and factory
+//! constructors rather than a free-form options object, so only declared
+//! properties affect the configuration.
 
 pub mod config;
 
