@@ -22,7 +22,7 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | PERF-08 | P1 | todo | M2 | PERF-01..05 | CI bench gate: baseline compare, fail on >2% p95 regression |
 | PERF-09 | P2 | todo | M2 | PERF-08 | Capture baseline `metrics.json` (feeds SITE-04) |
 | PERF-10 | P2 | done | M2 | PERF-01 | Done (lever a): vectorized ChESS SIMD μₗ/write-back tail — SIMD **4×→~7×** (1074 Mpix/s @1024²), **bit-identical** output (verified, all equivalence/snapshot/accuracy-guard tests green). Remaining optional levers → PERF-13. |
-| PERF-12 | P2 | todo | M2 | — | Add soft-edge (blurred) + warped-corner bench fixtures. Current `synth_chessboard` (hard 40/215 steps, rel_rms≈0.47) forces RingFit's robust path and blocks DiskFit's lazy gate, so the fast paths + DiskFit's intended warped case are unmeasured. Prereq for representative PERF-08/09 numbers. |
+| PERF-12 | P2 | done | M2 | — | Added soft-edge + warped fixtures (`benches/common`). Confirmed soft corner rel_rms≈0.01 → RingFit fast path (2.60→0.73 µs) + DiskFit lazy-gate short-circuit (123→0.73 µs, ~169×); warped (~61° sep) → DiskFit full disk 158 µs. DiskFit is not a flat 47× tax. |
 | PERF-13 | P3 | todo | — | PERF-12 | Optional further optimizations (only if profiling on PERF-12 fixtures justifies): Radon angular sampling @upsample=2; NMS O(W·H) scan; rayon 2D tiling for ChESS response; SIMD prefix-sum for Radon SAT. |
 
 ## API — v1.0 stabilization  ·  M3  ·  [design](design/api-v1.0.md)
@@ -104,7 +104,7 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | ML-03 | P2 | todo | PERF-10 | Optimize ML inference (~23 ms / 77 corners is too slow for real-time) |
 | ALGO-01 | P3 | todo | — | Adaptive per-corner refiner selection by local image context |
 | PY-01 | P3 | todo | — | Python batch processing with `PyramidBuffers` reuse across frames |
-| PERF-11 | P3 | todo | — | Investigate stable-Rust SIMD as an alternative to nightly `portable_simd` |
+| PERF-11 | P2 | todo | API-06 | Provide a STABLE-Rust SIMD path so the `simd` feature no longer needs nightly. Today it uses `core::simd`/`portable_simd` (nightly-only + API-unstable). Evaluate `wide` / `pulp` / `std::arch`+runtime-detect; must stay bit-identical-or-within-tolerance to scalar (cf. PERF-10) and re-bench. Default/stable build already uses the scalar path, so this is a reach-extension, **not a 1.0 blocker** — but it removes nightly reliance from a published feature. |
 
 ## Closed
 

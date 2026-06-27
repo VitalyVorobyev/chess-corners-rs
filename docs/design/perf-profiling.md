@@ -66,10 +66,11 @@ shared board from `benches/common/`). Reproduce with
 
 **PERF-03/04 — orientation fit, single corner (`fit_axes_at_point`):**
 
-| method | @corner | @edge | vs RingFit |
-|--------|---------|-------|------------|
-| RingFit | 2.59 µs | 3.26 µs | 1× |
-| DiskFit | 121.6 µs | 136.9 µs | 47× / 42× |
+| fixture | RingFit | DiskFit | note |
+|---------|---------|---------|------|
+| hard-edge 90° corner | 2.60 µs | 123 µs | worst case — both forced to the slow path |
+| **soft-edge 90° corner (typical)** | **0.73 µs** | **0.73 µs** | RingFit fast-seed path; DiskFit lazy gate short-circuits to RingFit |
+| warped corner (~61° sep) | — | 158 µs | DiskFit full disk (its intended case) |
 
 **PERF-05 — NMS scaling at 1024² (radius sweep, one shared response map):**
 
@@ -77,15 +78,15 @@ shared board from `benches/common/`). Reproduce with
 |------------|---|---|---|---|
 | time | 766 µs | 836 µs | 995 µs | 1646 µs |
 
-> **Worst-case caveat (important).** The synthetic board has hard 40/215
-> steps, giving `rel_rms ≈ 0.47` even at a perfect 90° corner
-> (scale-invariant). That exceeds RingFit's robust-path trigger (0.12) and
-> DiskFit's lazy-gate threshold (0.04), so here RingFit *always* runs its slow
-> robust grid (its sub-µs fast-seed path is unreachable) and DiskFit *never*
-> short-circuits. The 47× ratio is therefore the full-disk-vs-robust-grid
-> worst case, **not** typical clean/soft-edge cost. Representative numbers need
-> a soft-edge (blurred) fixture, plus a warped corner for DiskFit's intended
-> case (tracked as PERF-12).
+> **Hard- vs soft-edge (resolved by PERF-12).** The hard 40/215 board gives
+> `rel_rms ≈ 0.47` even at a perfect corner (the tanh model can't fit a step),
+> forcing RingFit's robust grid and blocking DiskFit's lazy gate — the
+> worst-case row above. On the **soft-edge** board (`rel_rms ≈ 0.01`, measured)
+> RingFit hits its fast 2nd-harmonic seed path and **DiskFit's lazy gate
+> short-circuits to RingFit** (123 µs → 0.73 µs, ~169×), confirming the gate
+> works as designed. DiskFit pays the full disk only on genuinely warped
+> corners (~61° sep → 158 µs). So DiskFit is **not** a flat 47× tax — on
+> typical corners it costs the same as RingFit.
 
 **Findings (these drive PERF-10):**
 
@@ -106,9 +107,11 @@ shared board from `benches/common/`). Reproduce with
   ~766 µs floor (`is_local_max` early-exits on slopes, so the `(2r+1)²` window
   is paid only at sparse maxima). A PERF-10 NMS win must target the full scan,
   not the window.
-- DiskFit costs ~42–47× RingFit *when it runs the full disk*; with soft edges
-  its lazy gate can fall back to RingFit, so the real-world ratio depends on
-  edge softness — measure on the PERF-12 fixture before acting.
+- DiskFit costs ~47× RingFit *only when it runs the full disk* (warped/large-
+  skew corners). PERF-12 confirmed the lazy gate short-circuits to RingFit on
+  typical soft, near-90° corners (DiskFit ≈ RingFit ≈ 0.73 µs), so default-path
+  DiskFit overhead is negligible — the full disk is paid only where the
+  geometry needs it.
 
 ## Stage 2 — flamegraph automation (`PERF-07` — already in place)
 
