@@ -56,10 +56,10 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 |----|-----|--------|-----------|------|------|
 | CPP-01 | P2 | done | M5 | M3 | `chess-corners-capi` (publish=false, staticlib+cdylib+rlib): flat `cc_config` + presets, `cc_detect_u8`, `cc_result`/`cc_result_free` (lib-owned alloc), `cc_status`/`cc_status_str`, `cc_abi_version`. Panic-trapped at every boundary; tags are `uint32_t`+`#define` (no discriminant UB). Rust parity test (corner-by-corner vs `Detector::detect_u8`) + C smoke (49 corners on 8×8). |
 | CPP-02 | P2 | done | M5 | CPP-01 | `cbindgen.toml` + `generate-ffi-header` bin (with `--check` drift mode) → committed `include/chess_corners.h`. Intra-doc brackets stripped for a clean C header. |
-| CPP-03 | P2 | todo | M5 | CPP-02 | Hand-written C++ header `chess_corners.hpp` (RAII, `std::vector`) |
-| CPP-04 | P2 | todo | M5 | CPP-01 | CMake package config (`find_package(chess-corners)`) + pkg-config |
+| CPP-03 | P2 | in-progress | M5 | CPP-02 | Hand-written C++ header `chess_corners.hpp` (RAII, `std::vector`) |
+| CPP-04 | P2 | in-progress | M5 | CPP-01 | CMake package config (`find_package(chess-corners)`) + pkg-config |
 | CPP-05 | P3 | todo | M5 | CPP-04 | vcpkg port (`vcpkg.json` + `portfile.cmake`); overlay first, then registry PR |
-| CPP-06 | P3 | todo | M5 | CPP-03 | C/C++ smoke + parity test + CI job + example consumer |
+| CPP-06 | P3 | in-progress | M5 | CPP-03 | C/C++ smoke + parity test + CI job + example consumer |
 | CPP-07 | P3 | todo | M5 | CPP-03 | Book chapter: C++ usage |
 
 ## SWEEP — dev-history/internal reference cleanup  ·  continuous → M3
