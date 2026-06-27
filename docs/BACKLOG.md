@@ -104,7 +104,7 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | ML-03 | P2 | todo | PERF-10 | Optimize ML inference (~23 ms / 77 corners is too slow for real-time) |
 | ALGO-01 | P3 | todo | — | Adaptive per-corner refiner selection by local image context |
 | PY-01 | P3 | todo | — | Python batch processing with `PyramidBuffers` reuse across frames |
-| PERF-11 | P2 | todo | API-06 | Provide a STABLE-Rust SIMD path so the `simd` feature no longer needs nightly. Today it uses `core::simd`/`portable_simd` (nightly-only + API-unstable). Evaluate `wide` / `pulp` / `std::arch`+runtime-detect; must stay bit-identical-or-within-tolerance to scalar (cf. PERF-10) and re-bench. Default/stable build already uses the scalar path, so this is a reach-extension, **not a 1.0 blocker** — but it removes nightly reliance from a published feature. |
+| PERF-11 | P2 | todo | API-06, M5 | **Scheduled last (after M5).** Replace the nightly `core::simd` path with a single STABLE backend so the `simd` feature drops its nightly requirement. Spike compares `wide` (stable, compile-time) vs `pulp` (stable, runtime CPU dispatch — valuable for wheels/vcpkg binaries on unknown CPUs) and picks **one** — we do NOT maintain multiple selectable backends (DRY; they lower to the same instructions). Must stay bit-identical-or-within-tolerance to scalar (cf. PERF-10) + re-bench. Not a 1.0 blocker (stable build already uses the scalar path). |
 
 ## Closed
 
