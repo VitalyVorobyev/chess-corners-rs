@@ -134,14 +134,17 @@ as part of M3 (these are additive and low-risk).
 3. **Phase C (freeze):** API-07 binding policy, API-08 semver-checks in CI,
    docs/migration notes, then API-09 tag `1.0.0`.
 
-## Open decisions (need a call before Phase B)
+## Decisions (resolved)
 
-1. `nms_radius`/`min_cluster_size`: lift to shared params, or keep per-strategy?
-2. `ChessRefiner::Ml`: honor in core / post-step / gate out?
-3. Seal `DenseDetector`/`CornerRefiner`, or support external impls?
-4. Python factory-name alignment now (binding-break) or document the mapping?
-5. `chess-corners-ml`: supported advanced crate at 1.0, or deprecate? (It is
-   published `0.10.0` while repo docs list three published crates.)
+1. `nms_radius`/`min_cluster_size` → **lift to a shared `DetectionParams`** reused by both strategies; strategy structs keep only strategy-specific knobs (API-02).
+2. `ChessRefiner::Ml` → **feature-gate the variant** (exists only with `ml-refiner`); drop the silent CenterOfMass fallback (API-04).
+3. `DenseDetector` / `CornerRefiner` → **seal both** — no external impls, so the trait signatures stay free to evolve post-1.0 (API-06).
+4. `chess-corners-ml` → **keep published, documented as advanced**; add it to the repo's published-crate list (AGENTS.md / README).
+
+Still open (decide during API-05): Python factory-name alignment
+(`single_scale`/`multiscale_preset` vs Rust `chess`/`chess_multiscale`/…) —
+align (binding-break) now, or document the mapping? **Default: document the
+mapping** unless a binding-break pass is explicitly wanted.
 
 ## Verification (per phase)
 
