@@ -17,14 +17,13 @@ use std::collections::BTreeSet;
 
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
-    ChessRefiner as RsChessRefiner, ChessRing as RsChessRing, DescriptorRing as RsDescriptorRing,
-    DetectionParams as RsDetectionParams, DetectionStrategy as RsDetectionStrategy,
-    DetectorConfig as RsDetectorConfig, ForstnerConfig as RsForstnerConfig,
-    MultiscaleConfig as RsMultiscaleConfig, OrientationMethod as RsOrientationMethod,
-    PeakFitMode as RsPeakFitMode, RadonConfig as RsRadonConfig,
-    RadonPeakConfig as RsRadonPeakConfig, RadonRefiner as RsRadonRefiner,
-    SaddlePointConfig as RsSaddlePointConfig, Threshold as RsThreshold,
-    UpscaleConfig as RsUpscaleConfig,
+    ChessRefiner as RsChessRefiner, ChessRing as RsChessRing, DetectionParams as RsDetectionParams,
+    DetectionStrategy as RsDetectionStrategy, DetectorConfig as RsDetectorConfig,
+    ForstnerConfig as RsForstnerConfig, MultiscaleConfig as RsMultiscaleConfig,
+    OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
+    RadonConfig as RsRadonConfig, RadonPeakConfig as RsRadonPeakConfig,
+    RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
+    Threshold as RsThreshold, UpscaleConfig as RsUpscaleConfig,
 };
 use pyo3::create_exception;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -207,17 +206,6 @@ py_enum!(
 );
 
 py_enum!(
-    /// Descriptor sampling ring selection. Independent of the detector
-    /// ring chosen by [`ChessRing`]. Lives inside `ChessConfig`.
-    DescriptorRing, RsDescriptorRing,
-    [
-        (FollowDetector, "FOLLOW_DETECTOR", FollowDetector),
-        (Canonical, "CANONICAL", Canonical),
-        (Broad, "BROAD", Broad),
-    ]
-);
-
-py_enum!(
     /// Subpixel peak-fit mode used by the Radon refiner and detector.
     PeakFitMode, RsPeakFitMode,
     [
@@ -277,18 +265,6 @@ fn parse_chess_ring(value: &str, path: &str) -> PyResult<RsChessRing> {
     )
 }
 
-fn parse_descriptor_ring(value: &str, path: &str) -> PyResult<RsDescriptorRing> {
-    parse_enum(
-        value,
-        path,
-        &[
-            ("follow_detector", RsDescriptorRing::FollowDetector),
-            ("canonical", RsDescriptorRing::Canonical),
-            ("broad", RsDescriptorRing::Broad),
-        ],
-    )
-}
-
 fn parse_peak_fit_mode(value: &str, path: &str) -> PyResult<RsPeakFitMode> {
     parse_enum(
         value,
@@ -316,15 +292,6 @@ fn chess_ring_str(v: RsChessRing) -> &'static str {
         RsChessRing::Canonical => "canonical",
         RsChessRing::Broad => "broad",
         _ => "canonical",
-    }
-}
-
-fn descriptor_ring_str(v: RsDescriptorRing) -> &'static str {
-    match v {
-        RsDescriptorRing::FollowDetector => "follow_detector",
-        RsDescriptorRing::Canonical => "canonical",
-        RsDescriptorRing::Broad => "broad",
-        _ => "follow_detector",
     }
 }
 
@@ -2061,7 +2028,6 @@ impl RadonRefiner {
 #[pyclass(module = "chess_corners")]
 pub struct ChessConfig {
     pub(crate) ring: RsChessRing,
-    pub(crate) descriptor_ring: RsDescriptorRing,
     pub(crate) refiner: Py<ChessRefiner>,
 }
 
@@ -2069,7 +2035,6 @@ impl ChessConfig {
     fn from_rs(py: Python<'_>, v: RsChessConfig) -> PyResult<Self> {
         Ok(Self {
             ring: v.ring,
-            descriptor_ring: v.descriptor_ring,
             refiner: Py::new(py, ChessRefiner::from_rs(v.refiner))?,
         })
     }
@@ -2077,7 +2042,6 @@ impl ChessConfig {
     pub(crate) fn to_rs(&self, py: Python<'_>) -> RsChessConfig {
         let mut cfg = RsChessConfig::default();
         cfg.ring = self.ring;
-        cfg.descriptor_ring = self.descriptor_ring;
         cfg.refiner = self.refiner.borrow(py).to_rs();
         cfg
     }
@@ -2100,15 +2064,6 @@ impl ChessConfig {
     }
 
     #[getter]
-    fn descriptor_ring(&self) -> DescriptorRing {
-        self.descriptor_ring.into()
-    }
-    #[setter]
-    fn set_descriptor_ring(&mut self, v: DescriptorRing) {
-        self.descriptor_ring = v.into();
-    }
-
-    #[getter]
     fn refiner(&self, py: Python<'_>) -> Py<ChessRefiner> {
         self.refiner.clone_ref(py)
     }
@@ -2120,7 +2075,6 @@ impl ChessConfig {
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
         d.set_item("ring", chess_ring_str(self.ring))?;
-        d.set_item("descriptor_ring", descriptor_ring_str(self.descriptor_ring))?;
         d.set_item("refiner", self.refiner.borrow(py).to_dict(py)?)?;
         Ok(d.unbind())
     }
@@ -2132,13 +2086,10 @@ impl ChessConfig {
         data: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let dict = require_dict(data, "chess")?;
-        reject_unknown_keys(&dict, &["ring", "descriptor_ring", "refiner"], "chess")?;
+        reject_unknown_keys(&dict, &["ring", "refiner"], "chess")?;
         let mut cfg = Self::from_rs(py, RsChessConfig::default())?;
         if let Some(s) = extract_string(&dict, "ring", "chess")? {
             cfg.ring = parse_chess_ring(&s, "chess.ring")?;
-        }
-        if let Some(s) = extract_string(&dict, "descriptor_ring", "chess")? {
-            cfg.descriptor_ring = parse_descriptor_ring(&s, "chess.descriptor_ring")?;
         }
         if let Some(value) = dict.get_item("refiner")? {
             let cls = py.get_type::<ChessRefiner>();
@@ -2750,11 +2701,11 @@ impl DetectorConfig {
     /// it is replaced with a default `ChessConfig` before applying kwargs.
     /// Top-level fields (threshold, multiscale, etc.) are preserved.
     ///
-    /// Accepted kwargs: `refiner`, `ring`, `descriptor_ring`. The shared
+    /// Accepted kwargs: `refiner`, `ring`. The shared
     /// NMS / clustering knobs moved to `with_detection`.
     #[pyo3(signature = (**kwargs))]
     fn with_chess(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        const CHESS_FIELDS: &[&str] = &["refiner", "ring", "descriptor_ring"];
+        const CHESS_FIELDS: &[&str] = &["refiner", "ring"];
 
         let mut cfg = self.clone_inner(py)?;
 
@@ -2780,10 +2731,6 @@ impl DetectorConfig {
             if let Some(v) = kw.get_item("ring")? {
                 let ring: ChessRing = v.extract()?;
                 chess.ring = ring.into();
-            }
-            if let Some(v) = kw.get_item("descriptor_ring")? {
-                let dr: DescriptorRing = v.extract()?;
-                chess.descriptor_ring = dr.into();
             }
         }
 
@@ -2978,13 +2925,6 @@ impl DetectorConfig {
         data: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let dict = require_dict(data, "config")?;
-        // descriptor_mode was removed in 0.10.0 — fail loudly with a
-        // specific message so callers know exactly what to change.
-        if dict.get_item("descriptor_mode")?.is_some() {
-            return Err(config_error(
-                "descriptor_mode moved into strategy.chess.descriptor_ring in 0.10.0",
-            ));
-        }
         if dict.get_item("refiner")?.is_some() {
             return Err(config_error(
                 "refiner moved into strategy.{chess,radon}.refiner in 0.10.0",

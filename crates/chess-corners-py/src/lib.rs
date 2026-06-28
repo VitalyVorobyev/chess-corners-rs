@@ -15,10 +15,10 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
 
 use crate::config::{
-    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, ConfigError, DescriptorRing,
-    DetectionParams, DetectionStrategy, DetectorConfig, ForstnerConfig, MultiscaleConfig,
-    OrientationMethod, PeakFitMode, RadonConfig, RadonPeakConfig, RadonRefiner, SaddlePointConfig,
-    Threshold, UpscaleConfig,
+    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, ConfigError, DetectionParams,
+    DetectionStrategy, DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod,
+    PeakFitMode, RadonConfig, RadonPeakConfig, RadonRefiner, SaddlePointConfig, Threshold,
+    UpscaleConfig,
 };
 
 fn extract_image<'py>(
@@ -197,7 +197,6 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ConfigError", py.get_type::<ConfigError>())?;
 
     m.add_class::<ChessRing>()?;
-    m.add_class::<DescriptorRing>()?;
     m.add_class::<PeakFitMode>()?;
     m.add_class::<OrientationMethod>()?;
 

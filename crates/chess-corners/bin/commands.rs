@@ -6,8 +6,8 @@
 use anyhow::{Context, Result};
 use chess_corners::{
     AxisEstimate, CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, CornerDescriptor,
-    DescriptorRing, DetectionStrategy, Detector, DetectorConfig, ForstnerConfig, MultiscaleConfig,
-    RadonPeakConfig, RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
+    DetectionStrategy, Detector, DetectorConfig, ForstnerConfig, MultiscaleConfig, RadonPeakConfig,
+    RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
 };
 use image::{ImageBuffer, ImageReader, Luma};
 use log::info;
@@ -62,7 +62,6 @@ pub struct DetectionOverrides {
     pub output_png: Option<PathBuf>,
     pub threshold: Option<Threshold>,
     pub chess_ring: Option<ChessRing>,
-    pub descriptor_ring: Option<DescriptorRing>,
     pub nms_radius: Option<u32>,
     pub min_cluster_size: Option<u32>,
     /// Override the ChESS subpixel refiner. Ignored when the active
@@ -261,7 +260,6 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
         output_png,
         threshold,
         chess_ring,
-        descriptor_ring,
         nms_radius,
         min_cluster_size,
         chess_refiner,
@@ -314,11 +312,6 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
     if let Some(v) = chess_ring {
         if let Some(chess) = chess_strategy_mut(&mut cfg.algorithm) {
             chess.ring = v;
-        }
-    }
-    if let Some(v) = descriptor_ring {
-        if let Some(chess) = chess_strategy_mut(&mut cfg.algorithm) {
-            chess.descriptor_ring = v;
         }
     }
     // NMS / clustering are shared detection knobs honoured by both

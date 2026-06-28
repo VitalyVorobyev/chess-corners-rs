@@ -70,7 +70,6 @@ cfg.multiscale = chess_corners.MultiscaleConfig.pyramid(
 # return the live shared object, so direct attribute assignment
 # propagates back to `cfg` — no rebuild needed:
 cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
-cfg.strategy.chess.descriptor_ring = chess_corners.DescriptorRing.FOLLOW_DETECTOR
 cfg.detection.nms_radius = 2
 cfg.detection.min_cluster_size = 2
 
@@ -128,13 +127,11 @@ Tagged classes:
 Enums:
 
 - `ChessRing`: `CANONICAL`, `BROAD`
-- `DescriptorRing`: `FOLLOW_DETECTOR`, `CANONICAL`, `BROAD`
 - `PeakFitMode`: `PARABOLIC`, `GAUSSIAN`
 - `OrientationMethod`: `RING_FIT`, `DISK_FIT`
 
 `ChessRing.BROAD` uses the wider radius-10 detector sampling pattern.
-Leave `descriptor_ring` at `FOLLOW_DETECTOR` unless you have a reason
-to override descriptor sampling separately.
+Descriptors always sample at the detector ring radius.
 
 ## JSON helpers and printing
 
@@ -170,7 +167,6 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
   "strategy": {
     "chess": {
       "ring": "broad",
-      "descriptor_ring": "canonical",
       "refiner": {
         "forstner": {
           "radius": 3,

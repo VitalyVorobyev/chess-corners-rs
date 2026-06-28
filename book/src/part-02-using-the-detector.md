@@ -33,8 +33,7 @@ Inside `ChessConfig`:
 
 | Field               | Meaning                                                                                                          |
 |---------------------|------------------------------------------------------------------------------------------------------------------|
-| `ring`              | `ChessRing::Canonical` (r=5, paper default) or `ChessRing::Broad` (r=10, wider support window). The single source of truth for "broad" detection. |
-| `descriptor_ring`   | `DescriptorRing::FollowDetector` (default), `Canonical`, or `Broad`. Lets you sample the descriptor ring at a different radius than the detector. |
+| `ring`              | `ChessRing::Canonical` (r=5, paper default) or `ChessRing::Broad` (r=10, wider support window). Descriptors always sample at this same radius. |
 | `refiner`           | `ChessRefiner::CenterOfMass(_)`, `Forstner(_)`, `SaddlePoint(_)`, or `Ml` (with `ml-refiner`). Each variant carries its own tuning struct. |
 
 Inside `RadonConfig`:
@@ -361,7 +360,6 @@ Python APIs, wrapped in a CLI envelope that adds `image`,
   "strategy": {
     "chess": {
       "ring": "canonical",
-      "descriptor_ring": "follow_detector",
       "refiner": { "center_of_mass": { "radius": 2 } }
     }
   },
@@ -390,7 +388,6 @@ Per-flag overrides (applied on top of the JSON):
 
 - `--threshold-absolute <v>` / `--threshold-relative <f>`
 - `--chess-ring canonical|broad`
-- `--descriptor-ring follow_detector|canonical|broad`
 - `--chess-refiner center_of_mass|forstner|saddle_point`
 - `--radon-refiner radon_peak|center_of_mass`
 - `--pyramid-levels <n>` (1 = single-scale)

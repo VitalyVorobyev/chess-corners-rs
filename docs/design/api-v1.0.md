@@ -77,7 +77,7 @@ Both `ChessConfig` and `RadonConfig` carry independent `nms_radius` and
 
 Recommendation: lift to a shared `DetectionParams` reused by both strategies;
 strategy structs keep only strategy-specific knobs (`ray_radius`,
-`response_blur_radius`, `peak_fit`, `ring`, `descriptor_ring`).
+`response_blur_radius`, `peak_fit`, `ring`).
 
 ### API-03 — Hide internal types leaking at the core root
 
@@ -199,7 +199,7 @@ WASM has no free-form options object — config is built through typed
 getters/setters and factory constructors, so there is no untyped key to
 misread. WASM discriminants were already explicit (`= 0/1/2`); a
 `cargo test` now pins all four `#[wasm_bindgen]` numeric enums
-(`ChessRing`, `DescriptorRing`, `PeakFitMode`, `OrientationMethod`) so a
+(`ChessRing`, `PeakFitMode`, `OrientationMethod`) so a
 reorder — breaking for JS consumers — fails locally (28 → 29 tests).
 
 ### API-08 / API-09 — Enforcement & release

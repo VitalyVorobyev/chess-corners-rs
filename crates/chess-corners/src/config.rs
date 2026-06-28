@@ -62,21 +62,6 @@ pub enum ChessRing {
     Broad,
 }
 
-/// Descriptor sampling ring selection. Independent of the detector ring
-/// chosen by [`ChessRing`].
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum DescriptorRing {
-    /// Use the same ring radius as the detector.
-    #[default]
-    FollowDetector,
-    /// Force the descriptor ring to `r=5`.
-    Canonical,
-    /// Force the descriptor ring to `r=10`.
-    Broad,
-}
-
 // ---------------------------------------------------------------------------
 // Refiner enums (one per detector)
 // ---------------------------------------------------------------------------
@@ -219,16 +204,14 @@ impl MultiscaleConfig {
 
 /// Configuration for the ChESS detector branch of [`DetectionStrategy`].
 ///
-/// Carries the detector ring choice, descriptor ring choice, and the
-/// subpixel refiner. The shared NMS / clustering thresholds
-/// ([`DetectionParams`]), multiscale, and upscale live at the top level
-/// of [`DetectorConfig`] and apply to both strategies.
+/// Carries the detector ring choice and the subpixel refiner. The shared
+/// NMS / clustering thresholds ([`DetectionParams`]), multiscale, and
+/// upscale live at the top level of [`DetectorConfig`] and apply to both
+/// strategies. Descriptors always sample at the detector ring radius.
 ///
 /// # Common knobs
 ///
 /// - [`ring`](ChessConfig::ring) — choose the detector kernel radius.
-/// - [`descriptor_ring`](ChessConfig::descriptor_ring) — choose the
-///   descriptor sampling radius.
 /// - [`refiner`](ChessConfig::refiner) — select and configure the
 ///   subpixel refinement backend.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -236,11 +219,8 @@ impl MultiscaleConfig {
 #[non_exhaustive]
 pub struct ChessConfig {
     /// Detector ring radius. `Canonical` selects the paper's `r=5`,
-    /// `Broad` selects `r=10`.
+    /// `Broad` selects `r=10`. Descriptors sample at this same radius.
     pub ring: ChessRing,
-    /// Descriptor sampling ring. Independent of the detector ring;
-    /// `FollowDetector` mirrors the detector's choice.
-    pub descriptor_ring: DescriptorRing,
     /// Subpixel refiner. Each variant carries its tuning struct.
     pub refiner: ChessRefiner,
 }
@@ -249,7 +229,6 @@ impl Default for ChessConfig {
     fn default() -> Self {
         Self {
             ring: ChessRing::Canonical,
-            descriptor_ring: DescriptorRing::FollowDetector,
             refiner: ChessRefiner::default(),
         }
     }
@@ -588,11 +567,6 @@ impl DetectorConfig {
         params.min_cluster_size = self.detection.min_cluster_size;
         if let DetectionStrategy::Chess(chess) = &self.strategy {
             params.use_radius10 = matches!(chess.ring, ChessRing::Broad);
-            params.descriptor_use_radius10 = match chess.descriptor_ring {
-                DescriptorRing::FollowDetector => None,
-                DescriptorRing::Canonical => Some(false),
-                DescriptorRing::Broad => Some(true),
-            };
             match chess.refiner {
                 ChessRefiner::CenterOfMass(cfg) => params.refiner = RefinerKind::CenterOfMass(cfg),
                 ChessRefiner::Forstner(cfg) => params.refiner = RefinerKind::Forstner(cfg),
@@ -746,7 +720,6 @@ mod tests {
         let cfg = DetectorConfig::default();
         let chess = assert_strategy_chess(&cfg);
         assert_eq!(chess.ring, ChessRing::Canonical);
-        assert_eq!(chess.descriptor_ring, DescriptorRing::FollowDetector);
         assert_eq!(
             chess.refiner,
             ChessRefiner::CenterOfMass(CenterOfMassConfig::default())
@@ -761,7 +734,6 @@ mod tests {
 
         let params = cfg.chess_params();
         assert!(!params.use_radius10);
-        assert_eq!(params.descriptor_use_radius10, None);
         assert_eq!(params.threshold_abs, Some(0.0));
         assert_eq!(params.nms_radius, 2);
         assert_eq!(params.min_cluster_size, 2);
@@ -882,7 +854,6 @@ mod tests {
         let cfg = DetectorConfig {
             strategy: DetectionStrategy::Chess(ChessConfig {
                 ring: ChessRing::Broad,
-                descriptor_ring: DescriptorRing::Canonical,
                 refiner: ChessRefiner::Forstner(forstner),
                 ..ChessConfig::default()
             }),
@@ -891,7 +862,6 @@ mod tests {
 
         let params = cfg.chess_params();
         assert!(params.use_radius10);
-        assert_eq!(params.descriptor_use_radius10, Some(false));
         assert_eq!(params.refiner, RefinerKind::Forstner(forstner));
     }
 
@@ -1032,7 +1002,10 @@ mod tests {
         let chess = assert_strategy_chess(&cfg);
         assert_eq!(chess.ring, ChessRing::Broad);
         // Other chess fields untouched
-        assert_eq!(chess.descriptor_ring, DescriptorRing::FollowDetector);
+        assert_eq!(
+            chess.refiner,
+            ChessRefiner::CenterOfMass(CenterOfMassConfig::default())
+        );
     }
 
     #[test]

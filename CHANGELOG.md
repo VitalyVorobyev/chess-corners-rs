@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   summed-area-table element type) are no longer re-exported from
   `chess_corners_core::unstable`; they are now crate-internal.
   Detection results are unchanged.
+- **Breaking:** removed the `descriptor_ring` ChESS config option
+  (Rust `DescriptorRing` enum, Python/WASM `descriptor_ring` field,
+  CLI `--descriptor-ring` flag). Descriptors now always sample at the
+  detector ring radius (`ring` / `ChessRing`).
 
 ### Changed
 

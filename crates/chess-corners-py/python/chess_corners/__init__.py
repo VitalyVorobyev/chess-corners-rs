@@ -2,7 +2,7 @@
 
 The config classes (`DetectorConfig`, `ChessConfig`, `RadonConfig`,
 `ChessRefiner`, `RadonRefiner`, ...) and enums (`ChessRing`,
-`DescriptorRing`, `PeakFitMode`, `OrientationMethod`) are native PyO3
+`PeakFitMode`, `OrientationMethod`) are native PyO3
 types defined in the compiled `_native` extension. They expose
 attribute access, classmethod factories
 (`DetectorConfig.multiscale()`, `Threshold.relative(...)`,
@@ -26,7 +26,6 @@ from ._native import (
     ChessRefiner,
     ChessRing,
     ConfigError,
-    DescriptorRing,
     DetectionParams,
     DetectionStrategy,
     Detector,
@@ -94,7 +93,6 @@ __all__ = [
     "ChessRefiner",
     "ChessRing",
     "ConfigError",
-    "DescriptorRing",
     "DetectionParams",
     "DetectionStrategy",
     "Detector",

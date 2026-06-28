@@ -67,7 +67,6 @@ def detection_config(image_path: Path, threshold: float, output_json: Path) -> d
         "strategy": {
             "chess": {
                 "ring": "canonical",
-                "descriptor_ring": "follow_detector",
                 "refiner": {"center_of_mass": {}},
             }
         },

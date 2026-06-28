@@ -23,7 +23,6 @@ SAMPLE_CONFIG = {
     "strategy": {
         "chess": {
             "ring": "broad",
-            "descriptor_ring": "canonical",
             "refiner": {
                 "forstner": {
                     "radius": 2,
@@ -76,10 +75,6 @@ def test_full_config_example_parser_is_lazy_about_pillow():
 
     assert cfg.strategy.kind == "chess"
     assert cfg.strategy.chess.ring is chess_corners.ChessRing.BROAD
-    assert (
-        cfg.strategy.chess.descriptor_ring
-        is chess_corners.DescriptorRing.CANONICAL
-    )
     assert cfg.threshold.kind == "absolute"
     assert cfg.threshold.value == 0.5
     assert cfg.detection.nms_radius == 3
@@ -115,10 +110,6 @@ def test_code_config_example_is_lazy_about_pillow_and_builds_full_config():
     cfg = module.build_chess_config()
     assert cfg.strategy.kind == "chess"
     assert cfg.strategy.chess.ring is chess_corners.ChessRing.BROAD
-    assert (
-        cfg.strategy.chess.descriptor_ring
-        is chess_corners.DescriptorRing.CANONICAL
-    )
     assert cfg.threshold.kind == "absolute"
     assert cfg.threshold.value == 0.5
     assert cfg.strategy.chess.refiner.kind == "forstner"

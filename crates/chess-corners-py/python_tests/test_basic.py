@@ -57,7 +57,6 @@ def test_chess_refiner_attached_to_chess_strategy():
 def test_config_roundtrip_and_print_helpers():
     cfg = chess_corners.DetectorConfig.chess_multiscale()
     cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
-    cfg.strategy.chess.descriptor_ring = chess_corners.DescriptorRing.CANONICAL
     cfg.threshold = chess_corners.Threshold.absolute(4.5)
     saddle = chess_corners.SaddlePointConfig()
     saddle.max_offset = 2.0

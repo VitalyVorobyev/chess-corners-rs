@@ -51,14 +51,13 @@ use std::rc::Rc;
 
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
-    ChessRefiner as RsChessRefiner, ChessRing as RsChessRing, DescriptorRing as RsDescriptorRing,
-    DetectionParams as RsDetectionParams, DetectionStrategy as RsDetectionStrategy,
-    DetectorConfig as RsDetectorConfig, ForstnerConfig as RsForstnerConfig,
-    MultiscaleConfig as RsMultiscaleConfig, OrientationMethod as RsOrientationMethod,
-    PeakFitMode as RsPeakFitMode, RadonConfig as RsRadonConfig,
-    RadonPeakConfig as RsRadonPeakConfig, RadonRefiner as RsRadonRefiner,
-    SaddlePointConfig as RsSaddlePointConfig, Threshold as RsThreshold,
-    UpscaleConfig as RsUpscaleConfig,
+    ChessRefiner as RsChessRefiner, ChessRing as RsChessRing, DetectionParams as RsDetectionParams,
+    DetectionStrategy as RsDetectionStrategy, DetectorConfig as RsDetectorConfig,
+    ForstnerConfig as RsForstnerConfig, MultiscaleConfig as RsMultiscaleConfig,
+    OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
+    RadonConfig as RsRadonConfig, RadonPeakConfig as RsRadonPeakConfig,
+    RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
+    Threshold as RsThreshold, UpscaleConfig as RsUpscaleConfig,
 };
 use wasm_bindgen::prelude::*;
 
@@ -101,38 +100,6 @@ impl From<RsChessRing> for ChessRing {
             RsChessRing::Canonical => ChessRing::Canonical,
             RsChessRing::Broad => ChessRing::Broad,
             _ => ChessRing::Canonical,
-        }
-    }
-}
-
-/// Descriptor sampling ring selection. Mirrors
-/// [`chess_corners::DescriptorRing`]. Selects whether the descriptor
-/// ring radius follows the detector or is forced to `r=5`/`r=10`.
-#[wasm_bindgen]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DescriptorRing {
-    FollowDetector = 0,
-    Canonical = 1,
-    Broad = 2,
-}
-
-impl From<DescriptorRing> for RsDescriptorRing {
-    fn from(v: DescriptorRing) -> Self {
-        match v {
-            DescriptorRing::FollowDetector => RsDescriptorRing::FollowDetector,
-            DescriptorRing::Canonical => RsDescriptorRing::Canonical,
-            DescriptorRing::Broad => RsDescriptorRing::Broad,
-        }
-    }
-}
-
-impl From<RsDescriptorRing> for DescriptorRing {
-    fn from(v: RsDescriptorRing) -> Self {
-        match v {
-            RsDescriptorRing::FollowDetector => DescriptorRing::FollowDetector,
-            RsDescriptorRing::Canonical => DescriptorRing::Canonical,
-            RsDescriptorRing::Broad => DescriptorRing::Broad,
-            _ => DescriptorRing::FollowDetector,
         }
     }
 }
@@ -1289,7 +1256,6 @@ impl UpscaleConfig {
 #[derive(Clone, Debug)]
 pub struct ChessConfig {
     ring: Cell<RsChessRing>,
-    descriptor_ring: Cell<RsDescriptorRing>,
     refiner_kind: Cell<ChessRefinerKind>,
     refiner_center_of_mass: Cell<RsCenterOfMassConfig>,
     refiner_forstner: Cell<RsForstnerConfig>,
@@ -1310,15 +1276,6 @@ impl ChessConfig {
     #[wasm_bindgen(setter)]
     pub fn set_ring(&mut self, v: ChessRing) {
         *self.ring.borrow_mut() = v.into();
-    }
-
-    #[wasm_bindgen(getter, js_name = descriptorRing)]
-    pub fn descriptor_ring(&self) -> DescriptorRing {
-        (*self.descriptor_ring.borrow()).into()
-    }
-    #[wasm_bindgen(setter, js_name = descriptorRing)]
-    pub fn set_descriptor_ring(&mut self, v: DescriptorRing) {
-        *self.descriptor_ring.borrow_mut() = v.into();
     }
 
     /// Subpixel refiner. Returns a wrapper that shares cells with this
@@ -1355,7 +1312,6 @@ impl ChessConfig {
         let refiner = ChessRefiner::from_value(value.refiner);
         Self {
             ring: cell(value.ring),
-            descriptor_ring: cell(value.descriptor_ring),
             refiner_kind: refiner.kind,
             refiner_center_of_mass: refiner.center_of_mass,
             refiner_forstner: refiner.forstner,
@@ -1368,7 +1324,6 @@ impl ChessConfig {
     /// see the update.
     fn copy_from(&self, other: &ChessConfig) {
         *self.ring.borrow_mut() = *other.ring.borrow();
-        *self.descriptor_ring.borrow_mut() = *other.descriptor_ring.borrow();
         *self.refiner_kind.borrow_mut() = *other.refiner_kind.borrow();
         *self.refiner_center_of_mass.borrow_mut() = *other.refiner_center_of_mass.borrow();
         *self.refiner_forstner.borrow_mut() = *other.refiner_forstner.borrow();
@@ -1387,7 +1342,6 @@ impl ChessConfig {
         };
         let mut s = RsChessConfig::default();
         s.ring = *self.ring.borrow();
-        s.descriptor_ring = *self.descriptor_ring.borrow();
         s.refiner = refiner_view.snapshot();
         s
     }
@@ -1951,7 +1905,6 @@ impl DetectorConfig {
     ///
     /// Accepted keys (all optional):
     /// - `ring`: `ChessRing`
-    /// - `descriptorRing`: `DescriptorRing`
     ///
     /// To set the refiner use the typed [`Self::with_chess_refiner`] builder
     /// instead — wasm-bindgen Rust structs cannot be passed via plain options
@@ -1959,7 +1912,7 @@ impl DetectorConfig {
     /// [`Self::with_detection`].
     ///
     /// Unknown keys throw `Error("unexpected option: '<key>'")`.
-    /// JS: `cfg.withChess({ ring: ChessRing.Broad, descriptorRing: DescriptorRing.Canonical })`.
+    /// JS: `cfg.withChess({ ring: ChessRing.Broad })`.
     #[wasm_bindgen(js_name = withChess)]
     pub fn with_chess(&self, opts: &js_sys::Object) -> Result<DetectorConfig, JsValue> {
         let mut out = self.deep_clone();
@@ -1987,17 +1940,6 @@ impl DetectorConfig {
                         ChessRing::Canonical
                     };
                     out.strategy.chess().set_ring(ring);
-                }
-                "descriptorRing" => {
-                    let dr = val.as_f64().ok_or_else(|| {
-                        JsValue::from_str("descriptorRing must be a DescriptorRing enum value")
-                    })? as u8;
-                    let dr = match dr {
-                        1 => DescriptorRing::Canonical,
-                        2 => DescriptorRing::Broad,
-                        _ => DescriptorRing::FollowDetector,
-                    };
-                    out.strategy.chess().set_descriptor_ring(dr);
                 }
                 other => {
                     return Err(JsValue::from_str(&format!("unexpected option: '{other}'")));
@@ -2253,14 +2195,12 @@ mod tests {
         let cfg = DetectorConfig::single_scale();
         let mut chess = cfg.strategy().chess();
         chess.set_ring(ChessRing::Broad);
-        chess.set_descriptor_ring(DescriptorRing::Canonical);
 
         let snap = cfg.snapshot();
         let RsDetectionStrategy::Chess(s) = snap.strategy else {
             panic!("expected chess strategy")
         };
         assert_eq!(s.ring, RsChessRingCheck::Broad);
-        assert_eq!(s.descriptor_ring, chess_corners::DescriptorRing::Canonical);
     }
 
     #[test]
@@ -2828,11 +2768,6 @@ mod tests {
         // ChessRing
         assert_eq!(ChessRing::Canonical as u32, 0);
         assert_eq!(ChessRing::Broad as u32, 1);
-
-        // DescriptorRing
-        assert_eq!(DescriptorRing::FollowDetector as u32, 0);
-        assert_eq!(DescriptorRing::Canonical as u32, 1);
-        assert_eq!(DescriptorRing::Broad as u32, 2);
 
         // PeakFitMode
         assert_eq!(PeakFitMode::Parabolic as u32, 0);

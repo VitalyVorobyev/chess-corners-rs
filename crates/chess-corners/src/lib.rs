@@ -163,8 +163,8 @@
 //!
 //! [`DetectorConfig`] is strategy-typed: the [`DetectorConfig::strategy`]
 //! field is a [`DetectionStrategy`] enum carrying either a
-//! [`ChessConfig`] (detector ring, descriptor ring, NMS, refiner) or
-//! a [`RadonConfig`] (whole-image Duda-Frese parameters). Acceptance
+//! [`ChessConfig`] (detector ring, refiner) or a [`RadonConfig`]
+//! (whole-image Duda-Frese parameters). Acceptance
 //! is a single [`Threshold`] enum (`Absolute` or `Relative`).
 //! [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
 //! and apply to both strategies. The detector translates this into
@@ -239,8 +239,8 @@ mod upscale;
 // (ring offsets, SAT views, scalar reference paths) via a direct
 // `chess-corners-core` dependency.
 pub use crate::config::{
-    ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionParams, DetectionStrategy,
-    DetectorConfig, MultiscaleConfig, RadonConfig, RadonRefiner, Threshold,
+    ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig,
+    MultiscaleConfig, RadonConfig, RadonRefiner, Threshold,
 };
 pub use crate::error::ChessError;
 pub use crate::upscale::{UpscaleConfig, UpscaleError};

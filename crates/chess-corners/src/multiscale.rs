@@ -429,7 +429,7 @@ pub(crate) fn detect_with_buffers(
             let refiner_kind = chess_params.refiner.clone();
             let shape = DetectorShape {
                 refiner_kind: &refiner_kind,
-                descriptor_ring_radius: chess_params.descriptor_ring_radius(),
+                descriptor_ring_radius: chess_params.ring_radius(),
                 orientation_method: chess_params.orientation_method,
                 merge_radius: cfg.merge_radius,
             };
@@ -452,7 +452,7 @@ pub(crate) fn detect_with_buffers(
             let shape = DetectorShape {
                 refiner_kind: &refiner_kind,
                 descriptor_ring_radius: chess_corners_core::unstable::ChessParams::default()
-                    .descriptor_ring_radius(),
+                    .ring_radius(),
                 orientation_method: cfg.orientation_method,
                 merge_radius: cfg.merge_radius,
             };
@@ -541,7 +541,7 @@ where
             base.data,
             base.width,
             base.height,
-            params.descriptor_ring_radius(),
+            params.ring_radius(),
             merged,
             params.orientation_method,
         );
@@ -564,7 +564,7 @@ where
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
-            params.descriptor_ring_radius(),
+            params.ring_radius(),
             merged,
             params.orientation_method,
         );
@@ -641,7 +641,7 @@ where
         base.data,
         base.width,
         base.height,
-        params.descriptor_ring_radius(),
+        params.ring_radius(),
         merged,
         params.orientation_method,
     )

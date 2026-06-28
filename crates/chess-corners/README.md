@@ -65,7 +65,7 @@ level:
 ```rust
 use chess_corners::{
     ChessRefiner, ChessRing, DetectorConfig,
-    DescriptorRing, MultiscaleConfig, Threshold, UpscaleConfig,
+    MultiscaleConfig, Threshold, UpscaleConfig,
 };
 
 let cfg = DetectorConfig::chess()
@@ -75,7 +75,6 @@ let cfg = DetectorConfig::chess()
     .with_upscale(UpscaleConfig::Fixed(2))
     .with_chess(|c| {
         c.ring = ChessRing::Broad;
-        c.descriptor_ring = DescriptorRing::FollowDetector;
         c.refiner = ChessRefiner::default();
     })
     .with_detection(|d| {

@@ -2,7 +2,6 @@
   "strategy": {
     "chess": {
       "ring": "broad",
-      "descriptor_ring": "canonical",
       "refiner": {
         "forstner": {
           "radius": 2,

@@ -141,7 +141,7 @@ fn measure(
     let cfg = DetectorConfig::chess();
     let params = to_chess_params(&cfg);
     let method = params.orientation_method;
-    let desc_radius = params.descriptor_ring_radius();
+    let desc_radius = params.ring_radius();
     let merge_radius = cfg.merge_radius;
 
     let mut refiner = Refiner::from_kind(params.refiner.clone());

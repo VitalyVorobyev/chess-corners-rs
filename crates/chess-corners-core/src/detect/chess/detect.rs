@@ -37,7 +37,7 @@ pub fn find_corners_u8_with_refiner(
     let image =
         ImageView::from_u8_slice(w, h, img).expect("image dimensions must match buffer length");
     let corners = detect_corners_from_response_with_refiner(&resp, params, Some(image), refiner);
-    let desc_radius = params.descriptor_ring_radius();
+    let desc_radius = params.ring_radius();
     describe_corners(img, w, h, desc_radius, corners, OrientationMethod::RingFit)
 }
 

@@ -64,19 +64,15 @@ ring point.
 
 - `use_radius10` – when `true`, `ring_radius()` returns 10 instead of
   5.
-- `descriptor_use_radius10` – optional override specifically for the
-  descriptor ring; when `None`, it follows `use_radius10`.
 
 Convenience methods:
 
-- `ring_radius()` / `descriptor_ring_radius()` return the numeric
-  radii.
-- `ring()` / `descriptor_ring()` return `RingOffsets` values, which
-  can be turned into offset tables via `offsets()`.
+- `ring_radius()` returns the numeric radius.
+- `ring()` returns the `RingOffsets` value, which can be turned into
+  an offset table via `offsets()`.
 
-The response path uses `ring()`, while descriptor estimation uses
-`descriptor_ring()`. This allows you, for example, to detect corners
-with a smaller ring but compute descriptors on a larger one.
+Both the response computation and descriptor estimation use `ring()`.
+Descriptors always sample at the detector ring radius.
 
 ---
 

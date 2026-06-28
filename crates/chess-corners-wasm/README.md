@@ -152,7 +152,6 @@ import init, {
   ChessConfig,
   ChessRefiner,
   ChessRing,
-  DescriptorRing,
   DetectionStrategy,
   ForstnerConfig,
   MultiscaleConfig,
@@ -178,7 +177,6 @@ cfg.mergeRadius = 2.5;
 // Strategy selects ChESS vs Radon and carries the detector tuning:
 const chess = new ChessConfig();
 chess.ring = ChessRing.Broad;
-chess.descriptorRing = DescriptorRing.Canonical;
 chess.nmsRadius = 3;
 chess.refiner = ChessRefiner.withForstner(new ForstnerConfig());
 cfg.strategy = DetectionStrategy.fromChess(chess);

@@ -4,7 +4,6 @@
   "strategy": {
     "chess": {
       "ring": "canonical",
-      "descriptor_ring": "follow_detector",
       "refiner": {
         "center_of_mass": {
           "radius": 2

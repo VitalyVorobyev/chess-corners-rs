@@ -19,9 +19,6 @@ use serde::{Deserialize, Serialize};
 pub struct ChessParams {
     /// Use the larger r=10 ring instead of the canonical r=5.
     pub use_radius10: bool,
-    /// Optional override for descriptor sampling ring (r=5 vs r=10). Falls back
-    /// to `use_radius10` when `None`.
-    pub descriptor_use_radius10: Option<bool>,
     /// Relative threshold as a fraction of max response (e.g. 0.2 = 20%).
     pub threshold_rel: f32,
     /// Absolute threshold override; if `Some`, this is used instead of `threshold_rel`.
@@ -46,7 +43,6 @@ impl Default for ChessParams {
     fn default() -> Self {
         Self {
             use_radius10: false,
-            descriptor_use_radius10: None,
             // Paper's contract: accept every strictly-positive ChESS
             // response. `threshold_abs = Some(0.0)` combined with the
             // strict comparison in `detect_corners_from_response` gives
@@ -74,21 +70,7 @@ impl ChessParams {
     }
 
     #[inline]
-    pub fn descriptor_ring_radius(&self) -> u32 {
-        match self.descriptor_use_radius10 {
-            Some(true) => 10,
-            Some(false) => 5,
-            None => self.ring_radius(),
-        }
-    }
-
-    #[inline]
     pub fn ring(&self) -> RingOffsets {
         RingOffsets::from_radius(self.ring_radius())
-    }
-
-    #[inline]
-    pub fn descriptor_ring(&self) -> RingOffsets {
-        RingOffsets::from_radius(self.descriptor_ring_radius())
     }
 }
