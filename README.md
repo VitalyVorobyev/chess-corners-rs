@@ -191,14 +191,19 @@ cfg = chess_corners.DetectorConfig.chess_multiscale()
 cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
-corners = detector.detect(img)
-print(corners.shape)  # (N, 7)
+det = detector.detect(img)
+print(det.xy.shape)      # (N, 2) float32
+print(det.response.shape) # (N,)  float32
 ```
 
-The returned NumPy array is `float32` with columns:
-`x, y, response, axis0_angle, axis0_sigma,
-axis1_angle, axis1_sigma`. With `cfg.without_orientation()`, the four
-axis columns are `NaN`.
+`detect()` returns a `Detections` object with named arrays:
+
+- `det.xy` — `(N, 2)` float32, subpixel corner positions (x, y) in input pixels
+- `det.response` — `(N,)` float32, raw detector response at each peak
+- `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
+- `det.sigmas` — `(N, 2)` float32, 1σ uncertainty per axis in radians, or `None` when orientation is disabled
+
+With `cfg.without_orientation()`, `det.angles` and `det.sigmas` are `None`.
 
 ## JavaScript / WebAssembly
 

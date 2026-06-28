@@ -77,6 +77,8 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | SOLID-01 | P2 | in-progress | M2 | — | Extract shared test utilities: `gaussian_blur` (dup ×5), bilinear patch extraction, synthetic chessboard, `ClassicRefiners` trait. Started: shared `benches/common/synth_chessboard` now used by `radon_response` + `descriptor_fit` (two duplicate generators removed). |
 | SOLID-02 | P3 | todo | — | — | Evaluate `Refiner` enum dispatch boilerplate (`refine/mod.rs`) — refactor or accept |
 | SOLID-03 | P3 | todo | M2 | SOLID-01 | Merge duplicate synthetic-chessboard generators into one fixture |
+| SOLID-04 | P2 | done | — | **Done.** Collapsed the core dual `threshold_rel` / `threshold_abs` sentinel to one field per detector (ChESS absolute, Radon relative). |
+| SOLID-05 | P2 | done | — | **Done.** Split `detect/chess/detect.rs` (713→371) into `detect/neighbors.rs` (shared NMS helpers) + `detect/merge.rs`; split the ~2.4k-line Python and WASM `config.rs` into per-config-type modules. |
 
 ## SKILL — reusable tooling  ·  continuous  ·  user-level, project-agnostic
 
@@ -94,6 +96,7 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | DOCS-02 | P3 | todo | — | — | Keep `design/algorithms-index.md` current as algorithms change (recurring) |
 | DOCS-03 | P3 | todo | — | — | Tracing/profiling cookbook examples (pair with book Part VIII) |
 | DOCS-04 | P3 | todo | — | — | Worked `no_std` examples for `chess-corners-core` |
+| DOCS-05 | P3 | todo | — | — | Regenerate the refiner benchmark plots under `book/src/img/bench/` (SVGs + `bench_sweep.json`) without the removed RadonPeak series so the charts match the RadonPeak-free prose. |
 
 ## Carried-over / future (not yet milestoned)
 
@@ -104,10 +107,11 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | ML-03 | P2 | todo | PERF-10 | Optimize ML inference (~23 ms / 77 corners is too slow for real-time) |
 | ALGO-01 | P3 | todo | — | Adaptive per-corner refiner selection by local image context |
 | PY-01 | P3 | todo | — | Python batch processing with `PyramidBuffers` reuse across frames |
-| TOOL-01 | P3 | todo | API-01 | `tools/orientation_bench/` reads the old Python `(N,9)` layout positionally (`runner.py` row[3..8], `__main__.py` `corners[pi,4]`, `metrics.py`) and breaks after API-01 (now `(N,7)`). It *measured* `fit_rms`/`contrast` as metrics, so this is a semantic rework: drop those fit-residual metrics or source amp/rms via a diagnostics path. Local research tooling, outside the gates — not a 1.0 blocker. |
+| PY-02 | P2 | done | API-01 | **Done.** `Detector.detect()` returns a structure-of-arrays `Detections` object (`.xy` / `.response` / `.angles` / `.sigmas`, `None` axes when orientation is off) instead of a dense `(N,7)` array — named fields, explicit orientation-off, same one-allocation-per-array efficiency. |
+| TOOL-01 | P3 | done | API-01, PY-02 | **Done.** The orientation bench now reads the Python `Detections` SoA by name (`.xy` / `.angles` / `.sigmas`) instead of indexing positionally; the obsolete `fit_rms` / `contrast` metrics were dropped. |
 | PERF-11 | P2 | done | API-06, M5 | **Evaluated — keeping nightly `std::simd`.** A spike ported the ChESS kernel to both `wide` (stable, compile-time) and `pulp` (stable, runtime dispatch) and benchmarked them bit-exact vs scalar. Neither is a viable single replacement: on aarch64/NEON `wide` runs ~571 Mpix/s — a 1.9× regression vs the nightly `std::simd` path (1101) and slower than scalar autovec (745), since `wide` 1.5 has no first-class NEON for >128-bit types; `pulp` cannot express the pyramid `(a+b+c+d+2)>>2` bit-exactly (no runtime-width integer shift), forcing a non-bit-exact pyramid or the multi-backend maintenance we forbid. Decision: keep the nightly `std::simd` feature as the optional high-performance path; the stable scalar/autovec build is the **supported portable baseline** (correct, portable, adequate). No kernel change. |
 | RADON-01 | P3 | done | — | **Resolved: removed the no-op `RadonRefiner` config.** The Rust enum, `RadonConfig.refiner`, the Python/WASM `RadonRefiner` type, and the CLI `--radon-refiner` flag are gone; the perf-page Radon matrix no longer varies a refiner. Radon's subpixel stays its Gaussian peak fit. RADON-02 covers the now-orphaned internal `RadonPeak` machinery, left in place to keep this change atomic. |
-| RADON-02 | P3 | todo | RADON-01 | Remove the now-dead internal `RadonPeak` refiner machinery: core `RefinerKind::RadonPeak` + `RadonPeakConfig` + `refine/radon_peak.rs` (and its bench/tests), plus the orphaned `RadonPeakConfig` wrapper classes in the Python and WASM bindings. Reachable only via the removed `RadonRefiner` path. Internal/unstable; net LOC negative. |
+| RADON-02 | P3 | done | RADON-01 | **Done.** Removed `RefinerKind::RadonPeak`, `RadonPeakConfig`, `refine/radon_peak.rs`, the Python/WASM `RadonPeakConfig` classes, the C `CC_REFINER_RADON_PEAK` tag (header regenerated), the now-dead radon ray-direction constants, and all bench/test/doc references. Net ≈ −1.4k LOC. |
 
 ## Closed
 

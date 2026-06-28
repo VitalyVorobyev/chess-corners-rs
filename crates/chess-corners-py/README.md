@@ -20,22 +20,20 @@ cfg.threshold = 60.0  # ChESS: absolute floor on the raw response (default 30)
 cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
-corners = detector.detect(img)
-print(corners.shape, corners.dtype)
+det = detector.detect(img)
+print(det.xy.shape, det.xy.dtype)  # (N, 2) float32
+if det.angles is not None:
+    print(det.angles.shape)        # (N, 2) float32
 print(cfg)
 ```
 
-`Detector(cfg).detect(image)` returns a NumPy `float32` array of shape
-`(N, 7)` with columns:
+`Detector(cfg).detect(image)` returns a `Detections` object with named
+arrays:
 
-1. `x` — subpixel corner x in input pixels
-2. `y` — subpixel corner y in input pixels
-3. `response` — raw detector response at the detected peak
-4. `axis0_angle` — angle of the first local grid axis, radians in `[0, π)`
-5. `axis0_sigma` — 1σ uncertainty of `axis0_angle`, radians
-6. `axis1_angle` — angle of the second local grid axis, radians in
-   `(axis0_angle, axis0_angle + π)`
-7. `axis1_sigma` — 1σ uncertainty of `axis1_angle`, radians
+- `det.xy` — `(N, 2)` float32, subpixel corner positions (x, y) in input pixels
+- `det.response` — `(N,)` float32, raw detector response at each peak
+- `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
+- `det.sigmas` — `(N, 2)` float32, 1σ uncertainty per axis in radians, or `None` when orientation is disabled
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` (by less than π)
 traverses a **dark** sector of the corner; the two grid axes are **not**
@@ -44,10 +42,8 @@ warp and lens distortion.
 
 The orientation fit is the dominant per-corner cost, and it is
 optional. A pipeline that recovers board geometry from corner
-*positions* alone can skip it with `cfg.without_orientation()`; the
-four axis columns (`axis0_angle`, `axis0_sigma`, `axis1_angle`,
-`axis1_sigma`) are then `NaN` for every row and the array shape stays
-`(N, 7)`.
+*positions* alone can skip it with `cfg.without_orientation()`; in that
+case `det.angles` and `det.sigmas` are `None`.
 
 Input requirements:
 
@@ -134,8 +130,8 @@ Enums:
 - `ChessRing`: `CANONICAL`, `BROAD`
 - `PeakFitMode`: `PARABOLIC`, `GAUSSIAN`
 - `OrientationMethod`: `RING_FIT`, `DISK_FIT`; disable the fit entirely
-  with `cfg.without_orientation()` (each corner's four axis columns then
-  read `NaN`)
+  with `cfg.without_orientation()` (then `det.angles` and `det.sigmas`
+  are `None`)
 
 `ChessRing.BROAD` uses the wider radius-10 detector sampling pattern.
 Descriptors always sample at the detector ring radius.
