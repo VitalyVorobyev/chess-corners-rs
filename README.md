@@ -30,7 +30,7 @@ use the same `DetectorConfig` schema.
 | Stage | Options | More detail |
 |-------|---------|-------------|
 | Detector | `ChESS` ring response, `Radon` ray-sum response | [ChESS](book/src/part-03-chess-detector.md) · [atlas](https://vitavision.dev/atlas/chess-corners), [Radon](book/src/part-04-radon-detector.md) · [atlas](https://vitavision.dev/atlas/duda-radon-corners) |
-| Refiner | `CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
+| Refiner | `CenterOfMass`, `Förstner`, `SaddlePoint`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
 | Scale handling | Single-scale or coarse-to-fine 2× pyramid | [Multiscale](book/src/part-07-multiscale-and-pyramids.md) |
 | Benchmarks | Synthetic sweeps and pipeline timings | [Benchmarks](book/src/part-08-benchmarks.md) |
 
@@ -143,9 +143,10 @@ validate on your own images when the decision matters.
 
 Refiner choice is also workload-dependent. The benchmark chapter reports
 the fixture, timing loop, and error metric used for each claim. In that
-fixture, `RadonPeak` has the lowest clean/blurred error and the optional
-ML refiner has the lowest mean error in the heaviest noise condition,
-while the geometric refiners are much cheaper per corner.
+fixture, `Förstner` has the lowest mean error on clean frames, `SaddlePoint`
+is most robust to blur, and the optional ML refiner has the lowest mean error
+in the heaviest noise condition; the geometric refiners are much cheaper per
+corner than ML.
 
 ## Performance Snapshot
 

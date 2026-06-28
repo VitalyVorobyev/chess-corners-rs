@@ -146,33 +146,7 @@ will be sharp or blurred. In Part VIII's synthetic blur sweep it stays
 inside the same error band as the other non-Förstner geometric
 refiners.
 
-## 5.5 RadonPeak
-
-Per-candidate version of the Radon detector's peak fit. Computes the
-local Radon response on a `(2·patch_radius + 1)²` grid around the
-seed (at working resolution set by `image_upsample`), applies the
-same 3×3 box blur and 3-point Gaussian peak fit used by the full
-detector, and returns the refined offset. See
-[Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline) for
-the underlying formulas — this refiner shares all of them.
-
-| Property         | Value                                           |
-|------------------|-------------------------------------------------|
-| Input            | Image                                           |
-| Default settings | `ray_radius = 2`, `patch_radius = 3`, `image_upsample = 2` |
-| Typical cost     | ~17 µs per corner                               |
-| Strengths        | Lowest clean/blurred error in the benchmark     |
-| Weaknesses       | 100–1000× slower than the structure-tensor refiners |
-
-This is the lowest-error option on the clean and blurred synthetic rows
-reported in Part VIII. Choose it when that extra accuracy matters more
-than the added per-corner cost.
-
-If you are already running the Radon *detector* (Part IV), its built-in
-peak fit gives you the same refinement implicitly, and this refiner
-is redundant.
-
-## 5.6 ML (ONNX model)
+## 5.5 ML (ONNX model)
 
 A learned refiner. Feeds a 21×21 normalized grayscale patch into a
 small CNN and takes `[dx, dy, conf_logit]` back out. The ChESS path
@@ -184,7 +158,7 @@ Available behind the `ml-refiner` feature. The default model
 [`chess-corners-ml`](https://docs.rs/chess-corners-ml) crate at
 `crates/chess-corners-ml/assets/ml/`.
 
-### 5.6.1 Architecture
+### 5.5.1 Architecture
 
 The shipped model is `CornerRefinerNet`, a CoordConv CNN with a
 flatten + MLP head. About 180 K parameters:
@@ -222,7 +196,7 @@ path. The shipped model is the small variant — the larger and
 softargmax variants did not move the held-out error meaningfully in
 our sweeps.
 
-### 5.6.2 Training data and loss
+### 5.5.2 Training data and loss
 
 The training pipeline lives in `tools/ml_refiner/`. The v4 dataset
 (`configs/synth_v6.yaml`) renders 200 000 patches with a 50/50 mix of
@@ -250,7 +224,7 @@ Loss: Huber on `(dx, dy)` for positives, binary cross-entropy on
 confidence for all samples. The regression loss is weighted up on
 positives only via `is_pos` (negatives have no valid target).
 
-### 5.6.3 Why earlier versions failed
+### 5.5.3 Why earlier versions failed
 
 Historical context, for anyone wondering why v4 is the version that
 ships. Versions v1–v2 trained exclusively on smooth `tanh(x)·tanh(y)`
@@ -266,12 +240,12 @@ opposite distribution failure.
 v4 is the mixed dataset (50/50) plus retuned offsets and augmentations.
 In the Part VIII synthetic benchmark it avoids the earlier tanh /
 hard-cell mismatch and has the lowest mean error on the heaviest noise
-row (`σ = 10` gray levels). It does not beat `RadonPeak` on clean or
-mildly blurred data. The current evidence is that the training setup did
-not learn the hand-designed RadonPeak structure; neither a wider CNN nor
+row (`σ = 10` gray levels). On clean and mildly blurred data, the
+geometric refiners (`Förstner` for clean frames, `SaddlePoint` for
+frames with any blur) have lower mean error, and neither a wider CNN nor
 a softargmax head closed that gap in the sweeps.
 
-### 5.6.4 ONNX export and inference
+### 5.5.4 ONNX export and inference
 
 The export step (`tools/ml_refiner/export_onnx.py`) writes an ONNX
 graph at opset 17 (falling back to 18 if a conversion is unsupported).
@@ -286,24 +260,24 @@ Rust inference is `chess_corners_ml::MlModel::infer_batch`. It wraps
 `SymbolScope`, so a single loaded model can handle variable-batch
 calls without re-optimization.
 
-## 5.7 Picking a refiner
+## 5.6 Picking a refiner
 
 The measurement-driven comparison lives in Part VIII. In short:
 
 - Budget matters more than anything else: the structure-tensor
-  refiners are 100–1000× faster than RadonPeak and ML.
-- RadonPeak gives the lowest error on the clean and blurred synthetic
-  rows, at a much higher per-corner cost.
+  refiners are orders of magnitude faster than ML per corner.
+- `Förstner` has the lowest mean error on clean frames; `SaddlePoint`
+  is more robust to blur and is a conservative all-round default.
 - ML has the lowest mean error on the heaviest synthetic noise row.
-- SaddlePoint is a conservative default when you want image-patch
-  refinement without the cost of RadonPeak or ML.
+- SaddlePoint is a good default for image-patch refinement when frames
+  may vary in sharpness.
 
 The ChESS refiner is selected through `ChessConfig.refiner`:
 `DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner())`.
 The Radon detector's subpixel step is the built-in 3-point peak fit;
 configure it via `RadonConfig.peak_fit` (e.g. `PeakFitMode::Gaussian`).
 Switching is a single-line change, and the comparison numbers
-in Part VIII come from running all five ChESS refiners on the same
+in Part VIII come from running all four ChESS refiners on the same
 fixture at a single build.
 
 ---

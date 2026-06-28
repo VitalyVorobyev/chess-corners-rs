@@ -449,10 +449,9 @@ The ML path:
   rejects or times out.
 
 The algorithm and its limits are covered in
-[Part V §5.6](part-05-refiners.md#56-ml-onnx-model). The ML refiner
-is not a direct replacement for RadonPeak: in the Part VIII synthetic
-benchmark, RadonPeak has lower clean/blurred error and ML has lower
-mean error on the heaviest noise row.
+[Part V §5.5](part-05-refiners.md#55-ml-onnx-model). Compared to the
+geometric refiners: `SaddlePoint` has lower error on blurred data while
+ML leads on the heaviest noise row (see the comparison in Part VIII).
 
 The ML refiner is available on the ChESS strategy only. The Radon
 detector does not use a pluggable refiner.

@@ -43,9 +43,9 @@ single configuration type:
 Both produce the same `CornerDescriptor` output, and both feed the
 same [multiscale pipeline](part-07-multiscale-and-pyramids.md).
 
-Once a detector has produced integer-pixel seeds, one of five
+Once a detector has produced integer-pixel seeds, one of four
 subpixel refiners brings the coordinates under a pixel:
-`CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, or an
+`CenterOfMass`, `Förstner`, `SaddlePoint`, or an
 ONNX-backed `ML` refiner. Each is selected through the active
 strategy's `refiner` field. The refiners are described in
 [Part V](part-05-refiners.md) and benchmarked in

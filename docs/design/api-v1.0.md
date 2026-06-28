@@ -153,8 +153,7 @@ the stub. Decide whether to align factory names or document the mapping.
 **Status: landed.**
 
 - `#[non_exhaustive]` added to `CenterOfMassConfig`, `ForstnerConfig`,
-  `SaddlePointConfig` (they were the only refiner configs missing it;
-  `RadonPeakConfig` already had it), to the `RingOffsets` enum, and to
+  `SaddlePointConfig`, to the `RingOffsets` enum, and to
   `ChessBuffers` — the one scratch-buffer carrier with a public field
   (`response`), where a future internal scratch field would otherwise
   break external literal construction; `#[non_exhaustive]` keeps that

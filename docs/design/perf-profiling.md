@@ -145,10 +145,8 @@ Part VIII (tracked as DOCS-03).
 ## Stage 3 — allocation audit + targeted optimization
 
 - `PERF-06` — **Allocation audit (done — invariant holds).** The genuine hot
-  paths are allocation-free per corner: `RadonPeakRefiner` sizes
-  `resp`/`blur_scratch` once in `new()` and the `refine()` loop only writes
-  into them (`refine/radon_peak.rs:119–136,236–251` — no `vec!`/`collect`);
-  the ChESS/Radon response kernels write into reused detector buffers. The
+  paths are allocation-free per corner: the ChESS/Radon response kernels
+  write into reused detector buffers. The
   multiscale coarse-to-fine loop (`multiscale.rs:345–383`) *does* allocate
   **two small `Vec<Corner>` per seed** — `detect_corners` (`:358`) and
   `refine_peaks_on_image` (`:371`) return owned vectors — but the per-seed
