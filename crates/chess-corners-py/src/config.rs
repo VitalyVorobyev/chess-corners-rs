@@ -21,8 +21,8 @@ use chess_corners::{
     DetectionStrategy as RsDetectionStrategy, DetectorConfig as RsDetectorConfig,
     ForstnerConfig as RsForstnerConfig, MultiscaleConfig as RsMultiscaleConfig,
     OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
-    RadonConfig as RsRadonConfig,
-    SaddlePointConfig as RsSaddlePointConfig, UpscaleConfig as RsUpscaleConfig,
+    RadonConfig as RsRadonConfig, SaddlePointConfig as RsSaddlePointConfig,
+    UpscaleConfig as RsUpscaleConfig,
 };
 use pyo3::create_exception;
 use pyo3::exceptions::{PyTypeError, PyValueError};

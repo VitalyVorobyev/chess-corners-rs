@@ -269,12 +269,44 @@ class DetectorConfig:
     def print(self, *, file: TextIO | None = ..., indent: int = ..., sort_keys: bool = ...) -> None: ...
 
 # ---------------------------------------------------------------------------
+# Detections
+# ---------------------------------------------------------------------------
+
+class Detections:
+    """Detected chessboard corners with per-corner response and optional orientation."""
+
+    @property
+    def xy(self) -> np.ndarray:
+        """``(N, 2)`` float32 array of corner coordinates ``(x, y)`` in image pixels."""
+        ...
+
+    @property
+    def response(self) -> np.ndarray:
+        """``(N,)`` float32 array of per-corner response values."""
+        ...
+
+    @property
+    def angles(self) -> np.ndarray | None:
+        """``(N, 2)`` float32 array of axis angles (radians), or ``None`` when
+        orientation estimation was disabled."""
+        ...
+
+    @property
+    def sigmas(self) -> np.ndarray | None:
+        """``(N, 2)`` float32 array of per-axis angle uncertainty (1σ, radians),
+        or ``None`` when orientation estimation was disabled."""
+        ...
+
+    def __len__(self) -> int: ...
+    def __repr__(self) -> str: ...
+
+# ---------------------------------------------------------------------------
 # Detector
 # ---------------------------------------------------------------------------
 
 class Detector:
     def __init__(self, cfg: DetectorConfig | None = ...) -> None: ...
-    def detect(self, image: np.ndarray) -> np.ndarray: ...
+    def detect(self, image: np.ndarray) -> Detections: ...
     def config(self) -> DetectorConfig: ...
     def apply_config(self, cfg: DetectorConfig | None) -> None: ...
     def radon_heatmap(self, image: np.ndarray) -> np.ndarray:

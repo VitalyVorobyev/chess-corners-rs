@@ -52,24 +52,25 @@ def _git_rev() -> str:
 
 def _process_patch_sample(
     sample: PatchSample, method: str
-) -> tuple[float, float, float, float, float, bool, bool, bool] | None:
+) -> tuple[float, float, float, float, bool, bool, bool] | None:
     """Run detection, match the central corner, return per-corner data."""
     from .runner import detect_with_method
 
     corners = detect_with_method(sample.img, method)
-    if corners.size == 0:
+    if len(corners) == 0:
         return None
-    pred_xy = corners[:, :2]
+    pred_xy = corners.xy
     gt_xy = np.asarray([sample.gt_xy], dtype=np.float64)
     matched_pred, matched_gt = match_to_gt(pred_xy, gt_xy, threshold_px=2.5)
     if matched_pred.size == 0:
         return None
     pi = int(matched_pred[0])
-    p1 = float(corners[pi, 5])
-    p2 = float(corners[pi, 7])
-    s0 = float(corners[pi, 6])
-    s1 = float(corners[pi, 8])
-    fit_rms = float(corners[pi, 4])
+    if corners.angles is None or corners.sigmas is None:
+        return None
+    p1 = float(corners.angles[pi, 0])
+    p2 = float(corners.angles[pi, 1])
+    s0 = float(corners.sigmas[pi, 0])
+    s1 = float(corners.sigmas[pi, 1])
     g1, g2 = sample.gt_angles
     d0, d1, swap = pair_axes_array(
         np.array([p1]), np.array([p2]), np.array([g1]), np.array([g2])
@@ -80,7 +81,7 @@ def _process_patch_sample(
     degenerate = (
         not math.isfinite(s0) or not math.isfinite(s1) or s0 <= 0.0 or s1 <= 0.0
     )
-    return delta0, delta1, s0, s1, fit_rms, swap_flag, degenerate, True
+    return delta0, delta1, s0, s1, swap_flag, degenerate, True
 
 
 def _process_chess_sample(
@@ -93,21 +94,21 @@ def _process_chess_sample(
         "delta1": [],
         "sigma0": [],
         "sigma1": [],
-        "fit_rms": [],
         "axis_swap_flag": [],
         "degenerate_flag": [],
     }
     corners = detect_with_method(sample.img, method)
-    if corners.size == 0:
+    if len(corners) == 0:
         return out | {"matched": 0, "gt_total": int(sample.gt_xy.shape[0])}
     matched_pred, matched_gt = match_to_gt(
-        corners[:, :2], sample.gt_xy, threshold_px=3.0
+        corners.xy, sample.gt_xy, threshold_px=3.0
     )
-    p1 = corners[matched_pred, 5] if matched_pred.size else np.empty((0,))
-    p2 = corners[matched_pred, 7] if matched_pred.size else np.empty((0,))
-    s0 = corners[matched_pred, 6] if matched_pred.size else np.empty((0,))
-    s1 = corners[matched_pred, 8] if matched_pred.size else np.empty((0,))
-    fit = corners[matched_pred, 4] if matched_pred.size else np.empty((0,))
+    if corners.angles is None or corners.sigmas is None:
+        return out | {"matched": 0, "gt_total": int(sample.gt_xy.shape[0])}
+    p1 = corners.angles[matched_pred, 0] if matched_pred.size else np.empty((0,))
+    p2 = corners.angles[matched_pred, 1] if matched_pred.size else np.empty((0,))
+    s0 = corners.sigmas[matched_pred, 0] if matched_pred.size else np.empty((0,))
+    s1 = corners.sigmas[matched_pred, 1] if matched_pred.size else np.empty((0,))
     g1 = sample.gt_angles[matched_gt, 0] if matched_gt.size else np.empty((0,))
     g2 = sample.gt_angles[matched_gt, 1] if matched_gt.size else np.empty((0,))
     d0, d1, swap = pair_axes_array(p1, p2, g1, g2)
@@ -119,14 +120,12 @@ def _process_chess_sample(
     d0 = np.where(gt_nan, np.nan, d0)
     d1 = np.where(gt_nan, np.nan, d1)
     swap_arr = np.where(gt_nan, False, swap)
-    fit_finite = np.where(gt_nan, np.nan, fit)
     sigma0_finite = np.where(gt_nan, np.nan, s0)
     sigma1_finite = np.where(gt_nan, np.nan, s1)
     out["delta0"] = list(map(float, d0))
     out["delta1"] = list(map(float, d1))
     out["sigma0"] = list(map(float, sigma0_finite))
     out["sigma1"] = list(map(float, sigma1_finite))
-    out["fit_rms"] = list(map(float, fit_finite))
     out["axis_swap_flag"] = [bool(x) for x in swap_arr]
     degen_from_sigma = [
         not (math.isfinite(a) and math.isfinite(b) and a > 0 and b > 0)
@@ -160,7 +159,6 @@ def _run_patch_sweep(
         delta1: list[float] = []
         sigma0: list[float] = []
         sigma1: list[float] = []
-        fit_rms: list[float] = []
         swap_flags: list[bool] = []
         degen_flags: list[bool] = []
         matched = 0
@@ -168,12 +166,11 @@ def _run_patch_sweep(
             row = _process_patch_sample(sample, method)
             if row is None:
                 continue
-            d0, d1, s0, s1, fit, sw, deg, _ = row
+            d0, d1, s0, s1, sw, deg, _ = row
             delta0.append(d0)
             delta1.append(d1)
             sigma0.append(s0)
             sigma1.append(s1)
-            fit_rms.append(fit)
             swap_flags.append(sw)
             degen_flags.append(deg)
             matched += 1
@@ -182,7 +179,6 @@ def _run_patch_sweep(
             delta1=np.asarray(delta1),
             sigma0=np.asarray(sigma0),
             sigma1=np.asarray(sigma1),
-            fit_rms=np.asarray(fit_rms),
             axis_swap_flag=np.asarray(swap_flags),
             degenerate_flag=np.asarray(degen_flags),
             matched=matched,
@@ -273,7 +269,6 @@ def _run_chess_sweep(
         delta1: list[float] = []
         sigma0: list[float] = []
         sigma1: list[float] = []
-        fit_rms: list[float] = []
         swap_flags: list[bool] = []
         degen_flags: list[bool] = []
         matched = 0
@@ -284,7 +279,6 @@ def _run_chess_sweep(
             delta1.extend(row["delta1"])
             sigma0.extend(row["sigma0"])
             sigma1.extend(row["sigma1"])
-            fit_rms.extend(row["fit_rms"])
             swap_flags.extend(row["axis_swap_flag"])
             degen_flags.extend(row["degenerate_flag"])
             matched += int(row["matched"])
@@ -294,7 +288,6 @@ def _run_chess_sweep(
             delta1=np.asarray(delta1),
             sigma0=np.asarray(sigma0),
             sigma1=np.asarray(sigma1),
-            fit_rms=np.asarray(fit_rms),
             axis_swap_flag=np.asarray(swap_flags),
             degenerate_flag=np.asarray(degen_flags),
             matched=matched,

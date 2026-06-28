@@ -9,7 +9,10 @@
 mod config;
 
 use ::chess_corners as chess_corners_rs;
-use numpy::{ndarray::Array2, IntoPyArray, PyReadonlyArray2};
+use numpy::{
+    ndarray::{Array1, Array2},
+    IntoPyArray, PyReadonlyArray2,
+};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
@@ -36,19 +39,64 @@ fn extract_image<'py>(
     Ok((array, height, width))
 }
 
-/// Number of float32 columns in the returned corner array.
+/// Detected chessboard corners with per-corner response and optional axis orientation.
 ///
-/// Columns: `x, y, response,
-///           axis0_angle, axis0_sigma, axis1_angle, axis1_sigma`.
-///
-/// When the orientation fit is skipped (`orientation_method` is `None`), the
-/// four axis columns are `NaN` for every row — the array shape is unchanged.
-const CORNER_COLUMNS: usize = 7;
+/// Built by [`Detector::detect`]. Access coordinates via [`Self::xy`],
+/// per-corner response via [`Self::response`], and axis orientations via
+/// [`Self::angles`] and [`Self::sigmas`]. Both `angles` and `sigmas` are
+/// `None` when orientation estimation was disabled for the run.
+#[pyclass(module = "chess_corners")]
+pub struct Detections {
+    n: usize,
+    orientation_on: bool,
+    xy: Py<PyAny>,
+    response: Py<PyAny>,
+    angles: Option<Py<PyAny>>,
+    sigmas: Option<Py<PyAny>>,
+}
 
-fn corners_to_array(
+#[pymethods]
+impl Detections {
+    /// `(N, 2)` float32 array of corner coordinates `(x, y)` in image pixels.
+    #[getter]
+    fn xy(&self, py: Python<'_>) -> Py<PyAny> {
+        self.xy.clone_ref(py)
+    }
+
+    /// `(N,)` float32 array of per-corner response values.
+    #[getter]
+    fn response(&self, py: Python<'_>) -> Py<PyAny> {
+        self.response.clone_ref(py)
+    }
+
+    /// `(N, 2)` float32 array of axis angles (radians) when orientation
+    /// estimation is enabled, `None` otherwise.
+    #[getter]
+    fn angles(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.angles.as_ref().map(|a| a.clone_ref(py))
+    }
+
+    /// `(N, 2)` float32 array of per-axis angle uncertainty (1σ, radians)
+    /// when orientation estimation is enabled, `None` otherwise.
+    #[getter]
+    fn sigmas(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.sigmas.as_ref().map(|s| s.clone_ref(py))
+    }
+
+    fn __len__(&self) -> usize {
+        self.n
+    }
+
+    fn __repr__(&self) -> String {
+        let orient = if self.orientation_on { "on" } else { "off" };
+        format!("Detections(n={}, orientation={})", self.n, orient)
+    }
+}
+
+fn build_detections(
     py: Python<'_>,
     mut corners: Vec<chess_corners_rs::CornerDescriptor>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Detections> {
     corners.sort_by(|a, b| {
         b.response
             .total_cmp(&a.response)
@@ -56,28 +104,81 @@ fn corners_to_array(
             .then_with(|| a.y.total_cmp(&b.y))
     });
 
-    let mut data = Vec::with_capacity(corners.len() * CORNER_COLUMNS);
+    let n = corners.len();
+    // Orientation is a global config: either all corners have axes or none do.
+    // Empty result → treat as orientation-on with (0, 2) arrays.
+    let orientation_on = n == 0 || corners[0].axes.is_some();
+
+    let mut xy_data = Vec::with_capacity(n * 2);
+    let mut resp_data = Vec::with_capacity(n);
+    let mut angles_data = if orientation_on {
+        Vec::with_capacity(n * 2)
+    } else {
+        Vec::new()
+    };
+    let mut sigmas_data = if orientation_on {
+        Vec::with_capacity(n * 2)
+    } else {
+        Vec::new()
+    };
+
     for corner in corners {
-        data.push(corner.x);
-        data.push(corner.y);
-        data.push(corner.response);
-        // `axes` is `None` when the orientation fit was skipped; the four
-        // axis columns are then NaN so the array shape stays `(N, 7)`.
-        match corner.axes {
-            Some(axes) => {
-                data.push(axes[0].angle);
-                data.push(axes[0].sigma);
-                data.push(axes[1].angle);
-                data.push(axes[1].sigma);
+        xy_data.push(corner.x);
+        xy_data.push(corner.y);
+        resp_data.push(corner.response);
+        if orientation_on {
+            match corner.axes {
+                Some(axes) => {
+                    angles_data.push(axes[0].angle);
+                    angles_data.push(axes[1].angle);
+                    sigmas_data.push(axes[0].sigma);
+                    sigmas_data.push(axes[1].sigma);
+                }
+                None => {
+                    // Guard: orientation is global so this branch is unreachable
+                    // in well-formed output, but NaN is safer than panicking.
+                    angles_data.extend_from_slice(&[f32::NAN; 2]);
+                    sigmas_data.extend_from_slice(&[f32::NAN; 2]);
+                }
             }
-            None => data.extend_from_slice(&[f32::NAN; 4]),
         }
     }
 
-    let rows = data.len() / CORNER_COLUMNS;
-    let out = Array2::from_shape_vec((rows, CORNER_COLUMNS), data)
-        .map_err(|_| PyValueError::new_err("failed to build output array"))?;
-    Ok(out.into_pyarray(py).into_any().unbind())
+    let xy = Array2::from_shape_vec((n, 2), xy_data)
+        .map_err(|e| PyValueError::new_err(format!("xy array: {e}")))?
+        .into_pyarray(py)
+        .into_any()
+        .unbind();
+
+    let response = Array1::from_vec(resp_data)
+        .into_pyarray(py)
+        .into_any()
+        .unbind();
+
+    let (angles, sigmas) = if orientation_on {
+        let a = Array2::from_shape_vec((n, 2), angles_data)
+            .map_err(|e| PyValueError::new_err(format!("angles array: {e}")))?
+            .into_pyarray(py)
+            .into_any()
+            .unbind();
+        let s = Array2::from_shape_vec((n, 2), sigmas_data)
+            .map_err(|e| PyValueError::new_err(format!("sigmas array: {e}")))?
+            .into_pyarray(py)
+            .into_any()
+            .unbind();
+        (Some(a), Some(s))
+    } else {
+        (None, None)
+    };
+
+    Ok(Detections {
+        n,
+        orientation_on,
+        xy,
+        response,
+        angles,
+        sigmas,
+    })
 }
 
 /// Resolve the optional `cfg` argument into a Rust facade `DetectorConfig`.
@@ -122,10 +223,10 @@ impl Detector {
         Ok(Self { inner })
     }
 
-    /// Detect chessboard corners. `image` must be a C-contiguous
-    /// `uint8` array of shape `(H, W)`. Returns an `(N, 7)` `float32`
-    /// NumPy array — see module docs for column layout.
-    fn detect<'py>(&mut self, py: Python<'py>, image: &Bound<'py, PyAny>) -> PyResult<Py<PyAny>> {
+    /// Detect chessboard corners in `image`. Returns a [`Detections`] object
+    /// with named array fields. `image` must be a C-contiguous `uint8` array
+    /// of shape `(H, W)`.
+    fn detect<'py>(&mut self, py: Python<'py>, image: &Bound<'py, PyAny>) -> PyResult<Detections> {
         let (array, height, width) = extract_image(image)?;
         let view = array.as_array();
         let slice = view.as_slice().ok_or_else(|| {
@@ -140,7 +241,7 @@ impl Detector {
         let corners = py
             .detach(|| self.inner.detect_u8(slice, width_u32, height_u32))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        corners_to_array(py, corners)
+        build_detections(py, corners)
     }
 
     /// Return a snapshot of the current detector configuration.
@@ -205,6 +306,7 @@ impl Detector {
 fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ConfigError", py.get_type::<ConfigError>())?;
 
+    m.add_class::<Detections>()?;
     m.add_class::<ChessRing>()?;
     m.add_class::<PeakFitMode>()?;
     m.add_class::<OrientationMethod>()?;
