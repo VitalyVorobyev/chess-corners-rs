@@ -103,8 +103,9 @@ cfg = (
 
 Refiners are per-detector: `ChessRefiner` carries one of
 `center_of_mass`, `forstner`, `saddle_point`, or `ml` (with the
-`ml-refiner` feature). `RadonRefiner` carries one of `radon_peak` or
-`center_of_mass`. The active variant's tuning is reachable via the
+`ml-refiner` feature). The Radon detector uses its built-in Gaussian
+peak fit (`PeakFitMode`); it does not expose a pluggable refiner.
+The active `ChessRefiner` variant's tuning is reachable via the
 `payload` property:
 
 ```python
@@ -127,7 +128,6 @@ Tagged classes:
   `fixed`) `factor`.
 - `ChessRefiner`: `center_of_mass()`, `forstner()`, `saddle_point()`,
   `ml()` (with the `ml-refiner` feature).
-- `RadonRefiner`: `radon_peak()`, `center_of_mass()`.
 
 Enums:
 
@@ -209,8 +209,7 @@ Switch to the Radon strategy by replacing the `strategy` object and setting the 
       "ray_radius": 4,
       "image_upsample": 2,
       "response_blur_radius": 1,
-      "peak_fit": "gaussian",
-      "refiner": { "radon_peak": {} }
+      "peak_fit": "gaussian"
     }
   },
   "detection": { "nms_radius": 4, "min_cluster_size": 2 }

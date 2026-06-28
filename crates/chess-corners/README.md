@@ -6,8 +6,7 @@ This crate is the public Rust API:
 
 - strategy-typed `DetectorConfig` (`DetectionStrategy::Chess(ChessConfig)`
   / `DetectionStrategy::Radon(RadonConfig)`) with a single numeric
-  `threshold` and per-detector refiner selection (`ChessRefiner`,
-  `RadonRefiner`)
+  `threshold` and per-ChESS-detector refiner selection (`ChessRefiner`)
 - top-level `MultiscaleConfig` (`SingleScale | Pyramid { ... }`) and
   `UpscaleConfig` (`Disabled | Fixed(factor)`), honoured by both
   detectors symmetrically
@@ -91,11 +90,11 @@ Three guarantees follow from this shape:
 
 1. **One place per knob.** `cfg.strategy.chess.ring = ChessRing::Broad`
    is the only way to request the wider ChESS ring.
-2. **Per-detector refiners.** `ChessRefiner` lists only refiners that
-   operate on ChESS output; `RadonRefiner` lists only those that
-   operate on Radon output.
-3. **Symmetric encoding.** `MultiscaleConfig`, `UpscaleConfig`, and both
-   refiner enums use the same enum-with-payload shape, so the JSON and
+2. **Per-detector refiners.** `ChessRefiner` lists the refiners that
+   operate on ChESS output. The Radon detector uses its built-in
+   Gaussian peak fit (`RadonConfig.peak_fit`), not a pluggable refiner.
+3. **Symmetric encoding.** `MultiscaleConfig`, `UpscaleConfig`, and
+   `ChessRefiner` use the same enum-with-payload shape, so the JSON and
    binding surface stays uniform. (`threshold` is a plain number, so it
    carries no tag.)
 
@@ -121,9 +120,9 @@ every descriptor's `axes` comes back `None`.
 
 ## Refiner configuration
 
-`ChessRefiner` and `RadonRefiner` are tagged enums; each variant
-carries its tuning struct as a payload, so switching kinds cannot
-leave a stale per-refiner config behind:
+`ChessRefiner` is a tagged enum; each variant carries its tuning struct
+as a payload, so switching kinds cannot leave a stale per-refiner config
+behind:
 
 ```rust
 use chess_corners::{ChessRefiner, DetectorConfig, ForstnerConfig};
@@ -137,9 +136,9 @@ let cfg = DetectorConfig::chess().with_chess(|c| {
 });
 ```
 
-The Radon equivalent uses `RadonRefiner::RadonPeak(_)` or
-`RadonRefiner::CenterOfMass(_)`. A `ChessRefiner::RadonPeak` (or
-vice versa) mismatch is unrepresentable.
+The Radon detector does not have a pluggable refiner. Its subpixel step
+is the built-in 3-point Gaussian peak fit, selected via
+`RadonConfig.peak_fit` (`PeakFitMode::Parabolic` or `Gaussian`).
 
 ## CLI config shape
 

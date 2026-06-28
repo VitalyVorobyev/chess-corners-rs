@@ -158,7 +158,6 @@ import init, {
   OrientationMethod,
   PeakFitMode,
   RadonConfig,
-  RadonRefiner,
   UpscaleConfig,
 } from '@vitavision/chess-corners';
 

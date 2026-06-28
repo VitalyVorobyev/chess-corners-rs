@@ -22,9 +22,10 @@ The user-visible controls correspond to fields on the typed config:
   MultiscaleConfig.pyramid(levels, minSize, 3)` (or `.singleScale()`).
 - Upscale factor — `cfg.upscale = UpscaleConfig.disabled()` or
   `UpscaleConfig.fixed(k)` with `k ∈ {2, 3, 4}`.
-- Refiner — `ChessRefiner.withCenterOfMass(...)`,
-  `.withForstner(...)`, `.withSaddlePoint(...)`, or
-  `RadonRefiner.withRadonPeak(...)` on the Radon path.
+- Refiner (ChESS) — `ChessRefiner.withCenterOfMass(...)`,
+  `.withForstner(...)`, or `.withSaddlePoint(...)`. The Radon
+  detector's subpixel step is its built-in peak fit (`PeakFitMode`),
+  not a pluggable refiner.
 
 For each detected corner it overlays:
 

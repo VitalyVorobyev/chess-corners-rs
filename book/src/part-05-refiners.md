@@ -10,10 +10,10 @@ either the image or the response map and returns a refined
 The library ships five refiners with one trait and one configuration
 enum, so swapping between them is a one-line change. The ChESS
 detector always runs one of these refiners to reach subpixel accuracy.
-The Radon detector has its own peak fit built in (see
-[Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline)), but
-its output can still be post-refined if you need a different
-statistical behavior.
+The Radon detector handles subpixel accuracy through its own built-in
+3-point Gaussian peak fit (see
+[Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline)); it
+does not use a pluggable refiner.
 
 ## 5.1 The refiner trait
 
@@ -38,15 +38,18 @@ A `RefineResult` carries the refined `(x, y)`, a refiner-specific
 - `Rejected` — the refined offset exceeded the refiner's
   `max_offset`, or a per-refiner score threshold fired.
 
-The user-facing selector is per-detector: `ChessRefiner` (carrying
-`CenterOfMass`, `Forstner`, `SaddlePoint`, and optionally `Ml`) lives
-inside `ChessConfig`; `RadonRefiner` (carrying `RadonPeak` and
-`CenterOfMass`) lives inside `RadonConfig`. Each enum variant carries
-its tuning struct as a payload, so a refiner kind change cannot leave
-a stale per-refiner config field behind. At runtime the facade stores
-an owned `Refiner` enum (one allocated scratch buffer per concrete
-refiner) so the same instance is reused across seeds — no per-corner
-allocation.
+The user-facing selector for ChESS is `ChessRefiner` (carrying
+`CenterOfMass`, `Forstner`, `SaddlePoint`, and optionally `Ml`),
+nested inside `ChessConfig`. Each enum variant carries its tuning
+struct as a payload, so a refiner kind change cannot leave a stale
+per-refiner config field behind. At runtime the facade stores an owned
+`Refiner` enum (one allocated scratch buffer per concrete refiner) so
+the same instance is reused across seeds — no per-corner allocation.
+
+The Radon detector does not use a pluggable refiner. Its subpixel step
+is the 3-point Gaussian peak fit built into the Radon pipeline,
+configured via `RadonConfig.peak_fit` (`PeakFitMode::Parabolic` or
+`Gaussian`).
 
 ## 5.2 CenterOfMass
 
@@ -295,12 +298,13 @@ The measurement-driven comparison lives in Part VIII. In short:
 - SaddlePoint is a conservative default when you want image-patch
   refinement without the cost of RadonPeak or ML.
 
-The refiner is selected through the strategy's `refiner` field.
-For ChESS: `DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner())`.
-For Radon: `DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::radon_peak())`.
+The ChESS refiner is selected through `ChessConfig.refiner`:
+`DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner())`.
+The Radon detector's subpixel step is the built-in 3-point peak fit;
+configure it via `RadonConfig.peak_fit` (e.g. `PeakFitMode::Gaussian`).
 Switching is a single-line change, and the comparison numbers
-in Part VIII come from running all five on the same fixture at a
-single build.
+in Part VIII come from running all five ChESS refiners on the same
+fixture at a single build.
 
 ---
 

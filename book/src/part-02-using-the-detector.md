@@ -44,7 +44,6 @@ Inside `RadonConfig`:
 | `image_upsample`       | `1` (no supersample) or `2` (paper default). Values ≥ 3 are clamped to 2.                       |
 | `response_blur_radius` | Half-size of the box blur applied to the response map. `0` disables blurring.                  |
 | `peak_fit`             | `PeakFitMode::Parabolic` or `Gaussian` for the 3-point subpixel refinement.                   |
-| `refiner`              | `RadonRefiner::RadonPeak(_)` or `CenterOfMass(_)`.                                            |
 
 Four presets cover the common cases:
 
@@ -60,12 +59,12 @@ Three guarantees follow from this shape:
 1. **One place per knob.** `cfg.strategy.chess.ring = ChessRing::Broad`
    is the only way to request the wider ChESS sampling ring. There is
    no parallel top-level "broad" flag.
-2. **Per-detector refiners.** `ChessRefiner` lists only the refiners
-   that operate on ChESS output; `RadonRefiner` lists only those that
-   operate on Radon output. A `ChessRefiner::RadonPeak` mismatch is
-   unrepresentable.
+2. **Per-detector refiners.** `ChessRefiner` lists the refiners that
+   operate on ChESS output (`CenterOfMass`, `Forstner`, `SaddlePoint`,
+   `Ml`). The Radon detector does not have a pluggable refiner; its
+   subpixel step is the built-in Gaussian peak fit (`peak_fit`).
 3. **Enum-with-payload everywhere a knob has an "on/off + tuning"
-   shape.** `MultiscaleConfig`, `UpscaleConfig`, and both refiner enums
+   shape.** `MultiscaleConfig`, `UpscaleConfig`, and `ChessRefiner`
    share the same encoding, so the JSON shape and the binding surface
    stay symmetric across all of them. (`threshold` is a plain number —
    a single scalar carries no tuning, so it needs no tag.)
@@ -142,9 +141,9 @@ f.max_offset = 2.0;
 let refiner = ChessRefiner::Forstner(f);
 ```
 
-The Radon strategy uses `RadonRefiner` instead — see
-[Part V](part-05-refiners.md) for which refiners apply to which detector
-and why.
+The Radon detector does not have a pluggable refiner; its subpixel step
+is the built-in Gaussian peak fit, configured via
+`RadonConfig.peak_fit`. See [Part V](part-05-refiners.md).
 
 ### 2.2.4 Raw buffer API
 
@@ -249,8 +248,8 @@ supports `to_dict()`, `from_dict()`, `to_json()`, `from_json()`,
 enum classes follow a common idiom: `MultiscaleConfig.single_scale()` /
 `.pyramid(...)`, `UpscaleConfig.disabled()` / `.fixed(k)`,
 `ChessRefiner.center_of_mass(...)` / `.forstner(...)` /
-`.saddle_point(...)` / `.ml()`, and `RadonRefiner.radon_peak(...)` /
-`.center_of_mass(...)`. Orientation can be turned off entirely with
+`.saddle_point(...)` / `.ml()`. Orientation can be turned off entirely
+with
 `cfg.without_orientation()`, after which the four axis columns of the
 output array are `NaN`.
 
@@ -345,8 +344,7 @@ typed tree — `detector.getConfig()` returns an independent
 edits. The factory functions on the tagged classes follow the same
 `with*` idiom: `ChessRefiner.withForstner(cfg)`,
 `ChessRefiner.withCenterOfMass(cfg)`,
-`ChessRefiner.withSaddlePoint(cfg)`, `RadonRefiner.withRadonPeak(cfg)`,
-`RadonRefiner.withCenterOfMass(cfg)`, `MultiscaleConfig.singleScale()`,
+`ChessRefiner.withSaddlePoint(cfg)`, `MultiscaleConfig.singleScale()`,
 `MultiscaleConfig.pyramid(levels, minSize, refinementRadius)`, `UpscaleConfig.disabled()`,
 `UpscaleConfig.fixed(factor)`.
 
@@ -409,7 +407,6 @@ Per-flag overrides (applied on top of the JSON):
 - `--threshold <v>` (ChESS: absolute response floor; Radon: fraction of the per-frame max)
 - `--chess-ring canonical|broad`
 - `--chess-refiner center_of_mass|forstner|saddle_point`
-- `--radon-refiner radon_peak|center_of_mass`
 - `--pyramid-levels <n>` (1 = single-scale)
 - `--upscale-factor 0|2|3|4`
 
@@ -457,8 +454,8 @@ is not a direct replacement for RadonPeak: in the Part VIII synthetic
 benchmark, RadonPeak has lower clean/blurred error and ML has lower
 mean error on the heaviest noise row.
 
-The ML refiner lives on the ChESS strategy only — `RadonRefiner` does
-not list an `Ml` variant.
+The ML refiner is available on the ChESS strategy only. The Radon
+detector does not use a pluggable refiner.
 
 ## 2.7 Radon heatmap (visualization)
 
