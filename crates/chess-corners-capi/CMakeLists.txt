@@ -148,6 +148,8 @@ if(NOT _cc_shared)
   # Drop it on every platform and let the driver supply the C runtime.
   list(REMOVE_ITEM _cc_native_libs "-lSystem" "-lc")
 endif()
+message(STATUS "CC_DIAG nsl_res=[${_cc_nsl_res}] native_libs=[${_cc_native_libs}]")
+message(STATUS "CC_DIAG nsl_err=[${_cc_nsl_err}]")
 
 # ----------------------------------------------------------------------------
 # Imported target consumed in-tree (tests) and re-created by the installed
