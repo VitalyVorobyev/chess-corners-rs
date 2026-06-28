@@ -47,7 +47,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_SHARED_LIBS=${{ matrix.shared }} \
             -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/build/prefix"
-          cmake --build build/capi --verbose
+          cmake --build build/capi
 
       - name: Run C/C++ smoke tests (ctest)
         run: ctest --test-dir build/capi --output-on-failure

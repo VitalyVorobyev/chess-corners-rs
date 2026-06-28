@@ -111,12 +111,17 @@ add_custom_target(chess_corners_cargo ALL
 set(_cc_native_libs "")
 if(NOT _cc_shared)
   execute_process(
-    COMMAND "${CARGO_EXECUTABLE}" rustc --release -q -p chess-corners-capi
+    COMMAND "${CARGO_EXECUTABLE}" rustc --release -q --color never -p chess-corners-capi
             --crate-type staticlib -- --print native-static-libs
     WORKING_DIRECTORY "${_cc_workspace_root}"
     OUTPUT_VARIABLE _cc_nsl_out
     ERROR_VARIABLE _cc_nsl_err
     RESULT_VARIABLE _cc_nsl_res)
+  # Strip ANSI colour escapes defensively: CI runners can force coloured cargo
+  # output even on a non-TTY, which leaves a trailing reset sequence glued to
+  # the last token (e.g. `-lc<ESC>[0m`) and corrupts the parsed library list.
+  string(ASCII 27 _cc_esc)
+  string(REGEX REPLACE "${_cc_esc}\\[[0-9;]*m" "" _cc_nsl_err "${_cc_nsl_err}")
   if(_cc_nsl_res EQUAL 0 AND _cc_nsl_err MATCHES "native-static-libs:([^\r\n]*)")
     separate_arguments(_cc_nsl_args NATIVE_COMMAND "${CMAKE_MATCH_1}")
     set(_cc_prev "")
@@ -140,16 +145,12 @@ if(NOT _cc_shared)
     endif()
   endif()
   # The C/C++ compiler driver (gcc/clang) always links the C runtime itself and
-  # appends it after user libraries — which is also the correct position for
-  # resolving the static Rust std's late libc references. An explicit
-  # -lc / -lSystem from the native-static-libs note is therefore redundant; on
-  # macOS it only triggers a "duplicate libraries" warning, and on some Linux
-  # toolchains the bare `-lc` fails to resolve outright ("cannot find -lc").
-  # Drop it on every platform and let the driver supply the C runtime.
+  # appends it after the user libraries — the correct position for resolving the
+  # static Rust std's late libc references. An explicit -lc / -lSystem from the
+  # note is therefore redundant; on macOS it only yields a "duplicate libraries"
+  # warning. Drop it on every platform and let the driver supply the C runtime.
   list(REMOVE_ITEM _cc_native_libs "-lSystem" "-lc")
 endif()
-message(STATUS "CC_DIAG nsl_res=[${_cc_nsl_res}] native_libs=[${_cc_native_libs}]")
-message(STATUS "CC_DIAG nsl_err=[${_cc_nsl_err}]")
 
 # ----------------------------------------------------------------------------
 # Imported target consumed in-tree (tests) and re-created by the installed
