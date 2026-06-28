@@ -98,6 +98,18 @@ shared board from `benches/common/`). Reproduce with
   Replacing that tail with five contiguous cross-loads + a single vector store
   lifted SIMD to **~6–7×** (978–1074 Mpix/s; kernel ~1.65× faster) with
   **bit-identical** output (the 5-sample sum ≤1275 casts to f32 exactly; no FMA).
+- **PERF-11 (evaluated — keeping nightly `std::simd`):** a spike ported the
+  ChESS kernel to `wide` and `pulp` (both stable) and benchmarked them
+  bit-exact vs scalar on aarch64/NEON (1024×576). `wide` regressed to
+  571 Mpix/s — 1.9× below the nightly `std::simd` path (1101) and below scalar
+  autovec (745), because `wide` 1.5 has no first-class NEON for >128-bit types.
+  `pulp` cannot express the pyramid `(a+b+c+d+2)>>2` bit-exactly (no
+  runtime-width integer shift). x86 portable builds were SSE2-only for both
+  `wide` and `std::simd`; only `pulp` shipped a runtime-gated AVX2 kernel, but
+  that lone x86 upside doesn't justify the aarch64 regression or a
+  non-bit-exact pyramid. Decision: the nightly `simd` feature stays the
+  optional high-performance path; the stable scalar/autovec build is the
+  supported portable baseline (correct, portable, adequate).
 - The u32-SAT win (~9–16%) **collapses toward noise at upsample=2**, which
   proves SAT construction is *not* the upsample=2 bottleneck; the
   per-output-pixel angular sampling is. Aim "SAT SIMD prefix-sum" work at
