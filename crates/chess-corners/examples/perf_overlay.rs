@@ -8,8 +8,8 @@
 //!
 //! - **ChESS**: refiner ∈ {`center_of_mass`, `forstner`, `saddle_point`}
 //!   × orientation ∈ {`ring_fit`, `disk_fit`, `off`} = 9 configs.
-//! - **Radon**: refiner ∈ {`radon_peak`, `center_of_mass`}
-//!   × orientation ∈ {`ring_fit`, `disk_fit`, `off`} = 6 configs.
+//! - **Radon**: no pluggable refiner (built-in Gaussian peak fit)
+//!   × orientation ∈ {`ring_fit`, `disk_fit`, `off`} = 3 configs.
 //!
 //! Every config is decomposed into the same four stages, each timed in
 //! isolation so the orientation share is directly comparable:
@@ -90,7 +90,7 @@ const ORIENTATIONS: [&str; 3] = ["ring_fit", "disk_fit", "off"];
 /// Config ids whose descriptors are rendered as the representative
 /// per-detector overlays (detector default refiner + `ring_fit`).
 const CHESS_OVERLAY_ID: &str = "chess__center_of_mass__ring_fit";
-const RADON_OVERLAY_ID: &str = "radon__radon_peak__ring_fit";
+const RADON_OVERLAY_ID: &str = "radon__gaussian_peak__ring_fit";
 
 /// Previews wider than this are downscaled for the committed PNG; the
 /// detector still runs on the full-resolution image.

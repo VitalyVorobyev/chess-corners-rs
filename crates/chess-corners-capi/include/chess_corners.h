@@ -198,11 +198,6 @@ typedef struct cc_result {
 #define CC_REFINER_SADDLE_POINT 2
 
 /**
- * Radon-peak refiner. Valid for the Radon strategy only.
- */
-#define CC_REFINER_RADON_PEAK 3
-
-/**
  * 16-sample ring Gauss-Newton fit (the default).
  */
 #define CC_ORIENTATION_RING_FIT 0

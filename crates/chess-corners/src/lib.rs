@@ -251,7 +251,7 @@ pub use crate::error::ChessError;
 pub use crate::upscale::{UpscaleConfig, UpscaleError};
 pub use chess_corners_core::{
     AxisEstimate, CenterOfMassConfig, CornerDescriptor, ForstnerConfig, OrientationMethod,
-    PeakFitMode, RadonPeakConfig, SaddlePointConfig,
+    PeakFitMode, SaddlePointConfig,
 };
 
 // Primary detector entry point.

@@ -4,14 +4,12 @@
 //! where the 16-sample ring does not produce enough seeds in the target
 //! data. The detector computes a dense 4-angle localized Radon response
 //! `R(x, y) = (max_α S_α − min_α S_α)²` using summed-area tables for
-//! `O(1)`-per-pixel ray sums, then applies the same peak-fit pipeline as
-//! [`crate::RadonPeakRefiner`]: threshold / NMS /
-//! box-blur / 3-point Gaussian fit in x and y.
+//! `O(1)`-per-pixel ray sums, then applies a peak-fit pipeline:
+//! threshold / NMS / box-blur / 3-point Gaussian fit in x and y.
 //!
 //! Submodules:
 //!
-//! - [`primitives`] — angular basis, `fit_peak_frac`, `box_blur_inplace`
-//!   shared with [`crate::RadonPeakRefiner`].
+//! - [`primitives`] — angular basis, `fit_peak_frac`, `box_blur_inplace`.
 //! - [`response`] — `radon_response_u8` and the SAT / response-map
 //!   buffers and types.
 //! - [`detect`] — `detect_peaks_from_radon` (peak detection on the

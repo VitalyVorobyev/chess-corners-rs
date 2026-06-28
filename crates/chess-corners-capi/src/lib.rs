@@ -62,8 +62,6 @@ pub const CC_REFINER_CENTER_OF_MASS: cc_refiner_t = 0;
 pub const CC_REFINER_FORSTNER: cc_refiner_t = 1;
 /// Saddle-point refiner. Valid for the ChESS strategy only.
 pub const CC_REFINER_SADDLE_POINT: cc_refiner_t = 2;
-/// Radon-peak refiner. Valid for the Radon strategy only.
-pub const CC_REFINER_RADON_PEAK: cc_refiner_t = 3;
 
 /// Orientation-fit tag stored in `cc_config::orientation_method`.
 pub type cc_orientation_method_t = u32;
@@ -405,10 +403,9 @@ mod tests {
     }
 
     #[test]
-    fn cross_strategy_refiner_is_rejected() {
-        // RadonPeak is not a valid ChESS refiner.
+    fn out_of_range_refiner_is_rejected() {
         let mut cfg = cc_config_chess();
-        cfg.refiner = CC_REFINER_RADON_PEAK;
+        cfg.refiner = 99;
         assert_eq!(
             convert::to_detector_config(&cfg),
             Err(cc_status::CC_ERR_INVALID_CONFIG)

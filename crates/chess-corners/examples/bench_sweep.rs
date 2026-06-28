@@ -6,7 +6,7 @@
 //!
 //! ```json
 //! {
-//!   "refiners": ["CenterOfMass", "Forstner", "SaddlePoint", "RadonPeak", "ML"],
+//!   "refiners": ["CenterOfMass", "Forstner", "SaddlePoint", "ML"],
 //!   "results": [
 //!     {
 //!       "refiner": "CenterOfMass",
@@ -39,8 +39,8 @@ use chess_corners::low_level::ImageView;
 use chess_corners_core::unstable::ChessParams;
 use chess_corners_core::{
     chess_response_u8, CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig,
-    ForstnerRefiner, RadonPeakConfig, RadonPeakRefiner, RefineContext, RefineStatus, ResponseMap,
-    SaddlePointConfig, SaddlePointRefiner,
+    ForstnerRefiner, RefineContext, RefineStatus, ResponseMap, SaddlePointConfig,
+    SaddlePointRefiner,
 };
 
 // ---------------------------------------------------------------------------
@@ -211,7 +211,6 @@ struct ClassicRefiners {
     center: CenterOfMassRefiner,
     forstner: ForstnerRefiner,
     saddle: SaddlePointRefiner,
-    radon: RadonPeakRefiner,
 }
 
 impl ClassicRefiners {
@@ -220,7 +219,6 @@ impl ClassicRefiners {
             center: CenterOfMassRefiner::new(CenterOfMassConfig::default()),
             forstner: ForstnerRefiner::new(ForstnerConfig::default()),
             saddle: SaddlePointRefiner::new(SaddlePointConfig::default()),
-            radon: RadonPeakRefiner::new(RadonPeakConfig::default()),
         }
     }
 }
@@ -346,7 +344,6 @@ fn run_condition(
     let mut b_center = Bucket::default();
     let mut b_forstner = Bucket::default();
     let mut b_saddle = Bucket::default();
-    let mut b_radon = Bucket::default();
     #[cfg(feature = "ml-refiner")]
     let mut ml_refiner = ml::MlRefiner::load();
     #[cfg(feature = "ml-refiner")]
@@ -392,15 +389,6 @@ fn run_condition(
                 (ox, oy),
                 &mut b_saddle,
             );
-            bench_refiner(
-                &mut classic.radon,
-                ITERS_FAST,
-                view,
-                None,
-                seed,
-                (ox, oy),
-                &mut b_radon,
-            );
 
             #[cfg(feature = "ml-refiner")]
             if let Some(r) = ml_refiner.as_mut() {
@@ -414,7 +402,6 @@ fn run_condition(
         ("CenterOfMass", b_center.stats()),
         ("Forstner", b_forstner.stats()),
         ("SaddlePoint", b_saddle.stats()),
-        ("RadonPeak", b_radon.stats()),
     ];
     #[cfg(feature = "ml-refiner")]
     if ml_refiner.is_some() {

@@ -54,7 +54,7 @@ fn parse_refiner(s: &str) -> Result<RefinerSel, String> {
         "com" | "center_of_mass" | "centerofmass" => Ok(RefinerSel::CenterOfMass),
         "forstner" => Ok(RefinerSel::Forstner),
         "saddle" | "saddle_point" | "saddlepoint" => Ok(RefinerSel::Saddle),
-        "radon" | "radon_peak" | "radonpeak" => Ok(RefinerSel::Radon),
+        "radon" | "none" => Ok(RefinerSel::Radon),
         other => Err(format!(
             "unknown refiner '{other}' (expected com|forstner|saddle|radon)"
         )),
@@ -66,7 +66,7 @@ fn chess_refiner_from_sel(sel: RefinerSel) -> Option<ChessRefiner> {
         RefinerSel::CenterOfMass => Some(ChessRefiner::CenterOfMass(CenterOfMassConfig::default())),
         RefinerSel::Forstner => Some(ChessRefiner::Forstner(ForstnerConfig::default())),
         RefinerSel::Saddle => Some(ChessRefiner::SaddlePoint(SaddlePointConfig::default())),
-        // RadonPeak is Radon-only; the ChESS strategy can't host it.
+        // The Radon strategy has no pluggable refiner (Gaussian peak fit).
         RefinerSel::Radon => None,
     }
 }

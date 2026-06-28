@@ -55,8 +55,8 @@ use chess_corners::{
     DetectionStrategy as RsDetectionStrategy, DetectorConfig as RsDetectorConfig,
     ForstnerConfig as RsForstnerConfig, MultiscaleConfig as RsMultiscaleConfig,
     OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
-    RadonConfig as RsRadonConfig, RadonPeakConfig as RsRadonPeakConfig,
-    SaddlePointConfig as RsSaddlePointConfig, UpscaleConfig as RsUpscaleConfig,
+    RadonConfig as RsRadonConfig, SaddlePointConfig as RsSaddlePointConfig,
+    UpscaleConfig as RsUpscaleConfig,
 };
 use wasm_bindgen::prelude::*;
 
@@ -383,95 +383,6 @@ impl SaddlePointConfig {
     }
     pub(crate) fn from_cell(cell: Cell<RsSaddlePointConfig>) -> Self {
         Self { cell }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// RadonPeakConfig
-// ---------------------------------------------------------------------------
-
-#[wasm_bindgen]
-#[derive(Clone, Debug)]
-pub struct RadonPeakConfig {
-    cell: Cell<RsRadonPeakConfig>,
-}
-
-#[wasm_bindgen]
-impl RadonPeakConfig {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Self {
-            cell: cell(RsRadonPeakConfig::default()),
-        }
-    }
-
-    #[wasm_bindgen(getter, js_name = rayRadius)]
-    pub fn ray_radius(&self) -> u32 {
-        self.cell.borrow().ray_radius
-    }
-    #[wasm_bindgen(setter, js_name = rayRadius)]
-    pub fn set_ray_radius(&mut self, v: u32) {
-        self.cell.borrow_mut().ray_radius = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = patchRadius)]
-    pub fn patch_radius(&self) -> u32 {
-        self.cell.borrow().patch_radius
-    }
-    #[wasm_bindgen(setter, js_name = patchRadius)]
-    pub fn set_patch_radius(&mut self, v: u32) {
-        self.cell.borrow_mut().patch_radius = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = imageUpsample)]
-    pub fn image_upsample(&self) -> u32 {
-        self.cell.borrow().image_upsample
-    }
-    #[wasm_bindgen(setter, js_name = imageUpsample)]
-    pub fn set_image_upsample(&mut self, v: u32) {
-        self.cell.borrow_mut().image_upsample = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = responseBlurRadius)]
-    pub fn response_blur_radius(&self) -> u32 {
-        self.cell.borrow().response_blur_radius
-    }
-    #[wasm_bindgen(setter, js_name = responseBlurRadius)]
-    pub fn set_response_blur_radius(&mut self, v: u32) {
-        self.cell.borrow_mut().response_blur_radius = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = peakFit)]
-    pub fn peak_fit(&self) -> PeakFitMode {
-        self.cell.borrow().peak_fit.into()
-    }
-    #[wasm_bindgen(setter, js_name = peakFit)]
-    pub fn set_peak_fit(&mut self, v: PeakFitMode) {
-        self.cell.borrow_mut().peak_fit = v.into();
-    }
-
-    #[wasm_bindgen(getter, js_name = minResponse)]
-    pub fn min_response(&self) -> f32 {
-        self.cell.borrow().min_response
-    }
-    #[wasm_bindgen(setter, js_name = minResponse)]
-    pub fn set_min_response(&mut self, v: f32) {
-        self.cell.borrow_mut().min_response = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = maxOffset)]
-    pub fn max_offset(&self) -> f32 {
-        self.cell.borrow().max_offset
-    }
-    #[wasm_bindgen(setter, js_name = maxOffset)]
-    pub fn set_max_offset(&mut self, v: f32) {
-        self.cell.borrow_mut().max_offset = v;
-    }
-}
-
-impl Default for RadonPeakConfig {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

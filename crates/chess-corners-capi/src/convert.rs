@@ -28,7 +28,7 @@ use chess_corners::{
 use crate::{
     cc_axis, cc_config, cc_corner, cc_refiner_t, cc_status, CC_ORIENTATION_DISK_FIT,
     CC_ORIENTATION_NONE, CC_ORIENTATION_RING_FIT, CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER,
-    CC_REFINER_RADON_PEAK, CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS, CC_STRATEGY_RADON,
+    CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS, CC_STRATEGY_RADON,
 };
 
 /// Convert a flat [`cc_config`] into a facade [`DetectorConfig`].
@@ -96,7 +96,9 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
 pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
     let (strategy, refiner) = match config.strategy {
         DetectionStrategy::Chess(c) => (CC_STRATEGY_CHESS, chess_refiner_tag(c.refiner)),
-        DetectionStrategy::Radon(_) => (CC_STRATEGY_RADON, CC_REFINER_RADON_PEAK),
+        // Radon has no pluggable refiner; report the default tag (ignored
+        // for Radon on the round-trip back through `to_detector_config`).
+        DetectionStrategy::Radon(_) => (CC_STRATEGY_RADON, CC_REFINER_CENTER_OF_MASS),
         _ => (CC_STRATEGY_CHESS, CC_REFINER_CENTER_OF_MASS),
     };
     let multiscale = match config.multiscale {
