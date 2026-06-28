@@ -139,11 +139,14 @@ if(NOT _cc_shared)
       set(_cc_native_libs "-lpthread;-ldl;-lm")
     endif()
   endif()
-  # On macOS -lSystem / -lc are always supplied by the compiler driver; passing
-  # them again only produces a "duplicate libraries" linker warning.
-  if(APPLE)
-    list(REMOVE_ITEM _cc_native_libs "-lSystem" "-lc")
-  endif()
+  # The C/C++ compiler driver (gcc/clang) always links the C runtime itself and
+  # appends it after user libraries — which is also the correct position for
+  # resolving the static Rust std's late libc references. An explicit
+  # -lc / -lSystem from the native-static-libs note is therefore redundant; on
+  # macOS it only triggers a "duplicate libraries" warning, and on some Linux
+  # toolchains the bare `-lc` fails to resolve outright ("cannot find -lc").
+  # Drop it on every platform and let the driver supply the C runtime.
+  list(REMOVE_ITEM _cc_native_libs "-lSystem" "-lc")
 endif()
 
 # ----------------------------------------------------------------------------
