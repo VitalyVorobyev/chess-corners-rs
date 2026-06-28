@@ -33,7 +33,6 @@ import type {
   ChessRefinerKind,
   DetectorSettings,
   OrientationKind,
-  RadonRefinerKind,
   Strategy,
 } from "../types/chess-corners";
 
@@ -374,7 +373,7 @@ export function Workspace({ ready }: WorkspaceProps) {
                     onChange={(v) => update({ orientation: v as OrientationKind })}
                     info="RingFit fits a 16-sample ring; DiskFit is a full-disk crossing-line estimator for strongly warped corners."
                   />
-                  {settings.strategy === "chess" ? (
+                  {settings.strategy === "chess" && (
                     <SelectRow
                       label="Refiner"
                       value={settings.chessRefiner}
@@ -384,16 +383,6 @@ export function Workspace({ ready }: WorkspaceProps) {
                         ["saddlePoint", "Saddle point"],
                       ]}
                       onChange={(v) => update({ chessRefiner: v as ChessRefinerKind })}
-                    />
-                  ) : (
-                    <SelectRow
-                      label="Refiner"
-                      value={settings.radonRefiner}
-                      options={[
-                        ["radonPeak", "Radon peak"],
-                        ["centerOfMass", "Center of mass"],
-                      ]}
-                      onChange={(v) => update({ radonRefiner: v as RadonRefinerKind })}
                     />
                   )}
                 </div>

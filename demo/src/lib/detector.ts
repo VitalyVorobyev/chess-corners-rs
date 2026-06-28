@@ -10,11 +10,9 @@ import init, {
   DetectorConfig,
   OrientationMethod,
   ChessRefiner,
-  RadonRefiner,
   CenterOfMassConfig,
   ForstnerConfig,
   SaddlePointConfig,
-  RadonPeakConfig,
 } from "@vitavision/chess-corners";
 
 import type {
@@ -22,7 +20,6 @@ import type {
   DetectorSettings,
   HeatmapData,
   ChessRefinerKind,
-  RadonRefinerKind,
 } from "../types/chess-corners";
 
 let detector: ChessDetector | null = null;
@@ -55,21 +52,15 @@ function mapChessRefiner(kind: string): ChessRefinerKind {
   }
 }
 
-function mapRadonRefiner(kind: string): RadonRefinerKind {
-  return kind === "center_of_mass" ? "centerOfMass" : "radonPeak";
-}
-
 /** Seed the UI from the WASM `chess()` / `radon()` presets. */
 export function defaultSettings(): DetectorSettings {
   const chess = DetectorConfig.chess();
-  const radon = DetectorConfig.radon();
   return {
     strategy: "chess",
     multiscale: false,
     thresholdRel: 0.05,
     orientation: "ringFit",
     chessRefiner: mapChessRefiner(chess.strategy.chess.refiner.kind),
-    radonRefiner: mapRadonRefiner(radon.strategy.radon.refiner.kind),
     nmsRadius: chess.detection.nmsRadius,
     minClusterSize: chess.detection.minClusterSize,
   };
@@ -91,12 +82,6 @@ function buildChessRefiner(kind: ChessRefinerKind): ChessRefiner {
   }
 }
 
-function buildRadonRefiner(kind: RadonRefinerKind): RadonRefiner {
-  return kind === "centerOfMass"
-    ? RadonRefiner.withCenterOfMass(new CenterOfMassConfig())
-    : RadonRefiner.withRadonPeak(new RadonPeakConfig());
-}
-
 function buildConfig(s: DetectorSettings): DetectorConfig {
   let cfg =
     s.strategy === "radon"
@@ -113,10 +98,9 @@ function buildConfig(s: DetectorSettings): DetectorConfig {
       ? OrientationMethod.DiskFit
       : OrientationMethod.RingFit,
   );
-  cfg =
-    s.strategy === "radon"
-      ? cfg.withRadonRefiner(buildRadonRefiner(s.radonRefiner))
-      : cfg.withChessRefiner(buildChessRefiner(s.chessRefiner));
+  if (s.strategy !== "radon") {
+    cfg = cfg.withChessRefiner(buildChessRefiner(s.chessRefiner));
+  }
   cfg = cfg.withDetection({
     nmsRadius: s.nmsRadius,
     minClusterSize: s.minClusterSize,

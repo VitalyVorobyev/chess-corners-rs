@@ -9,8 +9,6 @@ import init, {
   ForstnerConfig,
   MultiscaleConfig,
   RadonConfig,
-  RadonRefiner,
-  RadonPeakConfig,
   SaddlePointConfig,
   UpscaleConfig,
 } from '../pkg/chess_corners_wasm.js';
@@ -121,7 +119,6 @@ function buildConfig() {
     const radon = new RadonConfig();
     radon.nmsRadius = parseInt(nmsRadius.value, 10);
     radon.minClusterSize = parseInt(minCluster.value, 10);
-    radon.refiner = RadonRefiner.withRadonPeak(new RadonPeakConfig());
     cfg.strategy = DetectionStrategy.fromRadon(radon);
     // Radon detector is single-scale in the demo.
     cfg.multiscale = MultiscaleConfig.singleScale();

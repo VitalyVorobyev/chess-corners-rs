@@ -1688,9 +1688,6 @@ impl DetectorConfig {
     /// - `rayRadius`: integer
     /// - `imageUpsample`: integer
     ///
-    /// To set the refiner use the typed [`Self::with_radon_refiner`] builder
-    /// instead.
-    ///
     /// Unknown keys throw `Error("unexpected option: '<key>'")`.
     /// JS: `cfg.withRadon({ rayRadius: 6, imageUpsample: 2 })`.
     #[wasm_bindgen(js_name = withRadon)]
