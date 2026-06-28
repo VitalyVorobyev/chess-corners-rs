@@ -377,6 +377,9 @@ pub struct DetectorConfig {
     ///
     /// ChESS reads it as an absolute floor on the raw response
     /// `R = SR − DR − 16·MR`: a candidate is kept when `R` exceeds it.
+    /// Useful floors run roughly `30..=300` depending on image contrast;
+    /// the [`chess`](Self::chess) preset defaults to `30`, which suppresses
+    /// texture noise while keeping well-formed corners.
     /// Radon reads it as a fraction in `[0.0, 1.0]` of the per-frame
     /// maximum response, because Radon's `(max − min)²` score scales
     /// with image size and has no portable absolute scale.
@@ -413,7 +416,9 @@ impl DetectorConfig {
     pub fn chess() -> Self {
         Self {
             strategy: DetectionStrategy::Chess(ChessConfig::default()),
-            threshold: 0.0,
+            // Absolute floor on the ChESS response: suppresses texture
+            // noise while keeping well-formed corners. See the field doc.
+            threshold: 30.0,
             detection: DetectionParams::default(),
             multiscale: MultiscaleConfig::SingleScale,
             upscale: UpscaleConfig::Disabled,
@@ -641,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn default_is_single_scale_chess_with_paper_threshold() {
+    fn default_is_single_scale_chess_with_denoise_floor() {
         let cfg = DetectorConfig::default();
         let chess = assert_strategy_chess(&cfg);
         assert_eq!(chess.ring, ChessRing::Canonical);
@@ -653,13 +658,13 @@ mod tests {
         assert_eq!(cfg.detection.min_cluster_size, 2);
         assert_eq!(cfg.multiscale, MultiscaleConfig::SingleScale);
         assert_eq!(cfg.upscale, UpscaleConfig::Disabled);
-        assert_eq!(cfg.threshold, 0.0);
+        assert_eq!(cfg.threshold, 30.0);
         assert_eq!(cfg.merge_radius, 3.0);
         assert!(cfg.coarse_to_fine_params().is_none());
 
         let params = cfg.chess_params();
         assert!(!params.use_radius10);
-        assert_eq!(params.threshold_abs, Some(0.0));
+        assert_eq!(params.threshold_abs, Some(30.0));
         assert_eq!(params.nms_radius, 2);
         assert_eq!(params.min_cluster_size, 2);
         assert_eq!(
