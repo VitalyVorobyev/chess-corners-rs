@@ -15,13 +15,15 @@
 
 pub mod chess;
 pub mod dense;
+mod merge;
+mod neighbors;
 pub mod radon;
 
-pub(crate) use chess::detect::{count_positive_neighbors, is_local_max};
 pub use chess::detect::{
     detect_corners_from_response, detect_corners_from_response_with_refiner, find_corners_u8,
-    merge_corners_simple,
 };
+pub use merge::merge_corners_simple;
+pub(crate) use neighbors::{count_positive_neighbors, is_local_max};
 
 /// A detected corner candidate (subpixel position with raw response strength).
 #[derive(Clone, Debug)]
