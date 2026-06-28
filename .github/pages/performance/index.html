@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>chess-corners-rs · Performance</title>
-<meta name="description" content="Per-image, per-stage ChESS corner-detection timing for chess-corners-rs, measured on public sample images." />
+<meta name="description" content="Per-image, per-stage corner-detection timing matrix for chess-corners-rs (ChESS and Radon detectors, all refiners and orientation methods), measured on public sample images." />
 <link rel="icon" type="image/svg+xml" href="../img/vv-logo.svg" />
 <style>
   :root {
@@ -42,7 +42,7 @@
     margin: 44px 0 14px; font-weight: 700; }
   .card { background: var(--card); border: 1px solid var(--edge); border-radius: 14px;
     padding: 20px 22px; margin-bottom: 16px; }
-  .imgcard h3 { margin: 0 0 2px; font-size: 18px; }
+  .imgcard h3 { margin: 0 0 10px; font-size: 18px; }
   .imgcard .preview { display: block; width: 100%; max-width: 100%; height: auto;
     border-radius: 10px; border: 1px solid var(--edge); margin: 0 0 14px; background: var(--track); }
   .imgcard .file { color: var(--muted); font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -53,17 +53,40 @@
   .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 14px; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
-  .barrow { display: grid; grid-template-columns: 118px 1fr 150px; align-items: center; gap: 12px; margin: 6px 0; }
-  .barrow .bl { font-size: 12.5px; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .track { background: var(--track); border-radius: 6px; height: 18px; position: relative; overflow: hidden;
-    border: 1px solid rgba(255,255,255,.04); }
-  .fill { height: 100%; border-radius: 6px; }
-  .barrow .bv { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink); text-align: right; }
-  .barrow .bv .mut { color: var(--muted); }
-  .totalrow { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 0; padding-top: 12px;
-    border-top: 1px solid var(--edge); font-size: 13px; color: var(--muted); }
-  .totalrow b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
   .desc { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  /* Overlay detector toggle + filter chips (clickable variant of .chip). */
+  .toggle { display: inline-flex; gap: 6px; margin: 0 0 12px; }
+  .toggle button, .fchip { font: inherit; cursor: pointer; background: var(--card);
+    border: 1px solid var(--edge); color: var(--muted); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; }
+  .toggle button:hover, .fchip:hover { color: var(--ink); }
+  .toggle button.on { color: var(--ink); border-color: var(--blue); background: rgba(91,157,255,.14); }
+  .fchip.on { color: var(--ink); border-color: var(--blue); background: rgba(91,157,255,.12); }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 6px 0 14px; align-items: center; }
+  .filtergroup { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .filtergroup .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-right: 2px; }
+  /* Config matrix table. */
+  .tablewrap { overflow-x: auto; margin: 0 -2px; }
+  table.matrix { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  table.matrix th { text-align: right; padding: 7px 8px; color: var(--muted); font-weight: 600; cursor: pointer;
+    border-bottom: 1px solid var(--edge); white-space: nowrap; user-select: none; }
+  table.matrix th:first-child, table.matrix td:first-child { text-align: left; }
+  table.matrix th.s-th { border-bottom-width: 2px; }
+  table.matrix th:hover { color: var(--ink); }
+  table.matrix th.sorted { color: var(--ink); }
+  table.matrix th .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+  table.matrix td { padding: 6px 8px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.04); color: var(--ink); }
+  table.matrix td.cfg { text-align: left; }
+  table.matrix td.cfg.mut { color: var(--muted); }
+  table.matrix tr:hover td { background: rgba(255,255,255,.025); }
+  .det-chess { color: var(--blue); font-weight: 600; }
+  .det-radon { color: var(--amber); font-weight: 600; }
+  .scell .v { display: block; }
+  .scell .spark { height: 3px; border-radius: 2px; margin-top: 3px; margin-left: auto; min-width: 2px; }
+  /* Orientation stage — the dominant cost, made prominent. */
+  th.orient { background: rgba(61,220,132,.07); color: var(--green); }
+  td.orient { background: rgba(61,220,132,.06); }
+  td.orient .v { color: var(--green); font-weight: 700; }
+  td.orient .spark { height: 5px; }
   .foot { color: var(--muted); font-size: 12px; margin-top: 44px; border-top: 1px solid var(--edge); padding-top: 16px; }
   .foot code, .file code, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .err { color: var(--rose); }
@@ -75,13 +98,15 @@
   <header class="top">
     <h1>Performance</h1>
     <div class="sub">Where the milliseconds go, measured per image on the public sample frames — not generic
-      aggregates. The ChESS detector runs in four stages; on corner-dense boards the per-corner
-      orientation fit, not the dense response, dominates the wall-clock cost.</div>
+      aggregates. Each frame is run as a matrix of detector configurations (ChESS and Radon, every refiner and
+      orientation method), decomposed into four stages. On corner-dense frames the per-corner orientation fit,
+      not the dense response, dominates the wall-clock cost.</div>
   </header>
   <div class="chips" id="chips"></div>
 
-  <h2>Per-image stage breakdown</h2>
+  <h2>Per-image configuration matrix</h2>
   <div class="desc" id="breakdown-desc"></div>
+  <div class="desc" id="matrix-desc" style="color:var(--ink)"></div>
   <div class="legend">
     <span><i class="sw" style="background:var(--amber)"></i> response</span>
     <span><i class="sw" style="background:var(--blue)"></i> detection</span>
@@ -95,67 +120,177 @@
 
 <script>
 const C = { amber: "#f2a93d", blue: "#5b9dff", teal: "#33c6e3", green: "#3ddc84" };
-// Pipeline stages in execution order, with display colours.
-const STAGES = [
-  { key: "response", label: "response", color: C.amber },
-  { key: "detection", label: "detection", color: C.blue },
-  { key: "refinement", label: "refinement", color: C.teal },
-  { key: "orientation", label: "orientation", color: C.green },
-];
 const fmt = (v, d = 3) => v == null ? "—" : v.toFixed(d);
 const mp = (w, h) => (w * h / 1e6).toFixed(2);
+const el = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
 
-function bar(label, valueMs, totalMs, maxMs, color) {
-  const row = document.createElement("div"); row.className = "barrow";
-  const bl = document.createElement("div"); bl.className = "bl"; bl.textContent = label;
-  const track = document.createElement("div"); track.className = "track";
-  const fill = document.createElement("div"); fill.className = "fill";
-  fill.style.width = Math.max(0.5, 100 * valueMs / maxMs) + "%";
-  fill.style.background = color;
-  fill.style.position = "absolute"; fill.style.top = "0"; fill.style.left = "0";
-  track.appendChild(fill);
-  const share = totalMs > 0 ? (100 * valueMs / totalMs).toFixed(0) + "%" : "—";
-  const bv = document.createElement("div"); bv.className = "bv";
-  bv.innerHTML = fmt(valueMs) + ' ms <span class="mut">' + share + "</span>";
-  row.append(bl, track, bv);
-  return row;
+// Column model. `stage` columns carry a colour and render a value + sparkbar;
+// the orientation stage is flagged `prominent` so it stands out.
+const COLS = [
+  { key: "detector", label: "detector", type: "s" },
+  { key: "refiner", label: "refiner", type: "s" },
+  { key: "orientation", label: "orientation", type: "s" },
+  { key: "corner_count", label: "corners", type: "n" },
+  { key: "response", label: "response", type: "stage", color: C.amber },
+  { key: "detection", label: "detection", type: "stage", color: C.blue },
+  { key: "refinement", label: "refinement", type: "stage", color: C.teal },
+  { key: "orientation_ms", label: "orientation", type: "stage", color: C.green, prominent: true },
+  { key: "total_ms", label: "total ms", type: "n" },
+  { key: "throughput_mpix_s", label: "Mpix/s", type: "n" },
+];
+
+// Sort key extraction. The config "orientation" (method) and the
+// "orientation" stage share a label but live at different keys.
+function cellValue(c, col) {
+  if (col.key === "orientation_ms") return c.stages.orientation;
+  if (col.type === "stage") return c.stages[col.key];
+  if (col.key === "total_ms") return c.total_ms;
+  if (col.key === "throughput_mpix_s") return c.throughput_mpix_s;
+  if (col.key === "corner_count") return c.corner_count;
+  return c[col.key];
+}
+
+function thLabel(col, state) {
+  const dot = col.color ? '<i class="dot" style="background:' + col.color + '"></i>' : "";
+  const arrow = col.key === state.sortKey ? (state.sortDir > 0 ? " ▲" : " ▼") : "";
+  return dot + col.label + arrow;
+}
+
+function sparkCell(value, color, maxInRow, prominent) {
+  const w = maxInRow > 0 ? Math.max(2, 100 * value / maxInRow) : 0;
+  return '<td class="scell' + (prominent ? " orient" : "") + '">' +
+    '<span class="v">' + fmt(value) + "</span>" +
+    '<div class="spark" style="width:' + w + "%;background:" + color + '"></div></td>';
+}
+
+function rowHtml(c) {
+  const s = c.stages;
+  // Per-row scale so each row reads as a share of its own heaviest stage —
+  // on dense configs that is orientation, which then visibly dominates.
+  const maxStage = Math.max(s.response, s.detection, s.refinement, s.orientation, 0) || 1;
+  return "<tr>" +
+    '<td class="cfg det-' + c.detector + '">' + c.detector + "</td>" +
+    '<td class="cfg mut">' + c.refiner + "</td>" +
+    '<td class="cfg mut">' + c.orientation + "</td>" +
+    "<td>" + c.corner_count + "</td>" +
+    sparkCell(s.response, C.amber, maxStage, false) +
+    sparkCell(s.detection, C.blue, maxStage, false) +
+    sparkCell(s.refinement, C.teal, maxStage, false) +
+    sparkCell(s.orientation, C.green, maxStage, true) +
+    "<td><b>" + fmt(c.total_ms, 2) + "</b></td>" +
+    "<td>" + fmt(c.throughput_mpix_s, 1) + "</td>" +
+  "</tr>";
+}
+
+function visibleConfigs(configs, state) {
+  let rows = configs.filter(c =>
+    (state.detector === "all" || c.detector === state.detector) &&
+    (state.orientation === "all" || c.orientation === state.orientation));
+  if (state.sortKey) {
+    const col = COLS.find(x => x.key === state.sortKey);
+    rows = rows.slice().sort((a, b) => {
+      const va = cellValue(a, col), vb = cellValue(b, col);
+      const cmp = col.type === "s" ? String(va).localeCompare(String(vb)) : (va - vb);
+      return cmp * state.sortDir;
+    });
+  }
+  return rows;
+}
+
+function filterGroup(label, values, state, stateKey, onChange) {
+  const g = el("div", "filtergroup");
+  const l = el("span", "lbl"); l.textContent = label; g.appendChild(l);
+  const chips = values.map(v => {
+    const c = el("button", "fchip"); c.textContent = v;
+    c.onclick = () => { state[stateKey] = v; onChange(); };
+    g.appendChild(c); return { v, c };
+  });
+  g.update = () => chips.forEach(({ v, c }) => c.classList.toggle("on", state[stateKey] === v));
+  return g;
 }
 
 function renderImageCard(img) {
-  const card = document.createElement("div"); card.className = "card imgcard";
+  const state = { detector: "all", orientation: "all", sortKey: null, sortDir: 1, overlay: "chess" };
+  const card = el("div", "card imgcard");
 
-  if (img.img) {
-    const fig = document.createElement("img"); fig.className = "preview";
-    fig.src = img.img; fig.alt = img.label; fig.loading = "lazy";
-    card.appendChild(fig);
+  const h = el("h3");
+  h.innerHTML = img.label + '<span class="kindtag">' + img.configs.length + " configs</span>";
+  card.appendChild(h);
+
+  // Overlay with a ChESS / Radon toggle.
+  if (img.overlays) {
+    const toggle = el("div", "toggle");
+    const bChess = el("button", "on"); bChess.textContent = "ChESS overlay";
+    const bRadon = el("button"); bRadon.textContent = "Radon overlay";
+    const fig = el("img", "preview");
+    fig.src = img.overlays.chess; fig.alt = img.label + " ChESS overlay"; fig.loading = "lazy";
+    bChess.onclick = () => {
+      state.overlay = "chess"; fig.src = img.overlays.chess; fig.alt = img.label + " ChESS overlay";
+      bChess.classList.add("on"); bRadon.classList.remove("on");
+    };
+    bRadon.onclick = () => {
+      state.overlay = "radon"; fig.src = img.overlays.radon; fig.alt = img.label + " Radon overlay";
+      bRadon.classList.add("on"); bChess.classList.remove("on");
+    };
+    toggle.append(bChess, bRadon);
+    card.append(toggle, fig);
   }
 
-  const h = document.createElement("h3");
-  h.innerHTML = img.label + '<span class="kindtag">' + img.corner_count + " corners</span>";
-  const file = document.createElement("div"); file.className = "file";
-  file.innerHTML = "<code>" + img.file + "</code>";
-  const meta = document.createElement("div"); meta.className = "meta";
+  const file = el("div", "file"); file.innerHTML = "<code>" + img.file + "</code>";
+  const meta = el("div", "meta");
   meta.innerHTML =
     "<span><b>" + img.width + "×" + img.height + "</b> px</span>" +
-    "<span><b>" + mp(img.width, img.height) + "</b> MP</span>" +
-    "<span><b>" + img.corner_count + "</b> corners</span>";
-  card.append(h, file, meta);
+    "<span><b>" + mp(img.width, img.height) + "</b> MP</span>";
+  card.append(file, meta);
 
-  const stages = STAGES.map(s => ({ ...s, v: img.stages[s.key] })).filter(s => s.v != null);
-  const maxMs = Math.max(...stages.map(s => s.v), 0) || 1;
-  stages.forEach(s => card.appendChild(bar(s.label, s.v, img.total_ms, maxMs, s.color)));
+  // Filter chips: detector + orientation.
+  const filters = el("div", "filters");
+  const detGroup = filterGroup("detector", ["all", "chess", "radon"], state, "detector", rerender);
+  const oriGroup = filterGroup("orientation", ["all", "ring_fit", "disk_fit", "off"], state, "orientation", rerender);
+  filters.append(detGroup, oriGroup);
+  card.append(filters);
 
-  const total = document.createElement("div"); total.className = "totalrow";
-  total.innerHTML =
-    "<span>total <b>" + fmt(img.total_ms, 2) + " ms</b></span>" +
-    "<span>throughput <b>" + fmt(img.throughput_mpix_s, 1) + "</b> Mpix/s</span>";
-  card.appendChild(total);
+  // Matrix table.
+  const wrap = el("div", "tablewrap");
+  const table = el("table", "matrix");
+  const thead = el("thead");
+  const htr = el("tr");
+  COLS.forEach(col => {
+    const th = el("th", col.type === "stage" ? "s-th" : "");
+    if (col.prominent) th.classList.add("orient");
+    th.dataset.key = col.key;
+    th.innerHTML = thLabel(col, state);
+    th.onclick = () => {
+      if (state.sortKey === col.key) state.sortDir *= -1;
+      else { state.sortKey = col.key; state.sortDir = col.type === "s" ? 1 : -1; }
+      rerender();
+    };
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  const tbody = el("tbody");
+  table.append(thead, tbody);
+  wrap.appendChild(table);
+  card.appendChild(wrap);
 
   if (img.note) {
-    const n = document.createElement("p"); n.className = "desc";
-    n.style.margin = "12px 0 0"; n.style.borderTop = "1px solid var(--edge)"; n.style.paddingTop = "10px";
-    n.textContent = img.note; card.appendChild(n);
+    const n = el("p", "desc");
+    n.style.cssText = "margin:14px 0 0;border-top:1px solid var(--edge);padding-top:10px";
+    n.textContent = img.note;
+    card.appendChild(n);
   }
+
+  function rerender() {
+    htr.querySelectorAll("th").forEach(th => {
+      const col = COLS.find(x => x.key === th.dataset.key);
+      th.classList.toggle("sorted", th.dataset.key === state.sortKey);
+      th.innerHTML = thLabel(col, state);
+    });
+    detGroup.update();
+    oriGroup.update();
+    tbody.innerHTML = visibleConfigs(img.configs, state).map(rowHtml).join("");
+  }
+  rerender();
   return card;
 }
 
@@ -168,6 +303,7 @@ function render(data) {
     '<span class="chip">' + (k ? k + " " : "") + "<b>" + v + "</b></span>").join("");
 
   document.getElementById("breakdown-desc").textContent = m.note;
+  if (m.matrix_note) document.getElementById("matrix-desc").textContent = m.matrix_note;
 
   const ic = document.getElementById("imagecards");
   data.images.forEach(img => ic.appendChild(renderImageCard(img)));

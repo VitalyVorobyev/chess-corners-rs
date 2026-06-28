@@ -1,22 +1,40 @@
-//! Per-stage timing + detection overlays for the public performance page.
+//! Per-stage timing matrix + detection overlays for the public
+//! performance page.
 //!
-//! Drives the single-scale ChESS pipeline on the public `testimages/`
-//! samples, decomposed into its four stages so each can be timed in
-//! isolation:
+//! For each public `testimages/` sample this measures a **matrix** of
+//! detector configurations, all built through the facade
+//! [`DetectorConfig`] builders so the numbers match a real
+//! `Detector::detect` run:
 //!
-//! 1. **response**    — [`chess_response_u8`] dense ChESS response map.
-//! 2. **detection**   — threshold + NMS + cluster-filter peak extraction
-//!    ([`detect_peaks_from_response_with_refine_radius`]).
+//! - **ChESS**: refiner ∈ {`center_of_mass`, `forstner`, `saddle_point`}
+//!   × orientation ∈ {`ring_fit`, `disk_fit`, `off`} = 9 configs.
+//! - **Radon**: refiner ∈ {`radon_peak`, `center_of_mass`}
+//!   × orientation ∈ {`ring_fit`, `disk_fit`, `off`} = 6 configs.
+//!
+//! Every config is decomposed into the same four stages, each timed in
+//! isolation so the orientation share is directly comparable:
+//!
+//! 1. **response**    — dense response map
+//!    ([`chess_response_u8`] / [`radon_response_u8`]).
+//! 2. **detection**   — threshold + NMS + cluster filter peak extraction
+//!    ([`detect_peaks_from_response_with_refine_radius`] /
+//!    [`detect_peaks_from_radon`]). For Radon this stage also runs the
+//!    3-point Gaussian response-map peak fit — Radon's only subpixel step.
 //! 3. **refinement**  — image-domain subpixel refinement
-//!    ([`refine_corners_on_image`]).
+//!    ([`refine_corners_on_image`]). The ChESS strategy runs the
+//!    configured refiner here; the Radon strategy's facade refinement is
+//!    a no-op (`RadonDetector::refine_peaks_on_image` returns peaks
+//!    unchanged and never consults the configured `RadonRefiner`), so the
+//!    Radon refinement stage measures as `0` and the two Radon refiner
+//!    rows are identical by construction.
 //! 4. **orientation** — two-axis orientation fit / descriptor assembly
-//!    ([`describe_corners`]).
+//!    ([`describe_corners`]). `off` configs skip the per-corner fit, so
+//!    the orientation stage collapses to descriptor assembly (~0 ms).
 //!
 //! This is exactly the stage order the single-scale facade `Detector`
-//! runs (`ChessDetector` + a near-zero-cost duplicate merge between
-//! refinement and orientation), so the per-stage p50s and the final
-//! corner count match a `DetectorConfig::chess()` detection on the same
-//! image.
+//! runs (`Chess`/`Radon` strategy + a near-zero-cost duplicate merge
+//! between refinement and orientation), so the per-stage p50s and final
+//! corner counts match a `DetectorConfig` detection on the same image.
 //!
 //! Each stage is timed with `--warmup` discarded iterations followed by
 //! `--repeats` measured iterations; the reported figure is the p50. Per-
@@ -24,10 +42,11 @@
 //! refinement/orientation stages consume) happens outside the timed
 //! region.
 //!
-//! It also writes a detection-overlay PNG per image (corner markers on a
-//! dimmed copy of the input) into `--overlay-dir`, downscaling previews
-//! wider than 1024 px while always detecting on the full-resolution
-//! image.
+//! It also writes one detection-overlay PNG per (image × detector) at the
+//! detector's default refiner + `ring_fit` into `--overlay-dir` (the
+//! orientation method and refiner do not visibly move corners), as
+//! `<base>__chess.png` / `<base>__radon.png`. Previews wider than 1024 px
+//! are downscaled while detection always runs on the full image.
 //!
 //! Output: one JSON document (to `--out`, else stdout) consumed by
 //! `scripts/gen_perf_data.py`.
@@ -45,24 +64,34 @@ use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use chess_corners::low_level::to_chess_params;
-use chess_corners::DetectorConfig;
+use chess_corners::low_level::{to_chess_params, to_radon_detector_params};
+use chess_corners::{ChessRefiner, DetectorConfig, OrientationMethod, RadonRefiner};
 use chess_corners_core::unstable::{
-    detect_peaks_from_response_with_refine_radius, refine_corners_on_image,
+    detect_peaks_from_response_with_refine_radius, refine_corners_on_image, ChessParams,
 };
 use chess_corners_core::{
-    chess_response_u8, describe_corners, merge_corners_simple, CornerDescriptor, CornerRefiner,
-    ImageView, Refiner,
+    chess_response_u8, describe_corners, detect_peaks_from_radon, merge_corners_simple,
+    radon_response_u8, CornerDescriptor, CornerRefiner, ImageView, RadonBuffers, Refiner,
 };
 use image::{imageops::FilterType, ImageReader, Rgb, RgbImage};
+use serde_json::json;
 
-/// Public report images (label, relative path). These are the ONLY
-/// public sample images in the repository.
+/// Public report images (`base`, relative path). `base` is the overlay
+/// filename stem and the merge key (via the file basename). These are the
+/// ONLY public sample images in the repository.
 const IMAGES: &[(&str, &str)] = &[
     ("small", "testimages/small.png"),
     ("mid", "testimages/mid.png"),
     ("large", "testimages/large.png"),
 ];
+
+/// Orientation variants measured for every detector/refiner pair.
+const ORIENTATIONS: [&str; 3] = ["ring_fit", "disk_fit", "off"];
+
+/// Config ids whose descriptors are rendered as the representative
+/// per-detector overlays (detector default refiner + `ring_fit`).
+const CHESS_OVERLAY_ID: &str = "chess__center_of_mass__ring_fit";
+const RADON_OVERLAY_ID: &str = "radon__radon_peak__ring_fit";
 
 /// Previews wider than this are downscaled for the committed PNG; the
 /// detector still runs on the full-resolution image.
@@ -113,42 +142,116 @@ struct StageTimes {
     orientation: f64,
 }
 
+/// One measured detector configuration.
+struct ConfigResult {
+    id: String,
+    detector: &'static str,
+    refiner: &'static str,
+    orientation: &'static str,
+    corner_count: usize,
+    stages: StageTimes,
+    total_ms: f64,
+    throughput_mpix_s: f64,
+}
+
 struct ImageResult {
     label: String,
     file: String,
-    img: String,
     width: usize,
     height: usize,
-    corner_count: usize,
-    total_ms: f64,
-    throughput_mpix_s: f64,
-    stages: StageTimes,
+    chess_overlay: String,
+    radon_overlay: String,
+    configs: Vec<ConfigResult>,
 }
 
-fn measure(
-    label: &str,
-    file: &str,
-    overlay_dir: &Path,
+/// A detector config to measure, with its display labels and merge id.
+struct ConfigSpec {
+    id: String,
+    detector: &'static str,
+    refiner: &'static str,
+    orientation: &'static str,
+    cfg: DetectorConfig,
+}
+
+/// Apply the requested orientation variant to a base config.
+fn with_orientation(cfg: DetectorConfig, orientation: &str) -> DetectorConfig {
+    match orientation {
+        "disk_fit" => cfg.with_orientation_method(OrientationMethod::DiskFit),
+        "off" => cfg.without_orientation(),
+        // "ring_fit" (and any unexpected value) → explicit RingFit.
+        _ => cfg.with_orientation_method(OrientationMethod::RingFit),
+    }
+}
+
+/// Build the 9 ChESS + 6 Radon configs measured per image.
+fn build_specs() -> Vec<ConfigSpec> {
+    let mut specs = Vec::with_capacity(15);
+
+    let chess_refiners: [(&str, ChessRefiner); 3] = [
+        ("center_of_mass", ChessRefiner::center_of_mass()),
+        ("forstner", ChessRefiner::forstner()),
+        ("saddle_point", ChessRefiner::saddle_point()),
+    ];
+    for (refiner, kind) in chess_refiners {
+        for orientation in ORIENTATIONS {
+            let cfg = with_orientation(
+                DetectorConfig::chess().with_chess(|c| c.refiner = kind),
+                orientation,
+            );
+            specs.push(ConfigSpec {
+                id: format!("chess__{refiner}__{orientation}"),
+                detector: "chess",
+                refiner,
+                orientation,
+                cfg,
+            });
+        }
+    }
+
+    let radon_refiners: [(&str, RadonRefiner); 2] = [
+        ("radon_peak", RadonRefiner::radon_peak()),
+        ("center_of_mass", RadonRefiner::center_of_mass()),
+    ];
+    for (refiner, kind) in radon_refiners {
+        for orientation in ORIENTATIONS {
+            let cfg = with_orientation(
+                DetectorConfig::radon().with_radon(|r| r.refiner = kind),
+                orientation,
+            );
+            specs.push(ConfigSpec {
+                id: format!("radon__{refiner}__{orientation}"),
+                detector: "radon",
+                refiner,
+                orientation,
+                cfg,
+            });
+        }
+    }
+
+    specs
+}
+
+/// Faithful single-scale ChESS stage decomposition (matches the facade
+/// `Detector` for `DetectionStrategy::Chess`).
+fn measure_chess(
+    cfg: &DetectorConfig,
+    data: &[u8],
+    w: usize,
+    h: usize,
+    view: ImageView<'_>,
     warmup: usize,
     reps: usize,
-) -> Result<ImageResult, Box<dyn std::error::Error>> {
-    let gray = ImageReader::open(file)?.decode()?.to_luma8();
-    let (w, h) = (gray.width() as usize, gray.height() as usize);
-    let data = gray.as_raw().as_slice();
-    let view = ImageView::from_u8_slice(w, h, data).ok_or("invalid image view")?;
-
-    // Faithful single-scale ChESS parameters (matches DetectorConfig::chess()).
-    let cfg = DetectorConfig::chess();
-    let params = to_chess_params(&cfg);
-    let method = params.orientation_method;
+) -> (Vec<CornerDescriptor>, StageTimes) {
+    let params = to_chess_params(cfg);
+    let method = cfg.orientation_method;
     let desc_radius = params.ring_radius();
     let merge_radius = cfg.merge_radius;
 
     let mut refiner = Refiner::from_kind(params.refiner.clone());
     let refine_border = refiner.radius();
 
-    // Canonical artifacts threaded between stages and used for the
-    // overlay + final count.
+    // Canonical artifacts threaded between stages and used for the final
+    // descriptor count / overlay.
     let resp = chess_response_u8(data, w, h, &params);
     let peaks = detect_peaks_from_response_with_refine_radius(&resp, &params, refine_border);
     let refined = refine_corners_on_image(peaks.clone(), Some(view), Some(&resp), &mut refiner);
@@ -156,7 +259,6 @@ fn measure(
     let merged = merge_corners_simple(&mut refined_for_merge, merge_radius);
     let descriptors = describe_corners(data, w, h, desc_radius, merged.clone(), method);
 
-    // ---- per-stage timing ----
     let t_response = time_stage(warmup, reps, || {
         black_box(chess_response_u8(data, w, h, &params));
     });
@@ -179,33 +281,150 @@ fn measure(
         black_box(describe_corners(data, w, h, desc_radius, m, method));
     });
 
-    let total_ms = t_response + t_detection + t_refinement + t_orientation;
-    let throughput_mpix_s = if total_ms > 0.0 {
-        (w * h) as f64 / (total_ms * 1000.0)
-    } else {
-        0.0
-    };
-
-    // ---- overlay PNG ----
-    let img_rel = format!("./img/{label}.png");
-    let out_path = overlay_dir.join(format!("{label}.png"));
-    write_overlay(&gray, &descriptors, &out_path)?;
-
-    Ok(ImageResult {
-        label: label.to_string(),
-        file: file.to_string(),
-        img: img_rel,
-        width: w,
-        height: h,
-        corner_count: descriptors.len(),
-        total_ms,
-        throughput_mpix_s,
-        stages: StageTimes {
+    (
+        descriptors,
+        StageTimes {
             response: t_response,
             detection: t_detection,
             refinement: t_refinement,
             orientation: t_orientation,
         },
+    )
+}
+
+/// Faithful single-scale Radon stage decomposition (matches the facade
+/// `Detector` for `DetectionStrategy::Radon`).
+///
+/// The Radon strategy's image-domain refinement is a no-op in the facade
+/// (`RadonDetector::refine_peaks_on_image` returns peaks unchanged and
+/// never consults the configured `RadonRefiner`), so the refinement stage
+/// is reported as `0`. Radon's subpixel step is the 3-point Gaussian fit
+/// inside `detect_peaks_from_radon`, already accounted for in `detection`.
+fn measure_radon(
+    cfg: &DetectorConfig,
+    data: &[u8],
+    w: usize,
+    h: usize,
+    warmup: usize,
+    reps: usize,
+) -> (Vec<CornerDescriptor>, StageTimes) {
+    let params = to_radon_detector_params(cfg);
+    let method = cfg.orientation_method;
+    // The facade samples descriptors at the canonical r=5 ring for the
+    // Radon strategy (it has no descriptor-ring knob of its own).
+    let desc_radius = ChessParams::default().ring_radius();
+    let merge_radius = cfg.merge_radius;
+
+    // Canonical artifacts. `resp` borrows `buffers` for the rest of the
+    // function; the response-timing loop below uses a separate buffer set.
+    let mut buffers = RadonBuffers::new();
+    let resp = radon_response_u8(data, w, h, &params, &mut buffers);
+    let peaks = detect_peaks_from_radon(&resp, &params);
+    // Facade no-op refinement: forward the detector peaks unchanged.
+    let mut corners = peaks.clone();
+    let merged = merge_corners_simple(&mut corners, merge_radius);
+    let descriptors = describe_corners(data, w, h, desc_radius, merged.clone(), method);
+
+    let mut timing_buffers = RadonBuffers::new();
+    let t_response = time_stage(warmup, reps, || {
+        black_box(radon_response_u8(data, w, h, &params, &mut timing_buffers));
+    });
+    let t_detection = time_stage(warmup, reps, || {
+        black_box(detect_peaks_from_radon(&resp, &params));
+    });
+    // Radon's facade refinement is a no-op (see fn doc) — no measurable cost.
+    let t_refinement = 0.0;
+    let t_orientation = time_stage_owned(warmup, reps, &merged, |m| {
+        black_box(describe_corners(data, w, h, desc_radius, m, method));
+    });
+
+    (
+        descriptors,
+        StageTimes {
+            response: t_response,
+            detection: t_detection,
+            refinement: t_refinement,
+            orientation: t_orientation,
+        },
+    )
+}
+
+fn measure_image(
+    base: &str,
+    file: &str,
+    overlay_dir: &Path,
+    warmup: usize,
+    reps: usize,
+) -> Result<ImageResult, Box<dyn std::error::Error>> {
+    let gray = ImageReader::open(file)?.decode()?.to_luma8();
+    let (w, h) = (gray.width() as usize, gray.height() as usize);
+    let data = gray.as_raw().as_slice();
+    let view = ImageView::from_u8_slice(w, h, data).ok_or("invalid image view")?;
+
+    let specs = build_specs();
+    let mut configs = Vec::with_capacity(specs.len());
+    let mut chess_overlay: Option<Vec<CornerDescriptor>> = None;
+    let mut radon_overlay: Option<Vec<CornerDescriptor>> = None;
+
+    for spec in &specs {
+        let (descriptors, stages) = if spec.detector == "chess" {
+            measure_chess(&spec.cfg, data, w, h, view, warmup, reps)
+        } else {
+            measure_radon(&spec.cfg, data, w, h, warmup, reps)
+        };
+        let corner_count = descriptors.len();
+        if spec.id == CHESS_OVERLAY_ID {
+            chess_overlay = Some(descriptors.clone());
+        } else if spec.id == RADON_OVERLAY_ID {
+            radon_overlay = Some(descriptors.clone());
+        }
+
+        let total_ms = stages.response + stages.detection + stages.refinement + stages.orientation;
+        let throughput_mpix_s = if total_ms > 0.0 {
+            (w * h) as f64 / (total_ms * 1000.0)
+        } else {
+            0.0
+        };
+        eprintln!(
+            "  {:<34} {:>5} corners  {:.3} ms",
+            spec.id, corner_count, total_ms
+        );
+        configs.push(ConfigResult {
+            id: spec.id.clone(),
+            detector: spec.detector,
+            refiner: spec.refiner,
+            orientation: spec.orientation,
+            corner_count,
+            stages,
+            total_ms,
+            throughput_mpix_s,
+        });
+    }
+
+    // Representative overlays: one per detector at its default refiner +
+    // ring_fit. The orientation method and refiner do not visibly move
+    // corners, so a single overlay per detector is faithful.
+    let chess_desc = chess_overlay.unwrap_or_default();
+    let radon_desc = radon_overlay.unwrap_or_default();
+    write_overlay(
+        &gray,
+        &chess_desc,
+        &overlay_dir.join(format!("{base}__chess.png")),
+    )?;
+    write_overlay(
+        &gray,
+        &radon_desc,
+        &overlay_dir.join(format!("{base}__radon.png")),
+    )?;
+
+    Ok(ImageResult {
+        label: base.to_string(),
+        file: file.to_string(),
+        width: w,
+        height: h,
+        chess_overlay: format!("./img/{base}__chess.png"),
+        radon_overlay: format!("./img/{base}__radon.png"),
+        configs,
     })
 }
 
@@ -265,51 +484,52 @@ fn put(img: &mut RgbImage, x: i32, y: i32, color: Rgb<u8>) {
     }
 }
 
-fn json_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+fn round4(x: f64) -> f64 {
+    (x * 1e4).round() / 1e4
+}
+fn round2(x: f64) -> f64 {
+    (x * 1e2).round() / 1e2
 }
 
 fn emit_json(results: &[ImageResult]) -> String {
-    let mut out = String::from("{\n  \"images\": [\n");
-    for (i, r) in results.iter().enumerate() {
-        if i > 0 {
-            out.push_str(",\n");
-        }
-        out.push_str(&format!(
-            concat!(
-                "    {{\n",
-                "      \"label\": \"{label}\",\n",
-                "      \"file\": \"{file}\",\n",
-                "      \"img\": \"{img}\",\n",
-                "      \"width\": {width},\n",
-                "      \"height\": {height},\n",
-                "      \"corner_count\": {corner_count},\n",
-                "      \"total_ms\": {total:.4},\n",
-                "      \"throughput_mpix_s\": {tput:.2},\n",
-                "      \"stages\": {{\n",
-                "        \"response\": {resp:.4},\n",
-                "        \"detection\": {det:.4},\n",
-                "        \"refinement\": {refi:.4},\n",
-                "        \"orientation\": {ori:.4}\n",
-                "      }}\n",
-                "    }}"
-            ),
-            label = json_escape(&r.label),
-            file = json_escape(&r.file),
-            img = json_escape(&r.img),
-            width = r.width,
-            height = r.height,
-            corner_count = r.corner_count,
-            total = r.total_ms,
-            tput = r.throughput_mpix_s,
-            resp = r.stages.response,
-            det = r.stages.detection,
-            refi = r.stages.refinement,
-            ori = r.stages.orientation,
-        ));
-    }
-    out.push_str("\n  ]\n}\n");
-    out
+    let images: Vec<serde_json::Value> = results
+        .iter()
+        .map(|r| {
+            let configs: Vec<serde_json::Value> = r
+                .configs
+                .iter()
+                .map(|c| {
+                    json!({
+                        "id": c.id,
+                        "detector": c.detector,
+                        "refiner": c.refiner,
+                        "orientation": c.orientation,
+                        "corner_count": c.corner_count,
+                        "stages": {
+                            "response": round4(c.stages.response),
+                            "detection": round4(c.stages.detection),
+                            "refinement": round4(c.stages.refinement),
+                            "orientation": round4(c.stages.orientation),
+                        },
+                        "total_ms": round4(c.total_ms),
+                        "throughput_mpix_s": round2(c.throughput_mpix_s),
+                    })
+                })
+                .collect();
+            json!({
+                "label": r.label,
+                "file": r.file,
+                "width": r.width,
+                "height": r.height,
+                "overlays": { "chess": r.chess_overlay, "radon": r.radon_overlay },
+                "configs": configs,
+            })
+        })
+        .collect();
+    let doc = json!({ "images": images });
+    let mut s = serde_json::to_string_pretty(&doc).expect("serialize perf json");
+    s.push('\n');
+    s
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -332,9 +552,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&overlay_dir)?;
 
     let mut results = Vec::new();
-    for (label, file) in IMAGES {
-        eprintln!("perf_overlay: measuring {label} ({file})");
-        results.push(measure(label, file, &overlay_dir, warmup, repeats)?);
+    for (base, file) in IMAGES {
+        eprintln!("perf_overlay: measuring {base} ({file})");
+        results.push(measure_image(base, file, &overlay_dir, warmup, repeats)?);
     }
 
     let json = emit_json(&results);

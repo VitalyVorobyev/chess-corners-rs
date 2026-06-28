@@ -7,14 +7,16 @@
 # committed and published, so it must stay public.
 #
 # Steps:
-#   1. `perf_overlay` measures the single-scale ChESS pipeline per stage
-#      (response / detection / refinement / orientation) on each image,
-#      warmup + REPEATS iterations, reporting the p50, and writes a
-#      detection-overlay PNG per image into the published img/ dir.
+#   1. `perf_overlay` measures a matrix of detector configs per stage
+#      (ChESS and Radon, every refiner x orientation method; response /
+#      detection / refinement / orientation) on each image, warmup +
+#      REPEATS iterations, reporting the p50, and writes two
+#      detection-overlay PNGs per image (one per detector) into the
+#      published img/ dir.
 #   2. A guard aborts before the merge if no measurement was produced.
-#   3. gen_perf_data.py merges the measured numbers + host metadata into
-#      data.json, preserving the editorial prose. total_ms / throughput
-#      are re-derived from the per-stage p50s there.
+#   3. gen_perf_data.py merges the measured per-config matrix + host
+#      metadata into data.json, preserving the editorial prose. Per-config
+#      total_ms / throughput are re-derived from the per-stage p50s there.
 #
 # Usage:
 #   bash scripts/gen-perf-data.sh
@@ -39,7 +41,7 @@ log() { printf '\n==== %s ====\n' "$*"; }
 
 # ---- 1. Per-stage timing + detection overlays on the public images ----
 out="$RAW/perf.json"
-log "perf_overlay (small/mid/large; per-stage p50 + detection overlays)"
+log "perf_overlay (small/mid/large; per-config matrix p50 + per-detector overlays)"
 cargo run --release -q -p chess-corners --example perf_overlay --features "$FEATURES" -- \
   --repeats "$REPEATS" --warmup "$WARMUP" \
   --out "$out" \
