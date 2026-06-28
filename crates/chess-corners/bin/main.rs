@@ -13,10 +13,7 @@ use log::LevelFilter;
 #[cfg(not(feature = "tracing"))]
 use std::str::FromStr;
 
-use commands::{
-    apply_overrides, load_config, run_detection, ChessRefinerSel, DetectionOverrides,
-    RadonRefinerSel,
-};
+use commands::{apply_overrides, load_config, run_detection, ChessRefinerSel, DetectionOverrides};
 
 #[cfg(feature = "tracing")]
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -77,11 +74,6 @@ enum Commands {
         /// strategy is Radon.
         #[arg(long)]
         chess_refiner: Option<String>,
-        /// Override the Radon subpixel refiner (`radon_peak`,
-        /// `center_of_mass`). Has no effect when the active strategy
-        /// is ChESS.
-        #[arg(long)]
-        radon_refiner: Option<String>,
         /// Integer upscale factor (2, 3, or 4). If set, enables
         /// pre-pipeline bilinear upscaling. Pass `0` or omit to leave
         /// the JSON config value unchanged.
@@ -111,7 +103,6 @@ fn main() -> Result<()> {
             nms_radius,
             min_cluster_size,
             chess_refiner,
-            radon_refiner,
             upscale_factor,
             #[cfg(feature = "tracing")]
             json_trace,
@@ -131,7 +122,6 @@ fn main() -> Result<()> {
                 nms_radius,
                 min_cluster_size,
                 chess_refiner: parse_flag_enum::<ChessRefinerSel>(chess_refiner.as_deref())?,
-                radon_refiner: parse_flag_enum::<RadonRefinerSel>(radon_refiner.as_deref())?,
                 upscale_factor,
             };
             apply_overrides(&mut cfg, overrides);

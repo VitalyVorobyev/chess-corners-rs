@@ -22,8 +22,7 @@ use chess_corners::{
     ForstnerConfig as RsForstnerConfig, MultiscaleConfig as RsMultiscaleConfig,
     OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
     RadonConfig as RsRadonConfig, RadonPeakConfig as RsRadonPeakConfig,
-    RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
-    UpscaleConfig as RsUpscaleConfig,
+    SaddlePointConfig as RsSaddlePointConfig, UpscaleConfig as RsUpscaleConfig,
 };
 use pyo3::create_exception;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -1648,223 +1647,6 @@ impl ChessRefiner {
 }
 
 // ---------------------------------------------------------------------------
-// RadonRefiner (variant-tagged wrapper).
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum RadonRefinerKind {
-    RadonPeak,
-    CenterOfMass,
-}
-
-impl RadonRefinerKind {
-    fn as_str(&self) -> &'static str {
-        match self {
-            RadonRefinerKind::RadonPeak => "radon_peak",
-            RadonRefinerKind::CenterOfMass => "center_of_mass",
-        }
-    }
-}
-
-/// Subpixel refiner selection for the Radon detector. Build via
-/// `RadonRefiner.radon_peak(...)` or `.center_of_mass(...)`.
-#[pyclass(module = "chess_corners", skip_from_py_object)]
-#[derive(Clone, Debug)]
-pub struct RadonRefiner {
-    kind: RadonRefinerKind,
-    radon_peak: RsRadonPeakConfig,
-    center_of_mass: RsCenterOfMassConfig,
-}
-
-impl RadonRefiner {
-    fn from_rs(v: RsRadonRefiner) -> Self {
-        let mut cfg = Self {
-            kind: RadonRefinerKind::RadonPeak,
-            radon_peak: RsRadonPeakConfig::default(),
-            center_of_mass: RsCenterOfMassConfig::default(),
-        };
-        match v {
-            RsRadonRefiner::RadonPeak(c) => {
-                cfg.kind = RadonRefinerKind::RadonPeak;
-                cfg.radon_peak = c;
-            }
-            RsRadonRefiner::CenterOfMass(c) => {
-                cfg.kind = RadonRefinerKind::CenterOfMass;
-                cfg.center_of_mass = c;
-            }
-            _ => {
-                cfg.kind = RadonRefinerKind::RadonPeak;
-            }
-        }
-        cfg
-    }
-
-    pub(crate) fn to_rs(&self) -> RsRadonRefiner {
-        match self.kind {
-            RadonRefinerKind::RadonPeak => RsRadonRefiner::RadonPeak(self.radon_peak),
-            RadonRefinerKind::CenterOfMass => RsRadonRefiner::CenterOfMass(self.center_of_mass),
-        }
-    }
-}
-
-#[pymethods]
-impl RadonRefiner {
-    /// Default-construct: Radon-peak refinement with default tuning.
-    #[new]
-    fn new() -> Self {
-        Self::from_rs(RsRadonRefiner::default())
-    }
-
-    /// Radon-projection refinement along candidate axes.
-    #[classmethod]
-    #[pyo3(name = "radon_peak", signature = (cfg=None))]
-    fn ctor_radon_peak(
-        _cls: &Bound<'_, PyType>,
-        py: Python<'_>,
-        cfg: Option<Py<RadonPeakConfig>>,
-    ) -> Self {
-        let inner = cfg.map(|c| c.borrow(py).inner).unwrap_or_default();
-        Self {
-            kind: RadonRefinerKind::RadonPeak,
-            radon_peak: inner,
-            center_of_mass: RsCenterOfMassConfig::default(),
-        }
-    }
-
-    /// Center-of-mass refinement on the response map.
-    #[classmethod]
-    #[pyo3(name = "center_of_mass", signature = (cfg=None))]
-    fn ctor_center_of_mass(
-        _cls: &Bound<'_, PyType>,
-        py: Python<'_>,
-        cfg: Option<Py<CenterOfMassConfig>>,
-    ) -> Self {
-        let inner = cfg.map(|c| c.borrow(py).inner).unwrap_or_default();
-        Self {
-            kind: RadonRefinerKind::CenterOfMass,
-            radon_peak: RsRadonPeakConfig::default(),
-            center_of_mass: inner,
-        }
-    }
-
-    /// Variant tag: `"radon_peak"` or `"center_of_mass"`.
-    #[getter]
-    fn kind(&self) -> &'static str {
-        self.kind.as_str()
-    }
-
-    /// Tuning payload of the active variant. Returns the typed config
-    /// struct (`RadonPeakConfig` or `CenterOfMassConfig`). Modifying
-    /// the returned object does not affect the refiner; rebuild via
-    /// the appropriate classmethod factory to apply changes.
-    #[getter]
-    fn payload(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        match self.kind {
-            RadonRefinerKind::RadonPeak => Ok(Py::new(
-                py,
-                RadonPeakConfig {
-                    inner: self.radon_peak,
-                },
-            )?
-            .into_any()),
-            RadonRefinerKind::CenterOfMass => Ok(Py::new(
-                py,
-                CenterOfMassConfig {
-                    inner: self.center_of_mass,
-                },
-            )?
-            .into_any()),
-        }
-    }
-
-    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        let d = PyDict::new(py);
-        match self.kind {
-            RadonRefinerKind::RadonPeak => {
-                let cfg = RadonPeakConfig {
-                    inner: self.radon_peak,
-                };
-                d.set_item("radon_peak", cfg.to_dict(py)?)?;
-            }
-            RadonRefinerKind::CenterOfMass => {
-                let cfg = CenterOfMassConfig {
-                    inner: self.center_of_mass,
-                };
-                d.set_item("center_of_mass", cfg.to_dict(py)?)?;
-            }
-        }
-        Ok(d.unbind())
-    }
-
-    #[classmethod]
-    fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let dict = require_dict(data, "refiner")?;
-        reject_unknown_keys(&dict, &["radon_peak", "center_of_mass"], "refiner")?;
-        let has_radon = dict.get_item("radon_peak")?.is_some();
-        let has_com = dict.get_item("center_of_mass")?.is_some();
-        if has_radon && has_com {
-            return Err(config_error(
-                "refiner must have exactly one of: radon_peak, center_of_mass",
-            ));
-        }
-        if has_radon {
-            let value = dict
-                .get_item("radon_peak")?
-                .ok_or_else(|| config_error("refiner.radon_peak missing"))?;
-            let py = data.py();
-            let cls = py.get_type::<RadonPeakConfig>();
-            let cfg = RadonPeakConfig::from_dict(&cls, &value)?;
-            return Ok(Self {
-                kind: RadonRefinerKind::RadonPeak,
-                radon_peak: cfg.inner,
-                center_of_mass: RsCenterOfMassConfig::default(),
-            });
-        }
-        if has_com {
-            let value = dict
-                .get_item("center_of_mass")?
-                .ok_or_else(|| config_error("refiner.center_of_mass missing"))?;
-            let py = data.py();
-            let cls = py.get_type::<CenterOfMassConfig>();
-            let cfg = CenterOfMassConfig::from_dict(&cls, &value)?;
-            return Ok(Self {
-                kind: RadonRefinerKind::CenterOfMass,
-                radon_peak: RsRadonPeakConfig::default(),
-                center_of_mass: cfg.inner,
-            });
-        }
-        Err(config_error(
-            "refiner must have one of: radon_peak, center_of_mass",
-        ))
-    }
-
-    #[pyo3(signature = (*, indent=None, sort_keys=true))]
-    fn to_json(&self, py: Python<'_>, indent: Option<i64>, sort_keys: bool) -> PyResult<String> {
-        let dict = self.to_dict(py)?;
-        json_dumps(py, dict.bind(py), indent, sort_keys)
-    }
-
-    #[classmethod]
-    fn from_json(cls: &Bound<'_, PyType>, py: Python<'_>, text: &str) -> PyResult<Self> {
-        let value = json_loads(py, text)
-            .map_err(|e| config_error(format!("failed to parse config JSON: {e}")))?;
-        Self::from_dict(cls, &value)
-    }
-
-    #[pyo3(signature = (*, indent=2, sort_keys=true))]
-    fn pretty(&self, py: Python<'_>, indent: i64, sort_keys: bool) -> PyResult<String> {
-        self.to_json(py, Some(indent), sort_keys)
-    }
-
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        self.pretty(py, 2, true)
-    }
-    fn __str__(&self, py: Python<'_>) -> PyResult<String> {
-        self.pretty(py, 2, true)
-    }
-}
-
-// ---------------------------------------------------------------------------
 // ChessConfig
 // ---------------------------------------------------------------------------
 
@@ -1977,27 +1759,24 @@ pub struct RadonConfig {
     pub(crate) image_upsample: u32,
     pub(crate) response_blur_radius: u32,
     pub(crate) peak_fit: RsPeakFitMode,
-    pub(crate) refiner: Py<RadonRefiner>,
 }
 
 impl RadonConfig {
-    fn from_rs(py: Python<'_>, v: RsRadonConfig) -> PyResult<Self> {
+    fn from_rs(_py: Python<'_>, v: RsRadonConfig) -> PyResult<Self> {
         Ok(Self {
             ray_radius: v.ray_radius,
             image_upsample: v.image_upsample,
             response_blur_radius: v.response_blur_radius,
             peak_fit: v.peak_fit,
-            refiner: Py::new(py, RadonRefiner::from_rs(v.refiner))?,
         })
     }
 
-    pub(crate) fn to_rs(&self, py: Python<'_>) -> RsRadonConfig {
+    pub(crate) fn to_rs(&self, _py: Python<'_>) -> RsRadonConfig {
         let mut cfg = RsRadonConfig::default();
         cfg.ray_radius = self.ray_radius;
         cfg.image_upsample = self.image_upsample;
         cfg.response_blur_radius = self.response_blur_radius;
         cfg.peak_fit = self.peak_fit;
-        cfg.refiner = self.refiner.borrow(py).to_rs();
         cfg
     }
 }
@@ -2045,22 +1824,12 @@ impl RadonConfig {
         self.peak_fit = v.into();
     }
 
-    #[getter]
-    fn refiner(&self, py: Python<'_>) -> Py<RadonRefiner> {
-        self.refiner.clone_ref(py)
-    }
-    #[setter]
-    fn set_refiner(&mut self, v: Py<RadonRefiner>) {
-        self.refiner = v;
-    }
-
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
         d.set_item("ray_radius", self.ray_radius)?;
         d.set_item("image_upsample", self.image_upsample)?;
         d.set_item("response_blur_radius", self.response_blur_radius)?;
         d.set_item("peak_fit", peak_fit_mode_str(self.peak_fit))?;
-        d.set_item("refiner", self.refiner.borrow(py).to_dict(py)?)?;
         Ok(d.unbind())
     }
 
@@ -2094,10 +1863,6 @@ impl RadonConfig {
         }
         if let Some(s) = extract_string(&dict, "peak_fit", "radon")? {
             cfg.peak_fit = parse_peak_fit_mode(&s, "radon.peak_fit")?;
-        }
-        if let Some(value) = dict.get_item("refiner")? {
-            let cls = py.get_type::<RadonRefiner>();
-            cfg.refiner = Py::new(py, RadonRefiner::from_dict(&cls, &value)?)?;
         }
         Ok(cfg)
     }
@@ -2629,9 +2394,6 @@ impl DetectorConfig {
                         "unexpected keyword argument: '{key_str}'"
                     )));
                 }
-            }
-            if let Some(v) = kw.get_item("refiner")? {
-                radon.refiner = v.extract::<Py<RadonRefiner>>()?;
             }
             if let Some(v) = kw.get_item("ray_radius")? {
                 radon.ray_radius = v.extract::<u32>()?;

@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Breaking:** removed the `RadonRefiner` config — the Rust enum, the
+  `RadonConfig.refiner` field, the Python/WASM `RadonRefiner` type, and the
+  CLI `--radon-refiner` flag. It was a no-op: the Radon detector never
+  applied a pluggable refiner, so the choice had no effect on output.
+  Radon's subpixel accuracy comes from its built-in Gaussian peak fit
+  (`peak_fit`), which is unchanged. Migration: delete any `refiner` set on
+  a Radon config — Radon detection results are identical.
 - **Breaking:** dropped the `contrast` and `fit_rms` fields from
   `CornerDescriptor`. The public descriptor is now
   `{ x, y, response, axes }`, and a single `response` score is the

@@ -22,11 +22,10 @@
 //!    3-point Gaussian response-map peak fit — Radon's only subpixel step.
 //! 3. **refinement**  — image-domain subpixel refinement
 //!    ([`refine_corners_on_image`]). The ChESS strategy runs the
-//!    configured refiner here; the Radon strategy's facade refinement is
-//!    a no-op (`RadonDetector::refine_peaks_on_image` returns peaks
-//!    unchanged and never consults the configured `RadonRefiner`), so the
-//!    Radon refinement stage measures as `0` and the two Radon refiner
-//!    rows are identical by construction.
+//!    configured refiner here; the Radon strategy has no pluggable
+//!    image-domain refiner — its subpixel step is the 3-point Gaussian
+//!    peak fit inside detection — so the Radon refinement stage measures
+//!    as `0`.
 //! 4. **orientation** — two-axis orientation fit / descriptor assembly
 //!    ([`describe_corners`]). `off` configs skip the per-corner fit, so
 //!    the orientation stage collapses to descriptor assembly (~0 ms).
@@ -65,7 +64,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use chess_corners::low_level::{to_chess_params, to_radon_detector_params};
-use chess_corners::{ChessRefiner, DetectorConfig, OrientationMethod, RadonRefiner};
+use chess_corners::{ChessRefiner, DetectorConfig, OrientationMethod};
 use chess_corners_core::unstable::{
     detect_peaks_from_response_with_refine_radius, refine_corners_on_image, ChessParams,
 };
@@ -183,9 +182,9 @@ fn with_orientation(cfg: DetectorConfig, orientation: &str) -> DetectorConfig {
     }
 }
 
-/// Build the 9 ChESS + 6 Radon configs measured per image.
+/// Build the 9 ChESS + 3 Radon configs measured per image.
 fn build_specs() -> Vec<ConfigSpec> {
-    let mut specs = Vec::with_capacity(15);
+    let mut specs = Vec::with_capacity(12);
 
     let chess_refiners: [(&str, ChessRefiner); 3] = [
         ("center_of_mass", ChessRefiner::center_of_mass()),
@@ -208,24 +207,17 @@ fn build_specs() -> Vec<ConfigSpec> {
         }
     }
 
-    let radon_refiners: [(&str, RadonRefiner); 2] = [
-        ("radon_peak", RadonRefiner::radon_peak()),
-        ("center_of_mass", RadonRefiner::center_of_mass()),
-    ];
-    for (refiner, kind) in radon_refiners {
-        for orientation in ORIENTATIONS {
-            let cfg = with_orientation(
-                DetectorConfig::radon().with_radon(|r| r.refiner = kind),
-                orientation,
-            );
-            specs.push(ConfigSpec {
-                id: format!("radon__{refiner}__{orientation}"),
-                detector: "radon",
-                refiner,
-                orientation,
-                cfg,
-            });
-        }
+    // Radon's subpixel step is its built-in Gaussian peak fit; it has no
+    // pluggable refiner, so the refiner axis is fixed.
+    for orientation in ORIENTATIONS {
+        let cfg = with_orientation(DetectorConfig::radon(), orientation);
+        specs.push(ConfigSpec {
+            id: format!("radon__gaussian_peak__{orientation}"),
+            detector: "radon",
+            refiner: "gaussian_peak",
+            orientation,
+            cfg,
+        });
     }
 
     specs
@@ -295,11 +287,10 @@ fn measure_chess(
 /// Faithful single-scale Radon stage decomposition (matches the facade
 /// `Detector` for `DetectionStrategy::Radon`).
 ///
-/// The Radon strategy's image-domain refinement is a no-op in the facade
-/// (`RadonDetector::refine_peaks_on_image` returns peaks unchanged and
-/// never consults the configured `RadonRefiner`), so the refinement stage
-/// is reported as `0`. Radon's subpixel step is the 3-point Gaussian fit
-/// inside `detect_peaks_from_radon`, already accounted for in `detection`.
+/// The Radon strategy has no pluggable image-domain refiner, so the
+/// refinement stage is reported as `0`. Radon's subpixel step is the
+/// 3-point Gaussian fit inside `detect_peaks_from_radon`, already
+/// accounted for in `detection`.
 fn measure_radon(
     cfg: &DetectorConfig,
     data: &[u8],

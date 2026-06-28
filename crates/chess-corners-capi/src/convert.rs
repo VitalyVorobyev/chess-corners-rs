@@ -22,7 +22,7 @@
 
 use chess_corners::{
     ChessError, ChessRefiner, CornerDescriptor, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, OrientationMethod, RadonRefiner,
+    MultiscaleConfig, OrientationMethod,
 };
 
 use crate::{
@@ -69,14 +69,9 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
             };
             DetectorConfig::chess().with_chess(|c| c.refiner = refiner)
         }
-        CC_STRATEGY_RADON => {
-            let refiner = match cfg.refiner {
-                CC_REFINER_CENTER_OF_MASS => RadonRefiner::center_of_mass(),
-                CC_REFINER_RADON_PEAK => RadonRefiner::radon_peak(),
-                _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
-            };
-            DetectorConfig::radon().with_radon(|r| r.refiner = refiner)
-        }
+        // Radon has no pluggable refiner (subpixel is its Gaussian peak
+        // fit); the shared `refiner` tag is ignored for this strategy.
+        CC_STRATEGY_RADON => DetectorConfig::radon(),
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
     };
 
@@ -101,7 +96,7 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
 pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
     let (strategy, refiner) = match config.strategy {
         DetectionStrategy::Chess(c) => (CC_STRATEGY_CHESS, chess_refiner_tag(c.refiner)),
-        DetectionStrategy::Radon(r) => (CC_STRATEGY_RADON, radon_refiner_tag(r.refiner)),
+        DetectionStrategy::Radon(_) => (CC_STRATEGY_RADON, CC_REFINER_RADON_PEAK),
         _ => (CC_STRATEGY_CHESS, CC_REFINER_CENTER_OF_MASS),
     };
     let multiscale = match config.multiscale {
@@ -132,14 +127,6 @@ fn chess_refiner_tag(refiner: ChessRefiner) -> cc_refiner_t {
         ChessRefiner::SaddlePoint(_) => CC_REFINER_SADDLE_POINT,
         // Future / feature-gated variants (e.g. the ML refiner) have no flat
         // tag; fall back to the universally valid center-of-mass tag.
-        _ => CC_REFINER_CENTER_OF_MASS,
-    }
-}
-
-fn radon_refiner_tag(refiner: RadonRefiner) -> cc_refiner_t {
-    match refiner {
-        RadonRefiner::RadonPeak(_) => CC_REFINER_RADON_PEAK,
-        RadonRefiner::CenterOfMass(_) => CC_REFINER_CENTER_OF_MASS,
         _ => CC_REFINER_CENTER_OF_MASS,
     }
 }

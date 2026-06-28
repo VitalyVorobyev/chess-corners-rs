@@ -5,8 +5,8 @@
 //!
 //! Each wrapper stores its inner Rust value in a shared
 //! `Rc<RefCell<T>>` cell, and compound wrappers (`DetectorConfig`,
-//! `DetectionStrategy`, `ChessConfig`, `RadonConfig`, `ChessRefiner`,
-//! `RadonRefiner`) hold `Rc` handles to their children's cells. A
+//! `DetectionStrategy`, `ChessConfig`, `RadonConfig`,
+//! `ChessRefiner`) hold `Rc` handles to their children's cells. A
 //! getter returns a wrapper backed by the same cell as the parent,
 //! so chained mutation propagates without a round-trip:
 //!
@@ -56,8 +56,7 @@ use chess_corners::{
     ForstnerConfig as RsForstnerConfig, MultiscaleConfig as RsMultiscaleConfig,
     OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
     RadonConfig as RsRadonConfig, RadonPeakConfig as RsRadonPeakConfig,
-    RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
-    UpscaleConfig as RsUpscaleConfig,
+    SaddlePointConfig as RsSaddlePointConfig, UpscaleConfig as RsUpscaleConfig,
 };
 use wasm_bindgen::prelude::*;
 
@@ -476,15 +475,6 @@ impl Default for RadonPeakConfig {
     }
 }
 
-impl RadonPeakConfig {
-    pub(crate) fn share_cell(&self) -> Cell<RsRadonPeakConfig> {
-        Rc::clone(&self.cell)
-    }
-    pub(crate) fn from_cell(cell: Cell<RsRadonPeakConfig>) -> Self {
-        Self { cell }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // ChessRefiner discriminant (internal)
 // ---------------------------------------------------------------------------
@@ -692,135 +682,6 @@ impl ChessRefiner {
             }
             #[cfg(feature = "ml-refiner")]
             ChessRefinerKind::Ml => RsChessRefiner::Ml,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// RadonRefiner discriminant (internal)
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RadonRefinerKind {
-    RadonPeak,
-    CenterOfMass,
-}
-
-impl RadonRefinerKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            RadonRefinerKind::RadonPeak => "radon_peak",
-            RadonRefinerKind::CenterOfMass => "center_of_mass",
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// RadonRefiner (tagged class)
-// ---------------------------------------------------------------------------
-
-/// Subpixel refiner selection for the whole-image Radon detector.
-///
-/// Construct one via [`RadonRefiner::radon_peak`] or
-/// [`RadonRefiner::center_of_mass`]. In JS these are
-/// `RadonRefiner.withRadonPeak(...)` and
-/// `RadonRefiner.withCenterOfMass(...)`. Instance getters
-/// (`refiner.radonPeak`, `refiner.centerOfMass`) hand back the
-/// corresponding payload wrapper.
-#[wasm_bindgen]
-#[derive(Clone, Debug)]
-pub struct RadonRefiner {
-    kind: Cell<RadonRefinerKind>,
-    radon_peak: Cell<RsRadonPeakConfig>,
-    center_of_mass: Cell<RsCenterOfMassConfig>,
-}
-
-#[wasm_bindgen]
-impl RadonRefiner {
-    /// Radon-projection refinement along candidate axes. JS:
-    /// `RadonRefiner.withRadonPeak(cfg)`.
-    #[wasm_bindgen(js_name = withRadonPeak)]
-    pub fn radon_peak(cfg: &RadonPeakConfig) -> Self {
-        Self {
-            kind: cell(RadonRefinerKind::RadonPeak),
-            radon_peak: cfg.share_cell(),
-            center_of_mass: cell(RsCenterOfMassConfig::default()),
-        }
-    }
-
-    /// Center-of-mass refinement on the response map. JS:
-    /// `RadonRefiner.withCenterOfMass(cfg)`.
-    #[wasm_bindgen(js_name = withCenterOfMass)]
-    pub fn center_of_mass(cfg: &CenterOfMassConfig) -> Self {
-        Self {
-            kind: cell(RadonRefinerKind::CenterOfMass),
-            radon_peak: cell(RsRadonPeakConfig::default()),
-            center_of_mass: cfg.share_cell(),
-        }
-    }
-
-    /// Discriminant tag: `"radon_peak"` or `"center_of_mass"`.
-    #[wasm_bindgen(getter)]
-    pub fn kind(&self) -> String {
-        self.kind.borrow().as_str().into()
-    }
-
-    /// Radon-peak payload wrapper.
-    #[wasm_bindgen(getter, js_name = radonPeak)]
-    pub fn get_radon_peak(&self) -> RadonPeakConfig {
-        RadonPeakConfig::from_cell(Rc::clone(&self.radon_peak))
-    }
-    #[wasm_bindgen(setter, js_name = radonPeak)]
-    pub fn set_radon_peak(&mut self, v: &RadonPeakConfig) {
-        *self.radon_peak.borrow_mut() = *v.cell.borrow();
-        *self.kind.borrow_mut() = RadonRefinerKind::RadonPeak;
-    }
-
-    /// Center-of-mass payload wrapper.
-    #[wasm_bindgen(getter, js_name = centerOfMass)]
-    pub fn get_center_of_mass(&self) -> CenterOfMassConfig {
-        CenterOfMassConfig::from_cell(Rc::clone(&self.center_of_mass))
-    }
-    #[wasm_bindgen(setter, js_name = centerOfMass)]
-    pub fn set_center_of_mass(&mut self, v: &CenterOfMassConfig) {
-        *self.center_of_mass.borrow_mut() = *v.cell.borrow();
-        *self.kind.borrow_mut() = RadonRefinerKind::CenterOfMass;
-    }
-}
-
-impl Default for RadonRefiner {
-    fn default() -> Self {
-        Self {
-            kind: cell(RadonRefinerKind::RadonPeak),
-            radon_peak: cell(RsRadonPeakConfig::default()),
-            center_of_mass: cell(RsCenterOfMassConfig::default()),
-        }
-    }
-}
-
-impl RadonRefiner {
-    fn from_value(value: RsRadonRefiner) -> Self {
-        let me = Self::default();
-        match value {
-            RsRadonRefiner::RadonPeak(cfg) => {
-                *me.kind.borrow_mut() = RadonRefinerKind::RadonPeak;
-                *me.radon_peak.borrow_mut() = cfg;
-            }
-            RsRadonRefiner::CenterOfMass(cfg) => {
-                *me.kind.borrow_mut() = RadonRefinerKind::CenterOfMass;
-                *me.center_of_mass.borrow_mut() = cfg;
-            }
-            _ => {}
-        }
-        me
-    }
-
-    fn snapshot(&self) -> RsRadonRefiner {
-        match *self.kind.borrow() {
-            RadonRefinerKind::RadonPeak => RsRadonRefiner::RadonPeak(*self.radon_peak.borrow()),
-            RadonRefinerKind::CenterOfMass => {
-                RsRadonRefiner::CenterOfMass(*self.center_of_mass.borrow())
-            }
         }
     }
 }
@@ -1266,10 +1127,8 @@ impl ChessConfig {
 /// [`chess_corners::RadonConfig`]. All radii / counts are in
 /// **working-resolution** pixels (i.e. after `imageUpsample`).
 ///
-/// All fields — including the refiner discriminant and payloads — are
-/// stored as shared `Rc<RefCell<…>>` cells. The `refiner` getter
-/// assembles a [`RadonRefiner`] wrapper out of clones of those cells,
-/// so nested chained edits propagate through the radon config.
+/// All fields are stored as shared `Rc<RefCell<…>>` cells, so nested
+/// chained edits propagate through the radon config.
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
 pub struct RadonConfig {
@@ -1277,9 +1136,6 @@ pub struct RadonConfig {
     image_upsample: Cell<u32>,
     response_blur_radius: Cell<u32>,
     peak_fit: Cell<RsPeakFitMode>,
-    refiner_kind: Cell<RadonRefinerKind>,
-    refiner_radon_peak: Cell<RsRadonPeakConfig>,
-    refiner_center_of_mass: Cell<RsCenterOfMassConfig>,
 }
 
 #[wasm_bindgen]
@@ -1324,24 +1180,6 @@ impl RadonConfig {
     pub fn set_peak_fit(&mut self, v: PeakFitMode) {
         *self.peak_fit.borrow_mut() = v.into();
     }
-
-    /// Subpixel refiner. Returns a wrapper that shares cells with this
-    /// config; edits propagate without a round-trip.
-    #[wasm_bindgen(getter)]
-    pub fn refiner(&self) -> RadonRefiner {
-        RadonRefiner {
-            kind: Rc::clone(&self.refiner_kind),
-            radon_peak: Rc::clone(&self.refiner_radon_peak),
-            center_of_mass: Rc::clone(&self.refiner_center_of_mass),
-        }
-    }
-    #[wasm_bindgen(setter)]
-    pub fn set_refiner(&mut self, v: &RadonRefiner) {
-        // Copy v's cell contents into this config's existing cells.
-        *self.refiner_kind.borrow_mut() = *v.kind.borrow();
-        *self.refiner_radon_peak.borrow_mut() = *v.radon_peak.borrow();
-        *self.refiner_center_of_mass.borrow_mut() = *v.center_of_mass.borrow();
-    }
 }
 
 impl Default for RadonConfig {
@@ -1352,15 +1190,11 @@ impl Default for RadonConfig {
 
 impl RadonConfig {
     fn from_value(value: RsRadonConfig) -> Self {
-        let refiner = RadonRefiner::from_value(value.refiner);
         Self {
             ray_radius: cell(value.ray_radius),
             image_upsample: cell(value.image_upsample),
             response_blur_radius: cell(value.response_blur_radius),
             peak_fit: cell(value.peak_fit),
-            refiner_kind: refiner.kind,
-            refiner_radon_peak: refiner.radon_peak,
-            refiner_center_of_mass: refiner.center_of_mass,
         }
     }
 
@@ -1372,23 +1206,14 @@ impl RadonConfig {
         *self.image_upsample.borrow_mut() = *other.image_upsample.borrow();
         *self.response_blur_radius.borrow_mut() = *other.response_blur_radius.borrow();
         *self.peak_fit.borrow_mut() = *other.peak_fit.borrow();
-        *self.refiner_kind.borrow_mut() = *other.refiner_kind.borrow();
-        *self.refiner_radon_peak.borrow_mut() = *other.refiner_radon_peak.borrow();
-        *self.refiner_center_of_mass.borrow_mut() = *other.refiner_center_of_mass.borrow();
     }
 
     fn snapshot(&self) -> RsRadonConfig {
-        let refiner_view = RadonRefiner {
-            kind: Rc::clone(&self.refiner_kind),
-            radon_peak: Rc::clone(&self.refiner_radon_peak),
-            center_of_mass: Rc::clone(&self.refiner_center_of_mass),
-        };
         let mut s = RsRadonConfig::default();
         s.ray_radius = *self.ray_radius.borrow();
         s.image_upsample = *self.image_upsample.borrow();
         s.response_blur_radius = *self.response_blur_radius.borrow();
         s.peak_fit = *self.peak_fit.borrow();
-        s.refiner = refiner_view.snapshot();
         s
     }
 }
@@ -1807,20 +1632,6 @@ impl DetectorConfig {
         out
     }
 
-    /// Return a copy of this config with the Radon refiner replaced.
-    ///
-    /// Use this instead of the `refiner` key in `withRadon({})`.
-    /// JS: `cfg.withRadonRefiner(RadonRefiner.withCenterOfMass(new CenterOfMassConfig()))`.
-    #[wasm_bindgen(js_name = withRadonRefiner)]
-    pub fn with_radon_refiner(&self, refiner: &RadonRefiner) -> Self {
-        let mut out = self.deep_clone();
-        if out.strategy.kind() != "radon" {
-            out.strategy.use_radon();
-        }
-        out.strategy.radon().set_refiner(refiner);
-        out
-    }
-
     /// Return a copy of this config with ChESS strategy fields patched
     /// from a plain JS options object.
     ///
@@ -1895,9 +1706,6 @@ impl DetectorConfig {
             let key_str = key.as_string().unwrap_or_default();
             let val = js_sys::Reflect::get(opts, &key)?;
             match key_str.as_str() {
-                "refiner" => {
-                    apply_radon_refiner_from_js(&mut out, val)?;
-                }
                 "rayRadius" => {
                     let r = val
                         .as_f64()
@@ -2049,16 +1857,10 @@ impl Default for DetectorConfig {
 /// object. wasm-bindgen Rust structs tagged with `#[wasm_bindgen]` are opaque
 /// pointers to JS — they cannot be extracted from a plain `JsValue` via
 /// `JsCast::dyn_ref`. Callers should use the dedicated typed builder methods
-/// `withChessRefiner` / `withRadonRefiner` instead.
+/// `withChessRefiner` instead.
 fn apply_chess_refiner_from_js(_cfg: &mut DetectorConfig, _val: JsValue) -> Result<(), JsValue> {
     Err(JsValue::from_str(
         "refiner cannot be set via the options object; use .withChessRefiner(refiner) instead",
-    ))
-}
-
-fn apply_radon_refiner_from_js(_cfg: &mut DetectorConfig, _val: JsValue) -> Result<(), JsValue> {
-    Err(JsValue::from_str(
-        "refiner cannot be set via the options object; use .withRadonRefiner(refiner) instead",
     ))
 }
 
@@ -2328,22 +2130,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn radon_refiner_center_of_mass_round_trips() {
-        let cfg = DetectorConfig::radon();
-        let mut radon = cfg.strategy().radon();
-        let cm = CenterOfMassConfig::new();
-        radon.set_refiner(&RadonRefiner::center_of_mass(&cm));
-        let snap = cfg.snapshot();
-        let RsDetectionStrategy::Radon(r) = snap.strategy else {
-            panic!("expected radon strategy")
-        };
-        assert!(matches!(
-            r.refiner,
-            chess_corners::RadonRefiner::CenterOfMass(_)
-        ));
-    }
-
     // ---- New 0.10.0 API ----
 
     #[test]
@@ -2513,22 +2299,6 @@ mod tests {
             !matches!(c_orig.refiner, chess_corners::ChessRefiner::Forstner(_)),
             "original config must not have Forstner refiner"
         );
-    }
-
-    #[test]
-    fn with_radon_refiner_builder_sets_center_of_mass() {
-        let cfg = DetectorConfig::radon();
-        let cm = CenterOfMassConfig::new();
-        let refiner = RadonRefiner::center_of_mass(&cm);
-        let cfg2 = cfg.with_radon_refiner(&refiner);
-        let snap = cfg2.snapshot();
-        let RsDetectionStrategy::Radon(r) = snap.strategy else {
-            panic!("expected radon strategy")
-        };
-        assert!(matches!(
-            r.refiner,
-            chess_corners::RadonRefiner::CenterOfMass(_)
-        ));
     }
 
     // The following tests use js_sys::Object / js_sys::Reflect which panic on

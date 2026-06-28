@@ -368,9 +368,9 @@ fn build_axis_rows(
         let (s, c) = theta.sin_cos();
         let row = &mut rows[k];
         let mut s_e = 0.0f32;
-        for p in 0..n {
+        for (p, row_p) in row.iter_mut().take(n).enumerate() {
             let d = -s * data.xs[p] + c * data.ys[p];
-            row[p] = (d / width).tanh();
+            *row_p = (d / width).tanh();
             let dd = signed_line_delta(data.grad_angles[p], theta);
             s_e += data.grad_weights[p] * (-0.5 * (dd / sigma) * (dd / sigma)).exp();
         }

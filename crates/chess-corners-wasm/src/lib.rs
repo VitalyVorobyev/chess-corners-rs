@@ -1,7 +1,7 @@
 //! WebAssembly bindings for the ChESS / Radon corner detector.
 //!
 //! Construct a typed [`DetectorConfig`] (with nested [`DetectionStrategy`],
-//! [`ChessConfig`] / [`RadonConfig`], [`ChessRefiner`] / [`RadonRefiner`],
+//! [`ChessConfig`] / [`RadonConfig`], [`ChessRefiner`],
 //! [`MultiscaleConfig`], [`UpscaleConfig`]), then pass it to
 //! [`ChessDetector::with_config`]. The typed config tree is the single
 //! source of truth for every detector knob.
@@ -44,7 +44,7 @@ use wasm_bindgen::prelude::*;
 pub use crate::config::{
     CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy,
     DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig,
-    RadonPeakConfig, RadonRefiner, SaddlePointConfig, UpscaleConfig,
+    RadonPeakConfig, SaddlePointConfig, UpscaleConfig,
 };
 
 /// Convert RGBA pixels to grayscale using BT.601 luminance weights.

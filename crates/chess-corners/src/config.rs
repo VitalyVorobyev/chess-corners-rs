@@ -2,7 +2,7 @@ use box_image_pyramid::PyramidParams;
 use chess_corners_core::{
     unstable::{ChessParams, RefinerKind},
     CenterOfMassConfig, ForstnerConfig, OrientationMethod, PeakFitMode, RadonDetectorParams,
-    RadonPeakConfig, SaddlePointConfig,
+    SaddlePointConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -72,39 +72,6 @@ impl ChessRefiner {
     /// Saddle-point quadratic fit with default tuning.
     pub fn saddle_point() -> Self {
         Self::SaddlePoint(SaddlePointConfig::default())
-    }
-}
-
-/// Subpixel refiner selection for the whole-image Radon detector.
-///
-/// Radon's `detect_corners` already runs a 3-point Gaussian peak fit
-/// on the response map; downstream refiners operate on the original
-/// image patch when meaningful.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum RadonRefiner {
-    /// Radon-projection refinement along candidate axes.
-    RadonPeak(RadonPeakConfig),
-    /// Center-of-mass refinement on the response map. A faster
-    /// alternative when the Radon peak quality is already high.
-    CenterOfMass(CenterOfMassConfig),
-}
-
-impl Default for RadonRefiner {
-    fn default() -> Self {
-        Self::RadonPeak(RadonPeakConfig::default())
-    }
-}
-
-impl RadonRefiner {
-    /// Radon-projection refinement with default tuning.
-    pub fn radon_peak() -> Self {
-        Self::RadonPeak(RadonPeakConfig::default())
-    }
-    /// Center-of-mass refinement with default tuning.
-    pub fn center_of_mass() -> Self {
-        Self::CenterOfMass(CenterOfMassConfig::default())
     }
 }
 
@@ -209,8 +176,6 @@ impl Default for ChessConfig {
 ///
 /// # Common knobs
 ///
-/// - [`refiner`](RadonConfig::refiner) — select and configure the
-///   subpixel refinement backend.
 /// - [`image_upsample`](RadonConfig::image_upsample) — `2` (the default)
 ///   reproduces the paper's 2× supersampled detection; `1` is faster but
 ///   less accurate on low-resolution inputs.
@@ -247,8 +212,6 @@ pub struct RadonConfig {
     /// on log-response (more accurate near the peak); `Parabolic` fits
     /// directly on the response values. See [`PeakFitMode`].
     pub peak_fit: PeakFitMode,
-    /// Subpixel refiner. Each variant carries its tuning struct.
-    pub refiner: RadonRefiner,
 }
 
 impl Default for RadonConfig {
@@ -258,7 +221,6 @@ impl Default for RadonConfig {
             image_upsample: 2,
             response_blur_radius: 1,
             peak_fit: PeakFitMode::Gaussian,
-            refiner: RadonRefiner::default(),
         }
     }
 }
@@ -594,7 +556,6 @@ impl DetectorConfig {
             params.image_upsample = radon.image_upsample;
             params.response_blur_radius = radon.response_blur_radius;
             params.peak_fit = radon.peak_fit;
-            params.refiner = radon_refiner_to_kind(radon.refiner);
         }
         // Radon interprets `threshold` as a fraction of the per-frame maximum.
         params.threshold_abs = None;
@@ -623,19 +584,6 @@ impl DetectorConfig {
         cfg.refinement_radius = refinement_radius;
         cfg.merge_radius = self.merge_radius;
         Some(cfg)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Refiner-enum → core RefinerKind translation
-// ---------------------------------------------------------------------------
-
-/// Translate a [`RadonRefiner`] into the lower-level [`RefinerKind`]
-/// used by `chess-corners-core`.
-pub(crate) fn radon_refiner_to_kind(refiner: RadonRefiner) -> RefinerKind {
-    match refiner {
-        RadonRefiner::RadonPeak(cfg) => RefinerKind::RadonPeak(cfg),
-        RadonRefiner::CenterOfMass(cfg) => RefinerKind::CenterOfMass(cfg),
     }
 }
 
@@ -738,10 +686,6 @@ mod tests {
         assert_eq!(radon.image_upsample, 2);
         assert_eq!(radon.response_blur_radius, 1);
         assert_eq!(radon.peak_fit, PeakFitMode::Gaussian);
-        assert_eq!(
-            radon.refiner,
-            RadonRefiner::RadonPeak(RadonPeakConfig::default())
-        );
         assert_eq!(cfg.detection.nms_radius, 4);
         assert_eq!(cfg.detection.min_cluster_size, 2);
         assert_eq!(cfg.threshold, 0.01);
@@ -755,10 +699,6 @@ mod tests {
         assert_eq!(radon_params.min_cluster_size, 2);
         assert_eq!(radon_params.threshold_abs, None);
         assert!((radon_params.threshold_rel - 0.01).abs() < f32::EPSILON);
-        assert_eq!(
-            radon_params.refiner,
-            RefinerKind::RadonPeak(RadonPeakConfig::default())
-        );
     }
 
     #[test]
@@ -805,22 +745,6 @@ mod tests {
         let params = cfg.chess_params();
         assert!(params.use_radius10);
         assert_eq!(params.refiner, RefinerKind::Forstner(forstner));
-    }
-
-    #[test]
-    fn radon_center_of_mass_refiner_round_trips_to_params() {
-        let cfg = DetectorConfig {
-            strategy: DetectionStrategy::Radon(RadonConfig {
-                refiner: RadonRefiner::CenterOfMass(CenterOfMassConfig::default()),
-                ..RadonConfig::default()
-            }),
-            ..DetectorConfig::radon()
-        };
-        let params = cfg.radon_detector_params();
-        assert_eq!(
-            params.refiner,
-            RefinerKind::CenterOfMass(CenterOfMassConfig::default())
-        );
     }
 
     #[test]
@@ -900,20 +824,6 @@ mod tests {
             let json = serde_json::to_string(&v).expect("serialize chess refiner");
             let decoded: ChessRefiner =
                 serde_json::from_str(&json).expect("deserialize chess refiner");
-            assert_eq!(decoded, v);
-        }
-    }
-
-    #[test]
-    fn radon_refiner_round_trips_each_variant() {
-        let variants = [
-            RadonRefiner::RadonPeak(RadonPeakConfig::default()),
-            RadonRefiner::CenterOfMass(CenterOfMassConfig::default()),
-        ];
-        for v in variants {
-            let json = serde_json::to_string(&v).expect("serialize radon refiner");
-            let decoded: RadonRefiner =
-                serde_json::from_str(&json).expect("deserialize radon refiner");
             assert_eq!(decoded, v);
         }
     }
@@ -1066,18 +976,6 @@ mod tests {
         assert_eq!(
             ChessRefiner::saddle_point(),
             ChessRefiner::SaddlePoint(SaddlePointConfig::default())
-        );
-    }
-
-    #[test]
-    fn radon_refiner_shortcuts_equal_full_constructors() {
-        assert_eq!(
-            RadonRefiner::radon_peak(),
-            RadonRefiner::RadonPeak(RadonPeakConfig::default())
-        );
-        assert_eq!(
-            RadonRefiner::center_of_mass(),
-            RadonRefiner::CenterOfMass(CenterOfMassConfig::default())
         );
     }
 
