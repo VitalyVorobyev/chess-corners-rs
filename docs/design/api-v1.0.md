@@ -31,9 +31,14 @@ pub struct CornerDescriptor {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub axes: [AxisEstimate; 2],
+    pub axes: Option<[AxisEstimate; 2]>,
 }
 ```
+
+`axes` is an `Option`: the per-corner orientation fit is opt-out via
+`DetectorConfig::without_orientation()`, in which case `axes` is `None`.
+The Python `(N, 7)` array and WASM stride-7 `Float32Array` keep their
+shape — the four axis columns are `NaN` when the fit is skipped.
 
 Rationale: at `crates/chess-corners-core/src/orientation/descriptor.rs:81-82`
 both fields are just re-exposed copies of the fit-internal `fit.amp` / `fit.rms`.

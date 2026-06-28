@@ -113,11 +113,16 @@ by the Radon refiner (see Part V):
 1. **Box blur.** A separable `(2·blur_radius + 1)²` box filter
    smooths the response map in place. `blur_radius = 1` (a 3×3 box)
    is the facade preset and matches the paper-style peak-fit pipeline.
-2. **Threshold.** Pixels below `threshold_abs` (if set) or
-   `threshold_rel · max(R)` are dropped. Because `R ≥ 0` everywhere,
-   there is no useful "strictly positive" selection analogous to
-   ChESS's `R > 0`; callers must pick a non-zero floor. Default is
-   `threshold_rel = 0.01` (1% of the map maximum).
+2. **Threshold.** The top-level `threshold` field feeds this stage as a
+   **relative** fraction: pixels below `threshold · max(R)` are dropped
+   (default `0.01`, i.e. 1% of the per-frame maximum). The fraction is
+   relative rather than absolute because the Radon score
+   `(max_α S_α − min_α S_α)²` is built from ray sums whose magnitude
+   grows with ray length and image scale — no fixed `R` means "corner"
+   across resolutions, whereas "1% of this frame's peak" tracks the
+   scene automatically. (ChESS, whose `R` has a stable per-corner scale,
+   instead reads `threshold` as an absolute floor; see
+   [Part III §3.3.1](part-03-chess-detector.md#331-thresholding-and-nms).)
 3. **Non-maximum suppression.** Each surviving pixel must be the
    strict maximum within a `(2·nms_radius + 1)²` window. (`nms_radius`
    is set via `DetectorConfig.detection`, shared with the ChESS detector.)
@@ -143,7 +148,7 @@ no iteration. Implementation: `radon::fit_peak_frac` in
 | `ray_radius`            | 4       | Paper value at `image_upsample = 2`; 2 physical pixels of support.                                     |
 | `image_upsample`        | 2       | Paper default. Halves aliasing on the ray endpoints.                                                   |
 | `response_blur_radius`  | 1       | 3×3 box used by the preset and by the repository's Radon tests.                                        |
-| `threshold_rel`         | 0.01    | 1 % of `max(R)`. `R ≥ 0` means a strictly positive threshold is required; 0.01 is a conservative floor. |
+| `threshold` (top-level) | 0.01    | Relative fraction of `max(R)`. `R ≥ 0` everywhere, so a non-zero floor is required; 0.01 (1% of the per-frame peak) is a conservative default. |
 | `nms_radius` (`detection`)      | 4       | Matches `ray_radius` — local maxima should be at least one ray length apart. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `min_cluster_size` (`detection`)| 2       | Requires at least one supporting positive neighbor inside the NMS window. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `peak_fit`              | Gaussian | Log-space 3-point fit used by the paper-style pipeline; parabolic fit is also available.              |

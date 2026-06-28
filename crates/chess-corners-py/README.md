@@ -16,7 +16,7 @@ import chess_corners
 img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.DetectorConfig.chess_multiscale()
-cfg.threshold = 0.15
+cfg.threshold = 60.0  # ChESS: absolute floor on the raw response (default 30)
 cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
@@ -42,6 +42,13 @@ traverses a **dark** sector of the corner; the two grid axes are **not**
 assumed to be orthogonal, so this output correctly captures projective
 warp and lens distortion.
 
+The orientation fit is the dominant per-corner cost, and it is
+optional. A pipeline that recovers board geometry from corner
+*positions* alone can skip it with `cfg.without_orientation()`; the
+four axis columns (`axis0_angle`, `axis0_sigma`, `axis1_angle`,
+`axis1_sigma`) are then `NaN` for every row and the array shape stays
+`(N, 7)`.
+
 Input requirements:
 
 - `image` must be a 2D `uint8` NumPy array with shape `(H, W)`
@@ -58,7 +65,7 @@ inside a `DetectionStrategy` variant. Top-level fields are
 
 ```python
 cfg = chess_corners.DetectorConfig.chess()  # ChESS, no pyramid
-cfg.threshold = 0.2  # plain float; ChESS = absolute response floor, Radon = fraction of per-frame max
+cfg.threshold = 60.0  # plain float; ChESS = absolute response floor (default 30), Radon = fraction of per-frame max (default 0.01)
 cfg.merge_radius = 3.0
 
 # Enable the coarse-to-fine pyramid (both detectors honour this):
@@ -126,7 +133,9 @@ Enums:
 
 - `ChessRing`: `CANONICAL`, `BROAD`
 - `PeakFitMode`: `PARABOLIC`, `GAUSSIAN`
-- `OrientationMethod`: `RING_FIT`, `DISK_FIT`
+- `OrientationMethod`: `RING_FIT`, `DISK_FIT`; disable the fit entirely
+  with `cfg.without_orientation()` (each corner's four axis columns then
+  read `NaN`)
 
 `ChessRing.BROAD` uses the wider radius-10 detector sampling pattern.
 Descriptors always sample at the detector ring radius.
@@ -176,7 +185,7 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
       }
     }
   },
-  "threshold": 0.5,
+  "threshold": 60.0,
   "detection": { "nms_radius": 3, "min_cluster_size": 1 },
   "multiscale": {
     "pyramid": {

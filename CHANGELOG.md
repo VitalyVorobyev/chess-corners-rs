@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Orientation can now be skipped. `DetectorConfig::without_orientation()`
+  (Rust), `without_orientation()` (Python), `withoutOrientation()` (WASM),
+  and `CC_ORIENTATION_NONE` (C) skip the per-corner axis fit entirely —
+  useful when a downstream stage recovers board geometry and does not need
+  per-corner orientation. With the fit skipped, detection returns the same
+  corner positions with no axis data.
+
 ### Removed
 
 - **Breaking:** dropped the `contrast` and `fit_rms` fields from
@@ -30,6 +39,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** the detector acceptance threshold is now a single number
+  (`DetectorConfig.threshold: f32`) instead of an `Absolute` / `Relative`
+  enum. ChESS reads it as an absolute floor on the response; Radon reads it
+  as a fraction in `[0, 1]` of the per-frame maximum. The CLI exposes one
+  `--threshold` flag, the Python/WASM configs take a plain number, and JSON
+  configs write `"threshold": <number>`. Migration: replace
+  `Threshold::Absolute(v)` with `v` (ChESS) and `Threshold::Relative(f)`
+  with `f` (Radon).
+- **Breaking:** the default ChESS threshold is now `30` (was `0`). The
+  previous default accepted every positive response and produced large
+  numbers of spurious detections on textured backgrounds; `30` keeps
+  well-formed corners while suppressing that noise. Useful values run
+  roughly `30`–`300` depending on image contrast; set `threshold`
+  explicitly to recover the previous behaviour.
+- **Breaking:** `CornerDescriptor.axes` is now `Option<[AxisEstimate; 2]>`,
+  `None` when the orientation fit was skipped. The Python `(N, 7)` array
+  and WASM `Float32Array` put `NaN` in the four axis columns for skipped
+  corners; the CLI JSON writes `axes: null`.
+- **Breaking (C ABI, version 3):** `cc_config` drops the threshold-kind tag
+  and the `CC_THRESHOLD_*` constants (it now carries a single `threshold`
+  field), and `cc_corner` gains a `has_orientation` flag (`0` when the axis
+  fields are unset). Check `cc_abi_version()`.
 - **Breaking:** `ChessParams` and `RefinerKind` moved off the
   `chess-corners-core` crate root into the unstable, no-semver-guarantee
   `chess_corners_core::unstable` namespace, where they are documented as

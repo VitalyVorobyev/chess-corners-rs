@@ -167,11 +167,12 @@ await init();
 const cfg = DetectorConfig.chessMultiscale();
 
 // Top-level fields are simple getters / setters:
-cfg.threshold = 0.15;
+cfg.threshold = 60.0; // ChESS: absolute floor on the raw response (default 30)
 cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3); // levels, minSize, refinementRadius
 cfg.upscale = UpscaleConfig.fixed(2);
 cfg.orientationMethod = OrientationMethod.DiskFit;
 cfg.mergeRadius = 2.5;
+// cfg = cfg.withoutOrientation(); // skip the per-corner fit (axis values become NaN)
 
 // Strategy selects ChESS vs Radon and carries the detector tuning:
 const chess = new ChessConfig();
@@ -251,6 +252,8 @@ visualization. They are not part of the normal detection result.
 | `i + 6` | `axis1_sigma` | 1σ uncertainty of `axis1_angle` |
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector of the corner. The two grid axes are not assumed orthogonal, so the layout can represent projective warp instead of forcing a right-angle model.
+
+The orientation fit is the dominant per-corner cost, and it is optional. When it is skipped — `const bare = cfg.withoutOrientation()` — the four axis values (`axis0_angle`, `axis0_sigma`, `axis1_angle`, `axis1_sigma`) are `NaN` for every corner and the stride stays 7. Skip it when a downstream stage recovers board geometry from corner positions alone.
 
 **Response map** (`diagnosticsResponse` / `diagnosticsResponseRgba`): `Float32Array` in row-major order, dimensions available via `diagnosticsResponseWidth()` / `diagnosticsResponseHeight()`.
 

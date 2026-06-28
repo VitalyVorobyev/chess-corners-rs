@@ -338,6 +338,11 @@ pipeline on each `detect` / `detect_u8` call is:
    - convert merged `Corner` values into `CornerDescriptor`s using
      `describe_corners` with `params.ring_radius()`.
 
+The final `describe_corners` step honours the top-level
+`orientation_method`: with the orientation fit disabled
+(`without_orientation()`) it is skipped, and every returned descriptor
+carries `axes = None`.
+
 When the `rayon` feature is enabled, the refinement step processes
 coarse corners in parallel; otherwise it uses a straightforward loop.
 

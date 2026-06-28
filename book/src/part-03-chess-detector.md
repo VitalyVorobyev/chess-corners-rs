@@ -201,18 +201,21 @@ candidates.
 
 The main stages are:
 
-1. **Thresholding** – we reject responses that are too small to be
-   meaningful. The paper's contract is "any strictly positive `R` is
-   a corner candidate", which is what the default settings encode:
-   - The default is `Threshold::Absolute(0.0)` combined with a strict
-     `R > thr` comparison, i.e. accept iff `R > 0`.
-   - Callers can opt into `Threshold::Relative(frac)` (a fraction of
-     the maximum response in the current frame) — useful as an adaptive
-     policy on high‑contrast scenes where the raw positive‑response
-     floor contains sensor noise.
-   - Or tune the absolute threshold upward directly with
-     `Threshold::Absolute(value)` to suppress flat‑region noise without
-     committing to a scene‑max policy.
+1. **Thresholding** – we reject responses too small to be a real
+   corner. ChESS reads the top-level `threshold` as an **absolute
+   floor** on the raw response `R`: a candidate survives only if
+   `R > threshold`. Why the floor is not zero is the failure mode it
+   guards against. Every textured patch — paper grain, fabric weave,
+   JPEG ringing — produces small positive `R`, so a floor near `0`
+   accepts thousands of those weak peaks and blankets a textured image
+   in spurious corners. The default `threshold = 30` sits above that
+   noise floor while staying well below the response of a well-formed
+   X-junction, which is far larger. Useful values run roughly
+   `30`–`300`, scaling with image contrast: raise it on high-contrast
+   boards, lower it toward `30` on faint or low-light captures. (Radon
+   reads the same field differently — as a fraction of the per-frame
+   maximum; see
+   [Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline).)
 2. **Non‑maximum suppression (NMS)** – in a window of radius
    `nms_radius` around each pixel, we keep only local maxima and
    suppress weaker neighbors. (`nms_radius` is set via
@@ -278,7 +281,7 @@ pub struct CornerDescriptor {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub axes: [AxisEstimate; 2],
+    pub axes: Option<[AxisEstimate; 2]>,
 }
 
 pub struct AxisEstimate {
@@ -292,9 +295,11 @@ Fields:
 - `x`, `y` – subpixel coordinates in full‑resolution image pixels.
 - `response` – raw, unnormalized ChESS response
   `R = SR − DR − 16·MR` at the detected peak. Units are 8‑bit pixel
-  sums; the paper's contract is `R > 0`.
-- `axes[0]`, `axes[1]` – the two local grid axis directions and
-  their 1σ uncertainties.
+  sums; a real corner clears the acceptance floor (`threshold`,
+  default `30`) from §3.3.1.
+- `axes` – `Some([axis0, axis1])` carries the two local grid axis
+  directions and their 1σ uncertainties, or `None` when the
+  orientation fit was disabled (§3.4.6).
 
 The axis convention:
 
@@ -421,8 +426,17 @@ For many tasks, `x`, `y`, and `response` are enough. When you need
 more insight into local structure — grid fitting, lens‑distortion
 modelling, calibration with per‑corner weights, or outlier rejection
 before bundle adjustment — the two `axes` and their per‑axis 1σ
-uncertainty are the extra handles you get "for free" with each
+uncertainty are the extra handles the orientation fit attaches to each
 detection.
+
+That fit is the dominant per‑corner cost, and it is optional. If
+`x`, `y`, and `response` are all you need — the common case when a
+downstream stage recovers board geometry from corner *positions*
+(grid topology first, then a global homography) and never reads the
+per‑corner axes — disable it with
+`DetectorConfig::without_orientation()`. Skipping the fit is the
+single largest per‑corner saving once detection itself is settled;
+every descriptor's `axes` field then comes back `None`.
 
 The `axes` and their per‑axis `sigma` values are produced by an
 orientation method shared with the Radon detector. See

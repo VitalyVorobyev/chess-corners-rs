@@ -27,13 +27,17 @@ algorithm logic — it only marshals types across the boundary.
 
 | Rust | C |
 |------|---|
-| `CornerDescriptor { x, y, response, axes:[AxisEstimate;2] }` | `cc_corner { float x, y, response; cc_axis axes[2]; }` |
+| `CornerDescriptor { x, y, response, axes: Option<[AxisEstimate;2]> }` | `cc_corner { float x, y, response; cc_axis axes[2]; uint8_t has_orientation; }` |
 | `AxisEstimate { angle, sigma }` | `cc_axis { float angle, sigma; }` |
+| `DetectorConfig.threshold: f32` | `cc_config.threshold` — a single `float`, no kind tag |
 | `DetectorConfig` (+ nested enums) | `cc_config` flat struct of scalars + `int` enum tags |
 | `ChessError` | `cc_status` enum (`CC_OK=0`, `CC_ERR_*`) |
 
 > The mapping must track the **frozen** `CornerDescriptor` (no `contrast` /
-> `fit_rms` — see [`api-v1.0.md`](api-v1.0.md)). This is why M5 depends on M3.
+> `fit_rms` — see [`api-v1.0.md`](api-v1.0.md)). `axes` is optional in Rust
+> (`Option<[AxisEstimate;2]>`); the C struct carries a `has_orientation`
+> flag that is `0` (with `axes` zeroed) when the per-corner fit is skipped.
+> This is why M5 depends on M3.
 
 ### C function surface (sketch)
 
