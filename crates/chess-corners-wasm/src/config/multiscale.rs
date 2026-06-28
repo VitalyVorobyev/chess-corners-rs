@@ -67,8 +67,9 @@ impl MultiscaleConfig {
 
     /// Library-default three-level pyramid configuration (levels = 3,
     /// minSize = 128, refinementRadius = 3). Matches the preset used by
-    /// [`DetectorConfig::chess_multiscale`] and
-    /// [`DetectorConfig::radon_multiscale`]. JS: `MultiscaleConfig.pyramidDefault()`.
+    /// [`DetectorConfig::chess_multiscale`](crate::DetectorConfig::chess_multiscale)
+    /// and [`DetectorConfig::radon_multiscale`](crate::DetectorConfig::radon_multiscale).
+    /// JS: `MultiscaleConfig.pyramidDefault()`.
     #[wasm_bindgen(js_name = pyramidDefault)]
     pub fn pyramid_default() -> Self {
         Self::pyramid(3, 128, 3)

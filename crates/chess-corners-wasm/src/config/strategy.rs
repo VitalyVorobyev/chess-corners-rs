@@ -247,7 +247,7 @@ impl RadonConfig {
 /// Shared non-maximum-suppression and peak-clustering thresholds.
 /// Mirrors [`chess_corners::DetectionParams`]. Honoured by both the
 /// ChESS and Radon strategies; lives on
-/// [`DetectorConfig`](DetectorConfig)'s `detection` field. All counts
+/// [`DetectorConfig`](crate::DetectorConfig)'s `detection` field. All counts
 /// are in working-resolution pixels.
 ///
 /// Cell-backed so the `detection` getter returns a wrapper sharing the
