@@ -20,6 +20,7 @@ import type {
   DetectorSettings,
   HeatmapData,
   ChessRefinerKind,
+  Strategy,
 } from "../types/chess-corners";
 
 let detector: ChessDetector | null = null;
@@ -52,13 +53,18 @@ function mapChessRefiner(kind: string): ChessRefinerKind {
   }
 }
 
+/** Return the preset threshold for the given strategy (reads from the WASM preset). */
+export function defaultThreshold(strategy: Strategy): number {
+  return strategy === "radon" ? DetectorConfig.radon().threshold : DetectorConfig.chess().threshold;
+}
+
 /** Seed the UI from the WASM `chess()` / `radon()` presets. */
 export function defaultSettings(): DetectorSettings {
   const chess = DetectorConfig.chess();
   return {
     strategy: "chess",
     multiscale: false,
-    thresholdRel: 0.05,
+    threshold: chess.threshold,
     orientation: "ringFit",
     chessRefiner: mapChessRefiner(chess.strategy.chess.refiner.kind),
     nmsRadius: chess.detection.nmsRadius,
@@ -92,7 +98,7 @@ function buildConfig(s: DetectorSettings): DetectorConfig {
         ? DetectorConfig.chessMultiscale()
         : DetectorConfig.chess();
 
-  cfg = cfg.withThreshold(s.thresholdRel);
+  cfg = cfg.withThreshold(s.threshold);
   cfg = cfg.withOrientationMethod(
     s.orientation === "diskFit"
       ? OrientationMethod.DiskFit

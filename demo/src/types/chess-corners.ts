@@ -45,8 +45,8 @@ export type ChessRefinerKind = "centerOfMass" | "forstner" | "saddlePoint";
 export interface DetectorSettings {
   strategy: Strategy;
   multiscale: boolean;
-  /** Relative acceptance threshold (fraction of the per-frame max response). */
-  thresholdRel: number;
+  /** Acceptance threshold. ChESS: absolute response floor (0–100). Radon: fraction of per-frame max (0–0.5). */
+  threshold: number;
   orientation: OrientationKind;
   chessRefiner: ChessRefinerKind;
   /** Non-maximum-suppression radius (px). */

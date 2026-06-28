@@ -43,6 +43,8 @@ const ctx = canvas.getContext('2d', { willReadFrequently: true });
 // Config controls.
 const threshold = $('threshold');
 const thresholdVal = $('thresholdVal');
+const thresholdLbl = $('thresholdLbl');
+const refinerRow = $('refinerRow');
 const nmsRadius = $('nmsRadius');
 const nmsRadiusVal = $('nmsRadiusVal');
 const minCluster = $('minCluster');
@@ -83,13 +85,46 @@ function linkRange(input, label, fmt = (v) => v) {
   label.textContent = fmt(input.value);
 }
 
-linkRange(threshold, thresholdVal, (v) => Number(v).toFixed(2));
+// Threshold display is mode-dependent; updated by updateThresholdUI().
+threshold.addEventListener('input', () => {
+  const isRadon = detectorMode.value === 'radon';
+  thresholdVal.textContent = isRadon
+    ? Number(threshold.value).toFixed(2)
+    : Number(threshold.value).toFixed(0);
+});
 linkRange(nmsRadius, nmsRadiusVal);
 linkRange(minCluster, minClusterVal);
 linkRange(pyrLevels, pyrLevelsVal);
 linkRange(pyrMinSize, pyrMinSizeVal);
 linkRange(arrowLen, arrowLenVal);
 linkRange(dotRadius, dotRadiusVal);
+
+// ChESS threshold: absolute response floor (0–100, step 1, default 30).
+// Radon threshold: fraction of per-frame max (0–0.5, step 0.01, default 0.01).
+// Refiner is ChESS-only; hidden when Radon is active.
+function updateThresholdUI() {
+  const isRadon = detectorMode.value === 'radon';
+  if (isRadon) {
+    thresholdLbl.textContent = 'Relative threshold';
+    threshold.min = '0';
+    threshold.max = '0.5';
+    threshold.step = '0.01';
+    threshold.value = '0.01';
+    thresholdVal.textContent = '0.01';
+    refinerRow.style.display = 'none';
+  } else {
+    thresholdLbl.textContent = 'Threshold';
+    threshold.min = '0';
+    threshold.max = '100';
+    threshold.step = '1';
+    threshold.value = '30';
+    thresholdVal.textContent = '30';
+    refinerRow.style.display = '';
+  }
+}
+
+// Call once on load to configure for the default mode (canonical / ChESS).
+updateThresholdUI();
 
 function buildRefiner(name) {
   switch (name) {
@@ -210,7 +245,7 @@ function drawCorners(corners) {
     const x = corners[i + IDX_X];
     const y = corners[i + IDX_Y];
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(x + 0.5, y + 0.5, r, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -226,6 +261,10 @@ function drawCorners(corners) {
 }
 
 function drawArrow(x, y, angle, len, color) {
+  // Shift to pixel-center convention so arrows originate from the same point
+  // as the dot overlay.
+  x += 0.5;
+  y += 0.5;
   const dx = Math.cos(angle) * len;
   const dy = Math.sin(angle) * len;
   const tx = x + dx;
@@ -313,6 +352,8 @@ function setupAutoRerun() {
     el.addEventListener('change', scheduleRun);
     if (el.type === 'range') el.addEventListener('input', scheduleRun);
   }
+  // Update threshold label/range whenever the detector mode changes.
+  detectorMode.addEventListener('change', updateThresholdUI);
 }
 
 // ---- Image loading ----
