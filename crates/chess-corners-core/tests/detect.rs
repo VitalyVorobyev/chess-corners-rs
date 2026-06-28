@@ -133,7 +133,7 @@ fn detect_corners_respects_threshold_and_cluster_size() {
     }
     let resp = ResponseMap::new(w, h, data);
     let mut params = ChessParams::default();
-    params.threshold_abs = Some(6.0);
+    params.threshold = 6.0;
 
     let corners = detect_corners_from_response(&resp, &params);
     assert_eq!(corners.len(), 1);

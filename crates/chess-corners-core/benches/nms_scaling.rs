@@ -28,7 +28,7 @@ fn bench_nms_scaling(c: &mut Criterion) {
     const H: usize = 1024;
 
     // One dense response map shared across every radius. Default params
-    // use `threshold_abs = Some(0.0)`, i.e. accept every strictly
+    // use `threshold = 0.0`, i.e. accept every strictly
     // positive response, which maximises the number of pixels that reach
     // the NMS window and therefore stresses the radius sweep.
     let img = synth_chessboard(W, H);

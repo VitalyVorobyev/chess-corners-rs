@@ -19,10 +19,10 @@ use serde::{Deserialize, Serialize};
 pub struct ChessParams {
     /// Use the larger r=10 ring instead of the canonical r=5.
     pub use_radius10: bool,
-    /// Relative threshold as a fraction of max response (e.g. 0.2 = 20%).
-    pub threshold_rel: f32,
-    /// Absolute threshold override; if `Some`, this is used instead of `threshold_rel`.
-    pub threshold_abs: Option<f32>,
+    /// Absolute response floor: a corner is kept when its raw ChESS
+    /// response exceeds this value (strict `>`). `0.0` accepts every
+    /// strictly-positive response — the paper's contract.
+    pub threshold: f32,
     /// Non-maximum suppression radius (in pixels).
     pub nms_radius: u32,
     /// Minimum count of positive-response neighbors in NMS window
@@ -51,13 +51,11 @@ impl Default for ChessParams {
         Self {
             use_radius10: false,
             // Paper's contract: accept every strictly-positive ChESS
-            // response. `threshold_abs = Some(0.0)` combined with the
-            // strict comparison in `detect_corners_from_response` gives
-            // "R > 0 ⇒ corner". `threshold_rel = 0.2` is kept as a
-            // default-sized opt-in value for callers that explicitly
-            // switch to `threshold_abs = None`.
-            threshold_rel: 0.2,
-            threshold_abs: Some(0.0),
+            // response. `threshold = 0.0` combined with the strict
+            // comparison in `detect_corners_from_response` gives
+            // "R > 0 ⇒ corner". The facade raises this to a denoise
+            // floor for real images.
+            threshold: 0.0,
             nms_radius: 2,
             min_cluster_size: 2,
             refiner: RefinerKind::default(),

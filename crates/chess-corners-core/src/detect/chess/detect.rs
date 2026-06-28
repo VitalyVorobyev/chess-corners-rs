@@ -116,28 +116,11 @@ pub fn detect_peaks_from_response_with_refine_radius(
         return Vec::new();
     }
 
-    // Compute global max response to derive relative threshold
-    let mut max_r = f32::NEG_INFINITY;
-    for &v in &resp.data {
-        if v > max_r {
-            max_r = v;
-        }
-    }
-    if !max_r.is_finite() {
-        return Vec::new();
-    }
-
-    let mut thr = params.threshold_abs.unwrap_or(params.threshold_rel * max_r);
-
-    if thr < 0.0 {
-        // Don’t use a negative threshold; that would accept noise.
-        thr = 0.0;
-    }
-
-    // The paper's acceptance criterion is "R > 0", so we use a strict
-    // comparison below. With `threshold_abs = Some(0.0)` (the default)
-    // this reduces to "accept any strictly positive response", which is
-    // the paper's contract.
+    // Absolute response floor. The paper's acceptance criterion is
+    // "R > 0", so we use a strict comparison below; the default
+    // `threshold = 0.0` reduces to "accept any strictly positive
+    // response", the paper's contract.
+    let thr = params.threshold.max(0.0);
 
     let nms_r = params.nms_radius as i32;
     let ring_r = params.ring_radius() as i32;
@@ -472,10 +455,7 @@ mod tests {
         use core::f32::consts::{FRAC_PI_2, PI};
 
         let size = 32u32;
-        let params = ChessParams {
-            threshold_rel: 0.01,
-            ..Default::default()
-        };
+        let params = ChessParams::default();
 
         let img = make_quadrant_corner(size, 20, 220);
         let corners = find_corners_u8(img.as_raw(), size as usize, size as usize, &params);
@@ -556,10 +536,7 @@ mod tests {
         resp.data[(cy + 1) * w + cx] = 5.0;
         resp.data[(cy + 1) * w + (cx + 1)] = 4.0;
 
-        let params = ChessParams {
-            threshold_rel: 0.01,
-            ..Default::default()
-        };
+        let params = ChessParams::default();
 
         let mut refiner = CenterOfMassRefiner::new(CenterOfMassConfig::default());
         let ctx = RefineContext {
@@ -593,8 +570,7 @@ mod tests {
         resp.data[(cy + 1) * w + cx] = 1.0;
 
         let mut params = ChessParams {
-            threshold_abs: Some(0.5),
-            threshold_rel: 0.0,
+            threshold: 0.5,
             ..Default::default()
         };
 

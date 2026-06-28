@@ -534,7 +534,7 @@ impl DetectorConfig {
             }
         }
         // ChESS interprets `threshold` as an absolute floor on the raw response.
-        params.threshold_abs = Some(self.threshold);
+        params.threshold = self.threshold;
         params.orientation_method = self.orientation_method;
         params
     }
@@ -558,7 +558,6 @@ impl DetectorConfig {
             params.peak_fit = radon.peak_fit;
         }
         // Radon interprets `threshold` as a fraction of the per-frame maximum.
-        params.threshold_abs = None;
         params.threshold_rel = self.threshold;
         params
     }
@@ -624,7 +623,7 @@ mod tests {
 
         let params = cfg.chess_params();
         assert!(!params.use_radius10);
-        assert_eq!(params.threshold_abs, Some(30.0));
+        assert_eq!(params.threshold, 30.0);
         assert_eq!(params.nms_radius, 2);
         assert_eq!(params.min_cluster_size, 2);
         assert_eq!(
@@ -640,7 +639,7 @@ mod tests {
             ..DetectorConfig::chess()
         };
         let params = cfg.chess_params();
-        assert_eq!(params.threshold_abs, Some(7.5));
+        assert_eq!(params.threshold, 7.5);
     }
 
     #[test]
@@ -650,7 +649,6 @@ mod tests {
             ..DetectorConfig::radon()
         };
         let params = cfg.radon_detector_params();
-        assert_eq!(params.threshold_abs, None);
         assert!((params.threshold_rel - 0.15).abs() < f32::EPSILON);
     }
 
@@ -697,7 +695,6 @@ mod tests {
         assert_eq!(radon_params.image_upsample, 2);
         assert_eq!(radon_params.nms_radius, 4);
         assert_eq!(radon_params.min_cluster_size, 2);
-        assert_eq!(radon_params.threshold_abs, None);
         assert!((radon_params.threshold_rel - 0.01).abs() < f32::EPSILON);
     }
 
