@@ -392,8 +392,12 @@ pub struct DetectorConfig {
     pub multiscale: MultiscaleConfig,
     /// Pre-pipeline integer upscaling. `Disabled` skips the stage.
     pub upscale: UpscaleConfig,
-    /// Orientation-fit method used when building corner descriptors.
-    pub orientation_method: OrientationMethod,
+    /// Orientation-fit method used when building corner descriptors, or
+    /// `None` to skip the per-corner fit entirely. When `None`, every
+    /// descriptor carries `axes: None`; positions and responses are
+    /// unaffected. Skipping orientation is the cheaper path for consumers
+    /// that derive board geometry themselves.
+    pub orientation_method: Option<OrientationMethod>,
     /// Advanced tuning. Merge radius in base-image pixels for
     /// cross-level and cross-seed duplicate suppression. After seeds
     /// detected at coarser pyramid levels are refined into the base
@@ -422,7 +426,7 @@ impl DetectorConfig {
             detection: DetectionParams::default(),
             multiscale: MultiscaleConfig::SingleScale,
             upscale: UpscaleConfig::Disabled,
-            orientation_method: OrientationMethod::default(),
+            orientation_method: Some(OrientationMethod::default()),
             merge_radius: 3.0,
         }
     }
@@ -514,7 +518,15 @@ impl DetectorConfig {
     }
     /// Replace the orientation-fit method used when building descriptors.
     pub fn with_orientation_method(mut self, method: OrientationMethod) -> Self {
-        self.orientation_method = method;
+        self.orientation_method = Some(method);
+        self
+    }
+    /// Skip the per-corner orientation fit. Descriptors are still produced
+    /// with subpixel positions and responses, but carry `axes: None`. Use
+    /// this when you derive board geometry yourself and don't need the
+    /// per-corner axes — it removes the dominant per-corner cost.
+    pub fn without_orientation(mut self) -> Self {
+        self.orientation_method = None;
         self
     }
     /// Replace the merge radius for cross-level duplicate suppression.
@@ -1018,7 +1030,21 @@ mod tests {
     fn with_orientation_method_sets_method() {
         let method = OrientationMethod::DiskFit;
         let cfg = DetectorConfig::chess().with_orientation_method(method);
-        assert_eq!(cfg.orientation_method, method);
+        assert_eq!(cfg.orientation_method, Some(method));
+    }
+
+    #[test]
+    fn without_orientation_clears_method() {
+        let cfg = DetectorConfig::chess().without_orientation();
+        assert_eq!(cfg.orientation_method, None);
+        // Lowering carries the `None` through to the low-level params.
+        assert_eq!(cfg.chess_params().orientation_method, None);
+    }
+
+    #[test]
+    fn default_orientation_method_is_some_ring_fit() {
+        let cfg = DetectorConfig::chess();
+        assert_eq!(cfg.orientation_method, Some(OrientationMethod::RingFit));
     }
 
     #[test]

@@ -71,6 +71,9 @@ pub type cc_orientation_method_t = u32;
 pub const CC_ORIENTATION_RING_FIT: cc_orientation_method_t = 0;
 /// Full-disk crossing-line estimator with a ring-fit fallback.
 pub const CC_ORIENTATION_DISK_FIT: cc_orientation_method_t = 1;
+/// Skip the per-corner orientation fit. Detected corners then have
+/// `cc_corner::has_orientation == 0` and a zeroed `axes` array.
+pub const CC_ORIENTATION_NONE: cc_orientation_method_t = 2;
 
 // ─── Result types (library writes, C reads) ─────────────────────────────
 
@@ -99,8 +102,13 @@ pub struct cc_corner {
     pub y: f32,
     /// Raw, unnormalized detector response at the peak.
     pub response: f32,
-    /// The two local grid-axis directions.
+    /// The two local grid-axis directions. Valid only when
+    /// `has_orientation` is `1`; zeroed otherwise.
     pub axes: [cc_axis; 2],
+    /// `1` when `axes` holds a fitted orientation, `0` when the
+    /// orientation fit was skipped (`CC_ORIENTATION_NONE`) and `axes`
+    /// is zeroed.
+    pub has_orientation: u8,
 }
 
 /// Owned array of detected corners returned by `cc_detect_u8`.
@@ -346,7 +354,7 @@ pub extern "C" fn cc_status_str(status: cc_status) -> *const c_char {
 /// ABI version of this library. Bumped manually on any breaking ABI change.
 #[no_mangle]
 pub extern "C" fn cc_abi_version() -> u32 {
-    2
+    3
 }
 
 #[cfg(test)]
@@ -422,6 +430,6 @@ mod tests {
 
     #[test]
     fn abi_version_is_stable() {
-        assert_eq!(cc_abi_version(), 2);
+        assert_eq!(cc_abi_version(), 3);
     }
 }

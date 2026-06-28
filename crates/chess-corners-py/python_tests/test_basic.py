@@ -24,6 +24,26 @@ def test_detector_basic():
     assert corners.shape[0] > 0
 
 
+def test_detect_without_orientation_yields_nan_axes():
+    img = _checkerboard(square_size=16, squares=8)
+    base = chess_corners.DetectorConfig()
+    base.threshold = 0.1
+    base.detection.min_cluster_size = 1
+
+    # Orientation on: axis columns (3..7) are finite.
+    on = chess_corners.Detector(base).detect(img)
+    assert on.shape[0] > 0 and on.shape[1] == 7
+    assert np.isfinite(on[:, 3:]).all()
+
+    # Orientation off: same shape and corner count, axis columns all NaN,
+    # while x / y / response stay finite.
+    off_cfg = base.without_orientation()
+    off = chess_corners.Detector(off_cfg).detect(img)
+    assert off.shape == on.shape
+    assert np.isnan(off[:, 3:]).all()
+    assert np.isfinite(off[:, :3]).all()
+
+
 def test_detector_rejects_wrong_dtype():
     img = _checkerboard(square_size=16, squares=8).astype(np.float32)
     detector = chess_corners.Detector()

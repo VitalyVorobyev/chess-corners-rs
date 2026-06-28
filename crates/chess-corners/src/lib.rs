@@ -55,10 +55,14 @@
 //! println!("found {} corners", corners.len());
 //!
 //! for c in &corners {
-//!     println!(
-//!         "corner at ({:.2}, {:.2}), response {:.1}, axes [{:.2}, {:.2}] rad",
-//!         c.x, c.y, c.response, c.axes[0].angle, c.axes[1].angle,
-//!     );
+//!     // `axes` is `None` when the orientation fit was skipped
+//!     // (see `DetectorConfig::without_orientation`).
+//!     if let Some(axes) = c.axes {
+//!         println!(
+//!             "corner at ({:.2}, {:.2}), response {:.1}, axes [{:.2}, {:.2}] rad",
+//!             c.x, c.y, c.response, axes[0].angle, axes[1].angle,
+//!         );
+//!     }
 //! }
 //! # Ok(()) }
 //! ```

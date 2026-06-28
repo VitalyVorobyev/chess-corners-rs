@@ -92,6 +92,21 @@ def test_with_orientation_method_sets_disk_fit():
     assert cfg.orientation_method == chess_corners.OrientationMethod.DISK_FIT
 
 
+def test_without_orientation_clears_method():
+    cfg = chess_corners.DetectorConfig.chess().without_orientation()
+    assert cfg.orientation_method is None
+    # Round-trips as JSON null.
+    assert cfg.to_dict()["orientation_method"] is None
+    restored = chess_corners.DetectorConfig.from_dict(cfg.to_dict())
+    assert restored.orientation_method is None
+
+
+def test_orientation_method_setter_accepts_none():
+    cfg = chess_corners.DetectorConfig.chess()
+    cfg.orientation_method = None
+    assert cfg.orientation_method is None
+
+
 def test_with_merge_radius_updates_value():
     cfg = chess_corners.DetectorConfig.chess().with_merge_radius(5.0)
     assert abs(cfg.merge_radius - 5.0) < 1e-6

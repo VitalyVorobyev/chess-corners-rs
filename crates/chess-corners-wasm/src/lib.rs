@@ -426,6 +426,9 @@ impl ChessDetector {
 
 /// Flat array stride per corner: `[x, y, response,
 /// axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`.
+///
+/// When the orientation fit is skipped (`orientationMethod` is `undefined`),
+/// the four axis values are `NaN` for every corner; the stride is unchanged.
 const CORNER_STRIDE: usize = 7;
 
 fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::Float32Array {
@@ -434,10 +437,17 @@ fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::
         flat.push(c.x);
         flat.push(c.y);
         flat.push(c.response);
-        flat.push(c.axes[0].angle);
-        flat.push(c.axes[0].sigma);
-        flat.push(c.axes[1].angle);
-        flat.push(c.axes[1].sigma);
+        // `axes` is `None` when orientation was skipped; emit NaN so the
+        // 7-wide stride stays constant.
+        match c.axes {
+            Some(axes) => {
+                flat.push(axes[0].angle);
+                flat.push(axes[0].sigma);
+                flat.push(axes[1].angle);
+                flat.push(axes[1].sigma);
+            }
+            None => flat.extend_from_slice(&[f32::NAN; 4]),
+        }
     }
     let arr = js_sys::Float32Array::new_with_length(flat.len() as u32);
     arr.copy_from(&flat);

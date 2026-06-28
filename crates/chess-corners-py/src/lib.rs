@@ -40,6 +40,9 @@ fn extract_image<'py>(
 ///
 /// Columns: `x, y, response,
 ///           axis0_angle, axis0_sigma, axis1_angle, axis1_sigma`.
+///
+/// When the orientation fit is skipped (`orientation_method` is `None`), the
+/// four axis columns are `NaN` for every row — the array shape is unchanged.
 const CORNER_COLUMNS: usize = 7;
 
 fn corners_to_array(
@@ -58,10 +61,17 @@ fn corners_to_array(
         data.push(corner.x);
         data.push(corner.y);
         data.push(corner.response);
-        data.push(corner.axes[0].angle);
-        data.push(corner.axes[0].sigma);
-        data.push(corner.axes[1].angle);
-        data.push(corner.axes[1].sigma);
+        // `axes` is `None` when the orientation fit was skipped; the four
+        // axis columns are then NaN so the array shape stays `(N, 7)`.
+        match corner.axes {
+            Some(axes) => {
+                data.push(axes[0].angle);
+                data.push(axes[0].sigma);
+                data.push(axes[1].angle);
+                data.push(axes[1].sigma);
+            }
+            None => data.extend_from_slice(&[f32::NAN; 4]),
+        }
     }
 
     let rows = data.len() / CORNER_COLUMNS;

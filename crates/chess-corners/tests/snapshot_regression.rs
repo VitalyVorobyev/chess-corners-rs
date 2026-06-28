@@ -95,14 +95,15 @@ struct CornerSnap {
 
 impl CornerSnap {
     fn from_descriptor(c: &CornerDescriptor) -> Self {
+        let axes = c.axes.expect("orientation enabled (default config)");
         Self {
             x: c.x as f64,
             y: c.y as f64,
             response: c.response as f64,
-            ax0_angle: c.axes[0].angle as f64,
-            ax0_sigma: c.axes[0].sigma as f64,
-            ax1_angle: c.axes[1].angle as f64,
-            ax1_sigma: c.axes[1].sigma as f64,
+            ax0_angle: axes[0].angle as f64,
+            ax0_sigma: axes[0].sigma as f64,
+            ax1_angle: axes[1].angle as f64,
+            ax1_sigma: axes[1].sigma as f64,
         }
     }
 }

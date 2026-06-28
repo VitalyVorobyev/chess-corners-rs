@@ -56,14 +56,14 @@ fn time_method(
 ) {
     for _ in 0..3 {
         let corners = base_corners.to_vec();
-        let d = describe_corners(img, w, h, 5, corners, method);
+        let d = describe_corners(img, w, h, 5, corners, Some(method));
         black_box(d);
     }
     let mut samples = Vec::with_capacity(iters);
     for _ in 0..iters {
         let corners = base_corners.to_vec();
         let t0 = Instant::now();
-        let d = describe_corners(img, w, h, 5, corners, method);
+        let d = describe_corners(img, w, h, 5, corners, Some(method));
         black_box(d);
         samples.push(t0.elapsed().as_secs_f64() * 1e6);
     }

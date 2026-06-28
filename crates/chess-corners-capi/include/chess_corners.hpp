@@ -24,7 +24,7 @@ namespace chess_corners {
 /// Checked against `cc_abi_version()` before each detection (see
 /// `check_abi()`); a mismatch means the header and the linked library are
 /// incompatible and detection throws rather than reading a stale layout.
-inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 2;
+inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 3;
 
 /// One local grid-axis direction with its 1-sigma angular uncertainty.
 ///
@@ -38,12 +38,15 @@ struct Axis {
 ///
 /// `axes` follow the joint polarity convention of the C ABI: `axes[0].angle`
 /// lies in `[0, pi)` and `axes[1].angle` in `(axes[0].angle, axes[0].angle +
-/// pi)`.
+/// pi)`. They are only meaningful when `has_orientation` is `true`; when the
+/// orientation fit was skipped (`CC_ORIENTATION_NONE`) `has_orientation` is
+/// `false` and `axes` is zeroed.
 struct Corner {
     float x = 0.0f;
     float y = 0.0f;
     float response = 0.0f;
     std::array<Axis, 2> axes{};
+    bool has_orientation = true;
 };
 
 /// Exception thrown when a C entry point returns a non-`CC_OK` status.
@@ -197,6 +200,7 @@ inline std::vector<Corner> detect(const std::uint8_t* pixels,
         dst.response = src.response;
         dst.axes[0] = Axis{src.axes[0].angle, src.axes[0].sigma};
         dst.axes[1] = Axis{src.axes[1].angle, src.axes[1].sigma};
+        dst.has_orientation = src.has_orientation != 0;
         corners.push_back(dst);
     }
     return corners;

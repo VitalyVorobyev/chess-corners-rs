@@ -2,7 +2,7 @@
 use super::response::chess_response_u8;
 use crate::detect::{Corner, CornerDescriptor};
 use crate::imageview::ImageView;
-use crate::orientation::{describe_corners, OrientationMethod};
+use crate::orientation::describe_corners;
 use crate::refine::{CornerRefiner, RefineContext, RefineStatus, Refiner};
 use crate::{ChessParams, ResponseMap};
 
@@ -38,7 +38,7 @@ pub fn find_corners_u8_with_refiner(
         ImageView::from_u8_slice(w, h, img).expect("image dimensions must match buffer length");
     let corners = detect_corners_from_response_with_refiner(&resp, params, Some(image), refiner);
     let desc_radius = params.ring_radius();
-    describe_corners(img, w, h, desc_radius, corners, OrientationMethod::RingFit)
+    describe_corners(img, w, h, desc_radius, corners, params.orientation_method)
 }
 
 /// Core detector: run NMS + refinement on an existing response map.
@@ -485,11 +485,12 @@ mod tests {
             .iter()
             .max_by(|a, b| a.response.partial_cmp(&b.response).unwrap())
             .expect("non-empty");
+        let best_axes = best.axes.expect("orientation enabled (default config)");
 
         // axes[0] in [0, π), axes[1] in (axes[0], axes[0] + π)
-        assert!(best.axes[0].angle >= 0.0 && best.axes[0].angle < PI);
+        assert!(best_axes[0].angle >= 0.0 && best_axes[0].angle < PI);
         assert!(
-            best.axes[1].angle > best.axes[0].angle && best.axes[1].angle < best.axes[0].angle + PI
+            best_axes[1].angle > best_axes[0].angle && best_axes[1].angle < best_axes[0].angle + PI
         );
 
         // The quadrant corner has one axis horizontal (line angle 0)
@@ -502,15 +503,15 @@ mod tests {
             d.min(PI - d)
         };
         // One of the two axes matches horizontal (line 0), the other vertical (line π/2).
-        let horiz = near_line(best.axes[0].angle, 0.0).min(near_line(best.axes[1].angle, 0.0));
+        let horiz = near_line(best_axes[0].angle, 0.0).min(near_line(best_axes[1].angle, 0.0));
         let vert =
-            near_line(best.axes[0].angle, FRAC_PI_2).min(near_line(best.axes[1].angle, FRAC_PI_2));
+            near_line(best_axes[0].angle, FRAC_PI_2).min(near_line(best_axes[1].angle, FRAC_PI_2));
         assert!(
             horiz < 0.35,
             "horiz line miss: {horiz}, axes {:?}",
-            best.axes
+            best_axes
         );
-        assert!(vert < 0.35, "vert line miss: {vert}, axes {:?}", best.axes);
+        assert!(vert < 0.35, "vert line miss: {vert}, axes {:?}", best_axes);
 
         // Brightness shift stability: both axes survive a global
         // intensity offset.
@@ -526,11 +527,14 @@ mod tests {
             .iter()
             .max_by(|a, b| a.response.partial_cmp(&b.response).unwrap())
             .expect("non-empty brighter");
+        let best_brighter_axes = best_brighter
+            .axes
+            .expect("orientation enabled (default config)");
 
         assert!((best.x - best_brighter.x).abs() < 0.5 && (best.y - best_brighter.y).abs() < 0.5);
 
-        let da0 = near_line(best.axes[0].angle, best_brighter.axes[0].angle);
-        let da1 = near_line(best.axes[1].angle, best_brighter.axes[1].angle);
+        let da0 = near_line(best_axes[0].angle, best_brighter_axes[0].angle);
+        let da1 = near_line(best_axes[1].angle, best_brighter_axes[1].angle);
         assert!(da0 < 0.35, "axis0 delta after brightness shift: {da0}");
         assert!(da1 < 0.35, "axis1 delta after brightness shift: {da1}");
     }

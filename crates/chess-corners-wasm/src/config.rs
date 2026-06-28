@@ -1647,7 +1647,7 @@ pub struct DetectorConfig {
     detection: DetectionParams,
     multiscale: MultiscaleConfig,
     upscale: UpscaleConfig,
-    orientation_method: Cell<RsOrientationMethod>,
+    orientation_method: Cell<Option<RsOrientationMethod>>,
     merge_radius: Cell<f32>,
 }
 
@@ -1769,7 +1769,17 @@ impl DetectorConfig {
     #[wasm_bindgen(js_name = withOrientationMethod)]
     pub fn with_orientation_method(&self, method: OrientationMethod) -> Self {
         let mut out = self.deep_clone();
-        out.set_orientation_method(method);
+        out.set_orientation_method(Some(method));
+        out
+    }
+
+    /// Return a copy of this config with the per-corner orientation fit
+    /// skipped. Detection still yields positions and responses, but the
+    /// four axis values per corner are `NaN`. JS: `cfg.withoutOrientation()`.
+    #[wasm_bindgen(js_name = withoutOrientation)]
+    pub fn without_orientation(&self) -> Self {
+        let mut out = self.deep_clone();
+        out.set_orientation_method(None);
         out
     }
 
@@ -2007,12 +2017,12 @@ impl DetectorConfig {
     }
 
     #[wasm_bindgen(getter, js_name = orientationMethod)]
-    pub fn orientation_method(&self) -> OrientationMethod {
-        (*self.orientation_method.borrow()).into()
+    pub fn orientation_method(&self) -> Option<OrientationMethod> {
+        (*self.orientation_method.borrow()).map(Into::into)
     }
     #[wasm_bindgen(setter, js_name = orientationMethod)]
-    pub fn set_orientation_method(&mut self, v: OrientationMethod) {
-        *self.orientation_method.borrow_mut() = v.into();
+    pub fn set_orientation_method(&mut self, v: Option<OrientationMethod>) {
+        *self.orientation_method.borrow_mut() = v.map(Into::into);
     }
 
     #[wasm_bindgen(getter, js_name = mergeRadius)]
@@ -2286,14 +2296,22 @@ mod tests {
 
         for (wasm_variant, rs_variant) in cases {
             let mut cfg = DetectorConfig::new();
-            cfg.set_orientation_method(wasm_variant);
-            assert_eq!(cfg.orientation_method(), wasm_variant);
+            cfg.set_orientation_method(Some(wasm_variant));
+            assert_eq!(cfg.orientation_method(), Some(wasm_variant));
             let snap = cfg.snapshot();
             assert_eq!(
-                snap.orientation_method, rs_variant,
+                snap.orientation_method,
+                Some(rs_variant),
                 "snapshot mismatch for {wasm_variant:?}"
             );
         }
+    }
+
+    #[test]
+    fn without_orientation_clears_method() {
+        let cfg = DetectorConfig::chess().without_orientation();
+        assert_eq!(cfg.orientation_method(), None);
+        assert_eq!(cfg.snapshot().orientation_method, None);
     }
 
     #[test]
@@ -2451,10 +2469,13 @@ mod tests {
         let cfg = DetectorConfig::chess();
         let cfg2 = cfg.with_orientation_method(OrientationMethod::DiskFit);
         let snap = cfg2.snapshot();
-        assert_eq!(snap.orientation_method, RsOrientationMethod::DiskFit);
+        assert_eq!(snap.orientation_method, Some(RsOrientationMethod::DiskFit));
         // Original is unchanged.
         let snap_orig = cfg.snapshot();
-        assert_eq!(snap_orig.orientation_method, RsOrientationMethod::RingFit);
+        assert_eq!(
+            snap_orig.orientation_method,
+            Some(RsOrientationMethod::RingFit)
+        );
     }
 
     #[test]

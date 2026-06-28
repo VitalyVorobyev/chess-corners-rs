@@ -35,8 +35,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn print_corner(label: &str, c: &CornerDescriptor) {
-    println!(
-        "{label}: ({:.2}, {:.2}), response {:.1}, axes [{:.2} ± {:.3}, {:.2} ± {:.3}] rad",
-        c.x, c.y, c.response, c.axes[0].angle, c.axes[0].sigma, c.axes[1].angle, c.axes[1].sigma
-    );
+    match c.axes {
+        Some(axes) => println!(
+            "{label}: ({:.2}, {:.2}), response {:.1}, axes [{:.2} ± {:.3}, {:.2} ± {:.3}] rad",
+            c.x, c.y, c.response, axes[0].angle, axes[0].sigma, axes[1].angle, axes[1].sigma
+        ),
+        None => println!(
+            "{label}: ({:.2}, {:.2}), response {:.1}, axes skipped",
+            c.x, c.y, c.response
+        ),
+    }
 }

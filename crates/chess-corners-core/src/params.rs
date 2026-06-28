@@ -32,11 +32,18 @@ pub struct ChessParams {
     /// center-of-mass on the response map.
     pub refiner: RefinerKind,
     /// Orientation-fit method used to estimate the two grid axes at
-    /// each detected corner. Default [`OrientationMethod::RingFit`]
-    /// fits the parametric two-axis model with robust seeding and
-    /// calibrated per-axis uncertainties.
-    #[serde(default)]
-    pub orientation_method: OrientationMethod,
+    /// each detected corner, or `None` to skip the fit entirely (every
+    /// descriptor then carries `axes: None`). Default
+    /// `Some(`[`OrientationMethod::RingFit`]`)` fits the parametric
+    /// two-axis model with robust seeding and calibrated per-axis
+    /// uncertainties.
+    #[serde(default = "default_orientation_method")]
+    pub orientation_method: Option<OrientationMethod>,
+}
+
+#[inline]
+fn default_orientation_method() -> Option<OrientationMethod> {
+    Some(OrientationMethod::default())
 }
 
 impl Default for ChessParams {
@@ -54,7 +61,7 @@ impl Default for ChessParams {
             nms_radius: 2,
             min_cluster_size: 2,
             refiner: RefinerKind::default(),
-            orientation_method: OrientationMethod::default(),
+            orientation_method: Some(OrientationMethod::default()),
         }
     }
 }

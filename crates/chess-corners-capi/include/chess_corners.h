@@ -144,9 +144,16 @@ typedef struct cc_corner {
    */
   float response;
   /**
-   * The two local grid-axis directions.
+   * The two local grid-axis directions. Valid only when
+   * `has_orientation` is `1`; zeroed otherwise.
    */
   struct cc_axis axes[2];
+  /**
+   * `1` when `axes` holds a fitted orientation, `0` when the
+   * orientation fit was skipped (`CC_ORIENTATION_NONE`) and `axes`
+   * is zeroed.
+   */
+  uint8_t has_orientation;
 } cc_corner;
 
 /**
@@ -204,6 +211,12 @@ typedef struct cc_result {
  * Full-disk crossing-line estimator with a ring-fit fallback.
  */
 #define CC_ORIENTATION_DISK_FIT 1
+
+/**
+ * Skip the per-corner orientation fit. Detected corners then have
+ * `cc_corner::has_orientation == 0` and a zeroed `axes` array.
+ */
+#define CC_ORIENTATION_NONE 2
 
 #ifdef __cplusplus
 extern "C" {

@@ -2431,7 +2431,7 @@ pub struct DetectorConfig {
     pub(crate) detection: Py<DetectionParams>,
     pub(crate) multiscale: Py<MultiscaleConfig>,
     pub(crate) upscale: Py<UpscaleConfig>,
-    pub(crate) orientation_method: RsOrientationMethod,
+    pub(crate) orientation_method: Option<RsOrientationMethod>,
     pub(crate) merge_radius: f32,
 }
 
@@ -2528,7 +2528,16 @@ impl DetectorConfig {
     /// Return a new `DetectorConfig` with the orientation method replaced.
     fn with_orientation_method(&self, py: Python<'_>, method: OrientationMethod) -> PyResult<Self> {
         let mut cfg = self.clone_inner(py)?;
-        cfg.orientation_method = method.into();
+        cfg.orientation_method = Some(method.into());
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` with the per-corner orientation fit
+    /// skipped. Detection still yields positions and responses, but the
+    /// four axis columns of the output array are `NaN`.
+    fn without_orientation(&self, py: Python<'_>) -> PyResult<Self> {
+        let mut cfg = self.clone_inner(py)?;
+        cfg.orientation_method = None;
         Ok(cfg)
     }
 
@@ -2727,12 +2736,12 @@ impl DetectorConfig {
     }
 
     #[getter]
-    fn orientation_method(&self) -> OrientationMethod {
-        self.orientation_method.into()
+    fn orientation_method(&self) -> Option<OrientationMethod> {
+        self.orientation_method.map(Into::into)
     }
     #[setter]
-    fn set_orientation_method(&mut self, v: OrientationMethod) {
-        self.orientation_method = v.into();
+    fn set_orientation_method(&mut self, v: Option<OrientationMethod>) {
+        self.orientation_method = v.map(Into::into);
     }
 
     #[getter]
@@ -2753,9 +2762,10 @@ impl DetectorConfig {
         d.set_item("detection", self.detection.borrow(py).to_dict(py)?)?;
         d.set_item("multiscale", self.multiscale.borrow(py).to_dict(py)?)?;
         d.set_item("upscale", self.upscale.borrow(py).to_dict(py)?)?;
+        // `None` (skip orientation) serialises to a JSON `null`.
         d.set_item(
             "orientation_method",
-            orientation_method_str(self.orientation_method),
+            self.orientation_method.map(orientation_method_str),
         )?;
         d.set_item("merge_radius", self.merge_radius as f64)?;
         Ok(d.unbind())
@@ -2810,8 +2820,20 @@ impl DetectorConfig {
             let cls = py.get_type::<UpscaleConfig>();
             cfg.upscale = Py::new(py, UpscaleConfig::from_dict(&cls, &value)?)?;
         }
-        if let Some(s) = extract_string(&dict, "orientation_method", "config")? {
-            cfg.orientation_method = parse_orientation_method(&s, "config.orientation_method")?;
+        // A JSON `null` selects "skip orientation"; a string selects a
+        // method; an absent key keeps the default.
+        if let Some(value) = dict.get_item("orientation_method")? {
+            if value.is_none() {
+                cfg.orientation_method = None;
+            } else if value.is_instance_of::<PyString>() {
+                let s = value.extract::<String>()?;
+                cfg.orientation_method =
+                    Some(parse_orientation_method(&s, "config.orientation_method")?);
+            } else {
+                return Err(config_error(
+                    "config.orientation_method must be a string or null",
+                ));
+            }
         }
         if let Some(v) = extract_float(&dict, "merge_radius", "config")? {
             cfg.merge_radius = v as f32;

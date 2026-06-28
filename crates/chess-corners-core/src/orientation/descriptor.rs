@@ -34,9 +34,15 @@ const FULL_DISK_MAX_FULL_IMAGE_CORNERS: usize = 80;
 ///
 /// Orientation and polarity follow the conventions documented on
 /// [`CornerDescriptor`]. When `method` is
-/// [`OrientationMethod::DiskFit`] and the candidate count exceeds an
-/// internal cap, only the strongest candidates run the full-disk
+/// `Some(`[`OrientationMethod::DiskFit`]`)` and the candidate count exceeds
+/// an internal cap, only the strongest candidates run the full-disk
 /// estimator; the rest fall back to ring-fit transparently.
+///
+/// When `method` is `None` the orientation fit is skipped entirely — no
+/// ring is sampled and no model is fit — and every descriptor carries
+/// `axes: None`. This is the cheaper fast path: it does strictly less work
+/// (no per-corner ring buffer, no full-disk candidate mask) than any fitted
+/// method.
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -51,8 +57,28 @@ pub fn describe_corners(
     h: usize,
     radius: u32,
     corners: Vec<Corner>,
-    method: OrientationMethod,
+    method: Option<OrientationMethod>,
 ) -> Vec<CornerDescriptor> {
+    // Fast path: orientation skipped. No ring sampling, no fit, no mask
+    // allocation — only the output vector is allocated. Parallelism and
+    // output order match the fitted path (index-stable `par` collect).
+    let Some(method) = method else {
+        #[cfg(feature = "rayon")]
+        {
+            return corners
+                .into_par_iter()
+                .map(|c| CornerDescriptor::without_axes(c.x, c.y, c.strength))
+                .collect();
+        }
+        #[cfg(not(feature = "rayon"))]
+        {
+            return corners
+                .into_iter()
+                .map(|c| CornerDescriptor::without_axes(c.x, c.y, c.strength))
+                .collect();
+        }
+    };
+
     let ring = ring_offsets(radius);
     let ring_phi = ring_angles(ring);
     let full_disk_mask = full_disk_top_response_mask(&corners, method);
@@ -78,7 +104,7 @@ pub fn describe_corners(
             x: c.x,
             y: c.y,
             response: c.strength,
-            axes: [
+            axes: Some([
                 AxisEstimate {
                     angle: fit.theta1,
                     sigma: fit.sigma_theta1,
@@ -87,7 +113,7 @@ pub fn describe_corners(
                     angle: fit.theta2,
                     sigma: fit.sigma_theta2,
                 },
-            ],
+            ]),
         }
     };
 

@@ -86,7 +86,8 @@ pub struct CornerOut {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub axes: [AxisOut; 2],
+    /// `null` when the orientation fit was skipped.
+    pub axes: Option<[AxisOut; 2]>,
 }
 
 impl From<&AxisEstimate> for AxisOut {
@@ -172,7 +173,9 @@ impl From<&CornerDescriptor> for CornerOut {
             x: c.x,
             y: c.y,
             response: c.response,
-            axes: [AxisOut::from(&c.axes[0]), AxisOut::from(&c.axes[1])],
+            axes: c
+                .axes
+                .map(|axes| [AxisOut::from(&axes[0]), AxisOut::from(&axes[1])]),
         }
     }
 }

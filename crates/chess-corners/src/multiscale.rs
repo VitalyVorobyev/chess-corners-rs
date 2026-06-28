@@ -202,7 +202,7 @@ fn make_roi_context(
 struct DetectorShape<'r> {
     refiner_kind: &'r RefinerKind,
     descriptor_ring_radius: u32,
-    orientation_method: OrientationMethod,
+    orientation_method: Option<OrientationMethod>,
     merge_radius: f32,
 }
 

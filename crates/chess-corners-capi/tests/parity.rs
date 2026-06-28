@@ -54,9 +54,13 @@ fn ffi_detect_matches_reference() {
             a.response,
             b.response
         );
-        for k in 0..2 {
-            assert!((a.axes[k].angle - b.axes[k].angle).abs() < 1e-4);
-            assert!((a.axes[k].sigma - b.axes[k].sigma).abs() < 1e-4);
+        // The reference config keeps orientation on, so axes are present
+        // on both sides and the C corner flags them valid.
+        assert_eq!(a.has_orientation, 1, "ffi corner should carry orientation");
+        let b_axes = b.axes.expect("reference orientation enabled");
+        for (a_axis, b_axis) in a.axes.iter().zip(b_axes.iter()) {
+            assert!((a_axis.angle - b_axis.angle).abs() < 1e-4);
+            assert!((a_axis.sigma - b_axis.sigma).abs() < 1e-4);
         }
     }
 

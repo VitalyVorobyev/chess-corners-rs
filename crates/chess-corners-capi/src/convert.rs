@@ -27,8 +27,8 @@ use chess_corners::{
 
 use crate::{
     cc_axis, cc_config, cc_corner, cc_refiner_t, cc_status, CC_ORIENTATION_DISK_FIT,
-    CC_ORIENTATION_RING_FIT, CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, CC_REFINER_RADON_PEAK,
-    CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS, CC_STRATEGY_RADON,
+    CC_ORIENTATION_NONE, CC_ORIENTATION_RING_FIT, CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER,
+    CC_REFINER_RADON_PEAK, CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS, CC_STRATEGY_RADON,
 };
 
 /// Convert a flat [`cc_config`] into a facade [`DetectorConfig`].
@@ -47,9 +47,10 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
         MultiscaleConfig::SingleScale
     };
 
-    let orientation_method = match cfg.orientation_method {
-        CC_ORIENTATION_RING_FIT => OrientationMethod::RingFit,
-        CC_ORIENTATION_DISK_FIT => OrientationMethod::DiskFit,
+    let orientation_method: Option<OrientationMethod> = match cfg.orientation_method {
+        CC_ORIENTATION_RING_FIT => Some(OrientationMethod::RingFit),
+        CC_ORIENTATION_DISK_FIT => Some(OrientationMethod::DiskFit),
+        CC_ORIENTATION_NONE => None,
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
     };
 
@@ -79,14 +80,17 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
     };
 
-    Ok(base
+    let base = base
         .with_threshold(threshold)
         .with_multiscale(multiscale)
-        .with_orientation_method(orientation_method)
         .with_detection(|d| {
             d.nms_radius = nms_radius;
             d.min_cluster_size = min_cluster_size;
-        }))
+        });
+    Ok(match orientation_method {
+        Some(method) => base.with_orientation_method(method),
+        None => base.without_orientation(),
+    })
 }
 
 /// Flatten a facade [`DetectorConfig`] into a [`cc_config`].
@@ -105,9 +109,10 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
         _ => 1,
     };
     let orientation_method = match config.orientation_method {
-        OrientationMethod::RingFit => CC_ORIENTATION_RING_FIT,
-        OrientationMethod::DiskFit => CC_ORIENTATION_DISK_FIT,
-        _ => CC_ORIENTATION_RING_FIT,
+        None => CC_ORIENTATION_NONE,
+        Some(OrientationMethod::RingFit) => CC_ORIENTATION_RING_FIT,
+        Some(OrientationMethod::DiskFit) => CC_ORIENTATION_DISK_FIT,
+        Some(_) => CC_ORIENTATION_RING_FIT,
     };
     cc_config {
         strategy,
@@ -140,21 +145,38 @@ fn radon_refiner_tag(refiner: RadonRefiner) -> cc_refiner_t {
 }
 
 /// Convert a facade [`CornerDescriptor`] into a [`cc_corner`].
+///
+/// When the descriptor's orientation fit was skipped (`axes` is `None`),
+/// `has_orientation` is `0` and `axes` is zeroed; otherwise `has_orientation`
+/// is `1` and `axes` carries the fitted directions.
 pub(crate) fn corner_to_ffi(corner: &CornerDescriptor) -> cc_corner {
-    cc_corner {
-        x: corner.x,
-        y: corner.y,
-        response: corner.response,
-        axes: [
-            cc_axis {
-                angle: corner.axes[0].angle,
-                sigma: corner.axes[0].sigma,
-            },
-            cc_axis {
-                angle: corner.axes[1].angle,
-                sigma: corner.axes[1].sigma,
-            },
-        ],
+    match corner.axes {
+        Some(axes) => cc_corner {
+            x: corner.x,
+            y: corner.y,
+            response: corner.response,
+            axes: [
+                cc_axis {
+                    angle: axes[0].angle,
+                    sigma: axes[0].sigma,
+                },
+                cc_axis {
+                    angle: axes[1].angle,
+                    sigma: axes[1].sigma,
+                },
+            ],
+            has_orientation: 1,
+        },
+        None => cc_corner {
+            x: corner.x,
+            y: corner.y,
+            response: corner.response,
+            axes: [cc_axis {
+                angle: 0.0,
+                sigma: 0.0,
+            }; 2],
+            has_orientation: 0,
+        },
     }
 }
 

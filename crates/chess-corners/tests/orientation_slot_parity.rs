@@ -130,18 +130,22 @@ fn swap_stats(ring: &[CornerDescriptor], disk: &[CornerDescriptor]) -> SwapStats
             continue;
         };
 
+        // Both runs use a concrete orientation method, so axes are present.
+        let da = d.axes.expect("orientation enabled");
+        let ra = r.axes.expect("orientation enabled");
+
         // Skip corners DiskFit left on the RingFit fallback: identical to
         // the RingFit run, so they carry no slot-ordering signal and only
         // dilute the fraction.
-        let differs = line_delta(d.axes[0].angle, r.axes[0].angle) > INFLUENCE_TOL
-            || line_delta(d.axes[1].angle, r.axes[1].angle) > INFLUENCE_TOL;
+        let differs = line_delta(da[0].angle, ra[0].angle) > INFLUENCE_TOL
+            || line_delta(da[1].angle, ra[1].angle) > INFLUENCE_TOL;
         if !differs {
             continue;
         }
         disk_path += 1;
 
-        let to_r0 = line_delta(d.axes[0].angle, r.axes[0].angle);
-        let to_r1 = line_delta(d.axes[0].angle, r.axes[1].angle);
+        let to_r0 = line_delta(da[0].angle, ra[0].angle);
+        let to_r1 = line_delta(da[0].angle, ra[1].angle);
         // Only judge corners where the two methods agree on the line set.
         if to_r0.min(to_r1) > SET_TOL {
             continue;
@@ -172,14 +176,14 @@ fn minority_split(corners: &[CornerDescriptor]) -> (f32, usize, usize) {
     }
     let (mut sc, mut ss) = (0.0f32, 0.0f32);
     for c in corners {
-        let a = c.axes[0].angle;
+        let a = c.axes.expect("orientation enabled")[0].angle;
         sc += (4.0 * a).cos();
         ss += (4.0 * a).sin();
     }
     let axis = ss.atan2(sc) * 0.5; // cluster axis in doubled-angle space
     let (mut n0, mut n1) = (0usize, 0usize);
     for c in corners {
-        let beta = 2.0 * c.axes[0].angle;
+        let beta = 2.0 * c.axes.expect("orientation enabled")[0].angle;
         let off = (beta - axis + PI).rem_euclid(2.0 * PI) - PI; // (-π, π]
         if off.abs() < PI * 0.5 {
             n0 += 1;
