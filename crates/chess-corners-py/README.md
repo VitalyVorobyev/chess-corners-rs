@@ -16,7 +16,7 @@ import chess_corners
 img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.DetectorConfig.chess_multiscale()
-cfg.threshold = chess_corners.Threshold.relative(0.15)
+cfg.threshold = 0.15
 cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
@@ -58,7 +58,7 @@ inside a `DetectionStrategy` variant. Top-level fields are
 
 ```python
 cfg = chess_corners.DetectorConfig.chess()  # ChESS, no pyramid
-cfg.threshold = chess_corners.Threshold.relative(0.2)
+cfg.threshold = 0.2  # plain float; ChESS = absolute response floor, Radon = fraction of per-frame max
 cfg.merge_radius = 3.0
 
 # Enable the coarse-to-fine pyramid (both detectors honour this):
@@ -111,8 +111,6 @@ assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
 
 Tagged classes:
 
-- `Threshold`: `Threshold.absolute(value)` / `Threshold.relative(frac)`;
-  read `cfg.threshold.kind` and `cfg.threshold.value`.
 - `MultiscaleConfig`: `MultiscaleConfig.single_scale()` /
   `MultiscaleConfig.pyramid(levels=, min_size=, refinement_radius=)`;
   read `cfg.multiscale.kind` and (when `pyramid`) `levels`,
@@ -178,7 +176,7 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
       }
     }
   },
-  "threshold": { "absolute": 0.5 },
+  "threshold": 0.5,
   "detection": { "nms_radius": 3, "min_cluster_size": 1 },
   "multiscale": {
     "pyramid": {

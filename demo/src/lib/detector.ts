@@ -8,7 +8,6 @@
 import init, {
   ChessDetector,
   DetectorConfig,
-  Threshold,
   OrientationMethod,
   ChessRefiner,
   RadonRefiner,
@@ -108,7 +107,7 @@ function buildConfig(s: DetectorSettings): DetectorConfig {
         ? DetectorConfig.chessMultiscale()
         : DetectorConfig.chess();
 
-  cfg = cfg.withThreshold(Threshold.relative(s.thresholdRel));
+  cfg = cfg.withThreshold(s.thresholdRel);
   cfg = cfg.withOrientationMethod(
     s.orientation === "diskFit"
       ? OrientationMethod.DiskFit

@@ -44,7 +44,7 @@ use wasm_bindgen::prelude::*;
 pub use crate::config::{
     CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy,
     DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig,
-    RadonPeakConfig, RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
+    RadonPeakConfig, RadonRefiner, SaddlePointConfig, UpscaleConfig,
 };
 
 /// Convert RGBA pixels to grayscale using BT.601 luminance weights.

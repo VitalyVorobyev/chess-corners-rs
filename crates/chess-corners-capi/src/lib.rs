@@ -51,14 +51,6 @@ pub const CC_STRATEGY_CHESS: cc_strategy_t = 0;
 /// Whole-image Radon detector.
 pub const CC_STRATEGY_RADON: cc_strategy_t = 1;
 
-/// Acceptance-threshold interpretation tag stored in
-/// `cc_config::threshold_kind`.
-pub type cc_threshold_kind_t = u32;
-/// Read `cc_config::threshold_value` as an absolute score floor.
-pub const CC_THRESHOLD_ABSOLUTE: cc_threshold_kind_t = 0;
-/// Read `cc_config::threshold_value` as a fraction of the per-frame max.
-pub const CC_THRESHOLD_RELATIVE: cc_threshold_kind_t = 1;
-
 /// Subpixel-refiner tag stored in `cc_config::refiner`.
 ///
 /// Refiner-specific tuning is not exposed over the flat ABI; the selected
@@ -136,11 +128,9 @@ pub struct cc_result {
 pub struct cc_config {
     /// One of the `CC_STRATEGY_*` constants.
     pub strategy: cc_strategy_t,
-    /// One of the `CC_THRESHOLD_*` constants; selects how `threshold_value`
-    /// is interpreted.
-    pub threshold_kind: cc_threshold_kind_t,
-    /// Acceptance threshold; units depend on `threshold_kind`.
-    pub threshold_value: f32,
+    /// Acceptance threshold. ChESS reads it as an absolute response floor;
+    /// Radon as a fraction of the per-frame maximum.
+    pub threshold: f32,
     /// Non-maximum-suppression half-radius in working-resolution pixels.
     pub nms_radius: u32,
     /// Minimum positive-response neighbours required to accept a candidate.
@@ -356,7 +346,7 @@ pub extern "C" fn cc_status_str(status: cc_status) -> *const c_char {
 /// ABI version of this library. Bumped manually on any breaking ABI change.
 #[no_mangle]
 pub extern "C" fn cc_abi_version() -> u32 {
-    1
+    2
 }
 
 #[cfg(test)]
@@ -432,6 +422,6 @@ mod tests {
 
     #[test]
     fn abi_version_is_stable() {
-        assert_eq!(cc_abi_version(), 1);
+        assert_eq!(cc_abi_version(), 2);
     }
 }

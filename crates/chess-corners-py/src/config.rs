@@ -23,7 +23,7 @@ use chess_corners::{
     OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
     RadonConfig as RsRadonConfig, RadonPeakConfig as RsRadonPeakConfig,
     RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
-    Threshold as RsThreshold, UpscaleConfig as RsUpscaleConfig,
+    UpscaleConfig as RsUpscaleConfig,
 };
 use pyo3::create_exception;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -790,163 +790,6 @@ impl RadonPeakConfig {
             cfg.inner.max_offset = v as f32;
         }
         Ok(cfg)
-    }
-
-    #[pyo3(signature = (*, indent=None, sort_keys=true))]
-    fn to_json(&self, py: Python<'_>, indent: Option<i64>, sort_keys: bool) -> PyResult<String> {
-        let dict = self.to_dict(py)?;
-        json_dumps(py, dict.bind(py), indent, sort_keys)
-    }
-
-    #[classmethod]
-    fn from_json(cls: &Bound<'_, PyType>, py: Python<'_>, text: &str) -> PyResult<Self> {
-        let value = json_loads(py, text)
-            .map_err(|e| config_error(format!("failed to parse config JSON: {e}")))?;
-        Self::from_dict(cls, &value)
-    }
-
-    #[pyo3(signature = (*, indent=2, sort_keys=true))]
-    fn pretty(&self, py: Python<'_>, indent: i64, sort_keys: bool) -> PyResult<String> {
-        self.to_json(py, Some(indent), sort_keys)
-    }
-
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        self.pretty(py, 2, true)
-    }
-    fn __str__(&self, py: Python<'_>) -> PyResult<String> {
-        self.pretty(py, 2, true)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Threshold (variant-tagged wrapper).
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum ThresholdKind {
-    Absolute,
-    Relative,
-}
-
-impl ThresholdKind {
-    fn as_str(&self) -> &'static str {
-        match self {
-            ThresholdKind::Absolute => "absolute",
-            ThresholdKind::Relative => "relative",
-        }
-    }
-}
-
-/// Detector acceptance threshold. One of `absolute(value)` or
-/// `relative(frac)`. Both detectors honour the same enum.
-#[pyclass(module = "chess_corners", skip_from_py_object)]
-#[derive(Clone, Debug)]
-pub struct Threshold {
-    kind: ThresholdKind,
-    value: f32,
-}
-
-impl Threshold {
-    fn from_rs(v: RsThreshold) -> Self {
-        match v {
-            RsThreshold::Absolute(v) => Self {
-                kind: ThresholdKind::Absolute,
-                value: v,
-            },
-            RsThreshold::Relative(v) => Self {
-                kind: ThresholdKind::Relative,
-                value: v,
-            },
-            _ => Self {
-                kind: ThresholdKind::Absolute,
-                value: 0.0,
-            },
-        }
-    }
-
-    fn to_rs(&self) -> RsThreshold {
-        match self.kind {
-            ThresholdKind::Absolute => RsThreshold::Absolute(self.value),
-            ThresholdKind::Relative => RsThreshold::Relative(self.value),
-        }
-    }
-}
-
-#[pymethods]
-impl Threshold {
-    /// Default-construct: absolute threshold at 0.0 (paper's `R > 0`).
-    #[new]
-    fn new() -> Self {
-        Self::from_rs(RsThreshold::default())
-    }
-
-    /// Build an absolute threshold: accept responses ≥ `value` in the
-    /// detector's native score units.
-    #[classmethod]
-    fn absolute(_cls: &Bound<'_, PyType>, value: f32) -> Self {
-        Self {
-            kind: ThresholdKind::Absolute,
-            value,
-        }
-    }
-
-    /// Build a relative threshold: accept responses ≥ `frac · max(response)`
-    /// in the current frame. `frac` is a fraction in `[0.0, 1.0]`.
-    #[classmethod]
-    fn relative(_cls: &Bound<'_, PyType>, frac: f32) -> Self {
-        Self {
-            kind: ThresholdKind::Relative,
-            value: frac,
-        }
-    }
-
-    /// Variant tag: `"absolute"` or `"relative"`.
-    #[getter]
-    fn kind(&self) -> &'static str {
-        self.kind.as_str()
-    }
-
-    /// Numeric payload of the active variant.
-    #[getter]
-    fn value(&self) -> f32 {
-        self.value
-    }
-    #[setter]
-    fn set_value(&mut self, v: f32) {
-        self.value = v;
-    }
-
-    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        let d = PyDict::new(py);
-        d.set_item(self.kind.as_str(), self.value as f64)?;
-        Ok(d.unbind())
-    }
-
-    #[classmethod]
-    fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let dict = require_dict(data, "threshold")?;
-        reject_unknown_keys(&dict, &["absolute", "relative"], "threshold")?;
-        // Externally-tagged: exactly one of {absolute, relative} present.
-        let mut found: Option<(ThresholdKind, f32)> = None;
-        for (key, kind) in [
-            ("absolute", ThresholdKind::Absolute),
-            ("relative", ThresholdKind::Relative),
-        ] {
-            if let Some(value) = extract_float(&dict, key, "threshold")? {
-                if found.is_some() {
-                    return Err(config_error(
-                        "threshold must have exactly one of: absolute, relative",
-                    ));
-                }
-                found = Some((kind, value as f32));
-            }
-        }
-        let Some((kind, value)) = found else {
-            return Err(config_error(
-                "threshold must have one of: absolute, relative",
-            ));
-        };
-        Ok(Self { kind, value })
     }
 
     #[pyo3(signature = (*, indent=None, sort_keys=true))]
@@ -2584,7 +2427,7 @@ impl DetectionStrategy {
 #[pyclass(module = "chess_corners")]
 pub struct DetectorConfig {
     pub(crate) strategy: Py<DetectionStrategy>,
-    pub(crate) threshold: Py<Threshold>,
+    pub(crate) threshold: f32,
     pub(crate) detection: Py<DetectionParams>,
     pub(crate) multiscale: Py<MultiscaleConfig>,
     pub(crate) upscale: Py<UpscaleConfig>,
@@ -2596,7 +2439,7 @@ impl DetectorConfig {
     pub(crate) fn from_rs(py: Python<'_>, src: RsDetectorConfig) -> PyResult<Self> {
         Ok(Self {
             strategy: Py::new(py, DetectionStrategy::from_rs(py, src.strategy)?)?,
-            threshold: Py::new(py, Threshold::from_rs(src.threshold))?,
+            threshold: src.threshold,
             detection: Py::new(py, DetectionParams::from_rs(src.detection))?,
             multiscale: Py::new(py, MultiscaleConfig::from_rs(src.multiscale))?,
             upscale: Py::new(py, UpscaleConfig::from_rs(src.upscale))?,
@@ -2618,7 +2461,7 @@ impl DetectorConfig {
     pub(crate) fn to_inner(&self, py: Python<'_>) -> RsDetectorConfig {
         let mut cfg = RsDetectorConfig::default();
         cfg.strategy = self.strategy.borrow(py).to_rs(py);
-        cfg.threshold = self.threshold.borrow(py).to_rs();
+        cfg.threshold = self.threshold;
         cfg.detection = self.detection.borrow(py).to_rs();
         cfg.multiscale = self.multiscale.borrow(py).to_rs();
         cfg.upscale = self.upscale.borrow(py).to_rs();
@@ -2662,7 +2505,7 @@ impl DetectorConfig {
     // ---- chainable builder methods ----
 
     /// Return a new `DetectorConfig` with the threshold replaced.
-    fn with_threshold(&self, py: Python<'_>, threshold: Py<Threshold>) -> PyResult<Self> {
+    fn with_threshold(&self, py: Python<'_>, threshold: f32) -> PyResult<Self> {
         let mut cfg = self.clone_inner(py)?;
         cfg.threshold = threshold;
         Ok(cfg)
@@ -2848,11 +2691,11 @@ impl DetectorConfig {
     }
 
     #[getter]
-    fn threshold(&self, py: Python<'_>) -> Py<Threshold> {
-        self.threshold.clone_ref(py)
+    fn threshold(&self) -> f32 {
+        self.threshold
     }
     #[setter]
-    fn set_threshold(&mut self, v: Py<Threshold>) {
+    fn set_threshold(&mut self, v: f32) {
         self.threshold = v;
     }
 
@@ -2906,7 +2749,7 @@ impl DetectorConfig {
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
         d.set_item("strategy", self.strategy.borrow(py).to_dict(py)?)?;
-        d.set_item("threshold", self.threshold.borrow(py).to_dict(py)?)?;
+        d.set_item("threshold", self.threshold as f64)?;
         d.set_item("detection", self.detection.borrow(py).to_dict(py)?)?;
         d.set_item("multiscale", self.multiscale.borrow(py).to_dict(py)?)?;
         d.set_item("upscale", self.upscale.borrow(py).to_dict(py)?)?;
@@ -2949,8 +2792,11 @@ impl DetectorConfig {
             cfg.strategy = Py::new(py, DetectionStrategy::from_dict(&cls, py, &value)?)?;
         }
         if let Some(value) = dict.get_item("threshold")? {
-            let cls = py.get_type::<Threshold>();
-            cfg.threshold = Py::new(py, Threshold::from_dict(&cls, &value)?)?;
+            cfg.threshold = value
+                .extract::<f64>()
+                .map(|v| v as f32)
+                .or_else(|_| value.extract::<f32>())
+                .map_err(|_| config_error("threshold must be a number"))?;
         }
         if let Some(value) = dict.get_item("detection")? {
             let cls = py.get_type::<DetectionParams>();

@@ -16,7 +16,7 @@ The user-visible controls correspond to fields on the typed config:
 - ChESS vs Radon — `cfg.strategy = DetectionStrategy.fromChess(...)` or
   `.fromRadon(...)`.
 - ChESS ring (Canonical / Broad) — `cfg.strategy.chess.ring`.
-- Threshold — `cfg.threshold = Threshold.relative(v)`.
+- Threshold — `cfg.threshold = v`.
 - NMS radius / min cluster size — on the active strategy variant.
 - Pyramid levels and min size — `cfg.multiscale =
   MultiscaleConfig.pyramid(levels, minSize, 3)` (or `.singleScale()`).

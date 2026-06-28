@@ -12,7 +12,6 @@ import init, {
   RadonRefiner,
   RadonPeakConfig,
   SaddlePointConfig,
-  Threshold,
   UpscaleConfig,
 } from '../pkg/chess_corners_wasm.js';
 
@@ -112,7 +111,7 @@ function buildConfig() {
   const isRadon = modeValue === "radon";
   const cfg = new DetectorConfig();
 
-  cfg.threshold = Threshold.relative(parseFloat(threshold.value));
+  cfg.threshold = parseFloat(threshold.value);
 
   const upFactor = parseInt(upscaleFactor.value, 10);
   cfg.upscale =

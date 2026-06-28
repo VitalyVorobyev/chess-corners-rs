@@ -55,12 +55,6 @@ typedef enum cc_status {
 typedef uint32_t cc_strategy_t;
 
 /**
- * Acceptance-threshold interpretation tag stored in
- * `cc_config::threshold_kind`.
- */
-typedef uint32_t cc_threshold_kind_t;
-
-/**
  * Subpixel-refiner tag stored in `cc_config::refiner`.
  *
  * Refiner-specific tuning is not exposed over the flat ABI; the selected
@@ -87,14 +81,10 @@ typedef struct cc_config {
    */
   cc_strategy_t strategy;
   /**
-   * One of the `CC_THRESHOLD_*` constants; selects how `threshold_value`
-   * is interpreted.
+   * Acceptance threshold. ChESS reads it as an absolute response floor;
+   * Radon as a fraction of the per-frame maximum.
    */
-  cc_threshold_kind_t threshold_kind;
-  /**
-   * Acceptance threshold; units depend on `threshold_kind`.
-   */
-  float threshold_value;
+  float threshold;
   /**
    * Non-maximum-suppression half-radius in working-resolution pixels.
    */
@@ -184,16 +174,6 @@ typedef struct cc_result {
  * Whole-image Radon detector.
  */
 #define CC_STRATEGY_RADON 1
-
-/**
- * Read `cc_config::threshold_value` as an absolute score floor.
- */
-#define CC_THRESHOLD_ABSOLUTE 0
-
-/**
- * Read `cc_config::threshold_value` as a fraction of the per-frame max.
- */
-#define CC_THRESHOLD_RELATIVE 1
 
 /**
  * Center-of-mass refiner. Valid for both strategies.

@@ -57,7 +57,7 @@ use chess_corners::{
     OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
     RadonConfig as RsRadonConfig, RadonPeakConfig as RsRadonPeakConfig,
     RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
-    Threshold as RsThreshold, UpscaleConfig as RsUpscaleConfig,
+    UpscaleConfig as RsUpscaleConfig,
 };
 use wasm_bindgen::prelude::*;
 
@@ -189,95 +189,6 @@ impl StrategyKind {
             StrategyKind::Chess => "chess",
             StrategyKind::Radon => "radon",
         }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Threshold (tagged-class pattern, enum-with-payload)
-// ---------------------------------------------------------------------------
-
-/// Acceptance threshold for the corner detector.
-///
-/// Constructed via [`Threshold::absolute`] or [`Threshold::relative`].
-/// Mirrors the [`chess_corners::Threshold`] payload-carrying enum.
-///
-/// - `Threshold.absolute(value)` accepts responses `≥ value` in the
-///   detector's native score units.
-/// - `Threshold.relative(frac)` accepts responses `≥ frac · max(response)`
-///   in the current frame, with `frac ∈ [0.0, 1.0]`.
-///
-/// The `kind` getter returns `"absolute"` or `"relative"`; the `value`
-/// getter returns the carried payload.
-#[wasm_bindgen]
-#[derive(Clone, Debug)]
-pub struct Threshold {
-    cell: Cell<RsThreshold>,
-}
-
-#[wasm_bindgen]
-impl Threshold {
-    /// Construct an `Absolute(value)` threshold (the library default).
-    pub fn absolute(value: f32) -> Self {
-        Self {
-            cell: cell(RsThreshold::Absolute(value)),
-        }
-    }
-
-    /// Construct a `Relative(frac)` threshold. `frac` should lie in
-    /// `[0.0, 1.0]`.
-    pub fn relative(frac: f32) -> Self {
-        Self {
-            cell: cell(RsThreshold::Relative(frac)),
-        }
-    }
-
-    /// Discriminant tag: `"absolute"` or `"relative"`.
-    #[wasm_bindgen(getter)]
-    pub fn kind(&self) -> String {
-        match *self.cell.borrow() {
-            RsThreshold::Absolute(_) => "absolute".into(),
-            RsThreshold::Relative(_) => "relative".into(),
-            // Any future variant maps to the safe default.
-            _ => "absolute".into(),
-        }
-    }
-
-    /// Numeric payload (absolute value or relative fraction).
-    #[wasm_bindgen(getter)]
-    pub fn value(&self) -> f32 {
-        match *self.cell.borrow() {
-            RsThreshold::Absolute(v) => v,
-            RsThreshold::Relative(f) => f,
-            _ => 0.0,
-        }
-    }
-
-    /// In-place setter for the carried payload, preserving the kind.
-    #[wasm_bindgen(setter)]
-    pub fn set_value(&mut self, v: f32) {
-        let mut slot = self.cell.borrow_mut();
-        *slot = match *slot {
-            RsThreshold::Absolute(_) => RsThreshold::Absolute(v),
-            RsThreshold::Relative(_) => RsThreshold::Relative(v),
-            _ => RsThreshold::Absolute(v),
-        };
-    }
-}
-
-impl Default for Threshold {
-    fn default() -> Self {
-        Self {
-            cell: cell(RsThreshold::default()),
-        }
-    }
-}
-
-impl Threshold {
-    pub(crate) fn share_cell(&self) -> Cell<RsThreshold> {
-        Rc::clone(&self.cell)
-    }
-    pub(crate) fn from_value(value: RsThreshold) -> Self {
-        Self { cell: cell(value) }
     }
 }
 
@@ -1732,7 +1643,7 @@ impl DetectionStrategy {
 #[derive(Clone, Debug)]
 pub struct DetectorConfig {
     strategy: DetectionStrategy,
-    threshold: Threshold,
+    threshold: f32,
     detection: DetectionParams,
     multiscale: MultiscaleConfig,
     upscale: UpscaleConfig,
@@ -1748,7 +1659,7 @@ impl DetectorConfig {
     fn from_value(value: RsDetectorConfig) -> Self {
         Self {
             strategy: DetectionStrategy::from_value(value.strategy),
-            threshold: Threshold::from_value(value.threshold),
+            threshold: value.threshold,
             detection: DetectionParams::from_value(value.detection),
             multiscale: MultiscaleConfig::from_value(value.multiscale),
             upscale: UpscaleConfig::from_value(value.upscale),
@@ -1769,7 +1680,7 @@ impl DetectorConfig {
     pub(crate) fn snapshot(&self) -> RsDetectorConfig {
         let mut cfg = RsDetectorConfig::default();
         cfg.strategy = self.strategy.snapshot();
-        cfg.threshold = *self.threshold.share_cell().borrow();
+        cfg.threshold = self.threshold;
         cfg.detection = self.detection.snapshot();
         cfg.multiscale = self.multiscale.snapshot();
         cfg.upscale = self.upscale.snapshot();
@@ -1827,11 +1738,11 @@ impl DetectorConfig {
     // ---- Chainable builder methods ----
 
     /// Return a copy of this config with the threshold replaced.
-    /// JS: `cfg.withThreshold(Threshold.relative(0.15))`.
+    /// JS: `cfg.withThreshold(0.15)`.
     #[wasm_bindgen(js_name = withThreshold)]
-    pub fn with_threshold(&self, threshold: &Threshold) -> Self {
+    pub fn with_threshold(&self, threshold: f32) -> Self {
         let mut out = self.deep_clone();
-        out.set_threshold(threshold);
+        out.threshold = threshold;
         out
     }
 
@@ -2052,14 +1963,12 @@ impl DetectorConfig {
     }
 
     #[wasm_bindgen(getter)]
-    pub fn threshold(&self) -> Threshold {
-        self.threshold.clone()
+    pub fn threshold(&self) -> f32 {
+        self.threshold
     }
     #[wasm_bindgen(setter)]
-    pub fn set_threshold(&mut self, v: &Threshold) {
-        // Copy v's value into this config's threshold cell so
-        // cell-sharing observers see the update.
-        *self.threshold.share_cell().borrow_mut() = *v.share_cell().borrow();
+    pub fn set_threshold(&mut self, v: f32) {
+        self.threshold = v;
     }
 
     /// Shared NMS / clustering thresholds. Returns a wrapper backed by
@@ -2155,8 +2064,7 @@ mod tests {
     use super::*;
     use chess_corners::{
         ChessRing as RsChessRingCheck, DetectionStrategy as RsDetectionStrategy,
-        MultiscaleConfig as RsMultiscaleConfig, Threshold as RsThreshold,
-        UpscaleConfig as RsUpscaleConfig,
+        MultiscaleConfig as RsMultiscaleConfig, UpscaleConfig as RsUpscaleConfig,
     };
 
     #[test]
@@ -2268,34 +2176,24 @@ mod tests {
     }
 
     #[test]
-    fn threshold_kind_and_value_round_trip() {
-        let abs = Threshold::absolute(3.5);
-        assert_eq!(abs.kind(), "absolute");
-        assert!((abs.value() - 3.5).abs() < f32::EPSILON);
-
-        let rel = Threshold::relative(0.42);
-        assert_eq!(rel.kind(), "relative");
-        assert!((rel.value() - 0.42).abs() < f32::EPSILON);
+    fn threshold_numeric_round_trip() {
+        let mut cfg = DetectorConfig::new();
+        cfg.set_threshold(3.5);
+        assert!((cfg.threshold() - 3.5).abs() < f32::EPSILON);
+        let snap = cfg.snapshot();
+        assert!((snap.threshold - 3.5).abs() < f32::EPSILON);
     }
 
     #[test]
     fn cfg_threshold_propagates() {
         let mut cfg = DetectorConfig::new();
-        let t = Threshold::relative(0.15);
-        cfg.set_threshold(&t);
+        cfg.set_threshold(0.15);
         let snap = cfg.snapshot();
-        assert!(
-            matches!(snap.threshold, RsThreshold::Relative(f) if (f - 0.15).abs() < f32::EPSILON)
-        );
+        assert!((snap.threshold - 0.15).abs() < f32::EPSILON);
 
-        // Mutating the wrapper via setter also propagates.
-        let live = cfg.threshold();
-        let mut live_mut = live;
-        live_mut.set_value(0.25);
+        cfg.set_threshold(0.25);
         let snap2 = cfg.snapshot();
-        assert!(
-            matches!(snap2.threshold, RsThreshold::Relative(f) if (f - 0.25).abs() < f32::EPSILON)
-        );
+        assert!((snap2.threshold - 0.25).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -2371,14 +2269,12 @@ mod tests {
     #[test]
     fn snapshot_returns_independent_state() {
         let cfg = DetectorConfig::new();
-        let t = Threshold::absolute(0.1);
         let mut cfg_mut = cfg;
-        cfg_mut.set_threshold(&t);
+        cfg_mut.set_threshold(0.1);
         let snap = cfg_mut.snapshot();
         // Replace the threshold after snapshotting — snapshot must not move.
-        let t2 = Threshold::absolute(0.9);
-        cfg_mut.set_threshold(&t2);
-        assert!(matches!(snap.threshold, RsThreshold::Absolute(v) if (v - 0.1).abs() < 1e-6));
+        cfg_mut.set_threshold(0.9);
+        assert!((snap.threshold - 0.1).abs() < 1e-6);
     }
 
     #[test]
@@ -2475,10 +2371,7 @@ mod tests {
             RsMultiscaleConfig::SingleScale
         ));
         // Threshold must match.
-        assert_eq!(
-            std::mem::discriminant(&snap_compat.threshold),
-            std::mem::discriminant(&snap_new.threshold)
-        );
+        assert_eq!(snap_compat.threshold, snap_new.threshold);
     }
 
     #[test]
@@ -2504,18 +2397,15 @@ mod tests {
     fn with_threshold_builder_returns_new_config() {
         let cfg = DetectorConfig::chess();
         let snap_before = cfg.snapshot();
-        assert!(matches!(snap_before.threshold, RsThreshold::Absolute(_)));
+        let before_val = snap_before.threshold;
 
-        let t = Threshold::relative(0.12);
-        let cfg2 = cfg.with_threshold(&t);
+        let cfg2 = cfg.with_threshold(0.12);
         let snap2 = cfg2.snapshot();
-        assert!(
-            matches!(snap2.threshold, RsThreshold::Relative(f) if (f - 0.12).abs() < f32::EPSILON)
-        );
+        assert!((snap2.threshold - 0.12).abs() < f32::EPSILON);
 
         // Original is unchanged.
         let snap_orig = cfg.snapshot();
-        assert!(matches!(snap_orig.threshold, RsThreshold::Absolute(_)));
+        assert!((snap_orig.threshold - before_val).abs() < f32::EPSILON);
     }
 
     #[test]

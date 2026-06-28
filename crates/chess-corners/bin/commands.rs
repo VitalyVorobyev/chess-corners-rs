@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use chess_corners::{
     AxisEstimate, CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, CornerDescriptor,
     DetectionStrategy, Detector, DetectorConfig, ForstnerConfig, MultiscaleConfig, RadonPeakConfig,
-    RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
+    RadonRefiner, SaddlePointConfig, UpscaleConfig,
 };
 use image::{ImageBuffer, ImageReader, Luma};
 use log::info;
@@ -60,7 +60,7 @@ pub struct DetectionOverrides {
     pub merge_radius: Option<f32>,
     pub output_json: Option<PathBuf>,
     pub output_png: Option<PathBuf>,
-    pub threshold: Option<Threshold>,
+    pub threshold: Option<f32>,
     pub chess_ring: Option<ChessRing>,
     pub nms_radius: Option<u32>,
     pub min_cluster_size: Option<u32>,
@@ -197,14 +197,12 @@ pub fn validate_algorithm_config(cfg: &DetectorConfig) -> Result<()> {
     if cfg.merge_radius <= 0.0 {
         anyhow::bail!("merge_radius must be > 0");
     }
-    match cfg.threshold {
-        Threshold::Absolute(v) if v < 0.0 => {
-            anyhow::bail!("threshold.absolute must be >= 0")
-        }
-        Threshold::Relative(f) if !(0.0..=1.0).contains(&f) => {
-            anyhow::bail!("threshold.relative must be in [0, 1]")
-        }
-        _ => {}
+    if cfg.threshold < 0.0 {
+        anyhow::bail!("threshold must be >= 0");
+    }
+    // Radon reads the threshold as a fraction of the per-frame maximum.
+    if matches!(cfg.strategy, DetectionStrategy::Radon(_)) && cfg.threshold > 1.0 {
+        anyhow::bail!("threshold for the Radon detector is a fraction in [0, 1]");
     }
     cfg.upscale
         .validate()

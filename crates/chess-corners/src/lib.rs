@@ -38,7 +38,7 @@
 //! crate. This example reads from disk and is marked `no_run`:
 //!
 //! ```no_run
-//! use chess_corners::{ChessRefiner, Detector, DetectorConfig, Threshold};
+//! use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 //! use image::io::Reader as ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -47,7 +47,7 @@
 //!     .to_luma8();
 //!
 //! let cfg = DetectorConfig::chess_multiscale()
-//!     .with_threshold(Threshold::Relative(0.15))
+//!     .with_threshold(120.0)
 //!     .with_chess(|c| c.refiner = ChessRefiner::forstner());
 //!
 //! let mut detector = Detector::new(cfg)?;
@@ -164,9 +164,10 @@
 //! [`DetectorConfig`] is strategy-typed: the [`DetectorConfig::strategy`]
 //! field is a [`DetectionStrategy`] enum carrying either a
 //! [`ChessConfig`] (detector ring, refiner) or a [`RadonConfig`]
-//! (whole-image Duda-Frese parameters). Acceptance
-//! is a single [`Threshold`] enum (`Absolute` or `Relative`).
-//! [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
+//! (whole-image Duda-Frese parameters). Acceptance is a single
+//! [`threshold`](DetectorConfig::threshold) number — read as an absolute
+//! response floor by ChESS and as a fraction of the per-frame maximum by
+//! Radon. [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
 //! and apply to both strategies. The detector translates this into
 //! lower-level parameter structs internally; those structs
 //! (`ChessParams`, `RadonDetectorParams`) are exposed for hand-composed
@@ -240,7 +241,7 @@ mod upscale;
 // `chess-corners-core` dependency.
 pub use crate::config::{
     ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, RadonConfig, RadonRefiner, Threshold,
+    MultiscaleConfig, RadonConfig, RadonRefiner,
 };
 pub use crate::error::ChessError;
 pub use crate::upscale::{UpscaleConfig, UpscaleError};

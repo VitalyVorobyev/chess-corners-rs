@@ -22,14 +22,13 @@
 
 use chess_corners::{
     ChessError, ChessRefiner, CornerDescriptor, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, OrientationMethod, RadonRefiner, Threshold,
+    MultiscaleConfig, OrientationMethod, RadonRefiner,
 };
 
 use crate::{
     cc_axis, cc_config, cc_corner, cc_refiner_t, cc_status, CC_ORIENTATION_DISK_FIT,
     CC_ORIENTATION_RING_FIT, CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, CC_REFINER_RADON_PEAK,
-    CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS, CC_STRATEGY_RADON, CC_THRESHOLD_ABSOLUTE,
-    CC_THRESHOLD_RELATIVE,
+    CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS, CC_STRATEGY_RADON,
 };
 
 /// Convert a flat [`cc_config`] into a facade [`DetectorConfig`].
@@ -40,11 +39,7 @@ use crate::{
 /// tuning, upscaling, and the cross-level merge radius — are taken from the
 /// selected strategy preset.
 pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_status> {
-    let threshold = match cfg.threshold_kind {
-        CC_THRESHOLD_ABSOLUTE => Threshold::Absolute(cfg.threshold_value),
-        CC_THRESHOLD_RELATIVE => Threshold::Relative(cfg.threshold_value),
-        _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
-    };
+    let threshold = cfg.threshold;
 
     let multiscale = if cfg.multiscale != 0 {
         MultiscaleConfig::pyramid_default()
@@ -105,11 +100,6 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
         DetectionStrategy::Radon(r) => (CC_STRATEGY_RADON, radon_refiner_tag(r.refiner)),
         _ => (CC_STRATEGY_CHESS, CC_REFINER_CENTER_OF_MASS),
     };
-    let (threshold_kind, threshold_value) = match config.threshold {
-        Threshold::Absolute(v) => (CC_THRESHOLD_ABSOLUTE, v),
-        Threshold::Relative(v) => (CC_THRESHOLD_RELATIVE, v),
-        _ => (CC_THRESHOLD_ABSOLUTE, 0.0),
-    };
     let multiscale = match config.multiscale {
         MultiscaleConfig::SingleScale => 0,
         _ => 1,
@@ -121,8 +111,7 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
     };
     cc_config {
         strategy,
-        threshold_kind,
-        threshold_value,
+        threshold: config.threshold,
         nms_radius: config.detection.nms_radius,
         min_cluster_size: config.detection.min_cluster_size,
         refiner,
@@ -180,12 +169,11 @@ pub(crate) fn map_error(err: &ChessError) -> cc_status {
 
 /// Fallback config returned only if a preset constructor were to panic (it
 /// cannot in practice). All-zero tags select single-scale ChESS with the
-/// center-of-mass refiner and an absolute-zero threshold.
+/// center-of-mass refiner and a zero threshold.
 pub(crate) fn zeroed_config() -> cc_config {
     cc_config {
         strategy: CC_STRATEGY_CHESS,
-        threshold_kind: CC_THRESHOLD_ABSOLUTE,
-        threshold_value: 0.0,
+        threshold: 0.0,
         nms_radius: 0,
         min_cluster_size: 0,
         refiner: CC_REFINER_CENTER_OF_MASS,

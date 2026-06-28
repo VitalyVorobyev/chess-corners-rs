@@ -18,7 +18,6 @@ chess_corners = pytest.importorskip("chess_corners")
 OrientationMethod = chess_corners.OrientationMethod
 DetectorConfig = chess_corners.DetectorConfig
 ConfigError = chess_corners.ConfigError
-Threshold = chess_corners.Threshold
 
 
 # ---------------------------------------------------------------------------
@@ -104,11 +103,11 @@ def test_setting_orientation_method_changes_serialised_value():
 def test_orientation_method_survives_other_field_mutations():
     cfg = DetectorConfig()
     cfg.orientation_method = OrientationMethod.DISK_FIT
-    cfg.threshold = Threshold.relative(0.25)  # mutate unrelated field
+    cfg.threshold = 0.25  # mutate unrelated field
 
     d = cfg.to_dict()
     assert d["orientation_method"] == "disk_fit"
-    assert d["threshold"] == {"relative": pytest.approx(0.25)}
+    assert d["threshold"] == pytest.approx(0.25)
 
 
 # ---------------------------------------------------------------------------

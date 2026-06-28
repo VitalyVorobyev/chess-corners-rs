@@ -13,9 +13,7 @@
       }
     }
   },
-  "threshold": {
-    "absolute": 0.5
-  },
+  "threshold": 0.5,
   "detection": {
     "nms_radius": 3,
     "min_cluster_size": 1

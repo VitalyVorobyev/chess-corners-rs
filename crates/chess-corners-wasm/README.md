@@ -159,7 +159,6 @@ import init, {
   PeakFitMode,
   RadonConfig,
   RadonRefiner,
-  Threshold,
   UpscaleConfig,
 } from '@vitavision/chess-corners';
 
@@ -168,7 +167,7 @@ await init();
 const cfg = DetectorConfig.chessMultiscale();
 
 // Top-level fields are simple getters / setters:
-cfg.threshold = Threshold.relative(0.15);
+cfg.threshold = 0.15;
 cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3); // levels, minSize, refinementRadius
 cfg.upscale = UpscaleConfig.fixed(2);
 cfg.orientationMethod = OrientationMethod.DiskFit;

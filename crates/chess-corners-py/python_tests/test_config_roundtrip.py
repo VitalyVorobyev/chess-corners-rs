@@ -107,7 +107,7 @@ def test_from_dict_rejects_unknown_top_level_key():
 def test_json_and_dict_produce_equivalent_configs():
     """Configs constructed from JSON and from an equivalent dict must be identical."""
     cfg = chess_corners.DetectorConfig()
-    cfg.threshold = chess_corners.Threshold.relative(0.17)
+    cfg.threshold = 0.17
     chess = cfg.strategy.chess
     chess.refiner = chess_corners.ChessRefiner.forstner()
     cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)

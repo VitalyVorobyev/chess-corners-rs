@@ -45,7 +45,7 @@ def build_chess_config() -> chess_corners.DetectorConfig:
     chess.refiner = chess_corners.ChessRefiner.forstner(fcfg)
 
     cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
-    cfg.threshold = chess_corners.Threshold.absolute(0.5)
+    cfg.threshold = 0.5
     cfg.merge_radius = 2.5
     cfg.multiscale = chess_corners.MultiscaleConfig.pyramid(
         levels=3, min_size=96, refinement_radius=4

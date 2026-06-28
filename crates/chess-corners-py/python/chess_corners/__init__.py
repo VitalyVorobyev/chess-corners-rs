@@ -5,9 +5,9 @@ The config classes (`DetectorConfig`, `ChessConfig`, `RadonConfig`,
 `PeakFitMode`, `OrientationMethod`) are native PyO3
 types defined in the compiled `_native` extension. They expose
 attribute access, classmethod factories
-(`DetectorConfig.multiscale()`, `Threshold.relative(...)`,
-`MultiscaleConfig.pyramid(...)`, `ChessRefiner.forstner(cfg)`), and
-`to_dict` / `from_dict` / `to_json` / `from_json` helpers.
+(`DetectorConfig.multiscale()`, `MultiscaleConfig.pyramid(...)`,
+`ChessRefiner.forstner(cfg)`), and `to_dict` / `from_dict` /
+`to_json` / `from_json` helpers.
 
 The detector itself is the :class:`Detector` PyClass - build once,
 call :meth:`Detector.detect` repeatedly to amortise pyramid / upscale
@@ -38,7 +38,6 @@ from ._native import (
     RadonPeakConfig,
     RadonRefiner,
     SaddlePointConfig,
-    Threshold,
     UpscaleConfig,
 )
 
@@ -73,7 +72,6 @@ for _cls in (
     SaddlePointConfig,
     RadonPeakConfig,
     DetectionParams,
-    Threshold,
     MultiscaleConfig,
     UpscaleConfig,
     ChessRefiner,
@@ -105,6 +103,5 @@ __all__ = [
     "RadonPeakConfig",
     "RadonRefiner",
     "SaddlePointConfig",
-    "Threshold",
     "UpscaleConfig",
 ]

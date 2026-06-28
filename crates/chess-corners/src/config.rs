@@ -10,41 +10,6 @@ use crate::multiscale::CoarseToFineParams;
 use crate::upscale::UpscaleConfig;
 
 // ---------------------------------------------------------------------------
-// Threshold
-// ---------------------------------------------------------------------------
-
-/// Detector acceptance threshold.
-///
-/// A single, mode-aware enum that replaces the previous `(threshold_mode,
-/// threshold_value)` pair. Both the ChESS and Radon pipelines route through
-/// the same enum, so the user can't set a relative value while the active
-/// detector reads it as absolute.
-///
-/// - For ChESS the response is the paper's `R = SR − DR − 16·MR`.
-///   `Absolute(0.0)` encodes the paper's `R > 0` acceptance contract.
-/// - For Radon the response is the squared range `(max − min)²` of the
-///   ray-sum range across orientations; pick a positive `Absolute(_)` floor
-///   or a `Relative(_)` fraction of the per-frame maximum.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum Threshold {
-    /// Accept responses `≥ value` in the detector's native score units.
-    Absolute(f32),
-    /// Accept responses `≥ frac · max(response)` in the current frame.
-    /// `frac` is a fraction in `[0.0, 1.0]`.
-    Relative(f32),
-}
-
-impl Default for Threshold {
-    fn default() -> Self {
-        // Paper's ChESS contract: any strictly positive response is a corner.
-        // Radon presets override this to `Relative(0.01)`.
-        Threshold::Absolute(0.0)
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Detector kernel / ring selection
 // ---------------------------------------------------------------------------
 
@@ -149,7 +114,7 @@ impl RadonRefiner {
 
 /// Coarse-to-fine multiscale configuration.
 ///
-/// JSON shape mirrors [`Threshold`] and [`UpscaleConfig`]:
+/// JSON shape mirrors [`UpscaleConfig`]:
 ///
 /// - `{ "single_scale": null }` — run the detector once on the full image.
 /// - `{ "pyramid": { "levels": 3, "min_size": 128, "refinement_radius": 3 } }`
@@ -385,8 +350,9 @@ impl Default for DetectionStrategy {
 /// - [`strategy`](DetectorConfig::strategy) — choose ChESS or Radon and
 ///   configure its parameters.
 /// - [`threshold`](DetectorConfig::threshold) — control how many corners are
-///   returned: lower `Relative` fraction or `Absolute` floor → more
-///   candidates; higher → fewer, stronger ones.
+///   returned: lower → more candidates, higher → fewer and stronger. ChESS
+///   reads it as an absolute response floor; Radon as a fraction of the
+///   per-frame maximum.
 /// - [`multiscale`](DetectorConfig::multiscale) — enable coarse-to-fine
 ///   pyramid detection (`Pyramid`) or keep it off (`SingleScale`).
 /// - [`upscale`](DetectorConfig::upscale) — pre-pipeline integer bilinear
@@ -407,8 +373,14 @@ impl Default for DetectionStrategy {
 pub struct DetectorConfig {
     /// Detector dispatch: ChESS or Radon, each carrying its own tuning.
     pub strategy: DetectionStrategy,
-    /// Acceptance threshold. Same enum is honoured by both detectors.
-    pub threshold: Threshold,
+    /// Detector acceptance threshold.
+    ///
+    /// ChESS reads it as an absolute floor on the raw response
+    /// `R = SR − DR − 16·MR`: a candidate is kept when `R` exceeds it.
+    /// Radon reads it as a fraction in `[0.0, 1.0]` of the per-frame
+    /// maximum response, because Radon's `(max − min)²` score scales
+    /// with image size and has no portable absolute scale.
+    pub threshold: f32,
     /// Shared non-maximum-suppression and peak-clustering thresholds.
     /// Honoured by both strategies. See [`DetectionParams`].
     pub detection: DetectionParams,
@@ -441,7 +413,7 @@ impl DetectorConfig {
     pub fn chess() -> Self {
         Self {
             strategy: DetectionStrategy::Chess(ChessConfig::default()),
-            threshold: Threshold::Absolute(0.0),
+            threshold: 0.0,
             detection: DetectionParams::default(),
             multiscale: MultiscaleConfig::SingleScale,
             upscale: UpscaleConfig::Disabled,
@@ -464,7 +436,7 @@ impl DetectorConfig {
     pub fn radon() -> Self {
         Self {
             strategy: DetectionStrategy::Radon(RadonConfig::default()),
-            threshold: Threshold::Relative(0.01),
+            threshold: 0.01,
             detection: DetectionParams {
                 nms_radius: 4,
                 min_cluster_size: 2,
@@ -480,7 +452,7 @@ impl DetectorConfig {
     pub fn radon_multiscale() -> Self {
         Self {
             strategy: DetectionStrategy::Radon(RadonConfig::default()),
-            threshold: Threshold::Relative(0.01),
+            threshold: 0.01,
             detection: DetectionParams {
                 nms_radius: 4,
                 min_cluster_size: 2,
@@ -496,8 +468,8 @@ impl DetectorConfig {
     ///
     /// Top-level fields (threshold, multiscale, upscale, orientation_method,
     /// merge_radius) are untouched. When switching strategies, prefer the
-    /// preset constructors — Radon uses `Relative(0.01)` thresholds while
-    /// ChESS uses `Absolute(0.0)`.
+    /// preset constructors — ChESS reads `threshold` as an absolute response
+    /// floor, Radon as a fraction of the per-frame maximum.
     pub fn with_chess<F: FnOnce(&mut ChessConfig)>(mut self, f: F) -> Self {
         let mut chess = match self.strategy {
             DetectionStrategy::Chess(c) => c,
@@ -519,8 +491,9 @@ impl DetectorConfig {
         self
     }
 
-    /// Replace the acceptance threshold.
-    pub fn with_threshold(mut self, threshold: Threshold) -> Self {
+    /// Replace the acceptance threshold. See [`DetectorConfig::threshold`]
+    /// for the per-detector interpretation.
+    pub fn with_threshold(mut self, threshold: f32) -> Self {
         self.threshold = threshold;
         self
     }
@@ -581,7 +554,8 @@ impl DetectorConfig {
                 ChessRefiner::Ml => {}
             }
         }
-        apply_threshold(&mut params, self.threshold);
+        // ChESS interprets `threshold` as an absolute floor on the raw response.
+        params.threshold_abs = Some(self.threshold);
         params.orientation_method = self.orientation_method;
         params
     }
@@ -605,7 +579,9 @@ impl DetectorConfig {
             params.peak_fit = radon.peak_fit;
             params.refiner = radon_refiner_to_kind(radon.refiner);
         }
-        apply_threshold(&mut params, self.threshold);
+        // Radon interprets `threshold` as a fraction of the per-frame maximum.
+        params.threshold_abs = None;
+        params.threshold_rel = self.threshold;
         params
     }
 
@@ -646,57 +622,6 @@ pub(crate) fn radon_refiner_to_kind(refiner: RadonRefiner) -> RefinerKind {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Threshold → core param translation
-// ---------------------------------------------------------------------------
-
-/// Detector params that carry a `(threshold_abs, threshold_rel)` pair.
-/// Lets [`apply_threshold`] translate a [`Threshold`] uniformly without
-/// duplicating the match arms per detector.
-trait HasThreshold {
-    fn set_threshold_abs(&mut self, value: Option<f32>);
-    fn set_threshold_rel(&mut self, value: f32);
-}
-
-impl HasThreshold for ChessParams {
-    #[inline]
-    fn set_threshold_abs(&mut self, value: Option<f32>) {
-        self.threshold_abs = value;
-    }
-    #[inline]
-    fn set_threshold_rel(&mut self, value: f32) {
-        self.threshold_rel = value;
-    }
-}
-
-impl HasThreshold for RadonDetectorParams {
-    #[inline]
-    fn set_threshold_abs(&mut self, value: Option<f32>) {
-        self.threshold_abs = value;
-    }
-    #[inline]
-    fn set_threshold_rel(&mut self, value: f32) {
-        self.threshold_rel = value;
-    }
-}
-
-/// Translate a [`Threshold`] into the `(threshold_abs, threshold_rel)`
-/// pair carried by [`ChessParams`] and [`RadonDetectorParams`].
-///
-/// `Absolute(v)` sets `threshold_abs = Some(v)` (overrides relative);
-/// `Relative(f)` sets `threshold_abs = None` and `threshold_rel = f`.
-fn apply_threshold<T: HasThreshold>(params: &mut T, threshold: Threshold) {
-    match threshold {
-        Threshold::Absolute(value) => {
-            params.set_threshold_abs(Some(value));
-        }
-        Threshold::Relative(frac) => {
-            params.set_threshold_abs(None);
-            params.set_threshold_rel(frac);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -728,7 +653,7 @@ mod tests {
         assert_eq!(cfg.detection.min_cluster_size, 2);
         assert_eq!(cfg.multiscale, MultiscaleConfig::SingleScale);
         assert_eq!(cfg.upscale, UpscaleConfig::Disabled);
-        assert_eq!(cfg.threshold, Threshold::Absolute(0.0));
+        assert_eq!(cfg.threshold, 0.0);
         assert_eq!(cfg.merge_radius, 3.0);
         assert!(cfg.coarse_to_fine_params().is_none());
 
@@ -744,24 +669,24 @@ mod tests {
     }
 
     #[test]
-    fn relative_threshold_clears_absolute() {
+    fn chess_threshold_lowers_to_absolute_floor() {
         let cfg = DetectorConfig {
-            threshold: Threshold::Relative(0.15),
-            ..DetectorConfig::chess()
-        };
-        let params = cfg.chess_params();
-        assert_eq!(params.threshold_abs, None);
-        assert!((params.threshold_rel - 0.15).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn absolute_threshold_overrides_relative() {
-        let cfg = DetectorConfig {
-            threshold: Threshold::Absolute(7.5),
+            threshold: 7.5,
             ..DetectorConfig::chess()
         };
         let params = cfg.chess_params();
         assert_eq!(params.threshold_abs, Some(7.5));
+    }
+
+    #[test]
+    fn radon_threshold_lowers_to_relative_fraction() {
+        let cfg = DetectorConfig {
+            threshold: 0.15,
+            ..DetectorConfig::radon()
+        };
+        let params = cfg.radon_detector_params();
+        assert_eq!(params.threshold_abs, None);
+        assert!((params.threshold_rel - 0.15).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -802,7 +727,7 @@ mod tests {
         );
         assert_eq!(cfg.detection.nms_radius, 4);
         assert_eq!(cfg.detection.min_cluster_size, 2);
-        assert_eq!(cfg.threshold, Threshold::Relative(0.01));
+        assert_eq!(cfg.threshold, 0.01);
         assert_eq!(cfg.multiscale, MultiscaleConfig::SingleScale);
         assert!(cfg.coarse_to_fine_params().is_none());
 
@@ -823,7 +748,7 @@ mod tests {
     fn radon_multiscale_preset_carries_pyramid_params() {
         let cfg = DetectorConfig::radon_multiscale();
         assert_strategy_radon(&cfg);
-        assert_eq!(cfg.threshold, Threshold::Relative(0.01));
+        assert_eq!(cfg.threshold, 0.01);
         let MultiscaleConfig::Pyramid {
             levels,
             min_size,
@@ -918,20 +843,12 @@ mod tests {
     }
 
     #[test]
-    fn threshold_round_trips_with_externally_tagged_payload() {
-        let abs = Threshold::Absolute(3.5);
-        let abs_json = serde_json::to_string(&abs).expect("serialize absolute threshold");
-        assert!(abs_json.contains("absolute"));
-        let abs_decoded: Threshold =
-            serde_json::from_str(&abs_json).expect("deserialize absolute threshold");
-        assert_eq!(abs_decoded, abs);
-
-        let rel = Threshold::Relative(0.42);
-        let rel_json = serde_json::to_string(&rel).expect("serialize relative threshold");
-        assert!(rel_json.contains("relative"));
-        let rel_decoded: Threshold =
-            serde_json::from_str(&rel_json).expect("deserialize relative threshold");
-        assert_eq!(rel_decoded, rel);
+    fn threshold_serializes_as_a_bare_number() {
+        let cfg = DetectorConfig::chess().with_threshold(3.5);
+        let json = serde_json::to_string(&cfg).expect("serialize config");
+        assert!(json.contains("\"threshold\":3.5"));
+        let decoded: DetectorConfig = serde_json::from_str(&json).expect("deserialize config");
+        assert_eq!(decoded.threshold, 3.5);
     }
 
     #[test]
@@ -1011,13 +928,13 @@ mod tests {
     #[test]
     fn with_chess_replaces_radon_preserves_threshold() {
         let cfg = DetectorConfig::radon()
-            .with_threshold(Threshold::Absolute(5.0))
+            .with_threshold(5.0)
             .with_chess(|c| c.ring = ChessRing::Broad);
         // Strategy replaced with chess
         let chess = assert_strategy_chess(&cfg);
         assert_eq!(chess.ring, ChessRing::Broad);
         // Top-level threshold preserved
-        assert_eq!(cfg.threshold, Threshold::Absolute(5.0));
+        assert_eq!(cfg.threshold, 5.0);
     }
 
     #[test]
@@ -1032,12 +949,12 @@ mod tests {
     #[test]
     fn with_radon_replaces_chess_preserves_threshold() {
         let cfg = DetectorConfig::chess()
-            .with_threshold(Threshold::Relative(0.5))
+            .with_threshold(0.5)
             .with_radon(|r| r.ray_radius = 6);
         let radon = assert_strategy_radon(&cfg);
         assert_eq!(radon.ray_radius, 6);
         // Threshold preserved
-        assert_eq!(cfg.threshold, Threshold::Relative(0.5));
+        assert_eq!(cfg.threshold, 0.5);
     }
 
     #[test]
@@ -1063,9 +980,9 @@ mod tests {
     #[test]
     fn chained_builder_produces_expected_state() {
         let cfg = DetectorConfig::chess()
-            .with_threshold(Threshold::Relative(0.15))
+            .with_threshold(0.15)
             .with_chess(|c| c.refiner = ChessRefiner::forstner());
-        assert_eq!(cfg.threshold, Threshold::Relative(0.15));
+        assert_eq!(cfg.threshold, 0.15);
         let chess = assert_strategy_chess(&cfg);
         assert_eq!(
             chess.refiner,

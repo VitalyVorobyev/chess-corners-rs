@@ -26,7 +26,7 @@
 //!
 //! The Radon presets (`radon`, `radon_multiscale`) are intentionally
 //! excluded: their `(max - min)²` response sits near the
-//! `Threshold::Relative(0.01)` cutoff for many pixels, so
+//! relative `0.01` cutoff for many pixels, so
 //! sub-ulp FP differences DO cross the threshold and shift counts
 //! by ±0.5% across CPUs. The Radon path is covered end-to-end by
 //! `radon_pipeline.rs` (facade) and `radon_vs_chess.rs` (core).

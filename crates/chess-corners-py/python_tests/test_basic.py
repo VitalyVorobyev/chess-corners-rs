@@ -13,7 +13,7 @@ def _checkerboard(square_size: int = 16, squares: int = 8) -> np.ndarray:
 def test_detector_basic():
     img = _checkerboard(square_size=16, squares=8)
     cfg = chess_corners.DetectorConfig()
-    cfg.threshold = chess_corners.Threshold.relative(0.1)
+    cfg.threshold = 0.1
     cfg.detection.min_cluster_size = 1
 
     detector = chess_corners.Detector(cfg)
@@ -57,7 +57,7 @@ def test_chess_refiner_attached_to_chess_strategy():
 def test_config_roundtrip_and_print_helpers():
     cfg = chess_corners.DetectorConfig.chess_multiscale()
     cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
-    cfg.threshold = chess_corners.Threshold.absolute(4.5)
+    cfg.threshold = 4.5
     saddle = chess_corners.SaddlePointConfig()
     saddle.max_offset = 2.0
     chess = cfg.strategy.chess
@@ -114,7 +114,7 @@ def test_typed_config_passes_through_ffi_directly():
 
     img = _checkerboard(square_size=16, squares=8)
     cfg = chess_corners.DetectorConfig()
-    cfg.threshold = chess_corners.Threshold.relative(0.1)
+    cfg.threshold = 0.1
     fcfg = chess_corners.ForstnerConfig()
     fcfg.max_offset = 1.75
     chess = cfg.strategy.chess
@@ -206,20 +206,20 @@ def test_detector_config_roundtrip():
     img = _checkerboard(square_size=16, squares=8)
 
     cfg = chess_corners.DetectorConfig.chess()
-    cfg.threshold = chess_corners.Threshold.relative(0.1)
+    cfg.threshold = 0.1
     detector = chess_corners.Detector(cfg)
 
     # Snapshot the live config and verify it reflects the applied threshold.
     snapshot = detector.config()
-    assert snapshot.threshold.kind == "relative"
+    assert abs(snapshot.threshold - 0.1) < 1e-6
 
     # Mutate the snapshot and apply it back.
-    snapshot.threshold = chess_corners.Threshold.absolute(0.0)
+    snapshot.threshold = 0.0
     detector.apply_config(snapshot)
 
     # The updated config should be reflected in a new snapshot.
     updated = detector.config()
-    assert updated.threshold.kind == "absolute"
+    assert abs(updated.threshold - 0.0) < 1e-6
 
     # Detector must still produce a valid result after apply_config.
     corners = detector.detect(img)
@@ -239,7 +239,7 @@ def test_radon_multiscale_classmethod():
     assert cfg.multiscale.kind == "pyramid"
 
     # End-to-end: detector must produce at least some corners.
-    cfg.threshold = chess_corners.Threshold.relative(0.05)
+    cfg.threshold = 0.05
     corners = chess_corners.Detector(cfg).detect(img)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
