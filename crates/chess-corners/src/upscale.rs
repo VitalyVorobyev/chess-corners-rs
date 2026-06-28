@@ -387,8 +387,6 @@ mod tests {
                 x,
                 y,
                 1.0,
-                0.0,
-                0.0,
                 [AxisEstimate::new(0.0, 0.0), AxisEstimate::new(0.0, 0.0)],
             )
         }
@@ -424,8 +422,6 @@ mod tests {
             2.5,
             3.75,
             1.0,
-            0.0,
-            0.0,
             [AxisEstimate::new(0.0, 0.0), AxisEstimate::new(0.0, 0.0)],
         )];
         rescale_descriptors_to_input(&mut d, 1);

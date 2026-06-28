@@ -132,25 +132,48 @@ def test_with_chess_ring_kwarg_sets_ring():
     assert cfg.strategy.chess.ring == chess_corners.ChessRing.BROAD
 
 
-def test_with_chess_nms_radius_kwarg():
-    cfg = chess_corners.DetectorConfig.chess().with_chess(nms_radius=4)
-    assert cfg.strategy.chess.nms_radius == 4
+def test_with_chess_nms_radius_kwarg_now_rejected():
+    # nms_radius is a shared detection knob, no longer a chess kwarg.
+    with pytest.raises(TypeError, match="unexpected keyword argument: 'nms_radius'"):
+        chess_corners.DetectorConfig.chess().with_chess(nms_radius=4)
 
 
 def test_with_chess_multiple_kwargs_at_once():
     cfg = chess_corners.DetectorConfig.chess().with_chess(
         refiner=chess_corners.ChessRefiner.forstner(),
         ring=chess_corners.ChessRing.BROAD,
-        nms_radius=4,
     )
     assert cfg.strategy.chess.refiner.kind == "forstner"
     assert cfg.strategy.chess.ring == chess_corners.ChessRing.BROAD
-    assert cfg.strategy.chess.nms_radius == 4
 
 
 def test_with_chess_unknown_kwarg_raises_type_error():
     with pytest.raises(TypeError, match="unexpected keyword argument: 'bogus_field'"):
         chess_corners.DetectorConfig.chess().with_chess(bogus_field=1)
+
+
+# ---------------------------------------------------------------------------
+# with_detection(**kwargs)  — shared NMS / clustering knobs
+# ---------------------------------------------------------------------------
+
+
+def test_with_detection_kwargs_set_shared_params():
+    cfg = chess_corners.DetectorConfig.chess().with_detection(
+        nms_radius=4, min_cluster_size=3
+    )
+    assert cfg.detection.nms_radius == 4
+    assert cfg.detection.min_cluster_size == 3
+
+
+def test_with_detection_applies_to_radon_strategy_too():
+    cfg = chess_corners.DetectorConfig.radon().with_detection(nms_radius=6)
+    assert cfg.strategy.kind == "radon"
+    assert cfg.detection.nms_radius == 6
+
+
+def test_with_detection_unknown_kwarg_raises_type_error():
+    with pytest.raises(TypeError, match="unexpected keyword argument: 'bad_key'"):
+        chess_corners.DetectorConfig.chess().with_detection(bad_key=1)
 
 
 def test_with_chess_on_radon_config_switches_strategy_and_preserves_threshold():

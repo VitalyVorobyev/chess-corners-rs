@@ -15,7 +15,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
 
 use crate::config::{
-    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, ConfigError, DescriptorRing,
+    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, ConfigError, DetectionParams,
     DetectionStrategy, DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod,
     PeakFitMode, RadonConfig, RadonPeakConfig, RadonRefiner, SaddlePointConfig, Threshold,
     UpscaleConfig,
@@ -39,9 +39,9 @@ fn extract_image<'py>(
 
 /// Number of float32 columns in the returned corner array.
 ///
-/// Columns: `x, y, response, contrast, fit_rms,
+/// Columns: `x, y, response,
 ///           axis0_angle, axis0_sigma, axis1_angle, axis1_sigma`.
-const CORNER_COLUMNS: usize = 9;
+const CORNER_COLUMNS: usize = 7;
 
 fn corners_to_array(
     py: Python<'_>,
@@ -59,8 +59,6 @@ fn corners_to_array(
         data.push(corner.x);
         data.push(corner.y);
         data.push(corner.response);
-        data.push(corner.contrast);
-        data.push(corner.fit_rms);
         data.push(corner.axes[0].angle);
         data.push(corner.axes[0].sigma);
         data.push(corner.axes[1].angle);
@@ -116,7 +114,7 @@ impl Detector {
     }
 
     /// Detect chessboard corners. `image` must be a C-contiguous
-    /// `uint8` array of shape `(H, W)`. Returns an `(N, 9)` `float32`
+    /// `uint8` array of shape `(H, W)`. Returns an `(N, 7)` `float32`
     /// NumPy array — see module docs for column layout.
     fn detect<'py>(&mut self, py: Python<'py>, image: &Bound<'py, PyAny>) -> PyResult<Py<PyAny>> {
         let (array, height, width) = extract_image(image)?;
@@ -199,7 +197,6 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ConfigError", py.get_type::<ConfigError>())?;
 
     m.add_class::<ChessRing>()?;
-    m.add_class::<DescriptorRing>()?;
     m.add_class::<PeakFitMode>()?;
     m.add_class::<OrientationMethod>()?;
 
@@ -207,6 +204,7 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ForstnerConfig>()?;
     m.add_class::<SaddlePointConfig>()?;
     m.add_class::<RadonPeakConfig>()?;
+    m.add_class::<DetectionParams>()?;
     m.add_class::<Threshold>()?;
     m.add_class::<MultiscaleConfig>()?;
     m.add_class::<UpscaleConfig>()?;

@@ -36,11 +36,17 @@ Feature flags:
 - `tracing` – emit structured spans around response and detector code
   for profiling.
 
+The default (stable) build requires Rust **1.88** or newer
+(`rust-version` in `Cargo.toml`). The `simd` feature uses
+`portable_simd` and needs a nightly toolchain; every other feature
+builds on stable.
+
 Basic usage:
 
 ```rust
 use chess_corners_core::{
-    find_corners_u8, ChessParams, RefinerKind,
+    find_corners_u8,
+    unstable::{ChessParams, RefinerKind},
 };
 
 fn detect(img: &[u8], w: usize, h: usize) {

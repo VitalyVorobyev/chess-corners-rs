@@ -33,9 +33,8 @@ def build_chess_config() -> chess_corners.DetectorConfig:
     # Strategy-specific knobs live inside ChessConfig.
     chess = cfg.strategy.chess
     chess.ring = chess_corners.ChessRing.BROAD
-    chess.descriptor_ring = chess_corners.DescriptorRing.CANONICAL
-    chess.nms_radius = 3
-    chess.min_cluster_size = 1
+    cfg.detection.nms_radius = 3
+    cfg.detection.min_cluster_size = 1
 
     fcfg = chess_corners.ForstnerConfig()
     fcfg.radius = 3
@@ -89,10 +88,9 @@ def main() -> int:
         print(
             "strongest corner: "
             f"x={strongest[0]:.3f}, y={strongest[1]:.3f}, "
-            f"response={strongest[2]:.3f}, contrast={strongest[3]:.3f}, "
-            f"fit_rms={strongest[4]:.3f}, "
-            f"axis0=({strongest[5]:.4f}+/-{strongest[6]:.4f}), "
-            f"axis1=({strongest[7]:.4f}+/-{strongest[8]:.4f})"
+            f"response={strongest[2]:.3f}, "
+            f"axis0=({strongest[3]:.4f}+/-{strongest[4]:.4f}), "
+            f"axis1=({strongest[5]:.4f}+/-{strongest[6]:.4f})"
         )
 
     return 0

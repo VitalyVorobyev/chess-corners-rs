@@ -8,4 +8,5 @@
 - [Part VI: Orientation methods](part-06-orientation-methods.md)
 - [Part VII: Multiscale pipeline](part-07-multiscale-and-pyramids.md)
 - [Part VIII: Benchmarks and performance](part-08-benchmarks.md)
-- [Part IX: Contributing](part-09-contributing.md)
+- [Part IX: C++ bindings](part-09-cpp-bindings.md)
+- [Part X: Contributing](part-10-contributing.md)

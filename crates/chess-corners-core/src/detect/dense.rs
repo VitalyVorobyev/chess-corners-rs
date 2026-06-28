@@ -44,6 +44,13 @@ use crate::imageview::ImageView;
 use crate::refine::CornerRefiner;
 use crate::{ChessParams, ResponseMap};
 
+/// Sealing supertrait for [`DenseDetector`]. Implemented only for the
+/// in-crate detector markers, so downstream crates cannot add their own
+/// [`DenseDetector`] implementations.
+mod private {
+    pub trait Sealed {}
+}
+
 /// Two-stage dense corner detector contract.
 ///
 /// Implementors compute a dense per-pixel response over the input
@@ -62,7 +69,15 @@ use crate::{ChessParams, ResponseMap};
 ///
 /// Uses generic associated types ([`Self::Response`]); downstream
 /// consumers require Rust 1.65 or newer.
-pub trait DenseDetector {
+///
+/// # Stability
+///
+/// This trait is **sealed** via a private supertrait bound and cannot
+/// be implemented outside this crate. The only implementors are
+/// [`ChessDetector`] and [`RadonDetector`]; it is not a public
+/// extension point, so its method set may evolve without a breaking
+/// release.
+pub trait DenseDetector: private::Sealed {
     /// Detector-specific tuning parameters.
     type Params;
     /// Reusable scratch buffers. Allocated once via
@@ -181,6 +196,7 @@ pub trait DenseDetector {
 /// `Response<'a> = &'a ResponseMap` can borrow it across the two
 /// stages.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct ChessBuffers {
     /// Dense ChESS response from the most recent
     /// [`ChessDetector::compute_response`] call.
@@ -198,6 +214,8 @@ pub struct ChessBuffers {
 /// [`crate::unstable::refine_corners_on_image`].
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ChessDetector;
+
+impl private::Sealed for ChessDetector {}
 
 impl DenseDetector for ChessDetector {
     type Params = ChessParams;
@@ -286,6 +304,8 @@ impl DenseDetector for ChessDetector {
 /// Radon peak detector divides by `image_upsample` internally.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RadonDetector;
+
+impl private::Sealed for RadonDetector {}
 
 impl DenseDetector for RadonDetector {
     type Params = RadonDetectorParams;

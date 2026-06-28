@@ -14,13 +14,13 @@ def test_detector_basic():
     img = _checkerboard(square_size=16, squares=8)
     cfg = chess_corners.DetectorConfig()
     cfg.threshold = chess_corners.Threshold.relative(0.1)
-    cfg.strategy.chess.min_cluster_size = 1
+    cfg.detection.min_cluster_size = 1
 
     detector = chess_corners.Detector(cfg)
     corners = detector.detect(img)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
-    assert corners.shape[1] == 9
+    assert corners.shape[1] == 7
     assert corners.shape[0] > 0
 
 
@@ -57,7 +57,6 @@ def test_chess_refiner_attached_to_chess_strategy():
 def test_config_roundtrip_and_print_helpers():
     cfg = chess_corners.DetectorConfig.chess_multiscale()
     cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
-    cfg.strategy.chess.descriptor_ring = chess_corners.DescriptorRing.CANONICAL
     cfg.threshold = chess_corners.Threshold.absolute(4.5)
     saddle = chess_corners.SaddlePointConfig()
     saddle.max_offset = 2.0
@@ -125,7 +124,7 @@ def test_typed_config_passes_through_ffi_directly():
     corners = chess_corners.Detector(cfg).detect(img)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
-    assert corners.shape[1] == 9
+    assert corners.shape[1] == 7
 
 
 def test_invalid_cfg_type_raises_type_error():
@@ -226,7 +225,7 @@ def test_detector_config_roundtrip():
     corners = detector.detect(img)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
-    assert corners.shape[1] == 9
+    assert corners.shape[1] == 7
 
 
 def test_radon_multiscale_classmethod():
@@ -244,5 +243,5 @@ def test_radon_multiscale_classmethod():
     corners = chess_corners.Detector(cfg).detect(img)
     assert corners.dtype == np.float32
     assert corners.ndim == 2
-    assert corners.shape[1] == 9
+    assert corners.shape[1] == 7
     assert corners.shape[0] > 0, "radon_multiscale detector returned no corners"

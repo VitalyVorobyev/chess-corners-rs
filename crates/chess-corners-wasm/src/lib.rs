@@ -20,6 +20,18 @@
 //! ```
 //!
 //! See [`config`] for the cell-sharing details.
+//!
+//! # Enum forward-compatibility
+//!
+//! When this binding receives a core enum value it does not yet recognise
+//! (possible because core enums are `#[non_exhaustive]` and may gain new
+//! variants in future releases), it maps the unknown value to the documented
+//! default for that enum — for example, an unknown `OrientationMethod` maps
+//! to `RingFit`.  This keeps existing JS consumers running against a newer
+//! core without breakage until the binding is updated to name the new variant.
+//! The config surface itself is built from typed getters/setters and factory
+//! constructors rather than a free-form options object, so only declared
+//! properties affect the configuration.
 
 pub mod config;
 
@@ -30,7 +42,7 @@ use chess_corners::{
 use wasm_bindgen::prelude::*;
 
 pub use crate::config::{
-    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy,
+    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy,
     DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig,
     RadonPeakConfig, RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
 };
@@ -140,8 +152,8 @@ impl ChessDetector {
 
     /// Detect corners from grayscale u8 pixels.
     ///
-    /// Returns a `Float32Array` with stride 9 per corner:
-    /// `[x, y, response, contrast, fit_rms,
+    /// Returns a `Float32Array` with stride 7 per corner:
+    /// `[x, y, response,
     ///   axis0_angle, axis0_sigma, axis1_angle, axis1_sigma, ...]`.
     ///
     /// Throws a JS error string if the pixel buffer length does not match
@@ -412,9 +424,9 @@ impl ChessDetector {
     }
 }
 
-/// Flat array stride per corner: `[x, y, response, contrast, fit_rms,
+/// Flat array stride per corner: `[x, y, response,
 /// axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`.
-const CORNER_STRIDE: usize = 9;
+const CORNER_STRIDE: usize = 7;
 
 fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::Float32Array {
     let mut flat = Vec::with_capacity(corners.len() * CORNER_STRIDE);
@@ -422,8 +434,6 @@ fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::
         flat.push(c.x);
         flat.push(c.y);
         flat.push(c.response);
-        flat.push(c.contrast);
-        flat.push(c.fit_rms);
         flat.push(c.axes[0].angle);
         flat.push(c.axes[0].sigma);
         flat.push(c.axes[1].angle);

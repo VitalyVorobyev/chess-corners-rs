@@ -1,0 +1,38 @@
+[package]
+name = "chess-corners-capi"
+version.workspace = true
+description = "Stable C ABI for the chess-corners detector"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+# `staticlib` + `cdylib` for C / C++ consumers and vcpkg packaging; `rlib`
+# so the Rust integration test can link the crate and call the `extern "C"`
+# entry points directly.
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "generate-ffi-header"
+path = "src/bin/generate-ffi-header.rs"
+required-features = ["generate-header"]
+
+[features]
+# `cbindgen` is only needed by the header-generation binary; the shipped
+# library never depends on it.
+generate-header = ["dep:cbindgen"]
+
+[dependencies]
+# `detect_u8` takes a raw `&[u8]` and does not require the `image` feature,
+# so the workspace default (`default-features = false`) is sufficient.
+chess-corners.workspace = true
+# Not in `[workspace.dependencies]`; pinned here because only this crate
+# uses it (and only behind the `generate-header` feature).
+cbindgen = { version = "0.29", optional = true }
+
+[dev-dependencies]
+# Integration tests are a separate crate and need their own dependency on
+# the facade to compute the parity reference.
+chess-corners.workspace = true

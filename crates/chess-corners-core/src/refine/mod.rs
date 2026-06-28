@@ -25,6 +25,13 @@ pub use forstner::{ForstnerConfig, ForstnerRefiner};
 pub use radon_peak::{RadonPeakConfig, RadonPeakRefiner};
 pub use saddle_point::{SaddlePointConfig, SaddlePointRefiner};
 
+/// Sealing supertrait for [`CornerRefiner`]. Implemented only for the
+/// in-crate refiners, so downstream crates cannot add their own
+/// [`CornerRefiner`] implementations.
+mod private {
+    pub trait Sealed {}
+}
+
 /// Status of a refinement attempt.
 ///
 /// A refiner returns one of these variants to indicate whether it
@@ -147,8 +154,17 @@ impl<'a> RefineContext<'a> {
     }
 }
 
-/// Trait implemented by pluggable refinement backends.
-pub trait CornerRefiner {
+/// Trait implemented by the built-in subpixel refinement backends.
+///
+/// # Stability
+///
+/// This trait is **sealed** via a private supertrait bound and cannot
+/// be implemented outside this crate. The built-in implementors are
+/// [`CenterOfMassRefiner`], [`ForstnerRefiner`], [`SaddlePointRefiner`],
+/// [`RadonPeakRefiner`], and the [`Refiner`] dispatcher. It is not a
+/// public extension point: select a backend through [`RefinerKind`]
+/// rather than implementing this trait.
+pub trait CornerRefiner: private::Sealed {
     /// Half-width of the patch the refiner needs around the seed,
     /// in input-image pixels. The caller must ensure the seed is at
     /// least this many pixels away from every image border before
@@ -239,6 +255,12 @@ impl CornerRefiner for Refiner {
         }
     }
 }
+
+impl private::Sealed for CenterOfMassRefiner {}
+impl private::Sealed for ForstnerRefiner {}
+impl private::Sealed for SaddlePointRefiner {}
+impl private::Sealed for RadonPeakRefiner {}
+impl private::Sealed for Refiner {}
 
 #[cfg(test)]
 pub(crate) mod test_fixtures {

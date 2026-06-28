@@ -59,23 +59,20 @@ ring point.
 
 ### 3.1.2 From parameters to rings
 
-`ChessParams` in `lib.rs` controls which ring to use:
+`ChessParams` (in `chess-corners-core`, re-exported from
+`chess_corners_core::unstable`) controls which ring to use:
 
 - `use_radius10` – when `true`, `ring_radius()` returns 10 instead of
   5.
-- `descriptor_use_radius10` – optional override specifically for the
-  descriptor ring; when `None`, it follows `use_radius10`.
 
 Convenience methods:
 
-- `ring_radius()` / `descriptor_ring_radius()` return the numeric
-  radii.
-- `ring()` / `descriptor_ring()` return `RingOffsets` values, which
-  can be turned into offset tables via `offsets()`.
+- `ring_radius()` returns the numeric radius.
+- `ring()` returns the `RingOffsets` value, which can be turned into
+  an offset table via `offsets()`.
 
-The response path uses `ring()`, while descriptor estimation uses
-`descriptor_ring()`. This allows you, for example, to detect corners
-with a smaller ring but compute descriptors on a larger one.
+Both the response computation and descriptor estimation use `ring()`.
+Descriptors always sample at the detector ring radius.
 
 ---
 
@@ -218,11 +215,13 @@ The main stages are:
      committing to a scene‑max policy.
 2. **Non‑maximum suppression (NMS)** – in a window of radius
    `nms_radius` around each pixel, we keep only local maxima and
-   suppress weaker neighbors.
+   suppress weaker neighbors. (`nms_radius` is set via
+   `DetectorConfig.detection`, shared with the Radon detector.)
 3. **Cluster filtering** – we require that each surviving corner have
    at least `min_cluster_size` positive‑response neighbors in its NMS
    window. This discards isolated noisy peaks that don’t belong to a
-   structured corner.
+   structured corner. (`min_cluster_size` is likewise on
+   `DetectorConfig.detection`.)
 
 The result of this stage is a set of raw corner candidates, each
 carrying:
@@ -263,9 +262,8 @@ refiner are in [Part VIII](part-08-benchmarks.md).
 Raw corners (position + strength) are enough for many applications,
 but the core crate also offers a richer `CornerDescriptor` that fits
 a parametric intensity model to the 16-sample ring around each corner.
-The fit yields both local grid axes **independently**, their per-axis
-1σ angular uncertainty, a bright/dark contrast amplitude, and the RMS
-fit residual — all in one pass.
+The fit yields both local grid axes **independently** and their
+per-axis 1σ angular uncertainty — all in one pass.
 
 Both the ChESS detector and the Radon detector produce
 `CornerDescriptor` values via the same `describe_corners`
@@ -280,8 +278,6 @@ pub struct CornerDescriptor {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub contrast: f32,
-    pub fit_rms: f32,
     pub axes: [AxisEstimate; 2],
 }
 
@@ -297,11 +293,6 @@ Fields:
 - `response` – raw, unnormalized ChESS response
   `R = SR − DR − 16·MR` at the detected peak. Units are 8‑bit pixel
   sums; the paper's contract is `R > 0`.
-- `contrast` – fitted bright/dark amplitude `|A|` in gray levels.
-  Independent from `response` and not comparable to it.
-- `fit_rms` – root‑mean‑squared residual of the two‑axis intensity
-  fit (gray levels). Smaller means the ring sampled cleanly through
-  a chessboard‑like corner.
 - `axes[0]`, `axes[1]` – the two local grid axis directions and
   their 1σ uncertainties.
 
@@ -429,12 +420,13 @@ You get `CornerDescriptor` values when you use the high‑level APIs:
 For many tasks, `x`, `y`, and `response` are enough. When you need
 more insight into local structure — grid fitting, lens‑distortion
 modelling, calibration with per‑corner weights, or outlier rejection
-before bundle adjustment — `axes`, `sigma`, `contrast`, and `fit_rms`
-are the extra handles you get "for free" with each detection.
+before bundle adjustment — the two `axes` and their per‑axis 1σ
+uncertainty are the extra handles you get "for free" with each
+detection.
 
-The `axes`, `sigma_theta1`, `sigma_theta2`, `amp`, and `fit_rms`
-fields are produced by an orientation method shared with the Radon
-detector. See [Part VI: Orientation methods](part-06-orientation-methods.md)
+The `axes` and their per‑axis `sigma` values are produced by an
+orientation method shared with the Radon detector. See
+[Part VI: Orientation methods](part-06-orientation-methods.md)
 for the API surface, the two available algorithms (`RingFit` and
 `DiskFit`), and step-by-step descriptions of each.
 

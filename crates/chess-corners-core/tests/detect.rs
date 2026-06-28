@@ -1,8 +1,10 @@
 #[cfg(feature = "simd")]
 use chess_corners_core::unstable::chess_response_u8_scalar;
-use chess_corners_core::unstable::{chess_response_u8_patch, ring_offsets, RING10, RING5};
+use chess_corners_core::unstable::{
+    chess_response_u8_patch, ring_offsets, ChessParams, RING10, RING5,
+};
 use chess_corners_core::{
-    chess_response_u8, detect_corners_from_response, find_corners_u8, ChessParams, ResponseMap, Roi,
+    chess_response_u8, detect_corners_from_response, find_corners_u8, ResponseMap, Roi,
 };
 
 fn idx(w: usize, x: usize, y: usize) -> usize {

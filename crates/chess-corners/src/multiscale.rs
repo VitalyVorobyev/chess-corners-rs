@@ -22,16 +22,17 @@ use box_image_pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
 #[cfg(feature = "ml-refiner")]
 use chess_corners_core::unstable::chess_response_u8_patch;
 #[cfg(feature = "ml-refiner")]
-use chess_corners_core::ChessParams;
+use chess_corners_core::unstable::ChessParams;
 #[cfg(feature = "ml-refiner")]
 use chess_corners_core::ResponseMap;
 #[cfg(feature = "ml-refiner")]
 use chess_corners_core::{chess_response_u8, detect_corners_from_response_with_refiner, Roi};
 use chess_corners_core::{describe_corners, merge_corners_simple, Corner};
-use chess_corners_core::{ChessBuffers, ChessDetector, CornerDescriptor, DenseDetector};
 use chess_corners_core::{
-    CornerRefiner, ImageView, OrientationMethod, RadonBuffers, RadonDetector, Refiner, RefinerKind,
+    unstable::RefinerKind, CornerRefiner, ImageView, OrientationMethod, RadonBuffers,
+    RadonDetector, Refiner,
 };
+use chess_corners_core::{ChessBuffers, ChessDetector, CornerDescriptor, DenseDetector};
 
 /// Bridge from `chess_corners_core::ImageView` to `box_image_pyramid::ImageView`.
 fn to_pyramid_view(v: ImageView<'_>) -> box_image_pyramid::ImageView<'_> {
@@ -428,7 +429,7 @@ pub(crate) fn detect_with_buffers(
             let refiner_kind = chess_params.refiner.clone();
             let shape = DetectorShape {
                 refiner_kind: &refiner_kind,
-                descriptor_ring_radius: chess_params.descriptor_ring_radius(),
+                descriptor_ring_radius: chess_params.ring_radius(),
                 orientation_method: chess_params.orientation_method,
                 merge_radius: cfg.merge_radius,
             };
@@ -450,8 +451,8 @@ pub(crate) fn detect_with_buffers(
             // Orientation method is top-level on DetectorConfig.
             let shape = DetectorShape {
                 refiner_kind: &refiner_kind,
-                descriptor_ring_radius: chess_corners_core::ChessParams::default()
-                    .descriptor_ring_radius(),
+                descriptor_ring_radius: chess_corners_core::unstable::ChessParams::default()
+                    .ring_radius(),
                 orientation_method: cfg.orientation_method,
                 merge_radius: cfg.merge_radius,
             };
@@ -540,7 +541,7 @@ where
             base.data,
             base.width,
             base.height,
-            params.descriptor_ring_radius(),
+            params.ring_radius(),
             merged,
             params.orientation_method,
         );
@@ -563,7 +564,7 @@ where
             lvl.img.data,
             lvl.img.width,
             lvl.img.height,
-            params.descriptor_ring_radius(),
+            params.ring_radius(),
             merged,
             params.orientation_method,
         );
@@ -640,7 +641,7 @@ where
         base.data,
         base.width,
         base.height,
-        params.descriptor_ring_radius(),
+        params.ring_radius(),
         merged,
         params.orientation_method,
     )

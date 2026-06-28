@@ -15,31 +15,18 @@
 //! bench gives the reader a single number to reason about whole-image
 //! latency on 640×480 / 1280×720 / 1920×1080 frames.
 
-use chess_corners_core::{
-    chess_response_u8, radon_response_u8, ChessParams, RadonBuffers, RadonDetectorParams,
-};
+use chess_corners_core::unstable::ChessParams;
+use chess_corners_core::{chess_response_u8, radon_response_u8, RadonBuffers, RadonDetectorParams};
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use std::hint::black_box;
 
-/// Deterministic chessboard-like synthetic image so runs are
-/// comparable across machines. Corner density is roughly 25 cells
-/// across the shorter image dimension, which matches a typical
-/// calibration target in frame.
-fn synth_chessboard(w: usize, h: usize) -> Vec<u8> {
-    let cell = (h.min(w) / 25).max(8) as i32;
-    let mut out = vec![0u8; w * h];
-    for y in 0..h {
-        for x in 0..w {
-            let cx = (x as i32) / cell;
-            let cy = (y as i32) / cell;
-            out[y * w + x] = if (cx + cy) & 1 == 0 { 40 } else { 215 };
-        }
-    }
-    out
-}
+mod common;
+use common::synth_chessboard;
 
 fn bench_radon_response(c: &mut Criterion) {
-    let dims: &[(usize, usize)] = &[(640, 480), (1280, 720), (1920, 1080)];
+    // 1024² added for PERF-02 (1k² i64-vs-u32 SAT comparison); the
+    // others bracket it for context.
+    let dims: &[(usize, usize)] = &[(640, 480), (1280, 720), (1024, 1024), (1920, 1080)];
     let mut group = c.benchmark_group("radon_response");
     for &(w, h) in dims {
         let img = synth_chessboard(w, h);

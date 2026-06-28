@@ -65,7 +65,7 @@ level:
 ```rust
 use chess_corners::{
     ChessRefiner, ChessRing, DetectorConfig,
-    DescriptorRing, MultiscaleConfig, Threshold, UpscaleConfig,
+    MultiscaleConfig, Threshold, UpscaleConfig,
 };
 
 let cfg = DetectorConfig::chess()
@@ -75,10 +75,11 @@ let cfg = DetectorConfig::chess()
     .with_upscale(UpscaleConfig::Fixed(2))
     .with_chess(|c| {
         c.ring = ChessRing::Broad;
-        c.descriptor_ring = DescriptorRing::FollowDetector;
-        c.nms_radius = 2;
-        c.min_cluster_size = 2;
         c.refiner = ChessRefiner::default();
+    })
+    .with_detection(|d| {
+        d.nms_radius = 2;
+        d.min_cluster_size = 2;
     });
 // Or switch to the Radon strategy:
 let cfg = cfg.with_radon(|_| {});
@@ -102,8 +103,6 @@ Each detection is a `CornerDescriptor` with:
 - `x`, `y` — subpixel position.
 - `response` — raw unnormalized detector response (the ChESS paper's
   score for ChESS, `(max α S_α − min α S_α)²` for Radon).
-- `contrast` — fitted bright/dark amplitude `|A|` in gray levels.
-- `fit_rms` — RMS residual of the two-axis fit in gray levels.
 - `axes[0]`, `axes[1]` — the two local grid axes with per-axis 1σ
   angular uncertainty from the Gauss-Newton covariance
   (`σθᵢ = √((SSR / 12) · (JᵀJ)⁻¹[i,i])`). Axes are not assumed
@@ -121,7 +120,11 @@ leave a stale per-refiner config behind:
 use chess_corners::{ChessRefiner, DetectorConfig, ForstnerConfig};
 
 let cfg = DetectorConfig::chess().with_chess(|c| {
-    c.refiner = ChessRefiner::Forstner(ForstnerConfig { max_offset: 2.0, ..ForstnerConfig::default() });
+    // `ForstnerConfig` is `#[non_exhaustive]`: start from `Default` and
+    // set the fields you need.
+    let mut forstner = ForstnerConfig::default();
+    forstner.max_offset = 2.0;
+    c.refiner = ChessRefiner::Forstner(forstner);
 });
 ```
 
@@ -180,3 +183,8 @@ pyramid levels.
 - `tracing`: structured spans
 - `ml-refiner`: ONNX-backed ML refinement
 - `cli`: build the `chess-corners` binary
+
+The default (stable) build requires Rust **1.88** or newer
+(`rust-version` in `Cargo.toml`). The `simd` feature uses
+`portable_simd` and needs a nightly toolchain; every other feature
+builds on stable.

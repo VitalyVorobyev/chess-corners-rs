@@ -152,7 +152,7 @@
 //! - `crates/chess-corners-py` (PyO3 / maturin) exposes a
 //!   `chess_corners.Detector` class whose `detect(image)` method
 //!   accepts a 2D `uint8` NumPy array and returns a `float32`
-//!   `(N, 9)` array with columns `[x, y, response, contrast, fit_rms,
+//!   `(N, 7)` array with columns `[x, y, response,
 //!   axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`. See its
 //!   README for usage and configuration details.
 //! - `crates/chess-corners-wasm` (wasm-bindgen / wasm-pack) exposes
@@ -163,8 +163,8 @@
 //!
 //! [`DetectorConfig`] is strategy-typed: the [`DetectorConfig::strategy`]
 //! field is a [`DetectionStrategy`] enum carrying either a
-//! [`ChessConfig`] (detector ring, descriptor ring, NMS, refiner) or
-//! a [`RadonConfig`] (whole-image Duda-Frese parameters). Acceptance
+//! [`ChessConfig`] (detector ring, refiner) or a [`RadonConfig`]
+//! (whole-image Duda-Frese parameters). Acceptance
 //! is a single [`Threshold`] enum (`Absolute` or `Relative`).
 //! [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
 //! and apply to both strategies. The detector translates this into
@@ -207,6 +207,13 @@
 //! The library API is stable across feature combinations; features
 //! only affect performance and observability, not numerical results.
 //!
+//! # Minimum supported Rust version
+//!
+//! The default (stable) build requires Rust **1.88** or newer, as
+//! declared by `rust-version` in `Cargo.toml`. The optional `simd`
+//! feature uses `portable_simd` and therefore requires a **nightly**
+//! toolchain; every other feature builds on stable.
+//!
 //! # References
 //!
 //! - Bennett, Lasenby. *ChESS: A Fast and Accurate Chessboard Corner
@@ -232,7 +239,7 @@ mod upscale;
 // (ring offsets, SAT views, scalar reference paths) via a direct
 // `chess-corners-core` dependency.
 pub use crate::config::{
-    ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy, DetectorConfig,
+    ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig,
     MultiscaleConfig, RadonConfig, RadonRefiner, Threshold,
 };
 pub use crate::error::ChessError;

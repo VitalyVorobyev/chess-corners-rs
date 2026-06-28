@@ -44,6 +44,7 @@ pub const RING10: [(i32, i32); 16] = [
 /// Valid ring radii and their canonical offset tables.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
+#[non_exhaustive]
 pub enum RingOffsets {
     /// FAST-16 offsets scaled to r=5.
     R5 = 5,

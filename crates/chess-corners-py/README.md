@@ -26,18 +26,16 @@ print(cfg)
 ```
 
 `Detector(cfg).detect(image)` returns a NumPy `float32` array of shape
-`(N, 9)` with columns:
+`(N, 7)` with columns:
 
 1. `x` — subpixel corner x in input pixels
 2. `y` — subpixel corner y in input pixels
 3. `response` — raw detector response at the detected peak
-4. `contrast` — amplitude of the fitted bright/dark structure
-5. `fit_rms` — RMS residual of the two-axis intensity fit (gray levels)
-6. `axis0_angle` — angle of the first local grid axis, radians in `[0, π)`
-7. `axis0_sigma` — 1σ uncertainty of `axis0_angle`, radians
-8. `axis1_angle` — angle of the second local grid axis, radians in
+4. `axis0_angle` — angle of the first local grid axis, radians in `[0, π)`
+5. `axis0_sigma` — 1σ uncertainty of `axis0_angle`, radians
+6. `axis1_angle` — angle of the second local grid axis, radians in
    `(axis0_angle, axis0_angle + π)`
-9. `axis1_sigma` — 1σ uncertainty of `axis1_angle`, radians
+7. `axis1_sigma` — 1σ uncertainty of `axis1_angle`, radians
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` (by less than π)
 traverses a **dark** sector of the corner; the two grid axes are **not**
@@ -72,9 +70,8 @@ cfg.multiscale = chess_corners.MultiscaleConfig.pyramid(
 # return the live shared object, so direct attribute assignment
 # propagates back to `cfg` — no rebuild needed:
 cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
-cfg.strategy.chess.descriptor_ring = chess_corners.DescriptorRing.FOLLOW_DETECTOR
-cfg.strategy.chess.nms_radius = 2
-cfg.strategy.chess.min_cluster_size = 2
+cfg.detection.nms_radius = 2
+cfg.detection.min_cluster_size = 2
 
 # Switch the active strategy by assigning a new one:
 cfg.strategy = chess_corners.DetectionStrategy.from_radon(
@@ -92,8 +89,8 @@ cfg = (
     .with_chess(
         refiner=chess_corners.ChessRefiner.forstner(),
         ring=chess_corners.ChessRing.BROAD,
-        nms_radius=2,
     )
+    .with_detection(nms_radius=2, min_cluster_size=2)
 )
 ```
 
@@ -130,13 +127,11 @@ Tagged classes:
 Enums:
 
 - `ChessRing`: `CANONICAL`, `BROAD`
-- `DescriptorRing`: `FOLLOW_DETECTOR`, `CANONICAL`, `BROAD`
 - `PeakFitMode`: `PARABOLIC`, `GAUSSIAN`
 - `OrientationMethod`: `RING_FIT`, `DISK_FIT`
 
 `ChessRing.BROAD` uses the wider radius-10 detector sampling pattern.
-Leave `descriptor_ring` at `FOLLOW_DETECTOR` unless you have a reason
-to override descriptor sampling separately.
+Descriptors always sample at the detector ring radius.
 
 ## JSON helpers and printing
 
@@ -172,9 +167,6 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
   "strategy": {
     "chess": {
       "ring": "broad",
-      "descriptor_ring": "canonical",
-      "nms_radius": 3,
-      "min_cluster_size": 1,
       "refiner": {
         "forstner": {
           "radius": 3,
@@ -187,6 +179,7 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
     }
   },
   "threshold": { "absolute": 0.5 },
+  "detection": { "nms_radius": 3, "min_cluster_size": 1 },
   "multiscale": {
     "pyramid": {
       "levels": 3,
@@ -200,19 +193,20 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
 }
 ```
 
-Switch to the Radon strategy by replacing the `strategy` object:
+Switch to the Radon strategy by replacing the `strategy` object and setting the shared detection params:
 
 ```json
-"strategy": {
-  "radon": {
-    "ray_radius": 4,
-    "image_upsample": 2,
-    "response_blur_radius": 1,
-    "peak_fit": "gaussian",
-    "nms_radius": 4,
-    "min_cluster_size": 2,
-    "refiner": { "radon_peak": {} }
-  }
+{
+  "strategy": {
+    "radon": {
+      "ray_radius": 4,
+      "image_upsample": 2,
+      "response_blur_radius": 1,
+      "peak_fit": "gaussian",
+      "refiner": { "radon_peak": {} }
+    }
+  },
+  "detection": { "nms_radius": 4, "min_cluster_size": 2 }
 }
 ```
 

@@ -14,7 +14,7 @@
 //! const cfg = DetectorConfig.chessMultiscale();
 //! cfg.strategy.chess.ring = ChessRing.Broad;             // works
 //! cfg.strategy.chess.refiner.forstner.maxOffset = 2.0;   // works
-//! cfg.strategy.chess.nmsRadius = 3;                      // works
+//! cfg.detection.nmsRadius = 3;                           // works
 //! cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3);   // works
 //! ```
 //!
@@ -51,7 +51,7 @@ use std::rc::Rc;
 
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
-    ChessRefiner as RsChessRefiner, ChessRing as RsChessRing, DescriptorRing as RsDescriptorRing,
+    ChessRefiner as RsChessRefiner, ChessRing as RsChessRing, DetectionParams as RsDetectionParams,
     DetectionStrategy as RsDetectionStrategy, DetectorConfig as RsDetectorConfig,
     ForstnerConfig as RsForstnerConfig, MultiscaleConfig as RsMultiscaleConfig,
     OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
@@ -100,38 +100,6 @@ impl From<RsChessRing> for ChessRing {
             RsChessRing::Canonical => ChessRing::Canonical,
             RsChessRing::Broad => ChessRing::Broad,
             _ => ChessRing::Canonical,
-        }
-    }
-}
-
-/// Descriptor sampling ring selection. Mirrors
-/// [`chess_corners::DescriptorRing`]. Selects whether the descriptor
-/// ring radius follows the detector or is forced to `r=5`/`r=10`.
-#[wasm_bindgen]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DescriptorRing {
-    FollowDetector = 0,
-    Canonical = 1,
-    Broad = 2,
-}
-
-impl From<DescriptorRing> for RsDescriptorRing {
-    fn from(v: DescriptorRing) -> Self {
-        match v {
-            DescriptorRing::FollowDetector => RsDescriptorRing::FollowDetector,
-            DescriptorRing::Canonical => RsDescriptorRing::Canonical,
-            DescriptorRing::Broad => RsDescriptorRing::Broad,
-        }
-    }
-}
-
-impl From<RsDescriptorRing> for DescriptorRing {
-    fn from(v: RsDescriptorRing) -> Self {
-        match v {
-            RsDescriptorRing::FollowDetector => DescriptorRing::FollowDetector,
-            RsDescriptorRing::Canonical => DescriptorRing::Canonical,
-            RsDescriptorRing::Broad => DescriptorRing::Broad,
-            _ => DescriptorRing::FollowDetector,
         }
     }
 }
@@ -1288,9 +1256,6 @@ impl UpscaleConfig {
 #[derive(Clone, Debug)]
 pub struct ChessConfig {
     ring: Cell<RsChessRing>,
-    descriptor_ring: Cell<RsDescriptorRing>,
-    nms_radius: Cell<u32>,
-    min_cluster_size: Cell<u32>,
     refiner_kind: Cell<ChessRefinerKind>,
     refiner_center_of_mass: Cell<RsCenterOfMassConfig>,
     refiner_forstner: Cell<RsForstnerConfig>,
@@ -1311,33 +1276,6 @@ impl ChessConfig {
     #[wasm_bindgen(setter)]
     pub fn set_ring(&mut self, v: ChessRing) {
         *self.ring.borrow_mut() = v.into();
-    }
-
-    #[wasm_bindgen(getter, js_name = descriptorRing)]
-    pub fn descriptor_ring(&self) -> DescriptorRing {
-        (*self.descriptor_ring.borrow()).into()
-    }
-    #[wasm_bindgen(setter, js_name = descriptorRing)]
-    pub fn set_descriptor_ring(&mut self, v: DescriptorRing) {
-        *self.descriptor_ring.borrow_mut() = v.into();
-    }
-
-    #[wasm_bindgen(getter, js_name = nmsRadius)]
-    pub fn nms_radius(&self) -> u32 {
-        *self.nms_radius.borrow()
-    }
-    #[wasm_bindgen(setter, js_name = nmsRadius)]
-    pub fn set_nms_radius(&mut self, v: u32) {
-        *self.nms_radius.borrow_mut() = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = minClusterSize)]
-    pub fn min_cluster_size(&self) -> u32 {
-        *self.min_cluster_size.borrow()
-    }
-    #[wasm_bindgen(setter, js_name = minClusterSize)]
-    pub fn set_min_cluster_size(&mut self, v: u32) {
-        *self.min_cluster_size.borrow_mut() = v;
     }
 
     /// Subpixel refiner. Returns a wrapper that shares cells with this
@@ -1374,9 +1312,6 @@ impl ChessConfig {
         let refiner = ChessRefiner::from_value(value.refiner);
         Self {
             ring: cell(value.ring),
-            descriptor_ring: cell(value.descriptor_ring),
-            nms_radius: cell(value.nms_radius),
-            min_cluster_size: cell(value.min_cluster_size),
             refiner_kind: refiner.kind,
             refiner_center_of_mass: refiner.center_of_mass,
             refiner_forstner: refiner.forstner,
@@ -1389,9 +1324,6 @@ impl ChessConfig {
     /// see the update.
     fn copy_from(&self, other: &ChessConfig) {
         *self.ring.borrow_mut() = *other.ring.borrow();
-        *self.descriptor_ring.borrow_mut() = *other.descriptor_ring.borrow();
-        *self.nms_radius.borrow_mut() = *other.nms_radius.borrow();
-        *self.min_cluster_size.borrow_mut() = *other.min_cluster_size.borrow();
         *self.refiner_kind.borrow_mut() = *other.refiner_kind.borrow();
         *self.refiner_center_of_mass.borrow_mut() = *other.refiner_center_of_mass.borrow();
         *self.refiner_forstner.borrow_mut() = *other.refiner_forstner.borrow();
@@ -1410,9 +1342,6 @@ impl ChessConfig {
         };
         let mut s = RsChessConfig::default();
         s.ring = *self.ring.borrow();
-        s.descriptor_ring = *self.descriptor_ring.borrow();
-        s.nms_radius = *self.nms_radius.borrow();
-        s.min_cluster_size = *self.min_cluster_size.borrow();
         s.refiner = refiner_view.snapshot();
         s
     }
@@ -1437,8 +1366,6 @@ pub struct RadonConfig {
     image_upsample: Cell<u32>,
     response_blur_radius: Cell<u32>,
     peak_fit: Cell<RsPeakFitMode>,
-    nms_radius: Cell<u32>,
-    min_cluster_size: Cell<u32>,
     refiner_kind: Cell<RadonRefinerKind>,
     refiner_radon_peak: Cell<RsRadonPeakConfig>,
     refiner_center_of_mass: Cell<RsCenterOfMassConfig>,
@@ -1487,24 +1414,6 @@ impl RadonConfig {
         *self.peak_fit.borrow_mut() = v.into();
     }
 
-    #[wasm_bindgen(getter, js_name = nmsRadius)]
-    pub fn nms_radius(&self) -> u32 {
-        *self.nms_radius.borrow()
-    }
-    #[wasm_bindgen(setter, js_name = nmsRadius)]
-    pub fn set_nms_radius(&mut self, v: u32) {
-        *self.nms_radius.borrow_mut() = v;
-    }
-
-    #[wasm_bindgen(getter, js_name = minClusterSize)]
-    pub fn min_cluster_size(&self) -> u32 {
-        *self.min_cluster_size.borrow()
-    }
-    #[wasm_bindgen(setter, js_name = minClusterSize)]
-    pub fn set_min_cluster_size(&mut self, v: u32) {
-        *self.min_cluster_size.borrow_mut() = v;
-    }
-
     /// Subpixel refiner. Returns a wrapper that shares cells with this
     /// config; edits propagate without a round-trip.
     #[wasm_bindgen(getter)]
@@ -1538,8 +1447,6 @@ impl RadonConfig {
             image_upsample: cell(value.image_upsample),
             response_blur_radius: cell(value.response_blur_radius),
             peak_fit: cell(value.peak_fit),
-            nms_radius: cell(value.nms_radius),
-            min_cluster_size: cell(value.min_cluster_size),
             refiner_kind: refiner.kind,
             refiner_radon_peak: refiner.radon_peak,
             refiner_center_of_mass: refiner.center_of_mass,
@@ -1554,8 +1461,6 @@ impl RadonConfig {
         *self.image_upsample.borrow_mut() = *other.image_upsample.borrow();
         *self.response_blur_radius.borrow_mut() = *other.response_blur_radius.borrow();
         *self.peak_fit.borrow_mut() = *other.peak_fit.borrow();
-        *self.nms_radius.borrow_mut() = *other.nms_radius.borrow();
-        *self.min_cluster_size.borrow_mut() = *other.min_cluster_size.borrow();
         *self.refiner_kind.borrow_mut() = *other.refiner_kind.borrow();
         *self.refiner_radon_peak.borrow_mut() = *other.refiner_radon_peak.borrow();
         *self.refiner_center_of_mass.borrow_mut() = *other.refiner_center_of_mass.borrow();
@@ -1572,9 +1477,83 @@ impl RadonConfig {
         s.image_upsample = *self.image_upsample.borrow();
         s.response_blur_radius = *self.response_blur_radius.borrow();
         s.peak_fit = *self.peak_fit.borrow();
+        s.refiner = refiner_view.snapshot();
+        s
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DetectionParams (shared NMS / clustering knobs)
+// ---------------------------------------------------------------------------
+
+/// Shared non-maximum-suppression and peak-clustering thresholds.
+/// Mirrors [`chess_corners::DetectionParams`]. Honoured by both the
+/// ChESS and Radon strategies; lives on
+/// [`DetectorConfig`](DetectorConfig)'s `detection` field. All counts
+/// are in working-resolution pixels.
+///
+/// Cell-backed so the `detection` getter returns a wrapper sharing the
+/// parent's cells; edits chained as `cfg.detection.nmsRadius = 3`
+/// propagate without a round-trip.
+#[wasm_bindgen]
+#[derive(Clone, Debug)]
+pub struct DetectionParams {
+    nms_radius: Cell<u32>,
+    min_cluster_size: Cell<u32>,
+}
+
+#[wasm_bindgen]
+impl DetectionParams {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self::from_value(RsDetectionParams::default())
+    }
+
+    #[wasm_bindgen(getter, js_name = nmsRadius)]
+    pub fn nms_radius(&self) -> u32 {
+        *self.nms_radius.borrow()
+    }
+    #[wasm_bindgen(setter, js_name = nmsRadius)]
+    pub fn set_nms_radius(&mut self, v: u32) {
+        *self.nms_radius.borrow_mut() = v;
+    }
+
+    #[wasm_bindgen(getter, js_name = minClusterSize)]
+    pub fn min_cluster_size(&self) -> u32 {
+        *self.min_cluster_size.borrow()
+    }
+    #[wasm_bindgen(setter, js_name = minClusterSize)]
+    pub fn set_min_cluster_size(&mut self, v: u32) {
+        *self.min_cluster_size.borrow_mut() = v;
+    }
+}
+
+impl Default for DetectionParams {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DetectionParams {
+    fn from_value(value: RsDetectionParams) -> Self {
+        Self {
+            nms_radius: cell(value.nms_radius),
+            min_cluster_size: cell(value.min_cluster_size),
+        }
+    }
+
+    /// Copy every cell-backed field's content from `other` into this
+    /// config's cells. Cell-sharing observers (any clone of `self`) see
+    /// the update.
+    fn copy_from(&self, other: &DetectionParams) {
+        *self.nms_radius.borrow_mut() = *other.nms_radius.borrow();
+        *self.min_cluster_size.borrow_mut() = *other.min_cluster_size.borrow();
+    }
+
+    fn snapshot(&self) -> RsDetectionParams {
+        let mut s = RsDetectionParams::default();
         s.nms_radius = *self.nms_radius.borrow();
         s.min_cluster_size = *self.min_cluster_size.borrow();
-        s.refiner = refiner_view.snapshot();
         s
     }
 }
@@ -1754,6 +1733,7 @@ impl DetectionStrategy {
 pub struct DetectorConfig {
     strategy: DetectionStrategy,
     threshold: Threshold,
+    detection: DetectionParams,
     multiscale: MultiscaleConfig,
     upscale: UpscaleConfig,
     orientation_method: Cell<RsOrientationMethod>,
@@ -1769,6 +1749,7 @@ impl DetectorConfig {
         Self {
             strategy: DetectionStrategy::from_value(value.strategy),
             threshold: Threshold::from_value(value.threshold),
+            detection: DetectionParams::from_value(value.detection),
             multiscale: MultiscaleConfig::from_value(value.multiscale),
             upscale: UpscaleConfig::from_value(value.upscale),
             orientation_method: cell(value.orientation_method),
@@ -1789,6 +1770,7 @@ impl DetectorConfig {
         let mut cfg = RsDetectorConfig::default();
         cfg.strategy = self.strategy.snapshot();
         cfg.threshold = *self.threshold.share_cell().borrow();
+        cfg.detection = self.detection.snapshot();
         cfg.multiscale = self.multiscale.snapshot();
         cfg.upscale = self.upscale.snapshot();
         cfg.orientation_method = *self.orientation_method.borrow();
@@ -1923,15 +1905,14 @@ impl DetectorConfig {
     ///
     /// Accepted keys (all optional):
     /// - `ring`: `ChessRing`
-    /// - `nmsRadius`: integer
-    /// - `descriptorRing`: `DescriptorRing`
     ///
     /// To set the refiner use the typed [`Self::with_chess_refiner`] builder
     /// instead — wasm-bindgen Rust structs cannot be passed via plain options
-    /// objects.
+    /// objects. The shared NMS / clustering knobs moved to
+    /// [`Self::with_detection`].
     ///
     /// Unknown keys throw `Error("unexpected option: '<key>'")`.
-    /// JS: `cfg.withChess({ ring: ChessRing.Broad, nmsRadius: 4 })`.
+    /// JS: `cfg.withChess({ ring: ChessRing.Broad })`.
     #[wasm_bindgen(js_name = withChess)]
     pub fn with_chess(&self, opts: &js_sys::Object) -> Result<DetectorConfig, JsValue> {
         let mut out = self.deep_clone();
@@ -1959,24 +1940,6 @@ impl DetectorConfig {
                         ChessRing::Canonical
                     };
                     out.strategy.chess().set_ring(ring);
-                }
-                "nmsRadius" => {
-                    let r = val
-                        .as_f64()
-                        .ok_or_else(|| JsValue::from_str("nmsRadius must be a number"))?
-                        as u32;
-                    out.strategy.chess().set_nms_radius(r);
-                }
-                "descriptorRing" => {
-                    let dr = val.as_f64().ok_or_else(|| {
-                        JsValue::from_str("descriptorRing must be a DescriptorRing enum value")
-                    })? as u8;
-                    let dr = match dr {
-                        1 => DescriptorRing::Canonical,
-                        2 => DescriptorRing::Broad,
-                        _ => DescriptorRing::FollowDetector,
-                    };
-                    out.strategy.chess().set_descriptor_ring(dr);
                 }
                 other => {
                     return Err(JsValue::from_str(&format!("unexpected option: '{other}'")));
@@ -2036,6 +1999,47 @@ impl DetectorConfig {
         Ok(out)
     }
 
+    /// Return a copy of this config with the shared detection params
+    /// (NMS / clustering thresholds honoured by both strategies) patched
+    /// from a plain JS options object.
+    ///
+    /// Accepted keys (all optional):
+    /// - `nmsRadius`: integer
+    /// - `minClusterSize`: integer
+    ///
+    /// Unknown keys throw `Error("unexpected option: '<key>'")`.
+    /// JS: `cfg.withDetection({ nmsRadius: 4, minClusterSize: 2 })`.
+    #[wasm_bindgen(js_name = withDetection)]
+    pub fn with_detection(&self, opts: &js_sys::Object) -> Result<DetectorConfig, JsValue> {
+        let out = self.deep_clone();
+        let keys = js_sys::Object::keys(opts);
+        for i in 0..keys.length() {
+            let key = keys.get(i);
+            let key_str = key.as_string().unwrap_or_default();
+            let val = js_sys::Reflect::get(opts, &key)?;
+            match key_str.as_str() {
+                "nmsRadius" => {
+                    let r = val
+                        .as_f64()
+                        .ok_or_else(|| JsValue::from_str("nmsRadius must be a number"))?
+                        as u32;
+                    out.detection().set_nms_radius(r);
+                }
+                "minClusterSize" => {
+                    let r = val
+                        .as_f64()
+                        .ok_or_else(|| JsValue::from_str("minClusterSize must be a number"))?
+                        as u32;
+                    out.detection().set_min_cluster_size(r);
+                }
+                other => {
+                    return Err(JsValue::from_str(&format!("unexpected option: '{other}'")));
+                }
+            }
+        }
+        Ok(out)
+    }
+
     // ---- Top-level fields ----
 
     #[wasm_bindgen(getter)]
@@ -2056,6 +2060,18 @@ impl DetectorConfig {
         // Copy v's value into this config's threshold cell so
         // cell-sharing observers see the update.
         *self.threshold.share_cell().borrow_mut() = *v.share_cell().borrow();
+    }
+
+    /// Shared NMS / clustering thresholds. Returns a wrapper backed by
+    /// the same cells as the parent; edits propagate without a
+    /// round-trip. Honoured by both ChESS and Radon strategies.
+    #[wasm_bindgen(getter)]
+    pub fn detection(&self) -> DetectionParams {
+        self.detection.clone()
+    }
+    #[wasm_bindgen(setter)]
+    pub fn set_detection(&mut self, v: &DetectionParams) {
+        self.detection.copy_from(v);
     }
 
     /// Coarse-to-fine multiscale configuration. Returns a wrapper
@@ -2178,17 +2194,27 @@ mod tests {
     fn chess_config_field_edits_propagate() {
         let cfg = DetectorConfig::single_scale();
         let mut chess = cfg.strategy().chess();
-        chess.set_nms_radius(7);
         chess.set_ring(ChessRing::Broad);
-        chess.set_descriptor_ring(DescriptorRing::Canonical);
 
         let snap = cfg.snapshot();
         let RsDetectionStrategy::Chess(s) = snap.strategy else {
             panic!("expected chess strategy")
         };
-        assert_eq!(s.nms_radius, 7);
         assert_eq!(s.ring, RsChessRingCheck::Broad);
-        assert_eq!(s.descriptor_ring, chess_corners::DescriptorRing::Canonical);
+    }
+
+    #[test]
+    fn detection_field_edits_propagate() {
+        // Shared NMS / clustering knobs live on `detection` and are
+        // honoured regardless of the active strategy.
+        let cfg = DetectorConfig::single_scale();
+        let mut detection = cfg.detection();
+        detection.set_nms_radius(7);
+        detection.set_min_cluster_size(3);
+
+        let snap = cfg.snapshot();
+        assert_eq!(snap.detection.nms_radius, 7);
+        assert_eq!(snap.detection.min_cluster_size, 3);
     }
 
     #[test]
@@ -2600,7 +2626,7 @@ mod tests {
     // host continues to work. They run under `wasm-pack test` / wasm-bindgen-test.
     #[cfg(target_arch = "wasm32")]
     #[test]
-    fn with_chess_opts_ring_and_nms_radius() {
+    fn with_chess_opts_ring() {
         let cfg = DetectorConfig::chess();
         let opts = js_sys::Object::new();
         js_sys::Reflect::set(
@@ -2609,19 +2635,37 @@ mod tests {
             &JsValue::from_f64(ChessRing::Broad as u8 as f64),
         )
         .unwrap();
-        js_sys::Reflect::set(
-            &opts,
-            &JsValue::from_str("nmsRadius"),
-            &JsValue::from_f64(7.0),
-        )
-        .unwrap();
         let cfg2 = cfg.with_chess(&opts).expect("with_chess must succeed");
         let snap = cfg2.snapshot();
         let RsDetectionStrategy::Chess(c) = snap.strategy else {
             panic!("expected chess strategy")
         };
         assert_eq!(c.ring, chess_corners::ChessRing::Broad);
-        assert_eq!(c.nms_radius, 7);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[test]
+    fn with_detection_opts_set_shared_params() {
+        let cfg = DetectorConfig::chess();
+        let opts = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &opts,
+            &JsValue::from_str("nmsRadius"),
+            &JsValue::from_f64(7.0),
+        )
+        .unwrap();
+        js_sys::Reflect::set(
+            &opts,
+            &JsValue::from_str("minClusterSize"),
+            &JsValue::from_f64(3.0),
+        )
+        .unwrap();
+        let cfg2 = cfg
+            .with_detection(&opts)
+            .expect("with_detection must succeed");
+        let snap = cfg2.snapshot();
+        assert_eq!(snap.detection.nms_radius, 7);
+        assert_eq!(snap.detection.min_cluster_size, 3);
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -2701,8 +2745,8 @@ mod tests {
         let opts = js_sys::Object::new();
         js_sys::Reflect::set(
             &opts,
-            &JsValue::from_str("nmsRadius"),
-            &JsValue::from_f64(5.0),
+            &JsValue::from_str("ring"),
+            &JsValue::from_f64(ChessRing::Broad as u8 as f64),
         )
         .unwrap();
         let cfg2 = cfg.with_chess(&opts).expect("with_chess must succeed");
@@ -2711,5 +2755,26 @@ mod tests {
             matches!(snap.strategy, RsDetectionStrategy::Chess(_)),
             "strategy must flip to Chess"
         );
+    }
+
+    /// Pin the integer discriminants of every `#[wasm_bindgen]` numeric enum.
+    ///
+    /// wasm-bindgen exposes these values to JavaScript callers as plain
+    /// numbers, so reordering or renumbering a variant is a breaking change
+    /// for existing JS/TS consumers.  This test catches any accidental
+    /// reordering at `cargo test` time, before the WASM package is published.
+    #[test]
+    fn enum_discriminants_are_pinned() {
+        // ChessRing
+        assert_eq!(ChessRing::Canonical as u32, 0);
+        assert_eq!(ChessRing::Broad as u32, 1);
+
+        // PeakFitMode
+        assert_eq!(PeakFitMode::Parabolic as u32, 0);
+        assert_eq!(PeakFitMode::Gaussian as u32, 1);
+
+        // OrientationMethod
+        assert_eq!(OrientationMethod::RingFit as u32, 0);
+        assert_eq!(OrientationMethod::DiskFit as u32, 1);
     }
 }

@@ -51,7 +51,7 @@ pub enum OrientationMethod {
     /// ring samples via Gauss-Newton seeded from the 2nd-harmonic
     /// orientation. Suspicious local minima are retried from a small
     /// deterministic seed grid over the same 16 samples. When a
-    /// radius-10 descriptor ring is requested and still looks
+    /// radius-10 detector ring is used and the fit still looks
     /// suspicious, the canonical radius-5 ring is sampled as a cheap
     /// safety check and used when it produces a valid contrast/residual
     /// fit. Per-axis 1σ uncertainties are calibrated by a
@@ -90,7 +90,7 @@ pub(crate) fn ring_fit_for_descriptor(samples: &[f32; 16], ring_phi: &[f32; 16])
     ring_fit::fit_ring(samples, ring_phi)
 }
 
-/// Image-side RingFit entry point. Radius-10 descriptor rings sample
+/// Image-side RingFit entry point. Radius-10 detector rings sample
 /// farther from the candidate center. On very small extreme-skew corners
 /// that outer trace can cross the wrong sectors. If the outer fit already
 /// looks suspicious, retry the canonical radius-5 trace and use it as a

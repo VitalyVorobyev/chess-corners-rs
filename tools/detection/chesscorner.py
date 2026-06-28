@@ -18,8 +18,6 @@ class ChESSCorner:
     x: float
     y: float
     response: float
-    contrast: float = 0.0
-    fit_rms: float = 0.0
     axes: list[ChESSAxis] = field(default_factory=list)
     scale: float | None = None
 
@@ -35,8 +33,6 @@ class ChESSCorner:
             "x": self.x,
             "y": self.y,
             "response": self.response,
-            "contrast": self.contrast,
-            "fit_rms": self.fit_rms,
             "axes": [{"angle": a.angle, "sigma": a.sigma} for a in self.axes],
         }
         if self.scale is not None:

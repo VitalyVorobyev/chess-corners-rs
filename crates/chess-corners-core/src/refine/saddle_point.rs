@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 /// rejection or acceptance of clearly-wrong refinements.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct SaddlePointConfig {
     /// Half-size of the image patch used for the surface fit
     /// (full patch is `2·radius+1` × `2·radius+1`). Default is `2`

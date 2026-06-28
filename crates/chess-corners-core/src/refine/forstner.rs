@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 /// Configuration for the [`ForstnerRefiner`].
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct ForstnerConfig {
     /// Half-size of the local gradient window (full window is
     /// `2*radius+1`). A radius of 2 gives a 5×5 patch — large enough to

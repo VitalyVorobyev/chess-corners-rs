@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 /// centered at the rounded seed position.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct CenterOfMassConfig {
     /// Half-width of the centroid window in response-map pixels.
     /// Default is `2` (a 5×5 window). Increasing this value makes the

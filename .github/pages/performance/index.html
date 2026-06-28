@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>chess-corners-rs · Performance</title>
+<meta name="description" content="Per-image, per-stage ChESS corner-detection timing for chess-corners-rs, measured on public sample images." />
+<link rel="icon" type="image/svg+xml" href="../img/vv-logo.svg" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #060a14; --blue: #5b9dff; --amber: #f2a93d; --teal: #33c6e3;
+    --green: #3ddc84; --rose: #ff6b6b; --ink: #d8e3f2; --muted: #8294b0;
+    --card: #0b1426; --edge: #1b2740; --track: #0e1726;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background:
+      radial-gradient(1100px 700px at 14% -10%, rgba(91,157,255,.12), transparent 60%),
+      radial-gradient(1000px 720px at 102% 112%, rgba(242,169,61,.08), transparent 60%),
+      var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 30px 24px 80px; }
+  a.back { color: var(--muted); text-decoration: none; font-size: 13px; }
+  a.back:hover { color: var(--blue); }
+  header.top { margin: 14px 0 6px; }
+  h1 {
+    font-size: 30px; margin: 0; letter-spacing: -.02em;
+    background: linear-gradient(96deg, var(--blue), #eef4fb 55%, var(--amber));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    display: inline-block;
+  }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 6px; max-width: 72ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 8px; }
+  .chip { background: var(--card); border: 1px solid var(--edge); border-radius: 999px;
+    padding: 5px 12px; font-size: 12.5px; color: var(--muted); }
+  .chip b { color: var(--ink); font-weight: 600; }
+  h2 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+    margin: 44px 0 14px; font-weight: 700; }
+  .card { background: var(--card); border: 1px solid var(--edge); border-radius: 14px;
+    padding: 20px 22px; margin-bottom: 16px; }
+  .imgcard h3 { margin: 0 0 2px; font-size: 18px; }
+  .imgcard .preview { display: block; width: 100%; max-width: 100%; height: auto;
+    border-radius: 10px; border: 1px solid var(--edge); margin: 0 0 14px; background: var(--track); }
+  .imgcard .file { color: var(--muted); font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .imgcard .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 14px; font-size: 12.5px; color: var(--muted); }
+  .imgcard .meta b { color: var(--ink); font-weight: 600; }
+  .kindtag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 6px;
+    background: rgba(61,220,132,.15); color: var(--green); vertical-align: middle; margin-left: 8px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 14px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .barrow { display: grid; grid-template-columns: 118px 1fr 150px; align-items: center; gap: 12px; margin: 6px 0; }
+  .barrow .bl { font-size: 12.5px; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track { background: var(--track); border-radius: 6px; height: 18px; position: relative; overflow: hidden;
+    border: 1px solid rgba(255,255,255,.04); }
+  .fill { height: 100%; border-radius: 6px; }
+  .barrow .bv { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink); text-align: right; }
+  .barrow .bv .mut { color: var(--muted); }
+  .totalrow { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 0; padding-top: 12px;
+    border-top: 1px solid var(--edge); font-size: 13px; color: var(--muted); }
+  .totalrow b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .desc { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  .foot { color: var(--muted); font-size: 12px; margin-top: 44px; border-top: 1px solid var(--edge); padding-top: 16px; }
+  .foot code, .file code, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .err { color: var(--rose); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="../">&larr; chess-corners-rs</a>
+  <header class="top">
+    <h1>Performance</h1>
+    <div class="sub">Where the milliseconds go, measured per image on the public sample frames — not generic
+      aggregates. The ChESS detector runs in four stages; on corner-dense boards the per-corner
+      orientation fit, not the dense response, dominates the wall-clock cost.</div>
+  </header>
+  <div class="chips" id="chips"></div>
+
+  <h2>Per-image stage breakdown</h2>
+  <div class="desc" id="breakdown-desc"></div>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--amber)"></i> response</span>
+    <span><i class="sw" style="background:var(--blue)"></i> detection</span>
+    <span><i class="sw" style="background:var(--teal)"></i> refinement</span>
+    <span><i class="sw" style="background:var(--green)"></i> orientation</span>
+  </div>
+  <div id="imagecards"></div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const C = { amber: "#f2a93d", blue: "#5b9dff", teal: "#33c6e3", green: "#3ddc84" };
+// Pipeline stages in execution order, with display colours.
+const STAGES = [
+  { key: "response", label: "response", color: C.amber },
+  { key: "detection", label: "detection", color: C.blue },
+  { key: "refinement", label: "refinement", color: C.teal },
+  { key: "orientation", label: "orientation", color: C.green },
+];
+const fmt = (v, d = 3) => v == null ? "—" : v.toFixed(d);
+const mp = (w, h) => (w * h / 1e6).toFixed(2);
+
+function bar(label, valueMs, totalMs, maxMs, color) {
+  const row = document.createElement("div"); row.className = "barrow";
+  const bl = document.createElement("div"); bl.className = "bl"; bl.textContent = label;
+  const track = document.createElement("div"); track.className = "track";
+  const fill = document.createElement("div"); fill.className = "fill";
+  fill.style.width = Math.max(0.5, 100 * valueMs / maxMs) + "%";
+  fill.style.background = color;
+  fill.style.position = "absolute"; fill.style.top = "0"; fill.style.left = "0";
+  track.appendChild(fill);
+  const share = totalMs > 0 ? (100 * valueMs / totalMs).toFixed(0) + "%" : "—";
+  const bv = document.createElement("div"); bv.className = "bv";
+  bv.innerHTML = fmt(valueMs) + ' ms <span class="mut">' + share + "</span>";
+  row.append(bl, track, bv);
+  return row;
+}
+
+function renderImageCard(img) {
+  const card = document.createElement("div"); card.className = "card imgcard";
+
+  if (img.img) {
+    const fig = document.createElement("img"); fig.className = "preview";
+    fig.src = img.img; fig.alt = img.label; fig.loading = "lazy";
+    card.appendChild(fig);
+  }
+
+  const h = document.createElement("h3");
+  h.innerHTML = img.label + '<span class="kindtag">' + img.corner_count + " corners</span>";
+  const file = document.createElement("div"); file.className = "file";
+  file.innerHTML = "<code>" + img.file + "</code>";
+  const meta = document.createElement("div"); meta.className = "meta";
+  meta.innerHTML =
+    "<span><b>" + img.width + "×" + img.height + "</b> px</span>" +
+    "<span><b>" + mp(img.width, img.height) + "</b> MP</span>" +
+    "<span><b>" + img.corner_count + "</b> corners</span>";
+  card.append(h, file, meta);
+
+  const stages = STAGES.map(s => ({ ...s, v: img.stages[s.key] })).filter(s => s.v != null);
+  const maxMs = Math.max(...stages.map(s => s.v), 0) || 1;
+  stages.forEach(s => card.appendChild(bar(s.label, s.v, img.total_ms, maxMs, s.color)));
+
+  const total = document.createElement("div"); total.className = "totalrow";
+  total.innerHTML =
+    "<span>total <b>" + fmt(img.total_ms, 2) + " ms</b></span>" +
+    "<span>throughput <b>" + fmt(img.throughput_mpix_s, 1) + "</b> Mpix/s</span>";
+  card.appendChild(total);
+
+  if (img.note) {
+    const n = document.createElement("p"); n.className = "desc";
+    n.style.margin = "12px 0 0"; n.style.borderTop = "1px solid var(--edge)"; n.style.paddingTop = "10px";
+    n.textContent = img.note; card.appendChild(n);
+  }
+  return card;
+}
+
+function render(data) {
+  const m = data.meta;
+  document.getElementById("chips").innerHTML = [
+    ["", m.cpu], ["rustc", m.rustc], ["features", m.features], ["git", m.git_sha],
+    ["date", m.generated], ["p50 of", "×" + m.repeats + " reps"]
+  ].filter(([, v]) => v != null).map(([k, v]) =>
+    '<span class="chip">' + (k ? k + " " : "") + "<b>" + v + "</b></span>").join("");
+
+  document.getElementById("breakdown-desc").textContent = m.note;
+
+  const ic = document.getElementById("imagecards");
+  data.images.forEach(img => ic.appendChild(renderImageCard(img)));
+
+  document.getElementById("foot").innerHTML =
+    "All numbers are from public <code>testimages/</code> frames, regenerated with " +
+    "<code>" + m.source + "</code> on " + m.cpu +
+    (m.threads ? " (" + m.threads + "-threaded)" : "") + ". " +
+    "Stage definitions and methodology live in <code>docs/design/perf-profiling.md</code>.";
+}
+
+fetch("./data.json").then(r => r.json()).then(render).catch(e => {
+  document.getElementById("imagecards").innerHTML =
+    '<div class="card err">Could not load data.json: ' + e + "</div>";
+});
+</script>
+</body>
+</html>

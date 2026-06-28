@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chess_corners::{ChessRing, DescriptorRing, Threshold};
+use chess_corners::{ChessRing, Threshold};
 use clap::{Parser, Subcommand};
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
@@ -70,11 +70,6 @@ enum Commands {
         /// effect on the Radon strategy.
         #[arg(long)]
         chess_ring: Option<String>,
-        /// Override the ChESS descriptor ring
-        /// (`follow_detector`, `canonical`, `broad`). Has no effect on
-        /// the Radon strategy.
-        #[arg(long)]
-        descriptor_ring: Option<String>,
         /// NMS radius override (applied to whichever strategy is active).
         #[arg(long)]
         nms_radius: Option<u32>,
@@ -118,7 +113,6 @@ fn main() -> Result<()> {
             threshold_absolute,
             threshold_relative,
             chess_ring,
-            descriptor_ring,
             nms_radius,
             min_cluster_size,
             chess_refiner,
@@ -147,7 +141,6 @@ fn main() -> Result<()> {
                 output_png,
                 threshold,
                 chess_ring: parse_flag_enum::<ChessRing>(chess_ring.as_deref())?,
-                descriptor_ring: parse_flag_enum::<DescriptorRing>(descriptor_ring.as_deref())?,
                 nms_radius,
                 min_cluster_size,
                 chess_refiner: parse_flag_enum::<ChessRefinerSel>(chess_refiner.as_deref())?,

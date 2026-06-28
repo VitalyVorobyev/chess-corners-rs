@@ -336,7 +336,7 @@ pipeline on each `detect` / `detect_u8` call is:
      corners whose positions are within `merge_radius` of each other,
      keeping the stronger one.
    - convert merged `Corner` values into `CornerDescriptor`s using
-     `describe_corners` with `params.descriptor_ring_radius()`.
+     `describe_corners` with `params.ring_radius()`.
 
 When the `rayon` feature is enabled, the refinement step processes
 coarse corners in parallel; otherwise it uses a straightforward loop.

@@ -104,20 +104,6 @@ pub struct CornerDescriptor {
     /// a contrast, or a normalized strength.
     pub response: f32,
 
-    /// Bright/dark amplitude (`|A|`, ≥ 0) recovered by the two-axis
-    /// orientation fit (see [`describe_corners`](crate::describe_corners)).
-    /// Units are gray
-    /// levels. Larger means a stronger bright/dark separation at the
-    /// ring radius. This is an independent quantity from
-    /// [`Self::response`] — they are computed by different estimators
-    /// and must not be compared against each other or against the same
-    /// threshold.
-    pub contrast: f32,
-
-    /// RMS fit residual of the two-axis intensity model (gray levels).
-    /// Smaller = tighter match to an ideal chessboard corner.
-    pub fit_rms: f32,
-
     /// The two local grid axis directions with per-axis 1σ precision.
     pub axes: [AxisEstimate; 2],
 }
@@ -125,21 +111,11 @@ pub struct CornerDescriptor {
 impl CornerDescriptor {
     /// Construct a [`CornerDescriptor`].
     #[inline]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        x: f32,
-        y: f32,
-        response: f32,
-        contrast: f32,
-        fit_rms: f32,
-        axes: [AxisEstimate; 2],
-    ) -> Self {
+    pub fn new(x: f32, y: f32, response: f32, axes: [AxisEstimate; 2]) -> Self {
         Self {
             x,
             y,
             response,
-            contrast,
-            fit_rms,
             axes,
         }
     }

@@ -19,7 +19,7 @@
 //!   subpixel fit).
 
 pub mod detect;
-pub mod primitives;
+pub(crate) mod primitives;
 pub mod response;
 
 pub use detect::detect_peaks_from_radon;

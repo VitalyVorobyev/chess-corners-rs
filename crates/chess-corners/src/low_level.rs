@@ -60,7 +60,7 @@ pub use chess_corners_core::AxisFitResult;
 
 /// Low-level ChESS detection parameters consumed by the response and
 /// detection stages.
-pub use chess_corners_core::ChessParams;
+pub use chess_corners_core::unstable::ChessParams;
 
 /// Low-level Radon detection parameters.
 pub use chess_corners_core::RadonDetectorParams;
@@ -81,7 +81,7 @@ pub use chess_corners_core::CornerRefiner;
 pub use chess_corners_core::Refiner;
 
 /// Selector for the built-in subpixel refiner variants.
-pub use chess_corners_core::RefinerKind;
+pub use chess_corners_core::unstable::RefinerKind;
 
 /// Outcome of a single subpixel-refinement attempt.
 pub use chess_corners_core::RefineResult;

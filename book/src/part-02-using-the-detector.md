@@ -16,19 +16,24 @@ active strategy variant.
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
 | `strategy`            | `DetectionStrategy::Chess(ChessConfig)` or `DetectionStrategy::Radon(RadonConfig)` — selects the detector and carries its tuning.                  |
 | `threshold`           | `Threshold::Absolute(f32)` or `Threshold::Relative(f32)`. `Absolute(0.0)` is the ChESS paper's `R > 0` contract; `Relative(0.01)` is the Radon preset default. |
+| `detection`           | `DetectionParams { nms_radius, min_cluster_size }` — shared NMS and cluster-filter knobs honoured by both detectors.                              |
 | `multiscale`          | `MultiscaleConfig::SingleScale` or `MultiscaleConfig::Pyramid { levels, min_size, refinement_radius }`. Honoured by both detectors.                |
 | `upscale`             | `UpscaleConfig::Disabled` or `UpscaleConfig::Fixed(factor)` (`factor ∈ {2, 3, 4}`). Pre-pipeline bilinear upscaling for low-resolution inputs.    |
 | `orientation_method`  | `OrientationMethod::RingFit` (default) or `DiskFit`. Drives the two-axis descriptor fit on both detectors.                                         |
 | `merge_radius`        | Duplicate-suppression distance (base-image pixels) for the final cross-scale merge step.                                                          |
 
+Inside `DetectionParams` (set via `DetectorConfig.detection`):
+
+| Field               | Meaning                                                                                                          |
+|---------------------|------------------------------------------------------------------------------------------------------------------|
+| `nms_radius`        | Non-maximum-suppression window half-radius, in input-image pixels. ChESS preset default: `2`; Radon preset default: `4`. |
+| `min_cluster_size`  | Minimum positive-response neighbours inside the NMS window. Default: `2` for both presets.                      |
+
 Inside `ChessConfig`:
 
 | Field               | Meaning                                                                                                          |
 |---------------------|------------------------------------------------------------------------------------------------------------------|
-| `ring`              | `ChessRing::Canonical` (r=5, paper default) or `ChessRing::Broad` (r=10, wider support window). The single source of truth for "broad" detection. |
-| `descriptor_ring`   | `DescriptorRing::FollowDetector` (default), `Canonical`, or `Broad`. Lets you sample the descriptor ring at a different radius than the detector. |
-| `nms_radius`        | Non-maximum-suppression window half-radius, in input-image pixels.                                               |
-| `min_cluster_size`  | Minimum positive-response neighbours inside the NMS window.                                                      |
+| `ring`              | `ChessRing::Canonical` (r=5, paper default) or `ChessRing::Broad` (r=10, wider support window). Descriptors always sample at this same radius. |
 | `refiner`           | `ChessRefiner::CenterOfMass(_)`, `Forstner(_)`, `SaddlePoint(_)`, or `Ml` (with `ml-refiner`). Each variant carries its own tuning struct. |
 
 Inside `RadonConfig`:
@@ -39,8 +44,6 @@ Inside `RadonConfig`:
 | `image_upsample`       | `1` (no supersample) or `2` (paper default). Values ≥ 3 are clamped to 2.                       |
 | `response_blur_radius` | Half-size of the box blur applied to the response map. `0` disables blurring.                  |
 | `peak_fit`             | `PeakFitMode::Parabolic` or `Gaussian` for the 3-point subpixel refinement.                   |
-| `nms_radius`           | NMS half-radius, in working-resolution pixels.                                                |
-| `min_cluster_size`     | Minimum positive-response neighbours inside the NMS window.                                   |
 | `refiner`              | `RadonRefiner::RadonPeak(_)` or `CenterOfMass(_)`.                                            |
 
 Four presets cover the common cases:
@@ -131,10 +134,10 @@ Each refiner variant carries its tuning struct inline:
 ```rust
 use chess_corners::{ChessRefiner, ForstnerConfig};
 
-let f = ForstnerConfig {
-    max_offset: 2.0,
-    ..ForstnerConfig::default()
-};
+// The per-refiner config structs are `#[non_exhaustive]`: start from
+// `Default` and set only the fields you care about.
+let mut f = ForstnerConfig::default();
+f.max_offset = 2.0;
 let refiner = ChessRefiner::Forstner(f);
 ```
 
@@ -211,14 +214,14 @@ cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
 corners = detector.detect(img)
-print(corners.shape)   # (N, 9)
+print(corners.shape)   # (N, 7)
 ```
 
 `Detector(cfg).detect(image)` accepts a 2D `uint8` array shaped
-`(H, W)` and returns a `float32` array with stride 9 per corner:
+`(H, W)` and returns a `float32` array with stride 7 per corner:
 
 ```
-[x, y, response, contrast, fit_rms,
+[x, y, response,
  axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]
 ```
 
@@ -312,8 +315,8 @@ const detector = ChessDetector.withConfig(cfg);
 const imageData = ctx.getImageData(0, 0, width, height);
 const corners = detector.detect_rgba(imageData.data, width, height);
 
-// corners is Float32Array, stride 9 per corner — same layout as Python.
-for (let i = 0; i < corners.length; i += 9) {
+// corners is Float32Array, stride 7 per corner — same layout as Python.
+for (let i = 0; i < corners.length; i += 7) {
     console.log(`(${corners[i].toFixed(2)}, ${corners[i + 1].toFixed(2)})`);
 }
 
@@ -357,13 +360,11 @@ Python APIs, wrapped in a CLI envelope that adds `image`,
   "strategy": {
     "chess": {
       "ring": "canonical",
-      "descriptor_ring": "follow_detector",
-      "nms_radius": 2,
-      "min_cluster_size": 2,
       "refiner": { "center_of_mass": { "radius": 2 } }
     }
   },
   "threshold": { "absolute": 0.0 },
+  "detection": { "nms_radius": 2, "min_cluster_size": 2 },
   "multiscale": "single_scale",
   "upscale": "disabled",
   "orientation_method": "ring_fit",
@@ -387,7 +388,6 @@ Per-flag overrides (applied on top of the JSON):
 
 - `--threshold-absolute <v>` / `--threshold-relative <f>`
 - `--chess-ring canonical|broad`
-- `--descriptor-ring follow_detector|canonical|broad`
 - `--chess-refiner center_of_mass|forstner|saddle_point`
 - `--radon-refiner radon_peak|center_of_mass`
 - `--pyramid-levels <n>` (1 = single-scale)
