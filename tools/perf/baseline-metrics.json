@@ -1,0 +1,127 @@
+{
+  "note": "Machine-stamped reference snapshot of the gated bench medians. The LIVE regression gate (bench-gate.yml) does NOT read this file -- it compares the PR head against its own merge-base on one runner. This file is for human tracking and may feed the perf page (SITE-04). It is distinct from .github/pages/performance/data.json.",
+  "generated_utc": "2026-06-29T06:30:49+00:00",
+  "git_sha": "2c6daeb4f",
+  "toolchain": "nightly",
+  "features": [
+    "simd"
+  ],
+  "threshold_pct": 2.0,
+  "host": {
+    "cpu": "Apple M4 Pro",
+    "os": "Darwin 25.5.0",
+    "rustc": "rustc 1.97.0-nightly (9eb3be26b 2026-05-18)"
+  },
+  "benches": [
+    {
+      "id": "chess_response_kernel/256x256",
+      "median_ns": 65850.8,
+      "throughput": {
+        "kind": "elements",
+        "count": 65536,
+        "per_second": 995219622.8,
+        "unit": "elem/s"
+      }
+    },
+    {
+      "id": "chess_response_kernel/512x512",
+      "median_ns": 247875.4,
+      "throughput": {
+        "kind": "elements",
+        "count": 262144,
+        "per_second": 1057563540.8,
+        "unit": "elem/s"
+      }
+    },
+    {
+      "id": "chess_response_kernel/1024x1024",
+      "median_ns": 965376.1,
+      "throughput": {
+        "kind": "elements",
+        "count": 1048576,
+        "per_second": 1086183867.8,
+        "unit": "elem/s"
+      }
+    },
+    {
+      "id": "nms_scaling/radius_4",
+      "median_ns": 545709.0,
+      "throughput": {
+        "kind": "elements",
+        "count": 1048576,
+        "per_second": 1921492929.3,
+        "unit": "elem/s"
+      }
+    },
+    {
+      "id": "nms_scaling/radius_8",
+      "median_ns": 1262065.7,
+      "throughput": {
+        "kind": "elements",
+        "count": 1048576,
+        "per_second": 830841059.5,
+        "unit": "elem/s"
+      }
+    },
+    {
+      "id": "descriptor_fit/corners_64",
+      "median_ns": 243322.2,
+      "throughput": {
+        "kind": "elements",
+        "count": 64,
+        "per_second": 263025.7,
+        "unit": "elem/s"
+      }
+    },
+    {
+      "id": "descriptor_fit/corners_256",
+      "median_ns": 546980.6,
+      "throughput": {
+        "kind": "elements",
+        "count": 256,
+        "per_second": 468023.9,
+        "unit": "elem/s"
+      }
+    },
+    {
+      "id": "descriptor_fit/corners_1024",
+      "median_ns": 2331982.7,
+      "throughput": {
+        "kind": "elements",
+        "count": 1024,
+        "per_second": 439111.3,
+        "unit": "elem/s"
+      }
+    },
+    {
+      "id": "radon_response/640x480_up1",
+      "median_ns": 1763097.3,
+      "throughput": {
+        "kind": "elements",
+        "count": 307200,
+        "per_second": 174238820.4,
+        "unit": "elem/s"
+      }
+    },
+    {
+      "id": "radon_response/1280x720_up1",
+      "median_ns": 5501689.4,
+      "throughput": {
+        "kind": "elements",
+        "count": 921600,
+        "per_second": 167512183.8,
+        "unit": "elem/s"
+      }
+    },
+    {
+      "id": "pyramid_builders/box_image_pyramid/reuse_buffers/640x480",
+      "median_ns": 8215.4,
+      "throughput": {
+        "kind": "bytes",
+        "count": 307200,
+        "per_second": 37393066162.2,
+        "unit": "bytes/s"
+      }
+    }
+  ]
+}
