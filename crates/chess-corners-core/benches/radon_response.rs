@@ -17,11 +17,9 @@
 
 use chess_corners_core::unstable::ChessParams;
 use chess_corners_core::{chess_response_u8, radon_response_u8, RadonBuffers, RadonDetectorParams};
+use chess_corners_testutil::synth_chessboard;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use std::hint::black_box;
-
-mod common;
-use common::synth_chessboard;
 
 fn bench_radon_response(c: &mut Criterion) {
     // 1024² added for PERF-02 (1k² i64-vs-u32 SAT comparison); the

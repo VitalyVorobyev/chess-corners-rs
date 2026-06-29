@@ -16,36 +16,12 @@
 //!   silently (with a stderr note) if the file is missing.
 
 use chess_corners::{Detector, DetectorConfig};
+use chess_corners_testutil::synth_chessboard;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use image::ImageReader;
 use std::hint::black_box;
-use std::path::{Path, PathBuf};
 
-fn synth_chessboard(w: usize, h: usize) -> Vec<u8> {
-    let cell = (h.min(w) / 25).max(8) as i32;
-    let mut out = vec![0u8; w * h];
-    for y in 0..h {
-        for x in 0..w {
-            let cx = (x as i32) / cell;
-            let cy = (y as i32) / cell;
-            out[y * w + x] = if (cx + cy) & 1 == 0 { 40 } else { 215 };
-        }
-    }
-    out
-}
-
-fn load_test_image(name: &str) -> Option<(Vec<u8>, u32, u32)> {
-    let mut path: PathBuf = std::env::var_os("CARGO_MANIFEST_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(".").to_path_buf());
-    path.push("..");
-    path.push("..");
-    path.push("testimages");
-    path.push(name);
-    let img = ImageReader::open(&path).ok()?.decode().ok()?.to_luma8();
-    let (w, h) = (img.width(), img.height());
-    Some((img.into_raw(), w, h))
-}
+mod common;
+use common::load_test_image;
 
 fn bench_radon_pipeline_synth(c: &mut Criterion) {
     let dims: &[(usize, usize)] = &[(640, 480), (1280, 720), (1920, 1080)];

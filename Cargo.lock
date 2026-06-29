@@ -370,6 +370,7 @@ dependencies = [
  "box-image-pyramid",
  "chess-corners-core",
  "chess-corners-ml",
+ "chess-corners-testutil",
  "clap",
  "criterion",
  "image",
@@ -393,6 +394,7 @@ dependencies = [
 name = "chess-corners-core"
 version = "0.11.2"
 dependencies = [
+ "chess-corners-testutil",
  "criterion",
  "image",
  "log",
@@ -424,6 +426,10 @@ dependencies = [
  "pyo3-build-config",
  "serde_json",
 ]
+
+[[package]]
+name = "chess-corners-testutil"
+version = "0.11.2"
 
 [[package]]
 name = "chess-corners-wasm"

@@ -46,6 +46,9 @@ rayon = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]
+# Path-only (no version) so it is stripped from the published manifest;
+# `chess-corners-testutil` is an unpublished workspace dev-utility.
+chess-corners-testutil = { path = "../chess-corners-testutil" }
 criterion.workspace = true
 image.workspace = true
 serde_json.workspace = true

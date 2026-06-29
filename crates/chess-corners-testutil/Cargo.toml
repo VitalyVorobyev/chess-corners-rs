@@ -1,0 +1,19 @@
+[package]
+name = "chess-corners-testutil"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "chess_corners_testutil"
+path = "src/lib.rs"
+
+# Intentionally dependency-free: this is a dev-only fixture crate pulled in
+# as a path `dev-dependency`. Keeping it free of `chess-corners-core` (and
+# everything else) means it never enters a published crate's dependency
+# tree and can be shared by every crate's tests, benches, and examples
+# without introducing dependency cycles.
+[dependencies]

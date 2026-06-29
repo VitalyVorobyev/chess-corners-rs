@@ -18,6 +18,7 @@ use chess_corners_core::{
     chess_response_u8, detect_corners_from_response, detect_peaks_from_radon, radon_response_u8,
     RadonBuffers, RadonDetectorParams,
 };
+use chess_corners_testutil::{aa_chessboard, expected_corner_count, gaussian_blur};
 
 /// Render a chessboard, then simulate a hostile capture: heavy
 /// Gaussian blur and intensity-compressed values. Tuned so the ChESS
@@ -35,97 +36,6 @@ fn hostile_chessboard(size: usize, cell: usize, offset: (f32, f32)) -> Vec<u8> {
     // grey at every position.
     gaussian_blur(&mut blurred, size, 2.5);
     blurred
-}
-
-fn aa_chessboard(size: usize, cell: usize, offset: (f32, f32), dark: u8, bright: u8) -> Vec<u8> {
-    const SUPER: usize = 8;
-    let (ox, oy) = offset;
-    let c = cell as f32;
-    let dark_f = dark as f32;
-    let bright_f = bright as f32;
-    let inv_super2 = 1.0 / (SUPER * SUPER) as f32;
-    let mut img = vec![0u8; size * size];
-    for y in 0..size {
-        for x in 0..size {
-            let mut acc = 0.0f32;
-            for sy in 0..SUPER {
-                let yf = y as f32 + (sy as f32 + 0.5) / SUPER as f32 - 0.5;
-                let cy = ((yf - oy) / c).floor() as i32;
-                for sx in 0..SUPER {
-                    let xf = x as f32 + (sx as f32 + 0.5) / SUPER as f32 - 0.5;
-                    let cx = ((xf - ox) / c).floor() as i32;
-                    let dark_cell = (cx + cy).rem_euclid(2) == 0;
-                    acc += if dark_cell { dark_f } else { bright_f };
-                }
-            }
-            img[y * size + x] = (acc * inv_super2).round().clamp(0.0, 255.0) as u8;
-        }
-    }
-    img
-}
-
-fn gaussian_blur(img: &mut [u8], size: usize, sigma: f32) {
-    let radius = ((3.0 * sigma).ceil() as usize).max(1);
-    let klen = 2 * radius + 1;
-    let mut kernel = vec![0f32; klen];
-    let mut sum = 0f32;
-    for (i, k) in kernel.iter_mut().enumerate() {
-        let x = i as f32 - radius as f32;
-        *k = (-(x * x) / (2.0 * sigma * sigma)).exp();
-        sum += *k;
-    }
-    for k in kernel.iter_mut() {
-        *k /= sum;
-    }
-    let mut tmp = vec![0f32; size * size];
-    for y in 0..size {
-        for x in 0..size {
-            let mut acc = 0f32;
-            for (ki, &k) in kernel.iter().enumerate() {
-                let sx = (x as i32 + ki as i32 - radius as i32).clamp(0, size as i32 - 1) as usize;
-                acc += img[y * size + sx] as f32 * k;
-            }
-            tmp[y * size + x] = acc;
-        }
-    }
-    for y in 0..size {
-        for x in 0..size {
-            let mut acc = 0f32;
-            for (ki, &k) in kernel.iter().enumerate() {
-                let sy = (y as i32 + ki as i32 - radius as i32).clamp(0, size as i32 - 1) as usize;
-                acc += tmp[sy * size + x] * k;
-            }
-            img[y * size + x] = acc.round().clamp(0.0, 255.0) as u8;
-        }
-    }
-}
-
-/// Count the ground-truth corners visible in an `size × size` image
-/// given a chessboard with `cell` cells and `offset` origin. A
-/// "visible" corner sits on an `(offset.x + k·cell, offset.y +
-/// m·cell)` junction strictly inside a `border`-wide interior.
-fn expected_corner_count(size: usize, cell: usize, offset: (f32, f32), border: usize) -> usize {
-    let lo = border as f32;
-    let hi = (size - border) as f32;
-    let (ox, oy) = offset;
-    let c = cell as f32;
-    let mut n = 0;
-    let mut k = -((size as f32) / c).ceil() as i32;
-    while (k as f32) * c + ox < hi {
-        let kx = ox + (k as f32) * c;
-        if kx >= lo && kx <= hi {
-            let mut m = -((size as f32) / c).ceil() as i32;
-            while (m as f32) * c + oy < hi {
-                let my = oy + (m as f32) * c;
-                if my >= lo && my <= hi {
-                    n += 1;
-                }
-                m += 1;
-            }
-        }
-        k += 1;
-    }
-    n
 }
 
 #[test]

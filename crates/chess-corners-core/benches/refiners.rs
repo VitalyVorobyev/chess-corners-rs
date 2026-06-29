@@ -14,34 +14,9 @@ use chess_corners_core::{
     chess_response_u8, detect_corners_from_response, CenterOfMassConfig, CornerRefiner,
     ForstnerConfig, ImageView, RefineContext, Refiner, ResponseMap, SaddlePointConfig,
 };
+use chess_corners_testutil::aa_chessboard;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;
-
-const SUPER: usize = 8;
-
-fn synthetic_chessboard_aa(size: usize, cell: usize, offset: (f32, f32)) -> Vec<u8> {
-    let (ox, oy) = offset;
-    let c = cell as f32;
-    let inv_super2 = 1.0 / (SUPER * SUPER) as f32;
-    let mut img = vec![0u8; size * size];
-    for y in 0..size {
-        for x in 0..size {
-            let mut acc = 0.0f32;
-            for sy in 0..SUPER {
-                let yf = y as f32 + (sy as f32 + 0.5) / SUPER as f32 - 0.5;
-                let cy = ((yf - oy) / c).floor() as i32;
-                for sx in 0..SUPER {
-                    let xf = x as f32 + (sx as f32 + 0.5) / SUPER as f32 - 0.5;
-                    let cx = ((xf - ox) / c).floor() as i32;
-                    let dark_cell = (cx + cy).rem_euclid(2) == 0;
-                    acc += if dark_cell { 30.0 } else { 230.0 };
-                }
-            }
-            img[y * size + x] = (acc * inv_super2).round().clamp(0.0, 255.0) as u8;
-        }
-    }
-    img
-}
 
 /// Holds the frozen scene used by every refiner: image, response, seeds.
 struct Scene {
@@ -52,10 +27,12 @@ struct Scene {
 }
 
 fn build_scene(side: usize, cell: usize) -> Scene {
-    let img = synthetic_chessboard_aa(
+    let img = aa_chessboard(
         side,
         cell,
         (cell as f32 / 2.0 + 0.31, cell as f32 / 2.0 + 0.47),
+        30,
+        230,
     );
     let params = ChessParams::default();
     let resp = chess_response_u8(&img, side, side, &params);

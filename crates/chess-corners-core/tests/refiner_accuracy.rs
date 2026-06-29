@@ -16,42 +16,7 @@ use chess_corners_core::{
     CornerRefiner, ForstnerConfig, ForstnerRefiner, ImageView, RefineContext, RefineStatus,
     SaddlePointConfig, SaddlePointRefiner,
 };
-
-/// Anti-aliased synthetic chessboard renderer. Shares the supersampling
-/// strategy used in `refine_radon.rs` tests but kept separate here so
-/// the integration test stays self-contained.
-fn synthetic_chessboard_aa(
-    size: usize,
-    cell: usize,
-    offset: (f32, f32),
-    dark: u8,
-    bright: u8,
-) -> Vec<u8> {
-    const SUPER: usize = 8;
-    let (ox, oy) = offset;
-    let c = cell as f32;
-    let dark_f = dark as f32;
-    let bright_f = bright as f32;
-    let inv_super2 = 1.0 / (SUPER * SUPER) as f32;
-    let mut img = vec![0u8; size * size];
-    for y in 0..size {
-        for x in 0..size {
-            let mut acc = 0.0f32;
-            for sy in 0..SUPER {
-                let yf = y as f32 + (sy as f32 + 0.5) / SUPER as f32 - 0.5;
-                let cy = ((yf - oy) / c).floor() as i32;
-                for sx in 0..SUPER {
-                    let xf = x as f32 + (sx as f32 + 0.5) / SUPER as f32 - 0.5;
-                    let cx = ((xf - ox) / c).floor() as i32;
-                    let dark_cell = (cx + cy).rem_euclid(2) == 0;
-                    acc += if dark_cell { dark_f } else { bright_f };
-                }
-            }
-            img[y * size + x] = (acc * inv_super2).round().clamp(0.0, 255.0) as u8;
-        }
-    }
-    img
-}
+use chess_corners_testutil::aa_chessboard;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct Stats {
@@ -115,7 +80,7 @@ fn clean_subpixel_sweep_mean_accuracy() {
         for ky in 0..N {
             let ox = CENTER + kx as f32 / N as f32;
             let oy = CENTER + ky as f32 / N as f32;
-            let img = synthetic_chessboard_aa(SIZE, CELL, (ox, oy), 30, 230);
+            let img = aa_chessboard(SIZE, CELL, (ox, oy), 30, 230);
             let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
             let seed = [ox.round(), oy.round()];
             s_saddle.push(refine_err(&mut saddle, view, seed, (ox, oy)));
