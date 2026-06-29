@@ -67,6 +67,14 @@ jobs:
         run: cargo install critcmp --version 0.1.8 --locked
 
       - name: Run gate (PR head vs merge-base, same runner)
+        # ADVISORY on shared GitHub-hosted runners: observed ±13% run-to-run
+        # variance on identical code (e.g. radon_response/640x480_up1 at
+        # −13.65%, chess_response_kernel/256x256 at +2.37% same-runner no-change
+        # runs) makes a hard 2% block permanently unreliable on free runners.
+        # The gate reports drift but does NOT block the PR until this job is
+        # moved to a dedicated or self-hosted runner — at that point drop
+        # continue-on-error to make it blocking.
+        continue-on-error: true
         run: |
           set -euo pipefail
 

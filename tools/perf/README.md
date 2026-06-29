@@ -1,8 +1,16 @@
 # Benchmark-regression gate (`tools/perf/`)
 
-A CI gate that fails a PR when a curated subset of the workspace's Criterion
-microbenches regresses more than a budget (default **2%**), plus a committed
-reference snapshot of those benches.
+A CI gate that reports drift against a budget (default **2%**) for a curated
+subset of the workspace's Criterion microbenches, plus a committed reference
+snapshot of those benches.
+
+> **Advisory on shared CI runners.** GitHub-hosted runners exhibit ±13%
+> run-to-run variance on identical code (observed: `radon_response/640x480_up1`
+> at −13.65%, `chess_response_kernel/256x256` at +2.37% on a same-runner no-change
+> run), which precludes a hard 2% block. The gate currently reports drift without
+> blocking the PR. To make it blocking, move the CI job to a dedicated or
+> self-hosted runner and drop `continue-on-error` in
+> `.github/workflows/bench-gate.yml`.
 
 | File | Role |
 | --- | --- |
