@@ -112,7 +112,6 @@ def main() -> None:
                     "image_upsample": 2,
                     "response_blur_radius": 1,
                     "peak_fit": "gaussian",
-                    "refiner": {"radon_peak": {}},
                 }
             }
             radon_cfg["threshold"] = {"relative": 0.01}

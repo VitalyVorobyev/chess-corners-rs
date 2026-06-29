@@ -73,6 +73,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   well-formed corners while suppressing that noise. Useful values run
   roughly `30`–`300` depending on image contrast; set `threshold`
   explicitly to recover the previous behaviour.
+- **Breaking:** the Radon detector's default acceptance threshold is now
+  `0.30` (was `0.01`). It is read as a fraction of the per-frame maximum
+  response; raising the default eliminates low-response texture hits and
+  keeps a clean board-corner set. To restore the previous permissive
+  behaviour, set the threshold explicitly — e.g.
+  `DetectorConfig::radon().with_threshold(0.01)`.
 - **Breaking:** `CornerDescriptor.axes` is now `Option<[AxisEstimate; 2]>`,
   `None` when the orientation fit was skipped. The Python `Detections`
   object then reports `angles` / `sigmas` as `None`; the WASM
@@ -114,6 +120,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two keys out of `strategy.{chess,radon}` into a top-level `detection`
   object. Detection results are unchanged.
 - Bump `numpy` to `0.29` and `pyo3` to `0.29`
+
+### Migration to 1.0.0
+
+Quick reference when upgrading from 0.11.2:
+
+- **Threshold**: replace `Threshold::Absolute(v)` with `v` and
+  `Threshold::Relative(f)` with `f`; the plain `f32` is now the only
+  form. Note raised defaults: ChESS `0` → `30`, Radon `0.01` → `0.30`.
+- **Detection knobs**: move `nms_radius` and `min_cluster_size` from
+  `ChessConfig` / `RadonConfig` into `DetectorConfig::with_detection(…)`.
+- **Removed no-ops**: delete `RadonConfig.refiner`, `ChessConfig.descriptor_ring`,
+  and any use of `RadonRefiner`, `RadonPeakConfig`, `RadonPeakRefiner`, or
+  `RefinerKind::RadonPeak`.
+- **`CornerDescriptor`**: remove reads of `.contrast` and `.fit_rms`; use
+  `.response` for detection strength and `.axes[i].sigma` for per-axis
+  confidence. Handle `axes: Option<…>` — it is `None` when orientation is
+  disabled.
+- **Moved internals**: `ChessParams` and `RefinerKind` are now in
+  `chess_corners_core::unstable` / `chess_corners::low_level`; they remain
+  accessible but carry no semver guarantee.
+- **Sealed traits**: `DenseDetector` and `CornerRefiner` can no longer be
+  implemented outside the crate; select a backend through `RefinerKind`.
+- **Python**: `detect()` now returns a `Detections` object; replace
+  column-index access (`arr[:, 2]`) with named attributes (`det.response`,
+  `det.xy`, `det.angles`, `det.sigmas`).
 
 ## Past releases
 

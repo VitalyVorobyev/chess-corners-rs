@@ -1,0 +1,86 @@
+{
+  "_comment": [
+    "Single source of truth for the benchmark-regression gate (PERF-08) and the",
+    "committed baseline snapshot (PERF-09). Consumed by tools/perf/gate.py and",
+    "the .github/workflows/bench-gate.yml workflow.",
+    "",
+    "Only a CURATED, deterministic, low-variance subset of the 10 Criterion",
+    "benches is gated. The subset was chosen from measured same-runner",
+    "head-vs-head (no-op) deltas: every id below moved < 1.5% across two",
+    "back-to-back runs, so a 2% gate does not false-fail on them. Sub-millisecond",
+    "and allocation-bound microbenches were EXCLUDED because their scheduling /",
+    "allocator jitter exceeds 2% even with same-runner comparison:",
+    "  - nms_scaling/radius_1, radius_2  (<0.4 ms, +3..10% no-op jitter)",
+    "  - pyramid .../fresh_buffers/*      (per-iter alloc, +11% no-op jitter)",
+    "  - radon_response/*_up2             (2x internal upsample, ~8% dispersion)",
+    "  - orientation_fit/*                (single-corner, ns..us scale)",
+    "  - chess_response/* (radon-target secondary group; duplicate of",
+    "                      chess_response_kernel and noisy on small frames)",
+    "Whole targets excluded as too coarse/variable for a 2% gate: refiners,",
+    "upscale, chess_pipeline, radon_pipeline (end-to-end), plus the third-party",
+    "pyramid comparison builders (fast_image_resize / resize / image) which are",
+    "not our code. The committed snapshot tracks the SAME gated ids.",
+    "",
+    "Threshold is enforced on Criterion's MEDIAN point estimate (the number",
+    "critcmp reports). True p95 would require parsing target/criterion/*/new/",
+    "sample.json; median is the pragmatic, standard mechanism. Override the",
+    "budget per-run with REGRESSION_THRESHOLD_PCT."
+  ],
+  "threshold_pct": 2.0,
+  "toolchain": "nightly",
+  "warm_up_time_s": 2,
+  "measurement_time_s": 6,
+  "targets": [
+    {
+      "crate": "chess-corners-core",
+      "bench": "chess_response",
+      "features": ["simd"],
+      "filter": "chess_response_kernel",
+      "ids": [
+        "chess_response_kernel/256x256",
+        "chess_response_kernel/512x512",
+        "chess_response_kernel/1024x1024"
+      ]
+    },
+    {
+      "crate": "chess-corners-core",
+      "bench": "nms_scaling",
+      "features": ["simd"],
+      "filter": "nms_scaling/radius_(4|8)",
+      "ids": [
+        "nms_scaling/radius_4",
+        "nms_scaling/radius_8"
+      ]
+    },
+    {
+      "crate": "chess-corners-core",
+      "bench": "descriptor_fit",
+      "features": ["simd"],
+      "filter": "descriptor_fit/corners_",
+      "ids": [
+        "descriptor_fit/corners_64",
+        "descriptor_fit/corners_256",
+        "descriptor_fit/corners_1024"
+      ]
+    },
+    {
+      "crate": "chess-corners-core",
+      "bench": "radon_response",
+      "features": ["simd"],
+      "filter": "radon_response/(640x480|1280x720)_up1",
+      "ids": [
+        "radon_response/640x480_up1",
+        "radon_response/1280x720_up1"
+      ]
+    },
+    {
+      "crate": "box-image-pyramid",
+      "bench": "pyramid_perf",
+      "features": [],
+      "filter": "box_image_pyramid/reuse_buffers/640x480",
+      "ids": [
+        "pyramid_builders/box_image_pyramid/reuse_buffers/640x480"
+      ]
+    }
+  ]
+}

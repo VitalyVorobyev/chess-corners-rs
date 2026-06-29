@@ -18,8 +18,8 @@
 //! sweep in `refiner_benchmark.rs`.
 
 use chess_corners::{CornerDescriptor, Detector, DetectorConfig};
+use chess_corners_testutil::aa_chessboard;
 
-const SUPER: usize = 8;
 const MATCH_THRESHOLD_PX: f32 = 1.5;
 
 /// Per-detector accuracy bounds. Picked from a clean run on the
@@ -29,30 +29,6 @@ struct Bounds {
     min_recall: f32,
     min_precision: f32,
     max_p95_err: f32,
-}
-
-fn synthetic_chessboard(size: usize, cell: usize, offset: (f32, f32)) -> Vec<u8> {
-    let (ox, oy) = offset;
-    let c = cell as f32;
-    let inv_super2 = 1.0 / (SUPER * SUPER) as f32;
-    let mut img = vec![0u8; size * size];
-    for y in 0..size {
-        for x in 0..size {
-            let mut acc = 0.0f32;
-            for sy in 0..SUPER {
-                let yf = y as f32 + (sy as f32 + 0.5) / SUPER as f32 - 0.5;
-                let cy = ((yf - oy) / c).floor() as i32;
-                for sx in 0..SUPER {
-                    let xf = x as f32 + (sx as f32 + 0.5) / SUPER as f32 - 0.5;
-                    let cx = ((xf - ox) / c).floor() as i32;
-                    let dark_cell = (cx + cy).rem_euclid(2) == 0;
-                    acc += if dark_cell { 30.0 } else { 230.0 };
-                }
-            }
-            img[y * size + x] = (acc * inv_super2).round().clamp(0.0, 255.0) as u8;
-        }
-    }
-    img
 }
 
 fn ground_truth_corners(size: usize, cell: usize, offset: (f32, f32)) -> Vec<(f32, f32)> {
@@ -201,7 +177,7 @@ fn chess_single_scale_meets_accuracy_floor() {
     const SIDE: usize = 256;
     const CELL: usize = 24;
     let off = (CELL as f32 / 2.0 + 0.31, CELL as f32 / 2.0 + 0.47);
-    let img = synthetic_chessboard(SIDE, CELL, off);
+    let img = aa_chessboard(SIDE, CELL, off, 30, 230);
     let gt = ground_truth_corners(SIDE, CELL, off);
     let cfg = DetectorConfig::chess();
     let bounds = Bounds {
@@ -217,7 +193,7 @@ fn chess_multiscale_meets_accuracy_floor() {
     const SIDE: usize = 256;
     const CELL: usize = 24;
     let off = (CELL as f32 / 2.0 + 0.31, CELL as f32 / 2.0 + 0.47);
-    let img = synthetic_chessboard(SIDE, CELL, off);
+    let img = aa_chessboard(SIDE, CELL, off, 30, 230);
     let gt = ground_truth_corners(SIDE, CELL, off);
     let cfg = DetectorConfig::chess_multiscale();
     let bounds = Bounds {
@@ -233,7 +209,7 @@ fn radon_meets_accuracy_floor() {
     const SIDE: usize = 256;
     const CELL: usize = 24;
     let off = (CELL as f32 / 2.0 + 0.31, CELL as f32 / 2.0 + 0.47);
-    let img = synthetic_chessboard(SIDE, CELL, off);
+    let img = aa_chessboard(SIDE, CELL, off, 30, 230);
     let gt = ground_truth_corners(SIDE, CELL, off);
     let cfg = DetectorConfig::radon();
     let bounds = Bounds {

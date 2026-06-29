@@ -25,38 +25,10 @@ pub use response::{radon_response_u8, RadonBuffers, RadonDetectorParams, RadonRe
 
 #[cfg(test)]
 pub(super) mod test_fixtures {
-    /// Anti-aliased synthetic chessboard renderer shared between
-    /// `response.rs` and `detect.rs` test modules.
-    pub(crate) fn synthetic_chessboard_aa(
-        size: usize,
-        cell: usize,
-        offset: (f32, f32),
-        dark: u8,
-        bright: u8,
-    ) -> Vec<u8> {
-        const SUPER: usize = 8;
-        let (ox, oy) = offset;
-        let c = cell as f32;
-        let dark_f = dark as f32;
-        let bright_f = bright as f32;
-        let inv_super2 = 1.0 / (SUPER * SUPER) as f32;
-        let mut img = vec![0u8; size * size];
-        for y in 0..size {
-            for x in 0..size {
-                let mut acc = 0.0f32;
-                for sy in 0..SUPER {
-                    let yf = y as f32 + (sy as f32 + 0.5) / SUPER as f32 - 0.5;
-                    let cy = ((yf - oy) / c).floor() as i32;
-                    for sx in 0..SUPER {
-                        let xf = x as f32 + (sx as f32 + 0.5) / SUPER as f32 - 0.5;
-                        let cx = ((xf - ox) / c).floor() as i32;
-                        let dark_cell = (cx + cy).rem_euclid(2) == 0;
-                        acc += if dark_cell { dark_f } else { bright_f };
-                    }
-                }
-                img[y * size + x] = (acc * inv_super2).round().clamp(0.0, 255.0) as u8;
-            }
-        }
-        img
-    }
+    /// Anti-aliased synthetic chessboard renderer shared between the
+    /// `response.rs` and `detect.rs` test modules. Re-exported from the
+    /// workspace `chess-corners-testutil` fixtures so the anti-aliased board
+    /// has a single implementation (SOLID-03); the local alias keeps the
+    /// `test_fixtures::synthetic_chessboard_aa` path stable for callers.
+    pub(crate) use chess_corners_testutil::aa_chessboard as synthetic_chessboard_aa;
 }

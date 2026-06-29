@@ -19,8 +19,8 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | PERF-05 | P2 | done | M2 | — | Bench NMS scaling (`nms_scaling.rs`) r=1/2/4/8 @1024²: 766→1646 µs. Sub-quadratic (64× area = 2.15× time); O(W·H) scan dominates. |
 | PERF-06 | P1 | done | M2 | — | Allocation audit: inner loops allocation-free (RadonPeak scratch reused; response kernels use reused buffers). Multiscale loop allocates 2 small `Vec<Corner>`/seed (`multiscale.rs:358,371`) but response-patch dominates — keep; optional `*_into` is PERF-10. |
 | PERF-07 | P1 | done | M2 | — | Flamegraph/profiling automation already exists: `tools/profile.sh` (cargo-flamegraph + samply over `profile_target`). Residual: document in book Part VIII (→ DOCS-03). |
-| PERF-08 | P1 | todo | M2 | PERF-01..05 | CI bench gate: baseline compare, fail on >2% p95 regression |
-| PERF-09 | P2 | todo | M2 | PERF-08 | Capture baseline `metrics.json` (feeds SITE-04) |
+| PERF-08 | P1 | done | M2 | PERF-01..05 | **Done.** CI bench-regression gate (`tools/perf/{gate.py,gated-benches.json}` + `.github/workflows/bench-gate.yml`): same-runner PR-head-vs-merge-base `critcmp` (cancels runner noise), nightly+simd, 11 curated low-variance ids, fail on >2% median drift off critcmp full-precision JSON. Validated: no-op PASS + scalar-vs-simd injection → exit 1. Watch: `radon_response/1280x720_up1` is first to drop/widen if a runner proves flaky. |
+| PERF-09 | P2 | done | M2 | PERF-08 | **Done.** Committed `tools/perf/baseline-metrics.json` (gated-bench medians + throughput, host-stamped) — a reference snapshot distinct from the perf-page `data.json`; the live gate is head-vs-base, not vs this file. |
 | PERF-10 | P2 | done | M2 | PERF-01 | Done (lever a): vectorized ChESS SIMD μₗ/write-back tail — SIMD **4×→~7×** (1074 Mpix/s @1024²), **bit-identical** output (verified, all equivalence/snapshot/accuracy-guard tests green). Remaining optional levers → PERF-13. |
 | PERF-12 | P2 | done | M2 | — | Added soft-edge + warped fixtures (`benches/common`). Confirmed soft corner rel_rms≈0.01 → RingFit fast path (2.60→0.73 µs) + DiskFit lazy-gate short-circuit (123→0.73 µs, ~169×); warped (~61° sep) → DiskFit full disk 158 µs. DiskFit is not a flat 47× tax. |
 | PERF-13 | P3 | todo | — | PERF-12 | Optional further optimizations (only if profiling on PERF-12 fixtures justifies): Radon angular sampling @upsample=2; NMS O(W·H) scan; rayon 2D tiling for ChESS response; SIMD prefix-sum for Radon SAT. |
@@ -36,8 +36,8 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | API-05 | P1 | done | M3 | — | `.pyi` already complete (`detect`/`config`/`apply_config`/`radon_heatmap`) and factory names already match Rust (`chess`/`chess_multiscale`/`radon`/`radon_multiscale`; the RFC's `single_scale`/`multiscale_preset` "drift" was stale — `single_scale` is the faithful `MultiscaleConfig::SingleScale` ctor). Added a stub-vs-runtime parity guard test (pytest 82→83). |
 | API-06 | P1 | done | M3 | — | Sealed `DenseDetector`/`CornerRefiner` (private `Sealed` supertrait; removed the facade's only external impl, a no-op ML-seed refiner provably == a direct `detect_peaks_*` call); added `#[non_exhaustive]` to `CenterOfMassConfig`/`ForstnerConfig`/`SaddlePointConfig`/`RingOffsets`/`ChessBuffers`; documented MSRV (stable ≥ 1.88, `simd` = nightly). All gates + maturin/pytest(82)/wasm-pack green. |
 | API-07 | P2 | done | M3 | API-06 | Documented (no behavior change): unknown/future `#[non_exhaustive]` core variants map to each enum's documented default in the core→binding direction (forward-compat); user input is already strict (Python `reject_unknown_keys`; WASM typed getter/setter surface has no free-form keys). WASM discriminants were already explicit (`= 0/1/2`); added a `cargo test` pinning all four `#[wasm_bindgen]` enums (28→29) so reordering is caught. |
-| API-08 | P0 | todo | M3 | API-01..07 | Add `cargo-semver-checks` to CI with a 1.0 baseline |
-| API-09 | P0 | todo | M3 | API-08 | Tag `1.0.0` with migration notes |
+| API-08 | P0 | done | M3 | API-01..07 | **Done.** `.github/workflows/semver-checks.yml` vs `v0.11.2`, advisory (`continue-on-error`) until 1.0.0 is the baseline — flips to blocking at API-09; auto-skips publish=false crates. Confirmed the only reported breaks are the intended API-01..07 + RADON-01/02 + SOLID-04 changes. |
+| API-09 | P0 | in-progress | M3 | API-08 | **Prep done.** 1.0.0 migration notes landed in CHANGELOG `[Unreleased]`. Remaining (release step, post-merge, gated on M4 deploy + M5 vcpkg): bump 0.11.2→1.0.0, move `[Unreleased]`→`docs/changelog/1.0.0.md`, `git tag v1.0.0` + publish, flip semver-checks to blocking. |
 
 ## SITE — GitHub Pages  ·  M4 (dep M3)  ·  [design](design/site-architecture.md)
 
@@ -66,17 +66,17 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
-| SWEEP-01 | P2 | todo | M3 | — | Audit `.rs` doc comments + book + README + CHANGELOG for banned dev-history/internal refs (lineage names, "Phase N", origin notes) |
-| SWEEP-02 | P3 | todo | M3 | — | Audit non-doc code comments for outdated/internal references |
-| SWEEP-03 | P3 | todo | — | — | Fix `.claude/agents/*` "calib-targets-rs" mis-naming (copied from sibling; should read chess-corners-rs) |
+| SWEEP-01 | P2 | done | M3 | — | **Done.** Swept `.rs` doc comments + book + README for dev-history/lineage/origin + stale removed-entity refs. Fixes in `tools/book/plot_benchmark.py` (RadonPeak series; "ML (ONNX v4)"/"v3 ML proposal" lineage labels). Historical `docs/changelog/0.7–0.10` left intact (shipped-release fact). |
+| SWEEP-02 | P3 | done | M3 | — | **Done.** Fixed stale `tools/perf_bench.py` (removed `radon_peak` ref; file kept — referenced from `docs/design/`). Non-doc comment audit otherwise clean (legit "phase"/"baseline" word uses left). |
+| SWEEP-03 | P3 | done | — | — | **Done.** Fixed `.claude/agents/{deep,quick}-implementer.md` (26 "calib-targets"→"chess-corners" replacements + carried-over sibling-repo examples reworded); the real `calibration-target-detector` agent name preserved. |
 
 ## SOLID — DRY / cohesion cleanup  ·  continuous → M2
 
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
-| SOLID-01 | P2 | in-progress | M2 | — | Extract shared test utilities: `gaussian_blur` (dup ×5), bilinear patch extraction, synthetic chessboard, `ClassicRefiners` trait. Started: shared `benches/common/synth_chessboard` now used by `radon_response` + `descriptor_fit` (two duplicate generators removed). |
+| SOLID-01 | P2 | done | M2 | — | **Done.** New zero-dep `chess-corners-testutil` crate (publish=false, path dev-dep) homes the shared fixtures — AA board (was 8 copies), hard/soft/warped boards, `gaussian_blur` (×4), `add_gaussian_noise`, `expected_corner_count`; `ClassicRefiners` + new `RefineSampleSink` trait extracted. Byte-identical fixtures; net −1049 LOC. |
 | SOLID-02 | P3 | todo | — | — | Evaluate `Refiner` enum dispatch boilerplate (`refine/mod.rs`) — refactor or accept |
-| SOLID-03 | P3 | todo | M2 | SOLID-01 | Merge duplicate synthetic-chessboard generators into one fixture |
+| SOLID-03 | P3 | done | M2 | SOLID-01 | **Done (with SOLID-01).** Duplicate synthetic-chessboard generators merged into the single `chess-corners-testutil` fixture. |
 | SOLID-04 | P2 | done | — | **Done.** Collapsed the core dual `threshold_rel` / `threshold_abs` sentinel to one field per detector (ChESS absolute, Radon relative). |
 | SOLID-05 | P2 | done | — | **Done.** Split `detect/chess/detect.rs` (713→371) into `detect/neighbors.rs` (shared NMS helpers) + `detect/merge.rs`; split the ~2.4k-line Python and WASM `config.rs` into per-config-type modules. |
 
@@ -112,6 +112,7 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | PERF-11 | P2 | done | API-06, M5 | **Evaluated — keeping nightly `std::simd`.** A spike ported the ChESS kernel to both `wide` (stable, compile-time) and `pulp` (stable, runtime dispatch) and benchmarked them bit-exact vs scalar. Neither is a viable single replacement: on aarch64/NEON `wide` runs ~571 Mpix/s — a 1.9× regression vs the nightly `std::simd` path (1101) and slower than scalar autovec (745), since `wide` 1.5 has no first-class NEON for >128-bit types; `pulp` cannot express the pyramid `(a+b+c+d+2)>>2` bit-exactly (no runtime-width integer shift), forcing a non-bit-exact pyramid or the multi-backend maintenance we forbid. Decision: keep the nightly `std::simd` feature as the optional high-performance path; the stable scalar/autovec build is the **supported portable baseline** (correct, portable, adequate). No kernel change. |
 | RADON-01 | P3 | done | — | **Resolved: removed the no-op `RadonRefiner` config.** The Rust enum, `RadonConfig.refiner`, the Python/WASM `RadonRefiner` type, and the CLI `--radon-refiner` flag are gone; the perf-page Radon matrix no longer varies a refiner. Radon's subpixel stays its Gaussian peak fit. RADON-02 covers the now-orphaned internal `RadonPeak` machinery, left in place to keep this change atomic. |
 | RADON-02 | P3 | done | RADON-01 | **Done.** Removed `RefinerKind::RadonPeak`, `RadonPeakConfig`, `refine/radon_peak.rs`, the Python/WASM `RadonPeakConfig` classes, the C `CC_REFINER_RADON_PEAK` tag (header regenerated), the now-dead radon ray-direction constants, and all bench/test/doc references. Net ≈ −1.4k LOC. |
+| RADON-03 | P1 | done | — | **Done.** Recalibrated the Radon default `threshold_rel` 0.01→0.30 on `mid.png` (77 corners; plateau midpoint [0.26,0.36], mid 1021→76). Consolidated to one `RadonDetectorParams::DEFAULT_THRESHOLD_REL` const (3 literals → 1). Regenerated perf-page `data.json` + Radon overlays (wall texture now rejected). |
 
 ## Closed
 

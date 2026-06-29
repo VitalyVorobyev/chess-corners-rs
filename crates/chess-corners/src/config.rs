@@ -407,7 +407,7 @@ impl DetectorConfig {
     pub fn radon() -> Self {
         Self {
             strategy: DetectionStrategy::Radon(RadonConfig::default()),
-            threshold: 0.01,
+            threshold: RadonDetectorParams::DEFAULT_THRESHOLD_REL,
             detection: DetectionParams {
                 nms_radius: 4,
                 min_cluster_size: 2,
@@ -423,7 +423,7 @@ impl DetectorConfig {
     pub fn radon_multiscale() -> Self {
         Self {
             strategy: DetectionStrategy::Radon(RadonConfig::default()),
-            threshold: 0.01,
+            threshold: RadonDetectorParams::DEFAULT_THRESHOLD_REL,
             detection: DetectionParams {
                 nms_radius: 4,
                 min_cluster_size: 2,
@@ -686,7 +686,7 @@ mod tests {
         assert_eq!(radon.peak_fit, PeakFitMode::Gaussian);
         assert_eq!(cfg.detection.nms_radius, 4);
         assert_eq!(cfg.detection.min_cluster_size, 2);
-        assert_eq!(cfg.threshold, 0.01);
+        assert_eq!(cfg.threshold, RadonDetectorParams::DEFAULT_THRESHOLD_REL);
         assert_eq!(cfg.multiscale, MultiscaleConfig::SingleScale);
         assert!(cfg.coarse_to_fine_params().is_none());
 
@@ -695,14 +695,17 @@ mod tests {
         assert_eq!(radon_params.image_upsample, 2);
         assert_eq!(radon_params.nms_radius, 4);
         assert_eq!(radon_params.min_cluster_size, 2);
-        assert!((radon_params.threshold_rel - 0.01).abs() < f32::EPSILON);
+        assert!(
+            (radon_params.threshold_rel - RadonDetectorParams::DEFAULT_THRESHOLD_REL).abs()
+                < f32::EPSILON
+        );
     }
 
     #[test]
     fn radon_multiscale_preset_carries_pyramid_params() {
         let cfg = DetectorConfig::radon_multiscale();
         assert_strategy_radon(&cfg);
-        assert_eq!(cfg.threshold, 0.01);
+        assert_eq!(cfg.threshold, RadonDetectorParams::DEFAULT_THRESHOLD_REL);
         let MultiscaleConfig::Pyramid {
             levels,
             min_size,

@@ -11,7 +11,7 @@
 //!   DiskFit) across three fixtures that exercise each method's fast and
 //!   slow paths.
 //!
-//!   The hard 40/215 board ([`common::synth_chessboard`]) is the worst
+//!   The hard 40/215 board (`synth_chessboard`) is the worst
 //!   case: the two-axis `tanh` model cannot represent an instantaneous
 //!   step, so even a perfect corner fits with a large relative residual
 //!   (`rel_rms ≈ 0.47`, scale-invariant in cell size). That residual
@@ -21,13 +21,13 @@
 //!   disk cost — the `ringfit_corner`/`diskfit_corner` (90° crossing)
 //!   and `*_edge` (single straight edge) cases.
 //!
-//!   The anti-aliased board ([`common::synth_chessboard_soft`]) matches
+//!   The anti-aliased board (`synth_chessboard_soft`) matches
 //!   the model: a clean corner settles at `rel_rms ≈ 0.01`, so
 //!   `ringfit_soft_corner` reaches RingFit's fast 2nd-harmonic seed path
 //!   and `diskfit_soft_corner` short-circuits through the lazy gate to
 //!   that same ring fit.
 //!
-//!   The warped board ([`common::synth_chessboard_warped`]) skews the
+//!   The warped board (`synth_chessboard_warped`) skews the
 //!   corner to ~61° axis separation — outside the lazy-gate band — so
 //!   `diskfit_warped` runs the full disk estimator on its intended
 //!   projective-skew input.
@@ -36,10 +36,8 @@
 //! cargo bench -p chess-corners-core --bench descriptor_fit
 //! ```
 
-mod common;
-
 use chess_corners_core::{describe_corners, fit_axes_at_point, Corner, OrientationMethod};
-use common::{
+use chess_corners_testutil::{
     synth_chessboard, synth_chessboard_soft, synth_chessboard_warped, ORIENT_CORNER, ORIENT_DIM,
 };
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};

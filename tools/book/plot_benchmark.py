@@ -31,7 +31,6 @@ COLOURS: Dict[str, str] = {
     "CenterOfMass": "#1f77b4",
     "Forstner": "#ff7f0e",
     "SaddlePoint": "#2ca02c",
-    "RadonPeak": "#d62728",
     "ML": "#9467bd",
     "OpenCV_subpix": "#17becf",
 }
@@ -40,8 +39,7 @@ LABELS: Dict[str, str] = {
     "CenterOfMass": "CenterOfMass",
     "Forstner": "Förstner",
     "SaddlePoint": "SaddlePoint",
-    "RadonPeak": "RadonPeak",
-    "ML": "ML (ONNX v4)",
+    "ML": "ML (ONNX)",
     "OpenCV_subpix": "cv2.cornerSubPix",
 }
 
@@ -49,7 +47,6 @@ MARKERS: Dict[str, str] = {
     "CenterOfMass": "o",
     "Forstner": "s",
     "SaddlePoint": "^",
-    "RadonPeak": "D",
     "ML": "P",
     "OpenCV_subpix": "X",
 }
@@ -132,10 +129,9 @@ def plot_line_sweep(
     _setup_axes(ax, xlabel)
     if log_y:
         ax.set_yscale("log")
-    # Shaded 0.05–0.10 px "shipping band" — the target accuracy envelope
-    # from the v3 ML proposal. Combined with the log y-axis this
-    # anchors the eye on where the good refiners sit regardless of the
-    # failure cases' scale.
+    # Shaded 0.05–0.10 px "shipping band" — the target accuracy envelope.
+    # Combined with the log y-axis this anchors the eye on where the good
+    # refiners sit regardless of the failure cases' scale.
     ax.axhspan(0.05, 0.10, color="#bbbbbb", alpha=0.18, zorder=0)
     ax.axhline(0.1, linestyle="--", linewidth=0.8, color="#666", zorder=1)
     ax.text(

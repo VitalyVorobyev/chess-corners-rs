@@ -83,7 +83,7 @@ impl Default for RadonDetectorParams {
             image_upsample: 2,
             response_blur_radius: 1,
             peak_fit: PeakFitMode::Gaussian,
-            threshold_rel: 0.01,
+            threshold_rel: Self::DEFAULT_THRESHOLD_REL,
             nms_radius: 4,
             min_cluster_size: 2,
         }
@@ -97,6 +97,13 @@ impl Default for RadonDetectorParams {
 pub const MAX_IMAGE_UPSAMPLE: u32 = 2;
 
 impl RadonDetectorParams {
+    /// Default response threshold as a fraction of the per-frame
+    /// maximum response. The Radon `(max−min)²` response is dense near
+    /// zero, so the floor must sit well above the texture noise to keep
+    /// only well-formed corners; this value is calibrated on the public
+    /// reference images.
+    pub const DEFAULT_THRESHOLD_REL: f32 = 0.28;
+
     /// Clamp `image_upsample` into the supported set `{1, 2}`.
     /// Values outside that range are silently clamped — callers can
     /// detect truncation by comparing against

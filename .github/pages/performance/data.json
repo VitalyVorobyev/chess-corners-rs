@@ -2,21 +2,21 @@
   "meta": {
     "cpu": "Apple M4 Pro",
     "rustc": "1.97.0-nightly",
-    "git_sha": "b8972f0ac",
+    "git_sha": "399df16d5",
     "features": "simd",
     "threads": "single",
     "repeats": 60,
     "warmup": 8,
-    "generated": "2026-06-28",
+    "generated": "2026-06-29",
     "source": "scripts/gen-perf-data.sh",
-    "note": "Public testimages/ only. Each figure is the p50 over the measured iterations, decomposed into four stages: response (dense response map), detection (threshold + non-maximum suppression + cluster filter; for Radon this also runs the 3-point Gaussian peak fit, its only subpixel step), refinement (image-domain subpixel), and orientation (two-axis fit + descriptor assembly). total_ms is the sum of the four stage p50s; throughput is whole-pipeline megapixels per second. Per image we measure a matrix: ChESS over refiner {center_of_mass, forstner, saddle_point} x orientation {ring_fit, disk_fit, off}, and Radon over refiner {radon_peak, center_of_mass} x orientation {ring_fit, disk_fit, off}. The orientation=off rows isolate the per-corner orientation cost, which is the single largest stage on corner-dense frames. ChESS reads the threshold as an absolute response floor (default 30) and Radon as a fraction of the per-frame maximum (default 0.01), so Radon keeps far more candidates here and its corner counts (and orientation cost) are correspondingly larger; the two detectors' counts are not directly comparable. The Radon strategy's image-domain refinement is a no-op, so its refinement stage reads zero and the two Radon refiner rows are identical. Built with the simd feature, single-threaded.",
+    "note": "Public testimages/ only. Each figure is the p50 over the measured iterations, decomposed into four stages: response (dense response map), detection (threshold + non-maximum suppression + cluster filter; for Radon this also runs the 3-point Gaussian peak fit, its only subpixel step), refinement (image-domain subpixel), and orientation (two-axis fit + descriptor assembly). total_ms is the sum of the four stage p50s; throughput is whole-pipeline megapixels per second. Per image we measure a matrix: ChESS over refiner {center_of_mass, forstner, saddle_point} x orientation {ring_fit, disk_fit, off}, and Radon over orientation {ring_fit, disk_fit, off} (its subpixel is the built-in Gaussian peak fit, not a pluggable refiner). The orientation=off rows isolate the per-corner orientation cost, which is the single largest stage on corner-dense frames. ChESS reads the threshold as an absolute response floor (default 30) and Radon as a fraction of the per-frame maximum (default 0.28); the two response scores are defined on different scales, so the detectors' corner counts are not directly comparable. The Radon strategy's image-domain refinement is a no-op, so its refinement stage reads zero. Built with the simd feature, single-threaded.",
     "matrix_note": "Compare the orientation column across ring_fit / disk_fit / off to read the per-corner orientation cost, and across ChESS / Radon to compare detectors. Refiner and orientation method do not visibly move corners, so a single overlay per detector (default refiner + ring_fit) is shown."
   },
   "images": [
     {
       "label": "Marker board (small)",
       "file": "testimages/small.png",
-      "note": "A 0.39 MP marker board viewed obliquely, with the lower region out of focus. Blurred and out-of-board texture still clears the permissive thresholds, so the candidate set is large for both detectors and the per-corner orientation fit is a sizeable share of the cost; Radon's relative threshold keeps the most candidates here.",
+      "note": "A 0.39 MP marker board viewed obliquely, with the lower region out of focus. ChESS's absolute response floor still admits the blurred, out-of-board texture, so its candidate set is large and the per-corner orientation fit is a sizeable share of its cost; Radon's higher relative floor rejects most of that texture and keeps a much smaller set here.",
       "configs": [
         {
           "id": "chess__center_of_mass__ring_fit",
@@ -25,13 +25,13 @@
           "orientation": "ring_fit",
           "corner_count": 381,
           "stages": {
-            "detection": 0.5733,
-            "orientation": 1.2253,
-            "refinement": 0.0068,
-            "response": 0.5831
+            "detection": 0.1764,
+            "orientation": 1.2801,
+            "refinement": 0.0084,
+            "response": 0.5268
           },
-          "total_ms": 2.3885,
-          "throughput_mpix_s": 162.78
+          "total_ms": 1.9917,
+          "throughput_mpix_s": 195.21
         },
         {
           "id": "chess__center_of_mass__disk_fit",
@@ -40,13 +40,13 @@
           "orientation": "disk_fit",
           "corner_count": 381,
           "stages": {
-            "detection": 0.5099,
-            "orientation": 13.5627,
+            "detection": 0.1417,
+            "orientation": 14.9215,
             "refinement": 0.0068,
-            "response": 0.3615
+            "response": 0.3605
           },
-          "total_ms": 14.4409,
-          "throughput_mpix_s": 26.92
+          "total_ms": 15.4305,
+          "throughput_mpix_s": 25.2
         },
         {
           "id": "chess__center_of_mass__off",
@@ -55,13 +55,13 @@
           "orientation": "off",
           "corner_count": 381,
           "stages": {
-            "detection": 0.4808,
+            "detection": 0.1436,
             "orientation": 0.0003,
-            "refinement": 0.0068,
-            "response": 0.3579
+            "refinement": 0.0075,
+            "response": 0.3587
           },
-          "total_ms": 0.8458,
-          "throughput_mpix_s": 459.68
+          "total_ms": 0.5101,
+          "throughput_mpix_s": 762.2
         },
         {
           "id": "chess__forstner__ring_fit",
@@ -70,13 +70,13 @@
           "orientation": "ring_fit",
           "corner_count": 379,
           "stages": {
-            "detection": 0.4803,
-            "orientation": 1.2993,
-            "refinement": 0.0205,
-            "response": 0.3565
+            "detection": 0.1496,
+            "orientation": 1.3455,
+            "refinement": 0.0208,
+            "response": 0.3601
           },
-          "total_ms": 2.1566,
-          "throughput_mpix_s": 180.28
+          "total_ms": 1.876,
+          "throughput_mpix_s": 207.25
         },
         {
           "id": "chess__forstner__disk_fit",
@@ -85,13 +85,13 @@
           "orientation": "disk_fit",
           "corner_count": 379,
           "stages": {
-            "detection": 0.4852,
-            "orientation": 14.2503,
-            "refinement": 0.0204,
-            "response": 0.3608
+            "detection": 0.1659,
+            "orientation": 16.2447,
+            "refinement": 0.0226,
+            "response": 0.3445
           },
-          "total_ms": 15.1167,
-          "throughput_mpix_s": 25.72
+          "total_ms": 16.7777,
+          "throughput_mpix_s": 23.17
         },
         {
           "id": "chess__forstner__off",
@@ -100,13 +100,13 @@
           "orientation": "off",
           "corner_count": 379,
           "stages": {
-            "detection": 0.4922,
-            "orientation": 0.0002,
-            "refinement": 0.0204,
-            "response": 0.3525
+            "detection": 0.1739,
+            "orientation": 0.0003,
+            "refinement": 0.0227,
+            "response": 0.3663
           },
-          "total_ms": 0.8653,
-          "throughput_mpix_s": 449.32
+          "total_ms": 0.5632,
+          "throughput_mpix_s": 690.34
         },
         {
           "id": "chess__saddle_point__ring_fit",
@@ -115,13 +115,13 @@
           "orientation": "ring_fit",
           "corner_count": 182,
           "stages": {
-            "detection": 0.5086,
-            "orientation": 0.456,
-            "refinement": 0.0478,
-            "response": 0.3545
+            "detection": 0.15,
+            "orientation": 0.4768,
+            "refinement": 0.053,
+            "response": 0.3653
           },
-          "total_ms": 1.3669,
-          "throughput_mpix_s": 284.44
+          "total_ms": 1.0451,
+          "throughput_mpix_s": 372.02
         },
         {
           "id": "chess__saddle_point__disk_fit",
@@ -130,13 +130,13 @@
           "orientation": "disk_fit",
           "corner_count": 182,
           "stages": {
-            "detection": 0.4927,
-            "orientation": 11.9575,
-            "refinement": 0.048,
-            "response": 0.3418
+            "detection": 0.1449,
+            "orientation": 13.1747,
+            "refinement": 0.053,
+            "response": 0.3628
           },
-          "total_ms": 12.84,
-          "throughput_mpix_s": 30.28
+          "total_ms": 13.7354,
+          "throughput_mpix_s": 28.31
         },
         {
           "id": "chess__saddle_point__off",
@@ -145,103 +145,58 @@
           "orientation": "off",
           "corner_count": 182,
           "stages": {
-            "detection": 0.492,
-            "orientation": 0.0002,
-            "refinement": 0.0498,
-            "response": 0.3467
+            "detection": 0.148,
+            "orientation": 0.0001,
+            "refinement": 0.0526,
+            "response": 0.3572
           },
-          "total_ms": 0.8887,
-          "throughput_mpix_s": 437.49
+          "total_ms": 0.5579,
+          "throughput_mpix_s": 696.9
         },
         {
-          "id": "radon__radon_peak__ring_fit",
+          "id": "radon__gaussian_peak__ring_fit",
           "detector": "radon",
-          "refiner": "radon_peak",
+          "refiner": "gaussian_peak",
           "orientation": "ring_fit",
-          "corner_count": 4542,
+          "corner_count": 75,
           "stages": {
-            "detection": 6.7553,
-            "orientation": 18.8885,
+            "detection": 1.2525,
+            "orientation": 0.1746,
             "refinement": 0.0,
-            "response": 9.6381
+            "response": 10.3013
           },
-          "total_ms": 35.2819,
-          "throughput_mpix_s": 11.02
+          "total_ms": 11.7284,
+          "throughput_mpix_s": 33.15
         },
         {
-          "id": "radon__radon_peak__disk_fit",
+          "id": "radon__gaussian_peak__disk_fit",
           "detector": "radon",
-          "refiner": "radon_peak",
+          "refiner": "gaussian_peak",
           "orientation": "disk_fit",
-          "corner_count": 4542,
+          "corner_count": 75,
           "stages": {
-            "detection": 6.8467,
-            "orientation": 31.9108,
+            "detection": 1.2434,
+            "orientation": 13.6385,
             "refinement": 0.0,
-            "response": 9.8643
+            "response": 10.3217
           },
-          "total_ms": 48.6218,
-          "throughput_mpix_s": 8.0
+          "total_ms": 25.2036,
+          "throughput_mpix_s": 15.43
         },
         {
-          "id": "radon__radon_peak__off",
+          "id": "radon__gaussian_peak__off",
           "detector": "radon",
-          "refiner": "radon_peak",
+          "refiner": "gaussian_peak",
           "orientation": "off",
-          "corner_count": 4542,
+          "corner_count": 75,
           "stages": {
-            "detection": 6.8656,
-            "orientation": 0.0026,
+            "detection": 1.0998,
+            "orientation": 0.0001,
             "refinement": 0.0,
-            "response": 9.9119
+            "response": 10.2196
           },
-          "total_ms": 16.7801,
-          "throughput_mpix_s": 23.17
-        },
-        {
-          "id": "radon__center_of_mass__ring_fit",
-          "detector": "radon",
-          "refiner": "center_of_mass",
-          "orientation": "ring_fit",
-          "corner_count": 4542,
-          "stages": {
-            "detection": 6.8036,
-            "orientation": 19.0327,
-            "refinement": 0.0,
-            "response": 9.8795
-          },
-          "total_ms": 35.7158,
-          "throughput_mpix_s": 10.89
-        },
-        {
-          "id": "radon__center_of_mass__disk_fit",
-          "detector": "radon",
-          "refiner": "center_of_mass",
-          "orientation": "disk_fit",
-          "corner_count": 4542,
-          "stages": {
-            "detection": 6.8693,
-            "orientation": 31.896,
-            "refinement": 0.0,
-            "response": 9.8193
-          },
-          "total_ms": 48.5846,
-          "throughput_mpix_s": 8.0
-        },
-        {
-          "id": "radon__center_of_mass__off",
-          "detector": "radon",
-          "refiner": "center_of_mass",
-          "orientation": "off",
-          "corner_count": 4542,
-          "stages": {
-            "detection": 6.7998,
-            "orientation": 0.0026,
-            "refinement": 0.0,
-            "response": 9.7944
-          },
-          "total_ms": 16.5968,
-          "throughput_mpix_s": 23.43
+          "total_ms": 11.3195,
+          "throughput_mpix_s": 34.35
         }
       ],
       "width": 720,
@@ -254,7 +209,7 @@
     {
       "label": "Chessboard (mid)",
       "file": "testimages/mid.png",
-      "note": "A 0.59 MP chessboard photographed against a textured wall. ChESS's absolute response floor keeps a clean board-corner set; Radon's relative threshold also admits wall texture, so its corner count (and therefore its orientation cost) is much larger than ChESS's on the same frame.",
+      "note": "A 0.59 MP chessboard photographed against a textured wall. Both detectors reject the wall texture and keep a clean board-corner set of comparable size, so their corner counts \u2014 and the orientation cost that scales with them \u2014 are close on this frame.",
       "configs": [
         {
           "id": "chess__center_of_mass__ring_fit",
@@ -263,13 +218,13 @@
           "orientation": "ring_fit",
           "corner_count": 81,
           "stages": {
-            "detection": 0.6918,
-            "orientation": 0.23,
-            "refinement": 0.0015,
-            "response": 0.5453
+            "detection": 0.1644,
+            "orientation": 0.2285,
+            "refinement": 0.0017,
+            "response": 0.5389
           },
-          "total_ms": 1.4686,
-          "throughput_mpix_s": 401.62
+          "total_ms": 0.9335,
+          "throughput_mpix_s": 631.84
         },
         {
           "id": "chess__center_of_mass__disk_fit",
@@ -278,13 +233,13 @@
           "orientation": "disk_fit",
           "corner_count": 81,
           "stages": {
-            "detection": 0.6752,
-            "orientation": 12.3813,
-            "refinement": 0.0015,
-            "response": 0.5451
+            "detection": 0.1597,
+            "orientation": 13.8393,
+            "refinement": 0.0017,
+            "response": 0.5433
           },
-          "total_ms": 13.6031,
-          "throughput_mpix_s": 43.36
+          "total_ms": 14.544,
+          "throughput_mpix_s": 40.55
         },
         {
           "id": "chess__center_of_mass__off",
@@ -293,13 +248,13 @@
           "orientation": "off",
           "corner_count": 81,
           "stages": {
-            "detection": 0.6808,
+            "detection": 0.1608,
             "orientation": 0.0001,
-            "refinement": 0.0015,
-            "response": 0.5385
+            "refinement": 0.0016,
+            "response": 0.5366
           },
-          "total_ms": 1.2209,
-          "throughput_mpix_s": 483.11
+          "total_ms": 0.6991,
+          "throughput_mpix_s": 843.69
         },
         {
           "id": "chess__forstner__ring_fit",
@@ -308,13 +263,13 @@
           "orientation": "ring_fit",
           "corner_count": 81,
           "stages": {
-            "detection": 0.687,
-            "orientation": 0.2148,
-            "refinement": 0.0043,
-            "response": 0.5478
+            "detection": 0.1585,
+            "orientation": 0.2202,
+            "refinement": 0.0048,
+            "response": 0.5411
           },
-          "total_ms": 1.4539,
-          "throughput_mpix_s": 405.68
+          "total_ms": 0.9246,
+          "throughput_mpix_s": 637.92
         },
         {
           "id": "chess__forstner__disk_fit",
@@ -323,13 +278,13 @@
           "orientation": "disk_fit",
           "corner_count": 81,
           "stages": {
-            "detection": 0.688,
-            "orientation": 12.34,
-            "refinement": 0.0044,
-            "response": 0.549
+            "detection": 0.2088,
+            "orientation": 13.7365,
+            "refinement": 0.0048,
+            "response": 0.5485
           },
-          "total_ms": 13.5814,
-          "throughput_mpix_s": 43.43
+          "total_ms": 14.4986,
+          "throughput_mpix_s": 40.68
         },
         {
           "id": "chess__forstner__off",
@@ -338,13 +293,13 @@
           "orientation": "off",
           "corner_count": 81,
           "stages": {
-            "detection": 0.6797,
+            "detection": 0.1622,
             "orientation": 0.0001,
-            "refinement": 0.0045,
-            "response": 0.5425
+            "refinement": 0.0048,
+            "response": 0.5491
           },
-          "total_ms": 1.2268,
-          "throughput_mpix_s": 480.78
+          "total_ms": 0.7162,
+          "throughput_mpix_s": 823.55
         },
         {
           "id": "chess__saddle_point__ring_fit",
@@ -353,13 +308,13 @@
           "orientation": "ring_fit",
           "corner_count": 77,
           "stages": {
-            "detection": 0.6888,
-            "orientation": 0.2153,
-            "refinement": 0.0093,
-            "response": 0.552
+            "detection": 0.1541,
+            "orientation": 0.221,
+            "refinement": 0.0103,
+            "response": 0.5389
           },
-          "total_ms": 1.4654,
-          "throughput_mpix_s": 402.5
+          "total_ms": 0.9243,
+          "throughput_mpix_s": 638.13
         },
         {
           "id": "chess__saddle_point__disk_fit",
@@ -368,13 +323,13 @@
           "orientation": "disk_fit",
           "corner_count": 77,
           "stages": {
-            "detection": 0.6869,
-            "orientation": 11.7738,
-            "refinement": 0.0102,
-            "response": 0.5502
+            "detection": 0.1608,
+            "orientation": 13.0626,
+            "refinement": 0.0103,
+            "response": 0.5423
           },
-          "total_ms": 13.0211,
-          "throughput_mpix_s": 45.3
+          "total_ms": 13.776,
+          "throughput_mpix_s": 42.82
         },
         {
           "id": "chess__saddle_point__off",
@@ -383,103 +338,58 @@
           "orientation": "off",
           "corner_count": 77,
           "stages": {
-            "detection": 0.6917,
+            "detection": 0.2142,
             "orientation": 0.0001,
-            "refinement": 0.0096,
-            "response": 0.5495
+            "refinement": 0.0106,
+            "response": 0.5444
           },
-          "total_ms": 1.2509,
-          "throughput_mpix_s": 471.52
+          "total_ms": 0.7693,
+          "throughput_mpix_s": 766.7
         },
         {
-          "id": "radon__radon_peak__ring_fit",
+          "id": "radon__gaussian_peak__ring_fit",
           "detector": "radon",
-          "refiner": "radon_peak",
+          "refiner": "gaussian_peak",
           "orientation": "ring_fit",
-          "corner_count": 1021,
+          "corner_count": 77,
           "stages": {
-            "detection": 3.6807,
-            "orientation": 4.2259,
+            "detection": 1.902,
+            "orientation": 0.1325,
             "refinement": 0.0,
-            "response": 22.3896
+            "response": 22.7042
           },
-          "total_ms": 30.2962,
-          "throughput_mpix_s": 19.47
+          "total_ms": 24.7387,
+          "throughput_mpix_s": 23.84
         },
         {
-          "id": "radon__radon_peak__disk_fit",
+          "id": "radon__gaussian_peak__disk_fit",
           "detector": "radon",
-          "refiner": "radon_peak",
+          "refiner": "gaussian_peak",
           "orientation": "disk_fit",
-          "corner_count": 1021,
+          "corner_count": 77,
           "stages": {
-            "detection": 3.6934,
-            "orientation": 16.5224,
+            "detection": 1.8963,
+            "orientation": 12.8562,
             "refinement": 0.0,
-            "response": 22.4765
+            "response": 22.7677
           },
-          "total_ms": 42.6923,
-          "throughput_mpix_s": 13.82
+          "total_ms": 37.5202,
+          "throughput_mpix_s": 15.72
         },
         {
-          "id": "radon__radon_peak__off",
+          "id": "radon__gaussian_peak__off",
           "detector": "radon",
-          "refiner": "radon_peak",
+          "refiner": "gaussian_peak",
           "orientation": "off",
-          "corner_count": 1021,
+          "corner_count": 77,
           "stages": {
-            "detection": 3.6695,
-            "orientation": 0.0005,
+            "detection": 1.9131,
+            "orientation": 0.0001,
             "refinement": 0.0,
-            "response": 22.4073
+            "response": 22.8333
           },
-          "total_ms": 26.0773,
-          "throughput_mpix_s": 22.62
-        },
-        {
-          "id": "radon__center_of_mass__ring_fit",
-          "detector": "radon",
-          "refiner": "center_of_mass",
-          "orientation": "ring_fit",
-          "corner_count": 1021,
-          "stages": {
-            "detection": 3.6017,
-            "orientation": 4.2499,
-            "refinement": 0.0,
-            "response": 22.5275
-          },
-          "total_ms": 30.3791,
-          "throughput_mpix_s": 19.42
-        },
-        {
-          "id": "radon__center_of_mass__disk_fit",
-          "detector": "radon",
-          "refiner": "center_of_mass",
-          "orientation": "disk_fit",
-          "corner_count": 1021,
-          "stages": {
-            "detection": 3.6923,
-            "orientation": 16.49,
-            "refinement": 0.0,
-            "response": 22.4273
-          },
-          "total_ms": 42.6096,
-          "throughput_mpix_s": 13.84
-        },
-        {
-          "id": "radon__center_of_mass__off",
-          "detector": "radon",
-          "refiner": "center_of_mass",
-          "orientation": "off",
-          "corner_count": 1021,
-          "stages": {
-            "detection": 3.6605,
-            "orientation": 0.0006,
-            "refinement": 0.0,
-            "response": 22.4884
-          },
-          "total_ms": 26.1495,
-          "throughput_mpix_s": 22.56
+          "total_ms": 24.7465,
+          "throughput_mpix_s": 23.83
         }
       ],
       "width": 1024,
@@ -501,13 +411,13 @@
           "orientation": "ring_fit",
           "corner_count": 586,
           "stages": {
-            "detection": 3.8516,
-            "orientation": 1.3981,
-            "refinement": 0.0118,
-            "response": 2.9529
+            "detection": 0.9483,
+            "orientation": 1.4202,
+            "refinement": 0.0117,
+            "response": 2.9306
           },
-          "total_ms": 8.2144,
-          "throughput_mpix_s": 382.95
+          "total_ms": 5.3108,
+          "throughput_mpix_s": 592.33
         },
         {
           "id": "chess__center_of_mass__disk_fit",
@@ -516,13 +426,13 @@
           "orientation": "disk_fit",
           "corner_count": 586,
           "stages": {
-            "detection": 4.0537,
-            "orientation": 14.478,
+            "detection": 0.9321,
+            "orientation": 14.3528,
             "refinement": 0.0117,
-            "response": 3.0039
+            "response": 2.9604
           },
-          "total_ms": 21.5473,
-          "throughput_mpix_s": 145.99
+          "total_ms": 18.257,
+          "throughput_mpix_s": 172.3
         },
         {
           "id": "chess__center_of_mass__off",
@@ -531,13 +441,13 @@
           "orientation": "off",
           "corner_count": 586,
           "stages": {
-            "detection": 4.0714,
+            "detection": 0.9426,
             "orientation": 0.0003,
-            "refinement": 0.0118,
-            "response": 2.9728
+            "refinement": 0.0117,
+            "response": 2.9452
           },
-          "total_ms": 7.0563,
-          "throughput_mpix_s": 445.8
+          "total_ms": 3.8998,
+          "throughput_mpix_s": 806.64
         },
         {
           "id": "chess__forstner__ring_fit",
@@ -546,13 +456,13 @@
           "orientation": "ring_fit",
           "corner_count": 584,
           "stages": {
-            "detection": 3.7868,
-            "orientation": 1.5978,
-            "refinement": 0.033,
-            "response": 2.9884
+            "detection": 0.948,
+            "orientation": 1.6539,
+            "refinement": 0.0348,
+            "response": 2.9471
           },
-          "total_ms": 8.406,
-          "throughput_mpix_s": 374.22
+          "total_ms": 5.5838,
+          "throughput_mpix_s": 563.37
         },
         {
           "id": "chess__forstner__disk_fit",
@@ -561,13 +471,13 @@
           "orientation": "disk_fit",
           "corner_count": 584,
           "stages": {
-            "detection": 3.7646,
-            "orientation": 14.7528,
-            "refinement": 0.0315,
-            "response": 2.9923
+            "detection": 0.9395,
+            "orientation": 14.7498,
+            "refinement": 0.0348,
+            "response": 2.9521
           },
-          "total_ms": 21.5412,
-          "throughput_mpix_s": 146.03
+          "total_ms": 18.6762,
+          "throughput_mpix_s": 168.44
         },
         {
           "id": "chess__forstner__off",
@@ -576,13 +486,13 @@
           "orientation": "off",
           "corner_count": 584,
           "stages": {
-            "detection": 4.038,
+            "detection": 0.9484,
             "orientation": 0.0003,
-            "refinement": 0.035,
-            "response": 2.9965
+            "refinement": 0.0349,
+            "response": 2.9615
           },
-          "total_ms": 7.0698,
-          "throughput_mpix_s": 444.95
+          "total_ms": 3.9451,
+          "throughput_mpix_s": 797.38
         },
         {
           "id": "chess__saddle_point__ring_fit",
@@ -591,13 +501,13 @@
           "orientation": "ring_fit",
           "corner_count": 585,
           "stages": {
-            "detection": 4.0548,
-            "orientation": 1.3953,
-            "refinement": 0.0684,
-            "response": 2.8957
+            "detection": 0.9465,
+            "orientation": 1.4453,
+            "refinement": 0.0747,
+            "response": 2.9392
           },
-          "total_ms": 8.4142,
-          "throughput_mpix_s": 373.86
+          "total_ms": 5.4057,
+          "throughput_mpix_s": 581.93
         },
         {
           "id": "chess__saddle_point__disk_fit",
@@ -606,13 +516,13 @@
           "orientation": "disk_fit",
           "corner_count": 585,
           "stages": {
-            "detection": 4.0214,
-            "orientation": 14.578,
-            "refinement": 0.0752,
-            "response": 2.9042
+            "detection": 0.9432,
+            "orientation": 14.5038,
+            "refinement": 0.0748,
+            "response": 2.9486
           },
-          "total_ms": 21.5788,
-          "throughput_mpix_s": 145.78
+          "total_ms": 18.4704,
+          "throughput_mpix_s": 170.31
         },
         {
           "id": "chess__saddle_point__off",
@@ -621,103 +531,58 @@
           "orientation": "off",
           "corner_count": 585,
           "stages": {
-            "detection": 4.0674,
-            "orientation": 0.0004,
-            "refinement": 0.0668,
-            "response": 2.9354
+            "detection": 1.2015,
+            "orientation": 0.0003,
+            "refinement": 0.0737,
+            "response": 2.9482
           },
-          "total_ms": 7.07,
-          "throughput_mpix_s": 444.94
+          "total_ms": 4.2237,
+          "throughput_mpix_s": 744.78
         },
         {
-          "id": "radon__radon_peak__ring_fit",
+          "id": "radon__gaussian_peak__ring_fit",
           "detector": "radon",
-          "refiner": "radon_peak",
+          "refiner": "gaussian_peak",
           "orientation": "ring_fit",
-          "corner_count": 21007,
+          "corner_count": 279,
           "stages": {
-            "detection": 40.7378,
-            "orientation": 87.5617,
+            "detection": 10.2215,
+            "orientation": 0.4703,
             "refinement": 0.0,
-            "response": 123.8958
+            "response": 127.241
           },
-          "total_ms": 252.1953,
-          "throughput_mpix_s": 12.47
+          "total_ms": 137.9328,
+          "throughput_mpix_s": 22.81
         },
         {
-          "id": "radon__radon_peak__disk_fit",
+          "id": "radon__gaussian_peak__disk_fit",
           "detector": "radon",
-          "refiner": "radon_peak",
+          "refiner": "gaussian_peak",
           "orientation": "disk_fit",
-          "corner_count": 21007,
+          "corner_count": 279,
           "stages": {
-            "detection": 41.3698,
-            "orientation": 101.5022,
+            "detection": 10.1724,
+            "orientation": 13.5985,
             "refinement": 0.0,
-            "response": 123.6774
+            "response": 128.4255
           },
-          "total_ms": 266.5494,
-          "throughput_mpix_s": 11.8
+          "total_ms": 152.1964,
+          "throughput_mpix_s": 20.67
         },
         {
-          "id": "radon__radon_peak__off",
+          "id": "radon__gaussian_peak__off",
           "detector": "radon",
-          "refiner": "radon_peak",
+          "refiner": "gaussian_peak",
           "orientation": "off",
-          "corner_count": 21007,
+          "corner_count": 279,
           "stages": {
-            "detection": 41.2143,
-            "orientation": 0.0105,
+            "detection": 10.235,
+            "orientation": 0.0002,
             "refinement": 0.0,
-            "response": 123.9883
+            "response": 126.501
           },
-          "total_ms": 165.2131,
-          "throughput_mpix_s": 19.04
-        },
-        {
-          "id": "radon__center_of_mass__ring_fit",
-          "detector": "radon",
-          "refiner": "center_of_mass",
-          "orientation": "ring_fit",
-          "corner_count": 21007,
-          "stages": {
-            "detection": 41.5936,
-            "orientation": 88.2035,
-            "refinement": 0.0,
-            "response": 124.2168
-          },
-          "total_ms": 254.0139,
-          "throughput_mpix_s": 12.38
-        },
-        {
-          "id": "radon__center_of_mass__disk_fit",
-          "detector": "radon",
-          "refiner": "center_of_mass",
-          "orientation": "disk_fit",
-          "corner_count": 21007,
-          "stages": {
-            "detection": 41.586,
-            "orientation": 102.2183,
-            "refinement": 0.0,
-            "response": 123.9179
-          },
-          "total_ms": 267.7222,
-          "throughput_mpix_s": 11.75
-        },
-        {
-          "id": "radon__center_of_mass__off",
-          "detector": "radon",
-          "refiner": "center_of_mass",
-          "orientation": "off",
-          "corner_count": 21007,
-          "stages": {
-            "detection": 41.6268,
-            "orientation": 0.0116,
-            "refinement": 0.0,
-            "response": 124.3813
-          },
-          "total_ms": 166.0197,
-          "throughput_mpix_s": 18.95
+          "total_ms": 136.7362,
+          "throughput_mpix_s": 23.01
         }
       ],
       "width": 2048,
