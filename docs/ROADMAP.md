@@ -49,7 +49,7 @@ fold in `SOLID-01`.
 - Atomic benches for ring kernel, Radon SAT, RingFit solver, DiskFit, NMS.
 - Flamegraph automation script under `tools/`.
 - Allocation audit complete; "no per-corner allocations" invariant verified.
-- CI bench gate live (≤2% p95 drift); baseline `metrics.json` captured.
+- CI bench gate live (≤2% drift, same-runner head-vs-base median); baseline snapshot captured (`tools/perf/`, `bench-gate.yml`) — **done**.
 - A documented verdict on whether/what to optimize (`PERF-10`).
 
 ## M3 — API `v1.0.0` surface freeze
@@ -69,7 +69,7 @@ surface freezes).
 - ✅ `nms_radius`/`min_cluster_size` deduplicated; `ChessParams`/`RefinerKind` hidden in `unstable`.
 - ✅ `ChessRefiner::Ml` honesty resolved; Python `.pyi` parity + guard test shipped.
 - ✅ `#[non_exhaustive]`/sealed-trait policy applied; MSRV stated; binding discriminants pinned.
-- ⏳ (release) `cargo-semver-checks` in CI; `1.0.0` tagged with migration notes — after M5.
+- 🟡 `cargo-semver-checks` CI (advisory) + `1.0.0` migration notes **landed**; version bump + tag deferred to the release step (after M4 deploy + M5 vcpkg).
 
 ## M4 — GitHub Pages site  ·  *done*
 
