@@ -50,7 +50,12 @@ jobs:
           # been released beyond 0.11.2 with these breaks, so auto-detect
           # from crates.io would pick the wrong version.
           baseline-rev: v0.11.2
-          # Publishable crates only (chess-corners-capi, -py, -wasm have
-          # publish = false and are not checked).
-          # cargo-semver-checks auto-filters by publish = false when no
-          # explicit --package list is supplied.
+          # Publishable crates only. Explicit list guards against the action
+          # processing publish = false members (chess-corners-capi, -py, -wasm,
+          # chess-corners-testutil) which have no crates.io baseline to diff
+          # against and would pollute / abort the advisory output.
+          package: |
+            box-image-pyramid
+            chess-corners-core
+            chess-corners
+            chess-corners-ml

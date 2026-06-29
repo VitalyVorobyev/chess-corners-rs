@@ -1,3 +1,5 @@
+//! **Dev-only tool — excluded from the published package.**
+//!
 //! Dense refiner sweep — produces a JSON report consumed by the
 //! book's Part V plots (`tools/book/plot_benchmark.py`).
 //!

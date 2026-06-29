@@ -11,6 +11,11 @@ homepage = "https://vitalyvorobyev.github.io/chess-corners-rs"
 keywords = ["chessboard", "chess-corners", "corner-detection", "computer-vision", "image-processing"]
 readme = "README.md"
 autobins = false
+# bench_sweep is a heavyweight dev/accuracy-sweep tool that imports
+# chess_corners_testutil (path-only, stripped from the published manifest).
+# Exclude it from the package so `cargo publish` verification doesn't break;
+# it remains auto-discovered and runnable in-workspace.
+exclude = ["examples/bench_sweep.rs"]
 
 [lib]
 name = "chess_corners"
@@ -83,11 +88,6 @@ required-features = ["image"]
 name = "multiscale_image"
 path = "examples/multiscale_image.rs"
 required-features = ["image"]
-
-[[example]]
-name = "bench_sweep"
-path = "examples/bench_sweep.rs"
-required-features = []
 
 [[example]]
 name = "perf_overlay"
