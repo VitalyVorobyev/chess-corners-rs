@@ -102,7 +102,7 @@ impl RadonDetectorParams {
     /// zero, so the floor must sit well above the texture noise to keep
     /// only well-formed corners; this value is calibrated on the public
     /// reference images.
-    pub const DEFAULT_THRESHOLD_REL: f32 = 0.30;
+    pub const DEFAULT_THRESHOLD_REL: f32 = 0.28;
 
     /// Clamp `image_upsample` into the supported set `{1, 2}`.
     /// Values outside that range are silently clamped — callers can
