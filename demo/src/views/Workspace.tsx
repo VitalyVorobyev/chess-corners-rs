@@ -25,6 +25,7 @@ import { useDebounced } from "../hooks/useDebounced";
 import { useImageBitmapFromUrl } from "../hooks/useImageBitmap";
 import {
   defaultSettings,
+  defaultThreshold,
   detect,
   type DetectResult,
 } from "../lib/detector";
@@ -33,7 +34,6 @@ import type {
   ChessRefinerKind,
   DetectorSettings,
   OrientationKind,
-  RadonRefinerKind,
   Strategy,
 } from "../types/chess-corners";
 
@@ -181,11 +181,13 @@ export function Workspace({ ready }: WorkspaceProps) {
     ];
   }, [result, imgData, corners, visible]);
 
+  // Hit-test positions are offset +0.5 to match the pixel-center convention
+  // used in the overlay draw calls (markers sit at c.x+0.5, c.y+0.5).
   const hitPoints = useMemo<HitPoint<TooltipData>[]>(
     () =>
       corners.map((c) => ({
-        x: c.x,
-        y: c.y,
+        x: c.x + 0.5,
+        y: c.y + 0.5,
         data: {
           x: c.x,
           y: c.y,
@@ -362,7 +364,10 @@ export function Workspace({ ready }: WorkspaceProps) {
                       ["chess", "ChESS"],
                       ["radon", "Radon"],
                     ]}
-                    onChange={(v) => update({ strategy: v as Strategy })}
+                    onChange={(v) => {
+                      const s = v as Strategy;
+                      update({ strategy: s, threshold: defaultThreshold(s) });
+                    }}
                   />
                   <SelectRow
                     label="Orientation"
@@ -374,7 +379,7 @@ export function Workspace({ ready }: WorkspaceProps) {
                     onChange={(v) => update({ orientation: v as OrientationKind })}
                     info="RingFit fits a 16-sample ring; DiskFit is a full-disk crossing-line estimator for strongly warped corners."
                   />
-                  {settings.strategy === "chess" ? (
+                  {settings.strategy === "chess" && (
                     <SelectRow
                       label="Refiner"
                       value={settings.chessRefiner}
@@ -385,16 +390,6 @@ export function Workspace({ ready }: WorkspaceProps) {
                       ]}
                       onChange={(v) => update({ chessRefiner: v as ChessRefinerKind })}
                     />
-                  ) : (
-                    <SelectRow
-                      label="Refiner"
-                      value={settings.radonRefiner}
-                      options={[
-                        ["radonPeak", "Radon peak"],
-                        ["centerOfMass", "Center of mass"],
-                      ]}
-                      onChange={(v) => update({ radonRefiner: v as RadonRefinerKind })}
-                    />
                   )}
                 </div>
               </div>
@@ -403,16 +398,20 @@ export function Workspace({ ready }: WorkspaceProps) {
               <div>
                 <div className="label" style={{ marginBottom: "var(--s2)" }}>
                   Threshold
-                  <InfoTip text="Relative acceptance threshold: corners are kept when their response is at least this fraction of the per-frame maximum response." />
+                  <InfoTip text={
+                    settings.strategy === "chess"
+                      ? "Absolute response floor: corners are kept when their raw ChESS response exceeds this value."
+                      : "Fraction of the per-frame maximum Radon response."
+                  } />
                 </div>
                 <SliderRow
-                  label="Relative"
-                  value={settings.thresholdRel}
+                  label={settings.strategy === "chess" ? "Threshold" : "Relative threshold"}
+                  value={settings.threshold}
                   min={0}
-                  max={0.5}
-                  step={0.01}
-                  format={(v) => v.toFixed(2)}
-                  onChange={(v) => update({ thresholdRel: v })}
+                  max={settings.strategy === "chess" ? 100 : 0.5}
+                  step={settings.strategy === "chess" ? 1 : 0.01}
+                  format={(v) => settings.strategy === "chess" ? v.toFixed(0) : v.toFixed(2)}
+                  onChange={(v) => update({ threshold: v })}
                 />
               </div>
 

@@ -62,13 +62,11 @@ def test_pyramid_default_has_expected_fields():
 
 def test_with_threshold_returns_new_config_with_updated_threshold():
     base = chess_corners.DetectorConfig.chess()
-    new_thresh = chess_corners.Threshold.relative(0.15)
-    updated = base.with_threshold(new_thresh)
+    updated = base.with_threshold(0.15)
 
-    assert updated.threshold.kind == "relative"
-    assert abs(updated.threshold.value - 0.15) < 1e-6
+    assert abs(updated.threshold - 0.15) < 1e-6
     # Original is untouched (immutable builder).
-    assert base.threshold.kind != "relative" or abs(base.threshold.value - 0.15) > 1e-6 or True
+    assert abs(base.threshold - 0.15) > 1e-6 or True
 
 
 def test_with_multiscale_returns_new_config_with_pyramid():
@@ -94,6 +92,21 @@ def test_with_orientation_method_sets_disk_fit():
     assert cfg.orientation_method == chess_corners.OrientationMethod.DISK_FIT
 
 
+def test_without_orientation_clears_method():
+    cfg = chess_corners.DetectorConfig.chess().without_orientation()
+    assert cfg.orientation_method is None
+    # Round-trips as JSON null.
+    assert cfg.to_dict()["orientation_method"] is None
+    restored = chess_corners.DetectorConfig.from_dict(cfg.to_dict())
+    assert restored.orientation_method is None
+
+
+def test_orientation_method_setter_accepts_none():
+    cfg = chess_corners.DetectorConfig.chess()
+    cfg.orientation_method = None
+    assert cfg.orientation_method is None
+
+
 def test_with_merge_radius_updates_value():
     cfg = chess_corners.DetectorConfig.chess().with_merge_radius(5.0)
     assert abs(cfg.merge_radius - 5.0) < 1e-6
@@ -103,13 +116,12 @@ def test_chainable_form_produces_expected_nested_values():
     """Chaining with_threshold then with_chess produces correct nested state."""
     cfg = (
         chess_corners.DetectorConfig.chess_multiscale()
-        .with_threshold(chess_corners.Threshold.relative(0.12))
+        .with_threshold(0.12)
         .with_chess(refiner=chess_corners.ChessRefiner.forstner())
     )
     assert cfg.strategy.kind == "chess"
     assert cfg.multiscale.kind == "pyramid"
-    assert cfg.threshold.kind == "relative"
-    assert abs(cfg.threshold.value - 0.12) < 1e-6
+    assert abs(cfg.threshold - 0.12) < 1e-6
     assert cfg.strategy.chess.refiner.kind == "forstner"
 
 
@@ -180,16 +192,14 @@ def test_with_chess_on_radon_config_switches_strategy_and_preserves_threshold():
     """with_chess on a Radon-strategy config switches strategy to Chess
     and preserves the top-level threshold unchanged."""
     radon_cfg = chess_corners.DetectorConfig.radon()
-    original_threshold_kind = radon_cfg.threshold.kind
-    original_threshold_value = radon_cfg.threshold.value
+    original_threshold = radon_cfg.threshold
 
     chess_cfg = radon_cfg.with_chess(refiner=chess_corners.ChessRefiner.forstner())
 
     assert chess_cfg.strategy.kind == "chess"
     assert chess_cfg.strategy.chess.refiner.kind == "forstner"
     # Threshold is preserved (not reset to chess preset defaults).
-    assert chess_cfg.threshold.kind == original_threshold_kind
-    assert abs(chess_cfg.threshold.value - original_threshold_value) < 1e-6
+    assert abs(chess_cfg.threshold - original_threshold) < 1e-6
 
 
 # ---------------------------------------------------------------------------

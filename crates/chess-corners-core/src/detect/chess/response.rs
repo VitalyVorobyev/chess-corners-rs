@@ -120,13 +120,12 @@ fn ring_from_params(params: &ChessParams) -> (RingOffsets, &'static [(i32, i32);
 /// well below that upper bound.
 ///
 /// The paper's acceptance criterion is simply `R > 0`. That is what
-/// [`ChessParams`]`::default()` encodes via `threshold_abs = Some(0.0)`
+/// [`ChessParams`]`::default()` encodes via `threshold = 0.0`
 /// combined with a strict comparison in
-/// [`crate::detect_corners_from_response`]. The optional
-/// `threshold_rel` / `threshold_abs` fields are **adaptive policies
-/// layered on top** of the paper's score — they are a convenience for
-/// trading off sensitivity vs false positives, not part of the score
-/// definition.
+/// [`crate::detect_corners_from_response`]. The `threshold` field is an
+/// **absolute floor layered on top** of the paper's score — a
+/// convenience for trading off sensitivity vs false positives, not part
+/// of the score definition.
 ///
 /// # Implementation strategy
 ///

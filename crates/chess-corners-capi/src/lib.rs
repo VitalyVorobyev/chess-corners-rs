@@ -51,14 +51,6 @@ pub const CC_STRATEGY_CHESS: cc_strategy_t = 0;
 /// Whole-image Radon detector.
 pub const CC_STRATEGY_RADON: cc_strategy_t = 1;
 
-/// Acceptance-threshold interpretation tag stored in
-/// `cc_config::threshold_kind`.
-pub type cc_threshold_kind_t = u32;
-/// Read `cc_config::threshold_value` as an absolute score floor.
-pub const CC_THRESHOLD_ABSOLUTE: cc_threshold_kind_t = 0;
-/// Read `cc_config::threshold_value` as a fraction of the per-frame max.
-pub const CC_THRESHOLD_RELATIVE: cc_threshold_kind_t = 1;
-
 /// Subpixel-refiner tag stored in `cc_config::refiner`.
 ///
 /// Refiner-specific tuning is not exposed over the flat ABI; the selected
@@ -70,8 +62,6 @@ pub const CC_REFINER_CENTER_OF_MASS: cc_refiner_t = 0;
 pub const CC_REFINER_FORSTNER: cc_refiner_t = 1;
 /// Saddle-point refiner. Valid for the ChESS strategy only.
 pub const CC_REFINER_SADDLE_POINT: cc_refiner_t = 2;
-/// Radon-peak refiner. Valid for the Radon strategy only.
-pub const CC_REFINER_RADON_PEAK: cc_refiner_t = 3;
 
 /// Orientation-fit tag stored in `cc_config::orientation_method`.
 pub type cc_orientation_method_t = u32;
@@ -79,6 +69,9 @@ pub type cc_orientation_method_t = u32;
 pub const CC_ORIENTATION_RING_FIT: cc_orientation_method_t = 0;
 /// Full-disk crossing-line estimator with a ring-fit fallback.
 pub const CC_ORIENTATION_DISK_FIT: cc_orientation_method_t = 1;
+/// Skip the per-corner orientation fit. Detected corners then have
+/// `cc_corner::has_orientation == 0` and a zeroed `axes` array.
+pub const CC_ORIENTATION_NONE: cc_orientation_method_t = 2;
 
 // ─── Result types (library writes, C reads) ─────────────────────────────
 
@@ -107,8 +100,13 @@ pub struct cc_corner {
     pub y: f32,
     /// Raw, unnormalized detector response at the peak.
     pub response: f32,
-    /// The two local grid-axis directions.
+    /// The two local grid-axis directions. Valid only when
+    /// `has_orientation` is `1`; zeroed otherwise.
     pub axes: [cc_axis; 2],
+    /// `1` when `axes` holds a fitted orientation, `0` when the
+    /// orientation fit was skipped (`CC_ORIENTATION_NONE`) and `axes`
+    /// is zeroed.
+    pub has_orientation: u8,
 }
 
 /// Owned array of detected corners returned by `cc_detect_u8`.
@@ -136,11 +134,9 @@ pub struct cc_result {
 pub struct cc_config {
     /// One of the `CC_STRATEGY_*` constants.
     pub strategy: cc_strategy_t,
-    /// One of the `CC_THRESHOLD_*` constants; selects how `threshold_value`
-    /// is interpreted.
-    pub threshold_kind: cc_threshold_kind_t,
-    /// Acceptance threshold; units depend on `threshold_kind`.
-    pub threshold_value: f32,
+    /// Acceptance threshold. ChESS reads it as an absolute response floor;
+    /// Radon as a fraction of the per-frame maximum.
+    pub threshold: f32,
     /// Non-maximum-suppression half-radius in working-resolution pixels.
     pub nms_radius: u32,
     /// Minimum positive-response neighbours required to accept a candidate.
@@ -356,7 +352,7 @@ pub extern "C" fn cc_status_str(status: cc_status) -> *const c_char {
 /// ABI version of this library. Bumped manually on any breaking ABI change.
 #[no_mangle]
 pub extern "C" fn cc_abi_version() -> u32 {
-    1
+    3
 }
 
 #[cfg(test)]
@@ -407,10 +403,9 @@ mod tests {
     }
 
     #[test]
-    fn cross_strategy_refiner_is_rejected() {
-        // RadonPeak is not a valid ChESS refiner.
+    fn out_of_range_refiner_is_rejected() {
         let mut cfg = cc_config_chess();
-        cfg.refiner = CC_REFINER_RADON_PEAK;
+        cfg.refiner = 99;
         assert_eq!(
             convert::to_detector_config(&cfg),
             Err(cc_status::CC_ERR_INVALID_CONFIG)
@@ -432,6 +427,6 @@ mod tests {
 
     #[test]
     fn abi_version_is_stable() {
-        assert_eq!(cc_abi_version(), 1);
+        assert_eq!(cc_abi_version(), 3);
     }
 }

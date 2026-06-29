@@ -1,37 +1,14 @@
 //! Shared primitives for the Duda-Frese (2018) localized Radon
-//! response — used by both
-//! [`RadonPeakRefiner`](crate::refine::radon_peak::RadonPeakRefiner)
-//! (per-candidate subpixel refiner) and the whole-image
-//! [`radon_response_u8`](super::radon_response_u8) path.
+//! response, used by the whole-image
+//! [`radon_response_u8`](super::radon_response_u8) detection path.
 //!
 //! The module exists so the angular basis, the peak-fit, and the
-//! response-map box blur live in exactly one place. When the detector
-//! and refiner disagree on those primitives, they stop being comparable.
+//! response-map box blur live in exactly one place.
 
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
-
-/// Number of discrete ray angles. The paper samples
-/// `{0, π/4, π/2, 3π/4}`.
-pub(crate) const ANGLES: usize = 4;
-
-/// `cos α` for the four ray angles, in order.
-pub(crate) const DIR_COS: [f32; ANGLES] = [
-    1.0,
-    core::f32::consts::FRAC_1_SQRT_2,
-    0.0,
-    -core::f32::consts::FRAC_1_SQRT_2,
-];
-
-/// `sin α` for the four ray angles, in order.
-pub(crate) const DIR_SIN: [f32; ANGLES] = [
-    0.0,
-    core::f32::consts::FRAC_1_SQRT_2,
-    1.0,
-    core::f32::consts::FRAC_1_SQRT_2,
-];
 
 /// Subpixel peak-fitting mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

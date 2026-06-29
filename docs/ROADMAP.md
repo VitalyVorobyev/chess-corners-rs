@@ -115,5 +115,9 @@ draft whose registry finalization (real `v1.0.0` tag + SHA512 + cross-platform
 
 ## Out of scope (for now)
 
-Anything requiring a post-1.0 breaking change; new detector algorithms;
-stable-Rust SIMD (tracked in the backlog as a future investigation).
+Anything requiring a post-1.0 breaking change; new detector algorithms.
+Stable-Rust SIMD was evaluated (PERF-11) and rejected: no stable backend
+matches the nightly `std::simd` path without regressing aarch64 below even
+scalar, so the `simd` feature stays nightly-only as an optional
+high-performance path and the stable scalar/autovec build is the supported
+portable baseline.

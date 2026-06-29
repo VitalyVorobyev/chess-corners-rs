@@ -84,7 +84,7 @@ fn bench_descriptor_fit(c: &mut Criterion) {
                         H,
                         5,
                         corners,
-                        OrientationMethod::RingFit,
+                        Some(OrientationMethod::RingFit),
                     ))
                 },
                 criterion::BatchSize::SmallInput,

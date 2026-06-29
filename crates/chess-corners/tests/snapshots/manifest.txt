@@ -1,8 +1,8 @@
 # Per-case corner count for the ChESS presets.
 # Refresh with UPDATE_SNAPSHOTS=1 cargo test -p chess-corners --test snapshot_regression --all-features
-large-multiscale count=359
-large-single_scale count=2142
-mid-multiscale count=81
-mid-single_scale count=1199
-small-multiscale count=85
-small-single_scale count=514
+large-multiscale count=358
+large-single_scale count=586
+mid-multiscale count=77
+mid-single_scale count=81
+small-multiscale count=82
+small-single_scale count=381

@@ -1,7 +1,9 @@
 # Design: C++ bindings via vcpkg
 
-**Status:** Draft / design. **Workstream:** `CPP-*` (ROADMAP milestone **M5**,
-depends on **M3** API freeze). **Approach (locked):** C ABI generated with
+**Status:** Implemented (CPP-01..07); the vcpkg overlay port is verified
+locally, with registry finalization (real `v1.0.0` tag + SHA512 + cross-platform
+`vcpkg install`) deferred to the 1.0 release. **Workstream:** `CPP-*` (ROADMAP
+milestone **M5**, depends on **M3** API freeze). **Approach (locked):** C ABI generated with
 `cbindgen`, wrapped by a thin hand-written C++ convenience header, packaged
 with CMake and shipped as a vcpkg port.
 
@@ -27,13 +29,17 @@ algorithm logic — it only marshals types across the boundary.
 
 | Rust | C |
 |------|---|
-| `CornerDescriptor { x, y, response, axes:[AxisEstimate;2] }` | `cc_corner { float x, y, response; cc_axis axes[2]; }` |
+| `CornerDescriptor { x, y, response, axes: Option<[AxisEstimate;2]> }` | `cc_corner { float x, y, response; cc_axis axes[2]; uint8_t has_orientation; }` |
 | `AxisEstimate { angle, sigma }` | `cc_axis { float angle, sigma; }` |
+| `DetectorConfig.threshold: f32` | `cc_config.threshold` — a single `float`, no kind tag |
 | `DetectorConfig` (+ nested enums) | `cc_config` flat struct of scalars + `int` enum tags |
 | `ChessError` | `cc_status` enum (`CC_OK=0`, `CC_ERR_*`) |
 
 > The mapping must track the **frozen** `CornerDescriptor` (no `contrast` /
-> `fit_rms` — see [`api-v1.0.md`](api-v1.0.md)). This is why M5 depends on M3.
+> `fit_rms` — see [`api-v1.0.md`](api-v1.0.md)). `axes` is optional in Rust
+> (`Option<[AxisEstimate;2]>`); the C struct carries a `has_orientation`
+> flag that is `0` (with `axes` zeroed) when the per-corner fit is skipped.
+> This is why M5 depends on M3.
 
 ### C function surface (sketch)
 
@@ -112,17 +118,21 @@ A dedicated job (Linux first, then macOS/Windows):
 - **ABI guard:** `cc_abi_version()` checked by the C++ header at compile/run
   time so a mismatched header/lib pair fails loudly.
 
-## Open questions
+## Resolved / deferred
 
-1. ABI/versioning policy for `cc_config` once fields evolve (reserved padding
-   vs versioned structs vs an opaque builder).
-2. Threading: document that `cc_detect_u8` is reentrant; `rayon` parallelism
-   is internal and controlled by the build feature.
-3. Do we expose buffer-reuse (a detector handle) in v1, or keep it stateless?
-4. Minimum CMake / compiler versions to support in the port.
+1. **`cc_config` versioning.** Guarded at runtime by `cc_abi_version()` — the
+   C++ header checks it on every call so a mismatched header/lib pair fails
+   loudly. The flat struct is frozen for 1.0; field-evolution policy (reserved
+   padding vs versioned structs) is a post-1.0 ABI-change concern.
+2. **Threading.** `cc_detect_u8` is reentrant and carries no global state;
+   `rayon` parallelism is internal and controlled by the build feature
+   (documented in the header and book Part IX).
+3. **Buffer reuse.** v1 ships stateless (one self-contained detect call); a
+   reusable detector handle is a scoped post-1.0 follow-up.
+4. **Minimum versions.** CMake ≥ 3.20 and a C++17 compiler (the convenience
+   header is C++17; the example and smoke test pin `cxx_std_17`).
 
 ---
 
-Book coverage: add a C++ usage chapter (Part — see
-[`site-architecture.md`](site-architecture.md) for where it surfaces on the
-site). Task list: [`../BACKLOG.md`](../BACKLOG.md) `CPP-*`.
+Book coverage: Part IX "C++ bindings" (CPP-07). Task list:
+[`../BACKLOG.md`](../BACKLOG.md) `CPP-*`.

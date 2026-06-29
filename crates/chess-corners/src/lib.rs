@@ -38,7 +38,7 @@
 //! crate. This example reads from disk and is marked `no_run`:
 //!
 //! ```no_run
-//! use chess_corners::{ChessRefiner, Detector, DetectorConfig, Threshold};
+//! use chess_corners::{ChessRefiner, Detector, DetectorConfig};
 //! use image::io::Reader as ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -47,7 +47,7 @@
 //!     .to_luma8();
 //!
 //! let cfg = DetectorConfig::chess_multiscale()
-//!     .with_threshold(Threshold::Relative(0.15))
+//!     .with_threshold(120.0)
 //!     .with_chess(|c| c.refiner = ChessRefiner::forstner());
 //!
 //! let mut detector = Detector::new(cfg)?;
@@ -55,10 +55,14 @@
 //! println!("found {} corners", corners.len());
 //!
 //! for c in &corners {
-//!     println!(
-//!         "corner at ({:.2}, {:.2}), response {:.1}, axes [{:.2}, {:.2}] rad",
-//!         c.x, c.y, c.response, c.axes[0].angle, c.axes[1].angle,
-//!     );
+//!     // `axes` is `None` when the orientation fit was skipped
+//!     // (see `DetectorConfig::without_orientation`).
+//!     if let Some(axes) = c.axes {
+//!         println!(
+//!             "corner at ({:.2}, {:.2}), response {:.1}, axes [{:.2}, {:.2}] rad",
+//!             c.x, c.y, c.response, axes[0].angle, axes[1].angle,
+//!         );
+//!     }
 //! }
 //! # Ok(()) }
 //! ```
@@ -164,9 +168,10 @@
 //! [`DetectorConfig`] is strategy-typed: the [`DetectorConfig::strategy`]
 //! field is a [`DetectionStrategy`] enum carrying either a
 //! [`ChessConfig`] (detector ring, refiner) or a [`RadonConfig`]
-//! (whole-image Duda-Frese parameters). Acceptance
-//! is a single [`Threshold`] enum (`Absolute` or `Relative`).
-//! [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
+//! (whole-image Duda-Frese parameters). Acceptance is a single
+//! [`threshold`](DetectorConfig::threshold) number — read as an absolute
+//! response floor by ChESS and as a fraction of the per-frame maximum by
+//! Radon. [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
 //! and apply to both strategies. The detector translates this into
 //! lower-level parameter structs internally; those structs
 //! (`ChessParams`, `RadonDetectorParams`) are exposed for hand-composed
@@ -240,13 +245,13 @@ mod upscale;
 // `chess-corners-core` dependency.
 pub use crate::config::{
     ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, RadonConfig, RadonRefiner, Threshold,
+    MultiscaleConfig, RadonConfig,
 };
 pub use crate::error::ChessError;
 pub use crate::upscale::{UpscaleConfig, UpscaleError};
 pub use chess_corners_core::{
     AxisEstimate, CenterOfMassConfig, CornerDescriptor, ForstnerConfig, OrientationMethod,
-    PeakFitMode, RadonPeakConfig, SaddlePointConfig,
+    PeakFitMode, SaddlePointConfig,
 };
 
 // Primary detector entry point.

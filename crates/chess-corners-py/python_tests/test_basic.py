@@ -13,15 +13,46 @@ def _checkerboard(square_size: int = 16, squares: int = 8) -> np.ndarray:
 def test_detector_basic():
     img = _checkerboard(square_size=16, squares=8)
     cfg = chess_corners.DetectorConfig()
-    cfg.threshold = chess_corners.Threshold.relative(0.1)
+    cfg.threshold = 0.1
     cfg.detection.min_cluster_size = 1
 
     detector = chess_corners.Detector(cfg)
-    corners = detector.detect(img)
-    assert corners.dtype == np.float32
-    assert corners.ndim == 2
-    assert corners.shape[1] == 7
-    assert corners.shape[0] > 0
+    result = detector.detect(img)
+    assert isinstance(result, chess_corners.Detections)
+    assert result.xy.dtype == np.float32
+    assert result.xy.ndim == 2
+    assert result.xy.shape[1] == 2
+    assert result.response.dtype == np.float32
+    assert result.response.ndim == 1
+    assert len(result) > 0
+    assert result.xy.shape[0] == len(result)
+
+
+def test_detect_without_orientation_yields_nan_axes():
+    img = _checkerboard(square_size=16, squares=8)
+    base = chess_corners.DetectorConfig()
+    base.threshold = 0.1
+    base.detection.min_cluster_size = 1
+
+    # Orientation on: angles and sigmas are finite (N, 2) arrays.
+    on = chess_corners.Detector(base).detect(img)
+    assert len(on) > 0
+    assert on.angles is not None and on.sigmas is not None
+    assert on.angles.shape == (len(on), 2)
+    assert on.sigmas.shape == (len(on), 2)
+    assert np.isfinite(on.angles).all()
+    assert np.isfinite(on.sigmas).all()
+    assert np.isfinite(on.xy).all()
+    assert np.isfinite(on.response).all()
+
+    # Orientation off: same corner count; angles and sigmas are None.
+    off_cfg = base.without_orientation()
+    off = chess_corners.Detector(off_cfg).detect(img)
+    assert len(off) == len(on)
+    assert off.angles is None
+    assert off.sigmas is None
+    assert np.isfinite(off.xy).all()
+    assert np.isfinite(off.response).all()
 
 
 def test_detector_rejects_wrong_dtype():
@@ -57,7 +88,7 @@ def test_chess_refiner_attached_to_chess_strategy():
 def test_config_roundtrip_and_print_helpers():
     cfg = chess_corners.DetectorConfig.chess_multiscale()
     cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
-    cfg.threshold = chess_corners.Threshold.absolute(4.5)
+    cfg.threshold = 4.5
     saddle = chess_corners.SaddlePointConfig()
     saddle.max_offset = 2.0
     chess = cfg.strategy.chess
@@ -114,17 +145,16 @@ def test_typed_config_passes_through_ffi_directly():
 
     img = _checkerboard(square_size=16, squares=8)
     cfg = chess_corners.DetectorConfig()
-    cfg.threshold = chess_corners.Threshold.relative(0.1)
+    cfg.threshold = 0.1
     fcfg = chess_corners.ForstnerConfig()
     fcfg.max_offset = 1.75
     chess = cfg.strategy.chess
     chess.refiner = chess_corners.ChessRefiner.forstner(fcfg)
     cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
 
-    corners = chess_corners.Detector(cfg).detect(img)
-    assert corners.dtype == np.float32
-    assert corners.ndim == 2
-    assert corners.shape[1] == 7
+    result = chess_corners.Detector(cfg).detect(img)
+    assert isinstance(result, chess_corners.Detections)
+    assert result.xy.dtype == np.float32
 
 
 def test_invalid_cfg_type_raises_type_error():
@@ -206,26 +236,25 @@ def test_detector_config_roundtrip():
     img = _checkerboard(square_size=16, squares=8)
 
     cfg = chess_corners.DetectorConfig.chess()
-    cfg.threshold = chess_corners.Threshold.relative(0.1)
+    cfg.threshold = 0.1
     detector = chess_corners.Detector(cfg)
 
     # Snapshot the live config and verify it reflects the applied threshold.
     snapshot = detector.config()
-    assert snapshot.threshold.kind == "relative"
+    assert abs(snapshot.threshold - 0.1) < 1e-6
 
     # Mutate the snapshot and apply it back.
-    snapshot.threshold = chess_corners.Threshold.absolute(0.0)
+    snapshot.threshold = 0.0
     detector.apply_config(snapshot)
 
     # The updated config should be reflected in a new snapshot.
     updated = detector.config()
-    assert updated.threshold.kind == "absolute"
+    assert abs(updated.threshold - 0.0) < 1e-6
 
     # Detector must still produce a valid result after apply_config.
-    corners = detector.detect(img)
-    assert corners.dtype == np.float32
-    assert corners.ndim == 2
-    assert corners.shape[1] == 7
+    result = detector.detect(img)
+    assert isinstance(result, chess_corners.Detections)
+    assert result.xy.dtype == np.float32
 
 
 def test_radon_multiscale_classmethod():
@@ -239,9 +268,8 @@ def test_radon_multiscale_classmethod():
     assert cfg.multiscale.kind == "pyramid"
 
     # End-to-end: detector must produce at least some corners.
-    cfg.threshold = chess_corners.Threshold.relative(0.05)
-    corners = chess_corners.Detector(cfg).detect(img)
-    assert corners.dtype == np.float32
-    assert corners.ndim == 2
-    assert corners.shape[1] == 7
-    assert corners.shape[0] > 0, "radon_multiscale detector returned no corners"
+    cfg.threshold = 0.05
+    result = chess_corners.Detector(cfg).detect(img)
+    assert isinstance(result, chess_corners.Detections)
+    assert result.xy.dtype == np.float32
+    assert len(result) > 0, "radon_multiscale detector returned no corners"

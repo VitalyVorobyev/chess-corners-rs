@@ -21,8 +21,8 @@ use chess_corners::low_level::ImageView;
 use chess_corners_core::unstable::ChessParams;
 use chess_corners_core::{
     chess_response_u8, CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig,
-    ForstnerRefiner, RadonPeakConfig, RadonPeakRefiner, RefineContext, RefineStatus, ResponseMap,
-    SaddlePointConfig, SaddlePointRefiner,
+    ForstnerRefiner, RefineContext, RefineStatus, ResponseMap, SaddlePointConfig,
+    SaddlePointRefiner,
 };
 
 // ---------------------------------------------------------------------------
@@ -191,7 +191,6 @@ struct ClassicRefiners {
     center: CenterOfMassRefiner,
     forstner: ForstnerRefiner,
     saddle: SaddlePointRefiner,
-    radon: RadonPeakRefiner,
 }
 
 impl ClassicRefiners {
@@ -200,7 +199,6 @@ impl ClassicRefiners {
             center: CenterOfMassRefiner::new(CenterOfMassConfig::default()),
             forstner: ForstnerRefiner::new(ForstnerConfig::default()),
             saddle: SaddlePointRefiner::new(SaddlePointConfig::default()),
-            radon: RadonPeakRefiner::new(RadonPeakConfig::default()),
         }
     }
 }
@@ -334,7 +332,6 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
     let mut center_stats = Stats::default();
     let mut forstner_stats = Stats::default();
     let mut saddle_stats = Stats::default();
-    let mut radon_stats = Stats::default();
     #[cfg(feature = "ml-refiner")]
     let mut ml_refiner = ml::MlRefiner::load();
     #[cfg(feature = "ml-refiner")]
@@ -381,15 +378,6 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
                 (ox, oy),
                 &mut saddle_stats,
             );
-            bench_refiner(
-                &mut classic.radon,
-                ITERS,
-                view,
-                None,
-                seed,
-                (ox, oy),
-                &mut radon_stats,
-            );
 
             #[cfg(feature = "ml-refiner")]
             if let Some(r) = ml_refiner.as_mut() {
@@ -413,10 +401,6 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
             name: "SaddlePoint",
             stats: saddle_stats,
         },
-        RefinerRow {
-            name: "RadonPeak",
-            stats: radon_stats,
-        },
     ];
     for r in &rows {
         eprintln!("{}", format_row(r));
@@ -430,23 +414,19 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
         eprintln!("{}", format_row(&ml_row));
     }
 
-    // Floor assertions that guard against regressions in the code we
-    // actively tune here (RadonPeak). Other refiners are printed for
-    // context but not asserted — their numbers vary more with the
-    // fixture and the bench is primarily informational. At cell=5 the
-    // default RadonPeak ray integrates across most of a cell and is a
-    // little less accurate; the floor is relaxed there.
+    // Floor assertion guarding against regressions in the SaddlePoint
+    // fit math on clean input. Other refiners are printed for context
+    // but not asserted — their numbers vary more with the fixture and
+    // the bench is primarily informational.
     if blur_sigma == 0.0 && noise_sigma == 0.0 {
-        let floor = if cell >= 8 { 0.05 } else { 0.15 };
         assert!(
-            radon_stats.mean_err() < floor,
-            "RadonPeak clean mean {} >= {} (cell={cell})",
-            radon_stats.mean_err(),
-            floor,
+            saddle_stats.mean_err() < 0.2,
+            "SaddlePoint clean mean {} >= 0.2 (cell={cell})",
+            saddle_stats.mean_err(),
         );
         assert_eq!(
-            radon_stats.accepts, offsets,
-            "RadonPeak dropped candidates on clean input"
+            saddle_stats.accepts, offsets,
+            "SaddlePoint dropped candidates on clean input"
         );
     }
 }
@@ -455,8 +435,7 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
 // Tests. Each sweep runs an independent condition.
 
 // Cell sizes:
-//   - 8 px: matches the default RadonPeak ray_radius=2×image_upsample=2
-//     (4 physical px integration), a comfortable "large cell" regime.
+//   - 8 px: a comfortable "large cell" regime.
 //   - 5 px: closer to what the ML refiner was trained on (scale-1
 //     corners on 21×21 patches). Included for a fair ML comparison.
 

@@ -43,9 +43,9 @@ single configuration type:
 Both produce the same `CornerDescriptor` output, and both feed the
 same [multiscale pipeline](part-07-multiscale-and-pyramids.md).
 
-Once a detector has produced integer-pixel seeds, one of five
+Once a detector has produced integer-pixel seeds, one of four
 subpixel refiners brings the coordinates under a pixel:
-`CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, or an
+`CenterOfMass`, `Förstner`, `SaddlePoint`, or an
 ONNX-backed `ML` refiner. Each is selected through the active
 strategy's `refiner` field. The refiners are described in
 [Part V](part-05-refiners.md) and benchmarked in
@@ -123,11 +123,11 @@ Every detector in the workspace returns `Vec<CornerDescriptor>`.
 The type lives in `chess-corners-core` and is re-exported by the
 facade. Fields:
 
-| Field           | Type               | Meaning                                                                 |
-|-----------------|--------------------|-------------------------------------------------------------------------|
-| `x`, `y`        | `f32`              | Subpixel position in input image pixels.                                |
-| `response`      | `f32`              | Raw detector response at the peak. Scale is detector-specific.          |
-| `axes[0, 1]`    | `[AxisEstimate; 2]`| The two local grid axis directions, each with a 1σ angular uncertainty. |
+| Field           | Type                        | Meaning                                                                 |
+|-----------------|-----------------------------|-------------------------------------------------------------------------|
+| `x`, `y`        | `f32`                       | Subpixel position in input image pixels.                                |
+| `response`      | `f32`                       | Raw detector response at the peak. Scale is detector-specific.          |
+| `axes`          | `Option<[AxisEstimate; 2]>` | The two local grid axis directions, each with a 1σ angular uncertainty — or `None` when the orientation fit is disabled. |
 
 The two axes are **not** assumed orthogonal — projective warp or
 lens distortion tilts the sectors independently, and the fit
@@ -136,6 +136,14 @@ recovers both directions. Polarity convention:
 with the CCW arc from axis 0 to axis 1 crossing a dark sector. Full
 details and the fit math are in
 [Part III §3.4](part-03-chess-detector.md#34-corner-descriptors).
+
+The orientation fit is the dominant per-corner cost. It is also
+optional: a pipeline that recovers board geometry from corner
+*positions* alone — grid topology, then a global homography — never
+reads the per-corner axes. Disabling orientation (see
+[Part VI §6.5](part-06-orientation-methods.md#65-choosing-a-method))
+skips the fit and leaves `axes` as `None`, so you pay only for the
+positions you use.
 
 ## 1.5 Where to go next
 
@@ -172,14 +180,19 @@ Feature flags on the `chess-corners` facade:
 |---------------|------------------------------------------------------------------------|
 | `image`       | Default. `image::GrayImage` convenience entry points.                  |
 | `rayon`       | Parallelize response computation and multiscale refinement over cores. |
-| `simd`        | Portable SIMD for the ChESS kernel. Nightly only.                      |
+| `simd`        | Optional high-performance path: `std::simd` for the ChESS kernel. Nightly only. |
 | `par_pyramid` | SIMD / Rayon acceleration inside the pyramid downsampler.              |
 | `tracing`     | Structured `tracing` spans for the detector pipeline.                  |
 | `ml-refiner`  | Enable the ONNX-backed refiner (`chess-corners-ml` dependency).        |
 | `cli`         | Build the `chess-corners` binary.                                      |
 
 All feature combinations produce the same numerical results;
-features only affect performance and observability.
+features only affect performance and observability. The stable
+scalar/autovectorized build is the supported, portable baseline —
+correct on every target and fast enough for typical use; it needs
+Rust 1.88 or newer. `simd` layers portable `std::simd` on top for
+extra throughput and is the only feature that requires a nightly
+toolchain.
 
 ### Python
 

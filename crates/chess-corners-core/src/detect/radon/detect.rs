@@ -44,10 +44,7 @@ pub fn detect_peaks_from_radon(
         return Vec::new();
     }
 
-    let thr = params
-        .threshold_abs
-        .unwrap_or(params.threshold_rel * max_r)
-        .max(0.0);
+    let thr = (params.threshold_rel * max_r).max(0.0);
 
     let nms_r = params.nms_radius as i32;
     let ray_r = params.ray_radius_clamped() as i32;

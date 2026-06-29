@@ -6,8 +6,8 @@
 use anyhow::{Context, Result};
 use chess_corners::{
     AxisEstimate, CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, CornerDescriptor,
-    DetectionStrategy, Detector, DetectorConfig, ForstnerConfig, MultiscaleConfig, RadonPeakConfig,
-    RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
+    DetectionStrategy, Detector, DetectorConfig, ForstnerConfig, MultiscaleConfig,
+    SaddlePointConfig, UpscaleConfig,
 };
 use image::{ImageBuffer, ImageReader, Luma};
 use log::info;
@@ -24,17 +24,6 @@ pub enum ChessRefinerSel {
     CenterOfMass,
     Forstner,
     SaddlePoint,
-}
-
-/// Refiner selector for the Radon strategy, exposed by the CLI.
-///
-/// Accepts only the variants valid for Radon; passing a ChESS-only
-/// refiner via `--radon-refiner` is rejected at clap parse time.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RadonRefinerSel {
-    RadonPeak,
-    CenterOfMass,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -60,16 +49,13 @@ pub struct DetectionOverrides {
     pub merge_radius: Option<f32>,
     pub output_json: Option<PathBuf>,
     pub output_png: Option<PathBuf>,
-    pub threshold: Option<Threshold>,
+    pub threshold: Option<f32>,
     pub chess_ring: Option<ChessRing>,
     pub nms_radius: Option<u32>,
     pub min_cluster_size: Option<u32>,
     /// Override the ChESS subpixel refiner. Ignored when the active
     /// strategy is not ChESS.
     pub chess_refiner: Option<ChessRefinerSel>,
-    /// Override the Radon subpixel refiner. Ignored when the active
-    /// strategy is not Radon.
-    pub radon_refiner: Option<RadonRefinerSel>,
     /// Integer upscale factor override. `Some(0)` means no override;
     /// `Some(k)` for k >= 2 sets `upscale = Fixed(k)`.
     pub upscale_factor: Option<u32>,
@@ -86,7 +72,8 @@ pub struct CornerOut {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub axes: [AxisOut; 2],
+    /// `null` when the orientation fit was skipped.
+    pub axes: Option<[AxisOut; 2]>,
 }
 
 impl From<&AxisEstimate> for AxisOut {
@@ -172,7 +159,9 @@ impl From<&CornerDescriptor> for CornerOut {
             x: c.x,
             y: c.y,
             response: c.response,
-            axes: [AxisOut::from(&c.axes[0]), AxisOut::from(&c.axes[1])],
+            axes: c
+                .axes
+                .map(|axes| [AxisOut::from(&axes[0]), AxisOut::from(&axes[1])]),
         }
     }
 }
@@ -197,14 +186,12 @@ pub fn validate_algorithm_config(cfg: &DetectorConfig) -> Result<()> {
     if cfg.merge_radius <= 0.0 {
         anyhow::bail!("merge_radius must be > 0");
     }
-    match cfg.threshold {
-        Threshold::Absolute(v) if v < 0.0 => {
-            anyhow::bail!("threshold.absolute must be >= 0")
-        }
-        Threshold::Relative(f) if !(0.0..=1.0).contains(&f) => {
-            anyhow::bail!("threshold.relative must be in [0, 1]")
-        }
-        _ => {}
+    if cfg.threshold < 0.0 {
+        anyhow::bail!("threshold must be >= 0");
+    }
+    // Radon reads the threshold as a fraction of the per-frame maximum.
+    if matches!(cfg.strategy, DetectionStrategy::Radon(_)) && cfg.threshold > 1.0 {
+        anyhow::bail!("threshold for the Radon detector is a fraction in [0, 1]");
     }
     cfg.upscale
         .validate()
@@ -215,7 +202,9 @@ pub fn validate_algorithm_config(cfg: &DetectorConfig) -> Result<()> {
 fn log_active_refiner(cfg: &DetectorConfig) {
     match &cfg.strategy {
         DetectionStrategy::Chess(chess) => info!("refiner: {:?}", chess.refiner),
-        DetectionStrategy::Radon(radon) => info!("refiner: {:?}", radon.refiner),
+        DetectionStrategy::Radon(radon) => {
+            info!("subpixel: {:?} peak fit (built-in)", radon.peak_fit)
+        }
         _ => info!("refiner: <unknown strategy>"),
     }
 }
@@ -239,17 +228,6 @@ fn apply_chess_refiner(cfg: &mut DetectorConfig, sel: ChessRefinerSel) {
     }
 }
 
-fn apply_radon_refiner(cfg: &mut DetectorConfig, sel: RadonRefinerSel) {
-    if let DetectionStrategy::Radon(radon) = &mut cfg.strategy {
-        radon.refiner = match sel {
-            RadonRefinerSel::RadonPeak => RadonRefiner::RadonPeak(RadonPeakConfig::default()),
-            RadonRefinerSel::CenterOfMass => {
-                RadonRefiner::CenterOfMass(CenterOfMassConfig::default())
-            }
-        };
-    }
-}
-
 pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides) {
     let DetectionOverrides {
         pyramid_levels,
@@ -263,7 +241,6 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
         nms_radius,
         min_cluster_size,
         chess_refiner,
-        radon_refiner,
         upscale_factor,
     } = overrides;
 
@@ -324,9 +301,6 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
     }
     if let Some(v) = chess_refiner {
         apply_chess_refiner(&mut cfg.algorithm, v);
-    }
-    if let Some(v) = radon_refiner {
-        apply_radon_refiner(&mut cfg.algorithm, v);
     }
     // `Some(0)` is the documented sentinel for "no override — keep the value
     // parsed from the JSON config". Any other value is forwarded to

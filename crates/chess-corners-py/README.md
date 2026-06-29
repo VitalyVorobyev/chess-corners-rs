@@ -16,31 +16,34 @@ import chess_corners
 img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.DetectorConfig.chess_multiscale()
-cfg.threshold = chess_corners.Threshold.relative(0.15)
+cfg.threshold = 60.0  # ChESS: absolute floor on the raw response (default 30)
 cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
-corners = detector.detect(img)
-print(corners.shape, corners.dtype)
+det = detector.detect(img)
+print(det.xy.shape, det.xy.dtype)  # (N, 2) float32
+if det.angles is not None:
+    print(det.angles.shape)        # (N, 2) float32
 print(cfg)
 ```
 
-`Detector(cfg).detect(image)` returns a NumPy `float32` array of shape
-`(N, 7)` with columns:
+`Detector(cfg).detect(image)` returns a `Detections` object with named
+arrays:
 
-1. `x` — subpixel corner x in input pixels
-2. `y` — subpixel corner y in input pixels
-3. `response` — raw detector response at the detected peak
-4. `axis0_angle` — angle of the first local grid axis, radians in `[0, π)`
-5. `axis0_sigma` — 1σ uncertainty of `axis0_angle`, radians
-6. `axis1_angle` — angle of the second local grid axis, radians in
-   `(axis0_angle, axis0_angle + π)`
-7. `axis1_sigma` — 1σ uncertainty of `axis1_angle`, radians
+- `det.xy` — `(N, 2)` float32, subpixel corner positions (x, y) in input pixels
+- `det.response` — `(N,)` float32, raw detector response at each peak
+- `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
+- `det.sigmas` — `(N, 2)` float32, 1σ uncertainty per axis in radians, or `None` when orientation is disabled
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` (by less than π)
 traverses a **dark** sector of the corner; the two grid axes are **not**
 assumed to be orthogonal, so this output correctly captures projective
 warp and lens distortion.
+
+The orientation fit is the dominant per-corner cost, and it is
+optional. A pipeline that recovers board geometry from corner
+*positions* alone can skip it with `cfg.without_orientation()`; in that
+case `det.angles` and `det.sigmas` are `None`.
 
 Input requirements:
 
@@ -58,7 +61,7 @@ inside a `DetectionStrategy` variant. Top-level fields are
 
 ```python
 cfg = chess_corners.DetectorConfig.chess()  # ChESS, no pyramid
-cfg.threshold = chess_corners.Threshold.relative(0.2)
+cfg.threshold = 60.0  # plain float; ChESS = absolute response floor (default 30), Radon = fraction of per-frame max (default 0.01)
 cfg.merge_radius = 3.0
 
 # Enable the coarse-to-fine pyramid (both detectors honour this):
@@ -96,8 +99,9 @@ cfg = (
 
 Refiners are per-detector: `ChessRefiner` carries one of
 `center_of_mass`, `forstner`, `saddle_point`, or `ml` (with the
-`ml-refiner` feature). `RadonRefiner` carries one of `radon_peak` or
-`center_of_mass`. The active variant's tuning is reachable via the
+`ml-refiner` feature). The Radon detector uses its built-in Gaussian
+peak fit (`PeakFitMode`); it does not expose a pluggable refiner.
+The active `ChessRefiner` variant's tuning is reachable via the
 `payload` property:
 
 ```python
@@ -111,8 +115,6 @@ assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
 
 Tagged classes:
 
-- `Threshold`: `Threshold.absolute(value)` / `Threshold.relative(frac)`;
-  read `cfg.threshold.kind` and `cfg.threshold.value`.
 - `MultiscaleConfig`: `MultiscaleConfig.single_scale()` /
   `MultiscaleConfig.pyramid(levels=, min_size=, refinement_radius=)`;
   read `cfg.multiscale.kind` and (when `pyramid`) `levels`,
@@ -122,13 +124,14 @@ Tagged classes:
   `fixed`) `factor`.
 - `ChessRefiner`: `center_of_mass()`, `forstner()`, `saddle_point()`,
   `ml()` (with the `ml-refiner` feature).
-- `RadonRefiner`: `radon_peak()`, `center_of_mass()`.
 
 Enums:
 
 - `ChessRing`: `CANONICAL`, `BROAD`
 - `PeakFitMode`: `PARABOLIC`, `GAUSSIAN`
-- `OrientationMethod`: `RING_FIT`, `DISK_FIT`
+- `OrientationMethod`: `RING_FIT`, `DISK_FIT`; disable the fit entirely
+  with `cfg.without_orientation()` (then `det.angles` and `det.sigmas`
+  are `None`)
 
 `ChessRing.BROAD` uses the wider radius-10 detector sampling pattern.
 Descriptors always sample at the detector ring radius.
@@ -178,7 +181,7 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
       }
     }
   },
-  "threshold": { "absolute": 0.5 },
+  "threshold": 60.0,
   "detection": { "nms_radius": 3, "min_cluster_size": 1 },
   "multiscale": {
     "pyramid": {
@@ -202,8 +205,7 @@ Switch to the Radon strategy by replacing the `strategy` object and setting the 
       "ray_radius": 4,
       "image_upsample": 2,
       "response_blur_radius": 1,
-      "peak_fit": "gaussian",
-      "refiner": { "radon_peak": {} }
+      "peak_fit": "gaussian"
     }
   },
   "detection": { "nms_radius": 4, "min_cluster_size": 2 }

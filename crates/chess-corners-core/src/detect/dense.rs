@@ -434,10 +434,7 @@ mod tests {
         let view = ImageView::from_u8_slice(SIZE, SIZE, &img).expect("view");
 
         // ChESS path.
-        let chess_params = ChessParams {
-            threshold_rel: 0.01,
-            ..ChessParams::default()
-        };
+        let chess_params = ChessParams::default();
         let mut chess_buffers = ChessBuffers::default();
         let chess = ChessDetector;
         let resp = chess.compute_response(view, &chess_params, &mut chess_buffers);
@@ -474,10 +471,7 @@ mod tests {
         let img_b = synthetic_chessboard_aa(SIZE, CELL, (16.7, 16.2), 30, 230);
         let view_a = ImageView::from_u8_slice(SIZE, SIZE, &img_a).expect("view");
         let view_b = ImageView::from_u8_slice(SIZE, SIZE, &img_b).expect("view");
-        let params = ChessParams {
-            threshold_rel: 0.01,
-            ..ChessParams::default()
-        };
+        let params = ChessParams::default();
         let mut buffers = ChessBuffers::default();
         let chess = ChessDetector;
 

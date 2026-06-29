@@ -30,7 +30,7 @@ use the same `DetectorConfig` schema.
 | Stage | Options | More detail |
 |-------|---------|-------------|
 | Detector | `ChESS` ring response, `Radon` ray-sum response | [ChESS](book/src/part-03-chess-detector.md) · [atlas](https://vitavision.dev/atlas/chess-corners), [Radon](book/src/part-04-radon-detector.md) · [atlas](https://vitavision.dev/atlas/duda-radon-corners) |
-| Refiner | `CenterOfMass`, `Förstner`, `SaddlePoint`, `RadonPeak`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
+| Refiner | `CenterOfMass`, `Förstner`, `SaddlePoint`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
 | Scale handling | Single-scale or coarse-to-fine 2× pyramid | [Multiscale](book/src/part-07-multiscale-and-pyramids.md) |
 | Benchmarks | Synthetic sweeps and pipeline timings | [Benchmarks](book/src/part-08-benchmarks.md) |
 
@@ -105,13 +105,19 @@ Each Rust detection is a `CornerDescriptor`:
 |-------|---------|
 | `x`, `y` | Subpixel position in input-image pixels |
 | `response` | Raw detector response at the detected peak |
-| `axes[0]`, `axes[1]` | Two local grid-axis directions with per-axis 1σ uncertainty |
+| `axes` | `Option` of two local grid-axis directions with per-axis 1σ uncertainty; `None` when the orientation fit is disabled |
 
 The two axes are not forced to be orthogonal. This lets the descriptor
 represent perspective warp and lens distortion instead of collapsing the
 corner to a right-angle model. See
 [Part III §3.4](book/src/part-03-chess-detector.md#34-corner-descriptors)
 for the convention and derivation.
+
+The orientation fit is the dominant per-corner cost, and it is
+optional. A pipeline that recovers board geometry from corner
+*positions* alone can disable it with
+`DetectorConfig::without_orientation()`, which skips the fit and leaves
+each descriptor's `axes` as `None`.
 
 ![Projective-warp orientation overlays](book/src/img/readme_warp_overlays.png)
 
@@ -137,9 +143,10 @@ validate on your own images when the decision matters.
 
 Refiner choice is also workload-dependent. The benchmark chapter reports
 the fixture, timing loop, and error metric used for each claim. In that
-fixture, `RadonPeak` has the lowest clean/blurred error and the optional
-ML refiner has the lowest mean error in the heaviest noise condition,
-while the geometric refiners are much cheaper per corner.
+fixture, `Förstner` has the lowest mean error on clean frames, `SaddlePoint`
+is most robust to blur, and the optional ML refiner has the lowest mean error
+in the heaviest noise condition; the geometric refiners are much cheaper per
+corner than ML.
 
 ## Performance Snapshot
 
@@ -184,13 +191,19 @@ cfg = chess_corners.DetectorConfig.chess_multiscale()
 cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
 
 detector = chess_corners.Detector(cfg)
-corners = detector.detect(img)
-print(corners.shape)  # (N, 7)
+det = detector.detect(img)
+print(det.xy.shape)      # (N, 2) float32
+print(det.response.shape) # (N,)  float32
 ```
 
-The returned NumPy array is `float32` with columns:
-`x, y, response, axis0_angle, axis0_sigma,
-axis1_angle, axis1_sigma`.
+`detect()` returns a `Detections` object with named arrays:
+
+- `det.xy` — `(N, 2)` float32, subpixel corner positions (x, y) in input pixels
+- `det.response` — `(N,)` float32, raw detector response at each peak
+- `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
+- `det.sigmas` — `(N, 2)` float32, 1σ uncertainty per axis in radians, or `None` when orientation is disabled
+
+With `cfg.without_orientation()`, `det.angles` and `det.sigmas` are `None`.
 
 ## JavaScript / WebAssembly
 
@@ -235,7 +248,7 @@ a JSON summary and optional overlay PNG. Useful config examples:
 |---------|--------|
 | `image` | `image::GrayImage` entry points |
 | `rayon` | Parallel response/refinement work |
-| `simd` | Portable SIMD for ChESS kernels; requires nightly Rust |
+| `simd` | Optional high-performance path: `std::simd` ChESS kernels; nightly only |
 | `par_pyramid` | SIMD/Rayon paths inside `box-image-pyramid` |
 | `tracing` | Structured diagnostic spans |
 | `ml-refiner` | ONNX refiner through `chess-corners-ml` |
@@ -244,6 +257,9 @@ a JSON summary and optional overlay PNG. Useful config examples:
 
 Feature flags should affect performance or observability, not the
 numerical output. Deterministic ordering is part of the public contract.
+The stable scalar/autovectorized build is the supported, portable
+baseline — correct on every target and fast enough for typical use; it
+needs Rust 1.88 or newer. Only `simd` requires a nightly toolchain.
 
 ## Diligence Statement
 

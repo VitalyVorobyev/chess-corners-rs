@@ -2,18 +2,22 @@
 """Merge measured PUBLIC perf numbers into the committed performance data.
 
 Reads the raw per-image measurements produced by the `perf_overlay`
-example (run by scripts/gen-perf-data.sh) and refreshes ONLY the numeric
+example (run by scripts/gen-perf-data.sh) and refreshes ONLY the measured
 fields of .github/pages/performance/data.json. Editorial content — each
-card's label, file, img and note, plus the meta note — is preserved.
+card's label, file and note, plus the meta note — is preserved.
+
+Each card carries a `configs` array: the measured algorithm matrix
+(ChESS × {refiner} × {orientation}, Radon × {refiner} × {orientation}),
+keyed into the card by image basename. Per-config `total_ms` /
+`throughput_mpix_s` are re-derived from the measured stage p50s here so
+the published totals can never drift from the per-stage breakdown. The
+per-image `width`, `height` and `overlays` (chess/radon preview paths)
+are merged too.
 
 Host metadata (cpu / rustc / git_sha / features / threads / repeats /
 warmup) is read from environment variables exported by gen-perf-data.sh;
 an unset variable leaves the existing value untouched. `generated` is set
 to today (UTC).
-
-`total_ms` and `throughput_mpix_s` are derived from the measured stage
-p50s here so the published totals can never drift from the per-stage
-breakdown.
 
 Public data only — never read or emit private numbers.
 
@@ -73,6 +77,28 @@ def apply_meta(meta):
     meta["generated"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
+def merge_config(c, px):
+    """Round a measured config's stages and re-derive total_ms / throughput.
+
+    `px` is the image pixel count, used to recompute the per-config
+    throughput from the re-derived total so totals never drift from the
+    per-stage breakdown.
+    """
+    stages = {k: round(float(v), 4) for k, v in c["stages"].items()}
+    total = round(sum(stages.values()), 4)
+    throughput = round(px / (total * 1000.0), 2) if total > 0 else 0.0
+    return {
+        "id": c["id"],
+        "detector": c["detector"],
+        "refiner": c["refiner"],
+        "orientation": c["orientation"],
+        "corner_count": c["corner_count"],
+        "stages": stages,
+        "total_ms": total,
+        "throughput_mpix_s": throughput,
+    }
+
+
 def main():
     raw_dir, data_path = sys.argv[1], sys.argv[2]
     data = load(data_path)
@@ -83,19 +109,19 @@ def main():
     if not measured:
         print("WARNING: no perf.json measurements found — leaving image numbers as-is.")
     else:
+        # Legacy single-config per-image fields, dropped in favour of `configs`.
+        legacy_keys = ("img", "corner_count", "stages", "total_ms", "throughput_mpix_s")
         for card in data.get("images", []):
             m = measured.get(os.path.basename(card["file"]))
             if not m:
                 continue
             card["width"] = m["width"]
             card["height"] = m["height"]
-            card["corner_count"] = m["corner_count"]
-            stages = {k: round(float(v), 4) for k, v in m["stages"].items()}
-            card["stages"] = stages
-            total = round(sum(stages.values()), 4)
-            card["total_ms"] = total
+            card["overlays"] = m["overlays"]
             px = m["width"] * m["height"]
-            card["throughput_mpix_s"] = round(px / (total * 1000.0), 2) if total > 0 else 0.0
+            card["configs"] = [merge_config(c, px) for c in m["configs"]]
+            for k in legacy_keys:
+                card.pop(k, None)
 
     with open(data_path, "w") as f:
         json.dump(data, f, indent=2)

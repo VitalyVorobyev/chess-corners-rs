@@ -41,18 +41,14 @@ export type OrientationKind = "ringFit" | "diskFit";
 /** Subpixel refiner for the ChESS strategy. */
 export type ChessRefinerKind = "centerOfMass" | "forstner" | "saddlePoint";
 
-/** Subpixel refiner for the Radon strategy. */
-export type RadonRefinerKind = "radonPeak" | "centerOfMass";
-
 /** UI-facing detector configuration, mapped to the typed WASM config tree. */
 export interface DetectorSettings {
   strategy: Strategy;
   multiscale: boolean;
-  /** Relative acceptance threshold (fraction of the per-frame max response). */
-  thresholdRel: number;
+  /** Acceptance threshold. ChESS: absolute response floor (0–100). Radon: fraction of per-frame max (0–0.5). */
+  threshold: number;
   orientation: OrientationKind;
   chessRefiner: ChessRefinerKind;
-  radonRefiner: RadonRefinerKind;
   /** Non-maximum-suppression radius (px). */
   nmsRadius: number;
   /** Minimum cluster size for a detection to survive. */

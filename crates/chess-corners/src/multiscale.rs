@@ -202,7 +202,7 @@ fn make_roi_context(
 struct DetectorShape<'r> {
     refiner_kind: &'r RefinerKind,
     descriptor_ring_radius: u32,
-    orientation_method: OrientationMethod,
+    orientation_method: Option<OrientationMethod>,
     merge_radius: f32,
 }
 
@@ -445,7 +445,11 @@ pub(crate) fn detect_with_buffers(
         }
         DetectionStrategy::Radon(_) => {
             let radon_params = cfg.radon_detector_params();
-            let refiner_kind = radon_params.refiner.clone();
+            // Radon's subpixel is its built-in Gaussian peak fit:
+            // `refine_peaks_on_image` is a no-op and `refines_on_image()`
+            // is false, so this refiner kind is constructed but never
+            // applied. Use the cheapest default.
+            let refiner_kind = RefinerKind::default();
             // Radon strategies don't carry a descriptor-ring knob;
             // descriptors sample the canonical r=5 ring downstream.
             // Orientation method is top-level on DetectorConfig.

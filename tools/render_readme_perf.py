@@ -54,7 +54,7 @@ class Case:
 #
 # - ChESS responses are dimensionful gray-level sums on the 16-sample ring;
 #   they spike sharply at true X-junctions (~600+ here) and stay near
-#   single-digit at background noise. A single Threshold::Absolute(100.0)
+#   single-digit at background noise. A threshold of 100.0 (absolute floor)
 #   splits cleanly on both single-scale and multiscale.
 # - Radon's heatmap is broader because rays integrate through the corner.
 #   The multiscale pipeline's cross-level merge shifts the operating point
@@ -68,7 +68,7 @@ RADON_MULTI_RELATIVE = 0.34
 def _abs(factory: Callable[[], cc.DetectorConfig], v: float) -> Callable[[], cc.DetectorConfig]:
     def make() -> cc.DetectorConfig:
         cfg = factory()
-        cfg.threshold = cc.Threshold.absolute(v)
+        cfg.threshold = v
         return cfg
     return make
 
@@ -76,7 +76,7 @@ def _abs(factory: Callable[[], cc.DetectorConfig], v: float) -> Callable[[], cc.
 def _rel(factory: Callable[[], cc.DetectorConfig], v: float) -> Callable[[], cc.DetectorConfig]:
     def make() -> cc.DetectorConfig:
         cfg = factory()
-        cfg.threshold = cc.Threshold.relative(v)
+        cfg.threshold = v
         return cfg
     return make
 

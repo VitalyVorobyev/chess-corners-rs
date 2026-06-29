@@ -31,9 +31,14 @@ pub struct CornerDescriptor {
     pub x: f32,
     pub y: f32,
     pub response: f32,
-    pub axes: [AxisEstimate; 2],
+    pub axes: Option<[AxisEstimate; 2]>,
 }
 ```
+
+`axes` is an `Option`: the per-corner orientation fit is opt-out via
+`DetectorConfig::without_orientation()`, in which case `axes` is `None`.
+The Python `(N, 7)` array and WASM stride-7 `Float32Array` keep their
+shape — the four axis columns are `NaN` when the fit is skipped.
 
 Rationale: at `crates/chess-corners-core/src/orientation/descriptor.rs:81-82`
 both fields are just re-exposed copies of the fit-internal `fit.amp` / `fit.rms`.
@@ -148,8 +153,7 @@ the stub. Decide whether to align factory names or document the mapping.
 **Status: landed.**
 
 - `#[non_exhaustive]` added to `CenterOfMassConfig`, `ForstnerConfig`,
-  `SaddlePointConfig` (they were the only refiner configs missing it;
-  `RadonPeakConfig` already had it), to the `RingOffsets` enum, and to
+  `SaddlePointConfig`, to the `RingOffsets` enum, and to
   `ChessBuffers` — the one scratch-buffer carrier with a public field
   (`response`), where a future internal scratch field would otherwise
   break external literal construction; `#[non_exhaustive]` keeps that

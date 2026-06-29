@@ -58,7 +58,7 @@ def make_config(method) -> "cc.DetectorConfig":
     cfg.strategy = cc.DetectionStrategy.from_chess(chess)
     cfg.detection.nms_radius = 2
     cfg.detection.min_cluster_size = 1
-    cfg.threshold = cc.Threshold.absolute(0.05)
+    cfg.threshold = 0.05
     cfg.merge_radius = 1.5
     cfg.orientation_method = method
     return cfg

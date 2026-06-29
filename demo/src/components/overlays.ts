@@ -53,7 +53,7 @@ export function cornersLayer(
         const [rr, gg, bb] = turbo(Math.min(1, Math.abs(c.response) * inv));
         ctx.fillStyle = `rgb(${rr}, ${gg}, ${bb})`;
         ctx.beginPath();
-        ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+        ctx.arc(c.x + 0.5, c.y + 0.5, r, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }
@@ -80,8 +80,8 @@ export function axesLayer(
           const dy = Math.sin(axis.angle) * L;
           ctx.strokeStyle = k === 0 ? OVERLAY_COLORS.axis0 : OVERLAY_COLORS.axis1;
           ctx.beginPath();
-          ctx.moveTo(c.x - dx, c.y - dy);
-          ctx.lineTo(c.x + dx, c.y + dy);
+          ctx.moveTo(c.x + 0.5 - dx, c.y + 0.5 - dy);
+          ctx.lineTo(c.x + 0.5 + dx, c.y + 0.5 + dy);
           ctx.stroke();
         }
       }
@@ -111,8 +111,8 @@ export function sigmaLayer(
           // Undirected axis: mirror the wedge to both ends.
           for (const base of [axis.angle, axis.angle + Math.PI]) {
             ctx.beginPath();
-            ctx.moveTo(c.x, c.y);
-            ctx.arc(c.x, c.y, L, base - s, base + s);
+            ctx.moveTo(c.x + 0.5, c.y + 0.5);
+            ctx.arc(c.x + 0.5, c.y + 0.5, L, base - s, base + s);
             ctx.closePath();
             ctx.fill();
           }

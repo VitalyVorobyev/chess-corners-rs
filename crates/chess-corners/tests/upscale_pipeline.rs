@@ -1,6 +1,6 @@
 //! Integration tests for the optional pre-pipeline upscaling stage.
 
-use chess_corners::{ChessError, Detector, DetectorConfig, Threshold, UpscaleConfig};
+use chess_corners::{ChessError, Detector, DetectorConfig, UpscaleConfig};
 
 fn detect_u8(
     img: &[u8],
@@ -35,10 +35,10 @@ fn quadrant_corner(size: u32, dark: u8, bright: u8) -> Vec<u8> {
 
 fn low_res_cfg() -> DetectorConfig {
     // `DetectorConfig::default()` is single-scale ChESS — no pyramid is
-    // built on these small synthetic tiles, so we just need a small
-    // relative threshold to accept the lone synthetic corner.
+    // built on these small synthetic tiles, so we just need a tiny
+    // absolute response floor to accept the lone synthetic corner.
     let mut cfg = DetectorConfig::default();
-    cfg.threshold = Threshold::Relative(0.01);
+    cfg.threshold = 0.01;
     cfg
 }
 

@@ -1,13 +1,13 @@
 """Python-first public API for the chess_corners detector.
 
 The config classes (`DetectorConfig`, `ChessConfig`, `RadonConfig`,
-`ChessRefiner`, `RadonRefiner`, ...) and enums (`ChessRing`,
+`ChessRefiner`, ...) and enums (`ChessRing`,
 `PeakFitMode`, `OrientationMethod`) are native PyO3
 types defined in the compiled `_native` extension. They expose
 attribute access, classmethod factories
-(`DetectorConfig.multiscale()`, `Threshold.relative(...)`,
-`MultiscaleConfig.pyramid(...)`, `ChessRefiner.forstner(cfg)`), and
-`to_dict` / `from_dict` / `to_json` / `from_json` helpers.
+(`DetectorConfig.multiscale()`, `MultiscaleConfig.pyramid(...)`,
+`ChessRefiner.forstner(cfg)`), and `to_dict` / `from_dict` /
+`to_json` / `from_json` helpers.
 
 The detector itself is the :class:`Detector` PyClass - build once,
 call :meth:`Detector.detect` repeatedly to amortise pyramid / upscale
@@ -30,15 +30,13 @@ from ._native import (
     DetectionStrategy,
     Detector,
     DetectorConfig,
+    Detections,
     ForstnerConfig,
     MultiscaleConfig,
     OrientationMethod,
     PeakFitMode,
     RadonConfig,
-    RadonPeakConfig,
-    RadonRefiner,
     SaddlePointConfig,
-    Threshold,
     UpscaleConfig,
 )
 
@@ -71,13 +69,10 @@ for _cls in (
     CenterOfMassConfig,
     ForstnerConfig,
     SaddlePointConfig,
-    RadonPeakConfig,
     DetectionParams,
-    Threshold,
     MultiscaleConfig,
     UpscaleConfig,
     ChessRefiner,
-    RadonRefiner,
     ChessConfig,
     RadonConfig,
     DetectionStrategy,
@@ -97,14 +92,12 @@ __all__ = [
     "DetectionStrategy",
     "Detector",
     "DetectorConfig",
+    "Detections",
     "ForstnerConfig",
     "MultiscaleConfig",
     "OrientationMethod",
     "PeakFitMode",
     "RadonConfig",
-    "RadonPeakConfig",
-    "RadonRefiner",
     "SaddlePointConfig",
-    "Threshold",
     "UpscaleConfig",
 ]

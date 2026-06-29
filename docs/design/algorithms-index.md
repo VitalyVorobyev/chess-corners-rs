@@ -23,7 +23,6 @@ by" lists the downstream stages. Paths are relative to the repo root.
 | **F1** | CenterOfMass refiner | Refinement | `crates/chess-corners-core/src/refine/center_of_mass.rs` | V | — | response patch → subpixel `(x,y)` | X1 |
 | **F2** | Förstner refiner (structure tensor) | Refinement | `crates/chess-corners-core/src/refine/forstner.rs` | V | — | image patch → subpixel `(x,y)` | X1 |
 | **F3** | SaddlePoint refiner (quadratic Hessian) | Refinement | `crates/chess-corners-core/src/refine/saddle_point.rs` | V | — | response patch → subpixel `(x,y)` | X1 |
-| **F4** | RadonPeak refiner | Refinement | `crates/chess-corners-core/src/refine/radon_peak.rs` | V | — | image patch → subpixel `(x,y)` | X1 |
 | **T2** | `CornerRefiner` trait + `Refiner` dispatch enum | Refinement abstraction | `crates/chess-corners-core/src/refine/mod.rs` | V | — | corner → refined corner | D1, D2 |
 | **O1** | RingFit two-axis orientation (Gauss-Newton + σ-LUT) | Orientation | `crates/chess-corners-core/src/orientation/ring_fit/` | VI | `rayon` | ring samples → 2 axes + σ | X1 |
 | **O2** | DiskFit two-axis orientation (full-disk, lazy RingFit fallback) | Orientation | `crates/chess-corners-core/src/orientation/disk_sector/` | VI | — | disk samples → 2 axes + σ | X1 |
@@ -48,7 +47,7 @@ u8 image
 [D1] detect: threshold→NMS→cluster   [D2] detect: …→Gaussian peak fit
         │                              │
         ▼                              ▼
-[F1/F2/F3] subpixel refine          [F4] RadonPeak refine        (via T2; [M1] optional post-step)
+[F1/F2/F3] subpixel refine            │            (via T2; [M1] optional post-step)
         └──────────────┬──────────────┘
                        ▼
         [O1] RingFit  /  [O2] DiskFit   (two-axis orientation; uses [U1] σ-LUT, [H1] ring tables)
@@ -65,7 +64,7 @@ u8 image
 | Crate | Stages it owns |
 |-------|----------------|
 | `box-image-pyramid` | S1 (fully standalone; zero chess coupling) |
-| `chess-corners-core` | R1, R2, H1, D1, D2, T1, F1–F4, T2, O1, O2, U1, X1 |
+| `chess-corners-core` | R1, R2, H1, D1, D2, T1, F1–F3, T2, O1, O2, U1, X1 |
 | `chess-corners` (facade) | S2, S3 + the high-level `Detector`/config that selects R*/D*/F*/O* |
 | `chess-corners-ml` | M1 (only with `ml-refiner`) |
 | `chess-corners-py` / `-wasm` | bindings over the facade; own no algorithm |
@@ -86,4 +85,4 @@ See also: [`architecture.md`](architecture.md) (crate layering & data flow),
 [`../reference/detector-comparison.md`](../reference/detector-comparison.md)
 (R1/D1 vs R2/D2), and
 [`../reference/refiner-comparison.md`](../reference/refiner-comparison.md)
-(F1–F4 accuracy/throughput).
+(F1–F3 accuracy/throughput, plus ML).

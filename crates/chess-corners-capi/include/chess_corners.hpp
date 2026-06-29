@@ -24,7 +24,7 @@ namespace chess_corners {
 /// Checked against `cc_abi_version()` before each detection (see
 /// `check_abi()`); a mismatch means the header and the linked library are
 /// incompatible and detection throws rather than reading a stale layout.
-inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 1;
+inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 3;
 
 /// One local grid-axis direction with its 1-sigma angular uncertainty.
 ///
@@ -38,12 +38,15 @@ struct Axis {
 ///
 /// `axes` follow the joint polarity convention of the C ABI: `axes[0].angle`
 /// lies in `[0, pi)` and `axes[1].angle` in `(axes[0].angle, axes[0].angle +
-/// pi)`.
+/// pi)`. They are only meaningful when `has_orientation` is `true`; when the
+/// orientation fit was skipped (`CC_ORIENTATION_NONE`) `has_orientation` is
+/// `false` and `axes` is zeroed.
 struct Corner {
     float x = 0.0f;
     float y = 0.0f;
     float response = 0.0f;
     std::array<Axis, 2> axes{};
+    bool has_orientation = true;
 };
 
 /// Exception thrown when a C entry point returns a non-`CC_OK` status.
@@ -77,8 +80,7 @@ private:
 /// `Config::chess()`.
 struct Config {
     cc_strategy_t strategy;
-    cc_threshold_kind_t threshold_kind;
-    float threshold_value;
+    float threshold;
     std::uint32_t nms_radius;
     std::uint32_t min_cluster_size;
     cc_refiner_t refiner;
@@ -92,8 +94,7 @@ struct Config {
     static Config from_c(const cc_config& c) noexcept {
         Config out{Uninit{}};
         out.strategy = c.strategy;
-        out.threshold_kind = c.threshold_kind;
-        out.threshold_value = c.threshold_value;
+        out.threshold = c.threshold;
         out.nms_radius = c.nms_radius;
         out.min_cluster_size = c.min_cluster_size;
         out.refiner = c.refiner;
@@ -106,8 +107,7 @@ struct Config {
     [[nodiscard]] cc_config to_c() const noexcept {
         cc_config c;
         c.strategy = strategy;
-        c.threshold_kind = threshold_kind;
-        c.threshold_value = threshold_value;
+        c.threshold = threshold;
         c.nms_radius = nms_radius;
         c.min_cluster_size = min_cluster_size;
         c.refiner = refiner;
@@ -200,6 +200,7 @@ inline std::vector<Corner> detect(const std::uint8_t* pixels,
         dst.response = src.response;
         dst.axes[0] = Axis{src.axes[0].angle, src.axes[0].sigma};
         dst.axes[1] = Axis{src.axes[1].angle, src.axes[1].sigma};
+        dst.has_orientation = src.has_orientation != 0;
         corners.push_back(dst);
     }
     return corners;

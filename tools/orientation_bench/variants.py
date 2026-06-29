@@ -22,7 +22,7 @@ def _build_permissive_cfg():
     cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
     cfg.detection.nms_radius = 2
     cfg.detection.min_cluster_size = 1
-    cfg.threshold = chess_corners.Threshold.absolute(0.05)
+    cfg.threshold = 0.05
     cfg.merge_radius = 1.5
     return cfg
 

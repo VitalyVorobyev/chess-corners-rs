@@ -9,7 +9,6 @@
 //! - [`forstner`] — gradient structure-tensor refinement on the image
 //!   intensity patch.
 //! - [`saddle_point`] — quadratic surface fit on the image patch.
-//! - [`radon_peak`] — Radon-projection refiner along candidate axes.
 
 use crate::imageview::ImageView;
 use crate::ResponseMap;
@@ -17,12 +16,10 @@ use serde::{Deserialize, Serialize};
 
 pub mod center_of_mass;
 pub mod forstner;
-pub mod radon_peak;
 pub mod saddle_point;
 
 pub use center_of_mass::{CenterOfMassConfig, CenterOfMassRefiner};
 pub use forstner::{ForstnerConfig, ForstnerRefiner};
-pub use radon_peak::{RadonPeakConfig, RadonPeakRefiner};
 pub use saddle_point::{SaddlePointConfig, SaddlePointRefiner};
 
 /// Sealing supertrait for [`CornerRefiner`]. Implemented only for the
@@ -41,10 +38,8 @@ mod private {
 ///   `RefineResult::x` and `y`.
 /// - [`Rejected`](RefineStatus::Rejected) — the refiner ran but the
 ///   result did not pass an acceptance criterion (e.g. the computed
-///   displacement exceeded [`ForstnerConfig::max_offset`] or
-///   [`RadonPeakConfig::max_offset`], or the peak response was below
-///   [`RadonPeakConfig::min_response`]). Fall back to the original seed
-///   or skip this candidate.
+///   displacement exceeded [`ForstnerConfig::max_offset`]). Fall back to
+///   the original seed or skip this candidate.
 /// - [`OutOfBounds`](RefineStatus::OutOfBounds) — the seed is too close
 ///   to the image border for the refiner's patch window. The seed
 ///   coordinates in `RefineResult` are unchanged from the input.
@@ -89,10 +84,6 @@ pub enum RefineStatus {
 /// - **SaddlePoint**: `score` is `sqrt(|det(H)|)` where `H` is the
 ///   fitted quadratic Hessian. Larger magnitude indicates a sharper
 ///   saddle (steeper curvature); no absolute scale is defined.
-/// - **RadonPeak**: `score` is `sqrt(best_response)` where
-///   `best_response` is the peak `(max_ray − min_ray)²` value on the
-///   local Radon response map (in pixel-intensity units). Higher means
-///   stronger crossing-line structure.
 #[derive(Copy, Clone, Debug)]
 #[non_exhaustive]
 pub struct RefineResult {
@@ -132,7 +123,6 @@ impl RefineResult {
 /// - [`CenterOfMassRefiner`] reads `response`; it ignores `image`.
 /// - [`ForstnerRefiner`] and [`SaddlePointRefiner`] read `image`;
 ///   they ignore `response`.
-/// - [`RadonPeakRefiner`] reads `image`; it ignores `response`.
 ///
 /// Passing `None` for a required source causes the refiner to return
 /// [`RefineStatus::Rejected`] without moving the seed.
@@ -140,7 +130,7 @@ impl RefineResult {
 #[non_exhaustive]
 pub struct RefineContext<'a> {
     /// Grayscale image view. Required by image-patch refiners
-    /// (Förstner, SaddlePoint, RadonPeak).
+    /// (Förstner, SaddlePoint).
     pub image: Option<ImageView<'a>>,
     /// Dense ChESS response map. Required by the CenterOfMass refiner.
     pub response: Option<&'a ResponseMap>,
@@ -161,9 +151,9 @@ impl<'a> RefineContext<'a> {
 /// This trait is **sealed** via a private supertrait bound and cannot
 /// be implemented outside this crate. The built-in implementors are
 /// [`CenterOfMassRefiner`], [`ForstnerRefiner`], [`SaddlePointRefiner`],
-/// [`RadonPeakRefiner`], and the [`Refiner`] dispatcher. It is not a
-/// public extension point: select a backend through [`RefinerKind`]
-/// rather than implementing this trait.
+/// and the [`Refiner`] dispatcher. It is not a public extension point:
+/// select a backend through [`RefinerKind`] rather than implementing
+/// this trait.
 pub trait CornerRefiner: private::Sealed {
     /// Half-width of the patch the refiner needs around the seed,
     /// in input-image pixels. The caller must ensure the seed is at
@@ -195,8 +185,6 @@ pub enum RefinerKind {
     Forstner(ForstnerConfig),
     /// Quadratic surface fit on the image patch.
     SaddlePoint(SaddlePointConfig),
-    /// Local Radon-peak refinement along candidate axes.
-    RadonPeak(RadonPeakConfig),
 }
 
 impl Default for RefinerKind {
@@ -218,7 +206,6 @@ pub enum Refiner {
     CenterOfMass(CenterOfMassRefiner),
     Forstner(ForstnerRefiner),
     SaddlePoint(SaddlePointRefiner),
-    RadonPeak(RadonPeakRefiner),
 }
 
 impl Refiner {
@@ -229,7 +216,6 @@ impl Refiner {
             RefinerKind::CenterOfMass(cfg) => Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg)),
             RefinerKind::Forstner(cfg) => Refiner::Forstner(ForstnerRefiner::new(cfg)),
             RefinerKind::SaddlePoint(cfg) => Refiner::SaddlePoint(SaddlePointRefiner::new(cfg)),
-            RefinerKind::RadonPeak(cfg) => Refiner::RadonPeak(RadonPeakRefiner::new(cfg)),
         }
     }
 }
@@ -241,7 +227,6 @@ impl CornerRefiner for Refiner {
             Refiner::CenterOfMass(r) => r.radius(),
             Refiner::Forstner(r) => r.radius(),
             Refiner::SaddlePoint(r) => r.radius(),
-            Refiner::RadonPeak(r) => r.radius(),
         }
     }
 
@@ -251,7 +236,6 @@ impl CornerRefiner for Refiner {
             Refiner::CenterOfMass(r) => r.refine(seed_xy, ctx),
             Refiner::Forstner(r) => r.refine(seed_xy, ctx),
             Refiner::SaddlePoint(r) => r.refine(seed_xy, ctx),
-            Refiner::RadonPeak(r) => r.refine(seed_xy, ctx),
         }
     }
 }
@@ -259,7 +243,6 @@ impl CornerRefiner for Refiner {
 impl private::Sealed for CenterOfMassRefiner {}
 impl private::Sealed for ForstnerRefiner {}
 impl private::Sealed for SaddlePointRefiner {}
-impl private::Sealed for RadonPeakRefiner {}
 impl private::Sealed for Refiner {}
 
 #[cfg(test)]

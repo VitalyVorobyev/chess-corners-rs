@@ -22,7 +22,6 @@ class CellArrays:
     delta1: np.ndarray
     sigma0: np.ndarray
     sigma1: np.ndarray
-    fit_rms: np.ndarray
     axis_swap_flag: np.ndarray
     degenerate_flag: np.ndarray
     matched: int
@@ -96,7 +95,6 @@ def aggregate_cell(arrays: CellArrays) -> dict:
     d1 = np.asarray(arrays.delta1, dtype=np.float64)
     s0 = np.asarray(arrays.sigma0, dtype=np.float64)
     s1 = np.asarray(arrays.sigma1, dtype=np.float64)
-    fit = np.asarray(arrays.fit_rms, dtype=np.float64)
     swap = np.asarray(arrays.axis_swap_flag, dtype=bool)
     degen = np.asarray(arrays.degenerate_flag, dtype=bool)
     matched = int(arrays.matched)
@@ -108,14 +106,6 @@ def aggregate_cell(arrays: CellArrays) -> dict:
     failure_pct = float(np.mean(degen)) if degen.size else 0.0
 
     detection_pct = float(matched) / float(gt_total) if gt_total > 0 else 0.0
-
-    abs_d0 = np.abs(d0)
-    abs_d1 = np.abs(d1)
-    # Drop NaN pairs from correlation inputs (parallel masking).
-    mask0 = np.isfinite(fit) & np.isfinite(abs_d0)
-    mask1 = np.isfinite(fit) & np.isfinite(abs_d1)
-    corr0 = _safe_pearson(fit[mask0], abs_d0[mask0])
-    corr1 = _safe_pearson(fit[mask1], abs_d1[mask1])
 
     return {
         "n_samples": int(d0.size),
@@ -137,8 +127,6 @@ def aggregate_cell(arrays: CellArrays) -> dict:
         "z_std_axis1": z1_std,
         "z_outlier_frac_axis1": z1_out,
         "z_n_axis1": z1_n,
-        "corr_fitrms_abserr_axis0": corr0,
-        "corr_fitrms_abserr_axis1": corr1,
         "axis_swap_frac": float(swap.mean()) if swap.size else 0.0,
         "degenerate_frac": float(degen.mean()) if degen.size else 0.0,
     }

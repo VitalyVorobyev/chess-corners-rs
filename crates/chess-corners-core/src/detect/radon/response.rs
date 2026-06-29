@@ -25,7 +25,6 @@ use core::simd::Simd;
 use std::simd::cmp::SimdOrd;
 
 use super::primitives::{box_blur_inplace, PeakFitMode};
-use crate::refine::RefinerKind;
 use crate::ResponseMap;
 
 /// Number of pixels processed per SIMD iteration in
@@ -64,25 +63,17 @@ pub struct RadonDetectorParams {
     pub response_blur_radius: u32,
     /// Peak-fit mode for the 3-point subpixel refinement.
     pub peak_fit: PeakFitMode,
-    /// Relative response threshold as a fraction of the map's max
-    /// value. Used when `threshold_abs` is `None`.
+    /// Response threshold as a fraction of the per-frame maximum
+    /// response. The Radon `(max−min)²` response is unnormalized (it
+    /// scales with ray length and contrast), so a relative floor adapts
+    /// across frames where a fixed absolute cutoff would not.
     pub threshold_rel: f32,
-    /// Absolute response threshold. Overrides `threshold_rel` when set.
-    /// The paper's `(max−min)²` response is always ≥ 0, so the strict
-    /// inequality `R > 0` that ChESS uses is not by itself selective
-    /// enough — use a positive absolute floor in practice.
-    pub threshold_abs: Option<f32>,
     /// Non-maximum-suppression half-radius (in **working-resolution**
     /// pixels).
     pub nms_radius: u32,
     /// Minimum count of positive-response neighbours in the NMS window
     /// required to accept a peak. Rejects isolated noise.
     pub min_cluster_size: u32,
-    /// Subpixel refiner applied after Radon peak extraction. Defaults
-    /// to the Radon-projection refiner that pairs with the detector
-    /// output.
-    #[serde(default)]
-    pub refiner: RefinerKind,
 }
 
 impl Default for RadonDetectorParams {
@@ -93,10 +84,8 @@ impl Default for RadonDetectorParams {
             response_blur_radius: 1,
             peak_fit: PeakFitMode::Gaussian,
             threshold_rel: 0.01,
-            threshold_abs: None,
             nms_radius: 4,
             min_cluster_size: 2,
-            refiner: RefinerKind::RadonPeak(crate::refine::RadonPeakConfig::default()),
         }
     }
 }
@@ -865,7 +854,6 @@ mod tests {
             let params = RadonDetectorParams {
                 image_upsample: 1,
                 response_blur_radius: 0,
-                threshold_abs: Some(0.0),
                 ..RadonDetectorParams::default()
             };
             let mut buffers = RadonBuffers::new();

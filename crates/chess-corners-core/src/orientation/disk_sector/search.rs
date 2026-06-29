@@ -1,11 +1,11 @@
 //! Top-fit selection and local refinement of the best disk pair.
 
 use super::candidates::{
-    build_pair_pool, forced_histogram_pair, forced_seed_pair, histogram_candidates, CandidateSet,
-    PairScore, MAX_CANDIDATES, MAX_PAIRS,
+    build_pair_pool, combine_edge_pair, forced_histogram_pair, forced_seed_pair,
+    histogram_candidates, CandidateSet, PairScore, MAX_CANDIDATES, MAX_PAIRS,
 };
 use super::data::DiskData;
-use super::geometry::wrap_pi;
+use super::geometry::{signed_line_delta, wrap_pi};
 use super::score::{
     fit_is_better, precompute_edge_alignments, score_pair, score_pair_cached, Fit, MAX_TANH_PIXELS,
     WIDTHS_PX,
@@ -212,7 +212,100 @@ pub(super) fn insert_top(top: &mut [Option<Fit>; TOP_FITS], fit: Fit) {
 
 /// Local grid search around `seed` to refine the pair angles.
 /// Step sizes: 1°, 0.5°, 0.25°.
+///
+/// Dispatches to the row-cached implementation whenever the disk fits the
+/// per-axis scratch (`data.n <= MAX_TANH_PIXELS`, always true for the
+/// production `MAX_SUPPORT_RADIUS = 8`). The scalar reference handles the
+/// out-of-envelope fallback and is the bit-exact oracle the cached path
+/// is tested against.
 pub(super) fn refine_fit(data: &DiskData, seed: Fit) -> Fit {
+    if data.n <= MAX_TANH_PIXELS {
+        refine_fit_cached(data, seed)
+    } else {
+        refine_fit_scalar(data, seed)
+    }
+}
+
+/// Row-cached refinement.
+///
+/// Each greedy 3×3 step evaluates eight neighbours that share only three
+/// distinct θ₁ and three distinct θ₂ angles, yet the scalar reference
+/// recomputes both `tanh` factors *and* the full gradient-alignment edge
+/// score for all eight. Here the per-angle `tanh` rows and (un-normalised)
+/// edge sums are built once per step — rebuilt only when the greedy update
+/// moves the center — and reused across the eight combinations through the
+/// bit-exact [`score_pair_cached`] / [`combine_edge_pair`] paths. The
+/// `tanh`/`exp` count per step drops from `8·2·n` to `≤(1+moves)·3·2·n`.
+/// Output is bit-identical to [`refine_fit_scalar`].
+fn refine_fit_cached(data: &DiskData, seed: Fit) -> Fit {
+    let n = data.n;
+    let mut best = seed;
+    let total = edge_weight_total(data);
+    // Three θ₁-side and three θ₂-side rows for offsets [-step, 0, +step]
+    // around the current best, with their matching un-normalised edge
+    // sums. Stack-only; no per-corner heap allocation.
+    let mut t1_rows = [[0.0f32; MAX_TANH_PIXELS]; 3];
+    let mut t2_rows = [[0.0f32; MAX_TANH_PIXELS]; 3];
+    let mut t1_edge = [0.0f32; 3];
+    let mut t2_edge = [0.0f32; 3];
+
+    for step_deg in [1.0f32, 0.5, 0.25] {
+        let step = step_deg.to_radians();
+        let offsets = [-step, 0.0, step];
+        // Rebuild the cached rows at the start of each step and whenever a
+        // greedy update moves `best` (so the rows always describe the
+        // angles `score_pair_cached` is about to be called with).
+        let mut stale = true;
+        for (i0, &d0) in offsets.iter().enumerate() {
+            for (i1, &d1) in offsets.iter().enumerate() {
+                if d0 == 0.0 && d1 == 0.0 {
+                    continue;
+                }
+                if stale {
+                    build_axis_rows(
+                        data,
+                        best.theta1,
+                        &offsets,
+                        best.width,
+                        &mut t1_rows,
+                        &mut t1_edge,
+                    );
+                    build_axis_rows(
+                        data,
+                        best.theta2,
+                        &offsets,
+                        best.width,
+                        &mut t2_rows,
+                        &mut t2_edge,
+                    );
+                    stale = false;
+                }
+                let edge = combine_edge_pair(t1_edge[i0], t2_edge[i1], total);
+                if let Some(fit) = score_pair_cached(
+                    data,
+                    best.theta1 + d0,
+                    best.theta2 + d1,
+                    best.width,
+                    edge,
+                    &t1_rows[i0][..n],
+                    &t2_rows[i1][..n],
+                ) {
+                    if fit_is_better(fit, best) {
+                        best = fit;
+                        stale = true;
+                    }
+                }
+            }
+        }
+    }
+    best
+}
+
+/// Scalar reference refinement: recomputes the `tanh` model and the
+/// gradient-alignment edge score from scratch for every candidate. Used
+/// when `data.n > MAX_TANH_PIXELS` (out of the cached envelope) and as the
+/// bit-exact oracle for [`refine_fit_cached`].
+fn refine_fit_scalar(data: &DiskData, seed: Fit) -> Fit {
     let mut best = seed;
     // Step pattern dropped from `[2.0, 1.0, 0.5, 0.25]` to
     // `[1.0, 0.5, 0.25]`. The 2° step's role was to recover from a
@@ -237,4 +330,50 @@ pub(super) fn refine_fit(data: &DiskData, seed: Fit) -> Fit {
         }
     }
     best
+}
+
+/// Σ of the per-pixel gradient magnitudes. Matches the `total`
+/// accumulation order in [`super::score::edge_pair_score`] so the cached
+/// edge score is bit-identical to the scalar one.
+#[inline]
+fn edge_weight_total(data: &DiskData) -> f32 {
+    let mut total = 0.0f32;
+    for p in 0..data.n {
+        total += data.grad_weights[p];
+    }
+    total
+}
+
+/// Fill `rows[k]` / `edges[k]` for `θ = base + offsets[k]`, k ∈ {0,1,2}:
+///
+/// - `rows[k][p] = tanh((-sinθ·xₚ + cosθ·yₚ) / width)`
+/// - `edges[k]   = Σₚ wₚ · exp(-½(Δₚ/σ)²)` (un-normalised, σ = 4°)
+///
+/// Both expressions match `score_pair` / `edge_pair_score` operation for
+/// operation (same factor order, same accumulation order), so feeding the
+/// rows to [`score_pair_cached`] and the edge sums to [`combine_edge_pair`]
+/// reproduces the scalar refinement bit-for-bit.
+fn build_axis_rows(
+    data: &DiskData,
+    base: f32,
+    offsets: &[f32; 3],
+    width: f32,
+    rows: &mut [[f32; MAX_TANH_PIXELS]; 3],
+    edges: &mut [f32; 3],
+) {
+    let n = data.n;
+    let sigma = 4.0_f32.to_radians();
+    for (k, &off) in offsets.iter().enumerate() {
+        let theta = base + off;
+        let (s, c) = theta.sin_cos();
+        let row = &mut rows[k];
+        let mut s_e = 0.0f32;
+        for (p, row_p) in row.iter_mut().take(n).enumerate() {
+            let d = -s * data.xs[p] + c * data.ys[p];
+            *row_p = (d / width).tanh();
+            let dd = signed_line_delta(data.grad_angles[p], theta);
+            s_e += data.grad_weights[p] * (-0.5 * (dd / sigma) * (dd / sigma)).exp();
+        }
+        edges[k] = s_e;
+    }
 }

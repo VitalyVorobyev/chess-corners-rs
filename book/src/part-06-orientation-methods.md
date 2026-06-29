@@ -17,14 +17,16 @@ use each, and how each one works step by step.
 The `orientation_method` field on `DetectorConfig` (and the
 `OrientationMethod` enum) selects which algorithm runs:
 
-| Method     | JSON key      | Notes                                                                        |
-|------------|---------------|------------------------------------------------------------------------------|
-| `RingFit`  | `"ring_fit"`  | **Default.** 16-sample ring Gauss-Newton fit with calibrated σ.              |
-| `DiskFit`  | `"disk_fit"`  | Full-disk crossing-line estimator. Falls back to `RingFit` on weak evidence. |
+| Method       | JSON key     | Notes                                                                        |
+|--------------|--------------|------------------------------------------------------------------------------|
+| `RingFit`    | `"ring_fit"` | **Default.** 16-sample ring Gauss-Newton fit with calibrated σ.              |
+| `DiskFit`    | `"disk_fit"` | Full-disk crossing-line estimator. Falls back to `RingFit` on weak evidence. |
+| *(disabled)* | `null`       | Skip the fit entirely. `without_orientation()` (Rust/Python), `withoutOrientation()` (JS), `CC_ORIENTATION_NONE` (C). Each descriptor's `axes` is then `None`. |
 
-Both methods produce the same `AxisFitResult` shape:
+`RingFit` and `DiskFit` produce the same `AxisFitResult` shape:
 `(theta1, theta2, sigma_theta1, sigma_theta2, amp, rms)`. They differ
 in the image evidence they use and in the failure modes they handle.
+Disabling skips the stage altogether — see [§6.5](#65-choosing-a-method).
 
 ## 6.2 RingFit
 
@@ -177,6 +179,15 @@ benchmark (~131 µs vs ~15 µs for the measured case), but the lazy gate
 short-circuits clean orthogonal inputs. Switch to `DiskFit` when working
 with images that have known projective warp; otherwise leave the
 default in place.
+
+A third option is to compute no orientation at all. The fit — `RingFit`
+or `DiskFit` — is the dominant per-corner cost, so if your pipeline
+recovers board geometry from corner *positions* alone (grid topology,
+then a global homography) and never reads the per-corner axes, call
+`without_orientation()` (Rust/Python), `withoutOrientation()` (JS), or
+set `CC_ORIENTATION_NONE` (C). Detection and subpixel refinement still
+run unchanged; each descriptor's `axes` comes back `None`, and the fit's
+cost disappears.
 
 For the per-method precision/cost trade-off on the synthetic bench,
 see the orientation bench `REPORT.md` in `tools/orientation_bench/`.

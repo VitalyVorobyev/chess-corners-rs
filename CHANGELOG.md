@@ -7,17 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Orientation can now be skipped. `DetectorConfig::without_orientation()`
+  (Rust), `without_orientation()` (Python), `withoutOrientation()` (WASM),
+  and `CC_ORIENTATION_NONE` (C) skip the per-corner axis fit entirely —
+  useful when a downstream stage recovers board geometry and does not need
+  per-corner orientation. With the fit skipped, detection returns the same
+  corner positions with no axis data.
+
 ### Removed
 
+- **Breaking:** removed the `RadonRefiner` config — the Rust enum, the
+  `RadonConfig.refiner` field, the Python/WASM `RadonRefiner` type, and the
+  CLI `--radon-refiner` flag. It was a no-op: the Radon detector never
+  applied a pluggable refiner, so the choice had no effect on output.
+  Radon's subpixel accuracy comes from its built-in Gaussian peak fit
+  (`peak_fit`), which is unchanged. Migration: delete any `refiner` set on
+  a Radon config — Radon detection results are identical.
+- **Breaking:** removed the internal `RadonPeak` refiner — the core
+  `RefinerKind::RadonPeak` variant, the `RadonPeakConfig` type (including
+  the Python and WebAssembly `RadonPeakConfig` classes), and the C
+  `CC_REFINER_RADON_PEAK` tag. It was never selectable through the public
+  `ChessRefiner` configuration and was reachable only from the removed
+  `RadonRefiner` path; the Radon detector's Gaussian peak fit is unchanged.
 - **Breaking:** dropped the `contrast` and `fit_rms` fields from
   `CornerDescriptor`. The public descriptor is now
   `{ x, y, response, axes }`, and a single `response` score is the
-  detection-strength contract. The Python `detect()` array is now
-  `(N, 7)` and the WebAssembly `Float32Array` uses stride 7
-  (`[x, y, response, axis0_angle, axis0_sigma, axis1_angle,
-  axis1_sigma]`); the CLI JSON `corners` entries drop the two fields.
-  Migration: use `response` for per-corner strength and `axes[i].sigma`
-  for per-axis confidence.
+  detection-strength contract. The WebAssembly `Float32Array` uses
+  stride 7 (`[x, y, response, axis0_angle, axis0_sigma, axis1_angle,
+  axis1_sigma]`) and the CLI JSON `corners` entries drop the two fields.
+  (The Python result is a structure-of-arrays `Detections` object — see
+  *Changed* below.) Migration: use `response` for per-corner strength and
+  `axes[i].sigma` for per-axis confidence.
 - **Breaking:** the low-level Radon primitives (`ANGLES`, `DIR_COS`,
   `DIR_SIN`, `fit_peak_frac`, `box_blur_inplace`, and the `SatElem`
   summed-area-table element type) are no longer re-exported from
@@ -30,6 +52,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (Python):** `Detector.detect()` returns a `Detections` object
+  with named numpy arrays — `xy` (N×2), `response` (N), and `angles` /
+  `sigmas` (N×2, or `None` when orientation is disabled) — instead of a
+  dense `(N, 7)` array. Clearer than positional columns and makes
+  "orientation off" explicit (`None` vs `NaN`). Migration: `arr[:, :2]` →
+  `det.xy`, `arr[:, 2]` → `det.response`, and the axis columns →
+  `det.angles` / `det.sigmas`.
+- **Breaking:** the detector acceptance threshold is now a single number
+  (`DetectorConfig.threshold: f32`) instead of an `Absolute` / `Relative`
+  enum. ChESS reads it as an absolute floor on the response; Radon reads it
+  as a fraction in `[0, 1]` of the per-frame maximum. The CLI exposes one
+  `--threshold` flag, the Python/WASM configs take a plain number, and JSON
+  configs write `"threshold": <number>`. Migration: replace
+  `Threshold::Absolute(v)` with `v` (ChESS) and `Threshold::Relative(f)`
+  with `f` (Radon).
+- **Breaking:** the default ChESS threshold is now `30` (was `0`). The
+  previous default accepted every positive response and produced large
+  numbers of spurious detections on textured backgrounds; `30` keeps
+  well-formed corners while suppressing that noise. Useful values run
+  roughly `30`–`300` depending on image contrast; set `threshold`
+  explicitly to recover the previous behaviour.
+- **Breaking:** `CornerDescriptor.axes` is now `Option<[AxisEstimate; 2]>`,
+  `None` when the orientation fit was skipped. The Python `Detections`
+  object then reports `angles` / `sigmas` as `None`; the WASM
+  `Float32Array` puts `NaN` in the four axis columns; the CLI JSON
+  writes `axes: null`.
+- **Breaking (C ABI, version 3):** `cc_config` drops the threshold-kind tag
+  and the `CC_THRESHOLD_*` constants (it now carries a single `threshold`
+  field), and `cc_corner` gains a `has_orientation` flag (`0` when the axis
+  fields are unset). Check `cc_abi_version()`.
 - **Breaking:** `ChessParams` and `RefinerKind` moved off the
   `chess-corners-core` crate root into the unstable, no-semver-guarantee
   `chess_corners_core::unstable` namespace, where they are documented as

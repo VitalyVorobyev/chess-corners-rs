@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 
 /// Optional pre-pipeline integer-factor upscaling.
 ///
-/// JSON shape mirrors the other enum-with-payload knobs (`Threshold`,
-/// `MultiscaleConfig`):
+/// JSON shape mirrors the other enum-with-payload knobs
+/// (`MultiscaleConfig`):
 ///
 /// - `{ "disabled": null }` — no upscaling (default).
 /// - `{ "fixed": 2 }` — upscale by an integer factor before detection.

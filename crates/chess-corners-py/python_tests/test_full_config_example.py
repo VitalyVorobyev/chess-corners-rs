@@ -34,7 +34,7 @@ SAMPLE_CONFIG = {
             },
         },
     },
-    "threshold": {"absolute": 0.5},
+    "threshold": 0.5,
     "detection": {"nms_radius": 3, "min_cluster_size": 1},
     "multiscale": {
         "pyramid": {
@@ -75,8 +75,7 @@ def test_full_config_example_parser_is_lazy_about_pillow():
 
     assert cfg.strategy.kind == "chess"
     assert cfg.strategy.chess.ring is chess_corners.ChessRing.BROAD
-    assert cfg.threshold.kind == "absolute"
-    assert cfg.threshold.value == 0.5
+    assert abs(cfg.threshold - 0.5) < 1e-6
     assert cfg.detection.nms_radius == 3
     assert cfg.detection.min_cluster_size == 1
     assert cfg.strategy.chess.refiner.kind == "forstner"
@@ -110,8 +109,7 @@ def test_code_config_example_is_lazy_about_pillow_and_builds_full_config():
     cfg = module.build_chess_config()
     assert cfg.strategy.kind == "chess"
     assert cfg.strategy.chess.ring is chess_corners.ChessRing.BROAD
-    assert cfg.threshold.kind == "absolute"
-    assert cfg.threshold.value == 0.5
+    assert abs(cfg.threshold - 0.5) < 1e-6
     assert cfg.strategy.chess.refiner.kind == "forstner"
     assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
     ms = cfg.multiscale

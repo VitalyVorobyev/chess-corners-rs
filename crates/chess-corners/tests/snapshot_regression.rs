@@ -26,7 +26,7 @@
 //!
 //! The Radon presets (`radon`, `radon_multiscale`) are intentionally
 //! excluded: their `(max - min)²` response sits near the
-//! `Threshold::Relative(0.01)` cutoff for many pixels, so
+//! relative `0.01` cutoff for many pixels, so
 //! sub-ulp FP differences DO cross the threshold and shift counts
 //! by ±0.5% across CPUs. The Radon path is covered end-to-end by
 //! `radon_pipeline.rs` (facade) and `radon_vs_chess.rs` (core).
@@ -95,14 +95,15 @@ struct CornerSnap {
 
 impl CornerSnap {
     fn from_descriptor(c: &CornerDescriptor) -> Self {
+        let axes = c.axes.expect("orientation enabled (default config)");
         Self {
             x: c.x as f64,
             y: c.y as f64,
             response: c.response as f64,
-            ax0_angle: c.axes[0].angle as f64,
-            ax0_sigma: c.axes[0].sigma as f64,
-            ax1_angle: c.axes[1].angle as f64,
-            ax1_sigma: c.axes[1].sigma as f64,
+            ax0_angle: axes[0].angle as f64,
+            ax0_sigma: axes[0].sigma as f64,
+            ax1_angle: axes[1].angle as f64,
+            ax1_sigma: axes[1].sigma as f64,
         }
     }
 }

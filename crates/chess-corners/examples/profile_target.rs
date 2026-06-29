@@ -19,8 +19,7 @@
 //! ```
 
 use chess_corners::{
-    CenterOfMassConfig, ChessRefiner, Detector, DetectorConfig, ForstnerConfig, RadonPeakConfig,
-    RadonRefiner, SaddlePointConfig,
+    CenterOfMassConfig, ChessRefiner, Detector, DetectorConfig, ForstnerConfig, SaddlePointConfig,
 };
 use image::ImageReader;
 use std::env;
@@ -55,7 +54,7 @@ fn parse_refiner(s: &str) -> Result<RefinerSel, String> {
         "com" | "center_of_mass" | "centerofmass" => Ok(RefinerSel::CenterOfMass),
         "forstner" => Ok(RefinerSel::Forstner),
         "saddle" | "saddle_point" | "saddlepoint" => Ok(RefinerSel::Saddle),
-        "radon" | "radon_peak" | "radonpeak" => Ok(RefinerSel::Radon),
+        "radon" | "none" => Ok(RefinerSel::Radon),
         other => Err(format!(
             "unknown refiner '{other}' (expected com|forstner|saddle|radon)"
         )),
@@ -67,17 +66,8 @@ fn chess_refiner_from_sel(sel: RefinerSel) -> Option<ChessRefiner> {
         RefinerSel::CenterOfMass => Some(ChessRefiner::CenterOfMass(CenterOfMassConfig::default())),
         RefinerSel::Forstner => Some(ChessRefiner::Forstner(ForstnerConfig::default())),
         RefinerSel::Saddle => Some(ChessRefiner::SaddlePoint(SaddlePointConfig::default())),
-        // RadonPeak is Radon-only; the ChESS strategy can't host it.
+        // The Radon strategy has no pluggable refiner (Gaussian peak fit).
         RefinerSel::Radon => None,
-    }
-}
-
-fn radon_refiner_from_sel(sel: RefinerSel) -> Option<RadonRefiner> {
-    match sel {
-        RefinerSel::Radon => Some(RadonRefiner::RadonPeak(RadonPeakConfig::default())),
-        RefinerSel::CenterOfMass => Some(RadonRefiner::CenterOfMass(CenterOfMassConfig::default())),
-        // Forstner / SaddlePoint are ChESS-only; not representable in the Radon enum.
-        RefinerSel::Forstner | RefinerSel::Saddle => None,
     }
 }
 
@@ -147,13 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             cfg
         }
-        Mode::Radon => {
-            let mut cfg = DetectorConfig::radon();
-            if let Some(refiner) = radon_refiner_from_sel(args.refiner) {
-                cfg = cfg.with_radon(|r| r.refiner = refiner);
-            }
-            cfg
-        }
+        Mode::Radon => DetectorConfig::radon(),
     };
     let mut detector = Detector::new(cfg).unwrap();
 

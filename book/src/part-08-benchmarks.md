@@ -1,7 +1,7 @@
 # Part VIII: Benchmarks and performance
 
 This chapter measures what the library does on controlled synthetic
-fixtures and on real calibration frames. It covers the five refiners
+fixtures and on real calibration frames. It covers the four refiners
 of [Part V](part-05-refiners.md), the full detector pipeline with
 and without optional features, and a comparison against OpenCV's
 corner pipeline. All plots are reproducible from the commands at the
@@ -70,10 +70,8 @@ standard way to draw an ECDF.
 
 Reading the CDF:
 
-- **RadonPeak** has the lowest errors across the whole distribution.
-  Its 95th percentile sits below 0.12 px.
-- **Förstner** and **cv2.cornerSubPix** cluster in the next band,
-  with mean around 0.06 px and `p95` around 0.10 px.
+- **Förstner** and **cv2.cornerSubPix** have the lowest errors on
+  clean data, with mean around 0.06 px and `p95` around 0.10 px.
 - **CenterOfMass** and **ML (ONNX v4)** land around 0.09 px mean /
   0.15 px `p95`.
 - **SaddlePoint** has a fat right tail on this fixture: its
@@ -93,13 +91,11 @@ where a refiner is usable without per-scene tuning.
   grows roughly linearly in `σ_blur`.
 - Every other refiner stays inside the plotted 0.05–0.10 px band up to
   `σ_blur = 2.5 px` on this fixture.
-- **RadonPeak** and **cv2.cornerSubPix** have the lowest blur-row errors
-  in this plot. Both integrate over neighborhoods that still contain
-  useful signal after the step edge is smoothed.
+- **SaddlePoint** and **cv2.cornerSubPix** have the lowest blur-row errors
+  in this plot among the measured candidates.
 
 The Radon detector is not shown on this plot because it is a detector,
-not a refiner. It uses the same response family as RadonPeak, but
-detector-level recall and precision are measured separately.
+not a refiner; detector-level recall and precision are measured separately.
 
 ## 7.4 Accuracy vs additive noise
 
@@ -132,10 +128,10 @@ Largest operational plot. Two refiners break on small cells:
   error. At cell = 6 the crossover is minimal and the refiner
   recovers.
 
-**RadonPeak**, **Förstner**, **SaddlePoint**, and **ML** look at a
-2–3 px local neighborhood and are cell-size-agnostic down to 4 px.
+**Förstner**, **SaddlePoint**, and **ML** look at a 2–3 px local
+neighborhood and are cell-size-agnostic down to 4 px.
 For dense targets (ChArUco, compact calibration boards) pick from
-those four.
+those three.
 
 ## 7.6 Throughput vs accuracy
 
@@ -150,10 +146,9 @@ The Pareto frontier, fast-to-slow:
 | Refiner             | Time / corner | Clean-data mean error | Notes                                                                 |
 |---------------------|---------------|-----------------------|-----------------------------------------------------------------------|
 | `CenterOfMass`      | ~20 ns        | 0.08 px               | Unmatched throughput; fails at cell ≤ 5 (see §7.5).                   |
-| `Förstner`          | ~60 ns        | 0.06 px               | Good on sharp images; degrades with blur.                             |
-| `SaddlePoint`       | ~120 ns       | 0.11 px               | Stable across conditions; the no-surprise default.                    |
-| `cv2.cornerSubPix`  | ~2.7 µs       | 0.05 px               | OpenCV's refiner. Comparable accuracy to RadonPeak on clean data.     |
-| `RadonPeak`         | ~17 µs        | 0.049 px              | Lowest clean/blur error. ~140× SaddlePoint cost.                      |
+| `Förstner`          | ~60 ns        | 0.06 px               | Lowest clean-data mean error; degrades with blur.                     |
+| `SaddlePoint`       | ~120 ns       | 0.11 px               | Stable across conditions; best geometric result on the blur row.      |
+| `cv2.cornerSubPix`  | ~2.7 µs       | 0.05 px               | OpenCV's iterative gradient refiner.                                  |
 | `ML (ONNX v4)`      | ~250 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row in this fixture.               |
 
 The OpenCV timing in earlier revisions of this chapter was reported
@@ -183,10 +178,8 @@ Observations:
 
 - Refinement dominates: the coarse detect stage takes 0.08–0.75 ms
   across these sizes; merge is a negligible fraction.
-- Picking RadonPeak over SaddlePoint adds ~5–15 ms on a 1000-corner
-  calibration frame. Usually acceptable for offline calibration,
-  marginal for real-time loops.
-- Picking ML at batch = 1 adds ~30 ms per 100 corners.
+- Picking ML at batch = 1 adds ~30 ms per 100 corners; the geometric
+  refiners (SaddlePoint, Förstner) add under 1 µs per corner.
 
 **Feature flag guidance:**
 
@@ -330,9 +323,9 @@ When a frame returns fewer corners than expected:
    `DetectorConfig.refiner.kind` or relax the specific rejection
    (e.g. raise `SaddlePointConfig.max_offset`).
 3. If accuracy is fine but wall time is large, inspect the `refine`
-   span. On the measured refiner benchmark, replacing RadonPeak / ML
-   with a structure-tensor refiner is much cheaper per corner, with the
-   accuracy tradeoff shown in §7.2–§7.6.
+   span. On the measured refiner benchmark, replacing ML
+   with a structure-tensor refiner (SaddlePoint or Förstner) is much
+   cheaper per corner, with the accuracy tradeoff shown in §7.2–§7.6.
 
 ## 7.10 Integration recipes
 
@@ -358,18 +351,24 @@ loop {
 
 ### Offline calibration, maximum accuracy
 
-```rust
-use chess_corners::{Detector, DetectorConfig, RadonRefiner};
+For still calibration frames where gradients are sharp, `Förstner` has
+the lowest mean error on clean data; `SaddlePoint` is more robust when
+frames have any blur or out-of-focus softness.
 
-let cfg = DetectorConfig::radon_multiscale()
-    .with_radon(|r| r.refiner = RadonRefiner::radon_peak())
+```rust
+use chess_corners::{ChessRefiner, Detector, DetectorConfig};
+
+// Förstner for sharp, high-contrast calibration frames.
+let cfg = DetectorConfig::chess_multiscale()
+    .with_chess(|c| c.refiner = ChessRefiner::forstner())
     .with_merge_radius(2.0);
 
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&image)?;
 ```
 
-The extra 5–15 ms per frame is invisible in an offline run.
+Swap to `ChessRefiner::saddle_point()` if frames may vary in sharpness;
+it has lower error under blur (see §7.3).
 
 ### Low-light / noise-heavy imagery
 

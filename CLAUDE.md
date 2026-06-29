@@ -6,6 +6,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **chess-corners-rs** is a high-performance Rust implementation of the ChESS (Chess-board Extraction by Subtraction and Summation) corner detector. It detects chessboard corners in images with subpixel accuracy. Includes Python bindings via PyO3/maturin and WebAssembly bindings via wasm-bindgen/wasm-pack.
 
+## Engineering principles & critical review
+
+Hold every change to a high design bar, and actively keep this workspace
+from drifting back into undisciplined, copy-paste "agentic slop." Apply
+these principles by default — not only when explicitly asked:
+
+- **SOLID** — one responsibility per type/module; extend behavior through
+  the detector / refiner / orientation traits, not by editing parallel
+  match arms; depend on trait abstractions (`DenseDetector`, the refiner
+  traits), not concretions.
+- **DRY / single source of truth** — one canonical definition per concept.
+  Lower config to core params in exactly one place; never let a
+  threshold's or parameter's meaning be duplicated or diverge across
+  crates.
+- **KISS & YAGNI** — choose the simplest design that meets the actual
+  requirement; do not add config knobs, enum variants, or abstraction
+  layers for hypothetical future needs.
+- **Make illegal states unrepresentable** — push invariants into the type
+  system (enum-with-payload over a discriminator + parallel fields;
+  `Option` / newtypes over magic sentinels) so misuse fails to compile.
+- **Least astonishment & orthogonality** — APIs do what their names say;
+  keep independent concerns independent (orientation is a cross-cutting
+  stage, not a sub-mode of one detector).
+- **Minimal, honest public surface** — expose only what callers need; keep
+  diagnostics and internals out of the stable API (see *Public surface
+  hygiene*).
+
+**Be critical of every proposal — including the user's.** Treat a request
+as the start of a design discussion, not an instruction to implement
+verbatim. Before coding, review it against the principles above and the
+existing architecture; if it would introduce duplication, leak internals,
+add a dominated alternative, widen the public surface needlessly, or
+otherwise degrade the design, **say so and offer the cleaner alternative**
+rather than building it as-stated. When the better design needs a breaking
+change and the crate is pre-1.0, prefer the better design (see *Decisive
+cleanup*). Every change should leave the workspace's design and style
+better than it found them.
+
 ## Project planning & knowledge base
 
 The internal knowledge base lives under [`docs/`](docs/README.md) (not

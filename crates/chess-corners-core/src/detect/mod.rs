@@ -15,13 +15,15 @@
 
 pub mod chess;
 pub mod dense;
+mod merge;
+mod neighbors;
 pub mod radon;
 
-pub(crate) use chess::detect::{count_positive_neighbors, is_local_max};
 pub use chess::detect::{
     detect_corners_from_response, detect_corners_from_response_with_refiner, find_corners_u8,
-    merge_corners_simple,
 };
+pub use merge::merge_corners_simple;
+pub(crate) use neighbors::{count_positive_neighbors, is_local_max};
 
 /// A detected corner candidate (subpixel position with raw response strength).
 #[derive(Clone, Debug)]
@@ -89,6 +91,13 @@ impl AxisEstimate {
 /// under this same convention, so consumers may compare `axes[0]`
 /// (e.g. for slot-parity matching between cardinal grid neighbours)
 /// across methods without method-aware translation.
+///
+/// # Orientation skipped
+///
+/// [`axes`](Self::axes) is `None` when the per-corner orientation fit was
+/// skipped — the dominant per-corner cost. Consumers that derive board
+/// geometry themselves can disable it (the orientation method is `None` in
+/// the detector configuration); position and response are still produced.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct CornerDescriptor {
@@ -104,19 +113,33 @@ pub struct CornerDescriptor {
     /// a contrast, or a normalized strength.
     pub response: f32,
 
-    /// The two local grid axis directions with per-axis 1σ precision.
-    pub axes: [AxisEstimate; 2],
+    /// The two local grid axis directions with per-axis 1σ precision, or
+    /// `None` when the orientation fit was skipped (orientation disabled in
+    /// the detector configuration).
+    pub axes: Option<[AxisEstimate; 2]>,
 }
 
 impl CornerDescriptor {
-    /// Construct a [`CornerDescriptor`].
+    /// Construct a [`CornerDescriptor`] with a fitted orientation.
     #[inline]
     pub fn new(x: f32, y: f32, response: f32, axes: [AxisEstimate; 2]) -> Self {
         Self {
             x,
             y,
             response,
-            axes,
+            axes: Some(axes),
+        }
+    }
+
+    /// Construct a [`CornerDescriptor`] with the orientation fit skipped, so
+    /// [`axes`](Self::axes) is `None`.
+    #[inline]
+    pub fn without_axes(x: f32, y: f32, response: f32) -> Self {
+        Self {
+            x,
+            y,
+            response,
+            axes: None,
         }
     }
 }

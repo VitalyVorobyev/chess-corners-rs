@@ -5,9 +5,8 @@ Ergonomic chessboard corner detector on top of `chess-corners-core`.
 This crate is the public Rust API:
 
 - strategy-typed `DetectorConfig` (`DetectionStrategy::Chess(ChessConfig)`
-  / `DetectionStrategy::Radon(RadonConfig)`) with a unified `Threshold`
-  enum and per-detector refiner selection (`ChessRefiner`,
-  `RadonRefiner`)
+  / `DetectionStrategy::Radon(RadonConfig)`) with a single numeric
+  `threshold` and per-ChESS-detector refiner selection (`ChessRefiner`)
 - top-level `MultiscaleConfig` (`SingleScale | Pyramid { ... }`) and
   `UpscaleConfig` (`Disabled | Fixed(factor)`), honoured by both
   detectors symmetrically
@@ -24,14 +23,16 @@ compatibility boundary.
 ## Quick start
 
 ```rust
-use chess_corners::{Detector, DetectorConfig, Threshold};
+use chess_corners::{Detector, DetectorConfig};
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
+    // ChESS reads `threshold` as an absolute floor on the raw response
+    // (default 30); raise it to suppress more textured-region noise.
     let cfg = DetectorConfig::chess_multiscale()
-        .with_threshold(Threshold::Relative(0.15));
+        .with_threshold(60.0);
 
     let mut detector = Detector::new(cfg)?;
     let corners = detector.detect(&img)?;
@@ -65,11 +66,11 @@ level:
 ```rust
 use chess_corners::{
     ChessRefiner, ChessRing, DetectorConfig,
-    MultiscaleConfig, Threshold, UpscaleConfig,
+    MultiscaleConfig, UpscaleConfig,
 };
 
 let cfg = DetectorConfig::chess()
-    .with_threshold(Threshold::Relative(0.2))
+    .with_threshold(60.0) // ChESS: absolute floor on the raw response (default 30)
     .with_merge_radius(3.0)
     .with_multiscale(MultiscaleConfig::pyramid_default())
     .with_upscale(UpscaleConfig::Fixed(2))
@@ -89,12 +90,13 @@ Three guarantees follow from this shape:
 
 1. **One place per knob.** `cfg.strategy.chess.ring = ChessRing::Broad`
    is the only way to request the wider ChESS ring.
-2. **Per-detector refiners.** `ChessRefiner` lists only refiners that
-   operate on ChESS output; `RadonRefiner` lists only those that
-   operate on Radon output.
-3. **Symmetric encoding.** `Threshold`, `MultiscaleConfig`,
-   `UpscaleConfig`, and both refiner enums use the same enum-with-
-   payload shape, so the JSON and binding surface stays uniform.
+2. **Per-detector refiners.** `ChessRefiner` lists the refiners that
+   operate on ChESS output. The Radon detector uses its built-in
+   Gaussian peak fit (`RadonConfig.peak_fit`), not a pluggable refiner.
+3. **Symmetric encoding.** `MultiscaleConfig`, `UpscaleConfig`, and
+   `ChessRefiner` use the same enum-with-payload shape, so the JSON and
+   binding surface stays uniform. (`threshold` is a plain number, so it
+   carries no tag.)
 
 ## Descriptor output
 
@@ -103,18 +105,24 @@ Each detection is a `CornerDescriptor` with:
 - `x`, `y` — subpixel position.
 - `response` — raw unnormalized detector response (the ChESS paper's
   score for ChESS, `(max α S_α − min α S_α)²` for Radon).
-- `axes[0]`, `axes[1]` — the two local grid axes with per-axis 1σ
-  angular uncertainty from the Gauss-Newton covariance
+- `axes` — `Some([axis0, axis1])` carries the two local grid axes with
+  per-axis 1σ angular uncertainty from the Gauss-Newton covariance
   (`σθᵢ = √((SSR / 12) · (JᵀJ)⁻¹[i,i])`). Axes are not assumed
-  orthogonal; `axes[0].angle ∈ [0, π)` and `axes[1].angle ∈
-  (axes[0].angle, axes[0].angle + π)`, with the CCW arc between them
-  spanning a dark sector.
+  orthogonal; `axis0.angle ∈ [0, π)` and `axis1.angle ∈
+  (axis0.angle, axis0.angle + π)`, with the CCW arc between them
+  spanning a dark sector. It is `None` when the orientation fit is
+  disabled.
+
+The orientation fit is the dominant per-corner cost. If a downstream
+stage recovers board geometry from corner positions alone, disable it
+with `DetectorConfig::without_orientation()`: detection still runs and
+every descriptor's `axes` comes back `None`.
 
 ## Refiner configuration
 
-`ChessRefiner` and `RadonRefiner` are tagged enums; each variant
-carries its tuning struct as a payload, so switching kinds cannot
-leave a stale per-refiner config behind:
+`ChessRefiner` is a tagged enum; each variant carries its tuning struct
+as a payload, so switching kinds cannot leave a stale per-refiner config
+behind:
 
 ```rust
 use chess_corners::{ChessRefiner, DetectorConfig, ForstnerConfig};
@@ -128,9 +136,9 @@ let cfg = DetectorConfig::chess().with_chess(|c| {
 });
 ```
 
-The Radon equivalent uses `RadonRefiner::RadonPeak(_)` or
-`RadonRefiner::CenterOfMass(_)`. A `ChessRefiner::RadonPeak` (or
-vice versa) mismatch is unrepresentable.
+The Radon detector does not have a pluggable refiner. Its subpixel step
+is the built-in 3-point Gaussian peak fit, selected via
+`RadonConfig.peak_fit` (`PeakFitMode::Parabolic` or `Gaussian`).
 
 ## CLI config shape
 
@@ -178,13 +186,14 @@ pyramid levels.
 
 - `image` (default): `image::GrayImage` integration
 - `rayon`: parallel response/refinement
-- `simd`: portable-SIMD acceleration in the core response path
+- `simd`: optional high-performance path — portable `std::simd` in the core response path (nightly only)
 - `par_pyramid`: SIMD/`rayon` in pyramid construction
 - `tracing`: structured spans
 - `ml-refiner`: ONNX-backed ML refinement
 - `cli`: build the `chess-corners` binary
 
-The default (stable) build requires Rust **1.88** or newer
-(`rust-version` in `Cargo.toml`). The `simd` feature uses
-`portable_simd` and needs a nightly toolchain; every other feature
-builds on stable.
+The stable scalar/autovectorized build is the supported, portable
+baseline — correct and fast enough for typical use. It requires Rust
+**1.88** or newer (`rust-version` in `Cargo.toml`). The `simd` feature
+uses `std::simd` and is the only feature that needs a nightly
+toolchain; every other feature builds on stable.

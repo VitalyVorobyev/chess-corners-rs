@@ -89,18 +89,25 @@ int main() {
         // radon_multiscale(), default_(). The flat fields are public,
         // so you can tweak a preset before detecting:
         chess_corners::Config config = chess_corners::Config::chess();
-        // config.orientation_method = CC_ORIENTATION_DISK_FIT;  // optional
+        config.threshold = 60.0f;  // ChESS: absolute floor on raw response (default 30)
+        // config.orientation_method = CC_ORIENTATION_DISK_FIT;  // alternative fit
+        // config.orientation_method = CC_ORIENTATION_NONE;      // skip the fit
 
         std::vector<chess_corners::Corner> corners =
             chess_corners::detect(pixels, width, height, config);
 
         for (const chess_corners::Corner& c : corners) {
-            std::printf(
-                "(%.2f, %.2f) response=%.3f  "
-                "axis0=%.3f rad (sigma %.3f)  axis1=%.3f rad (sigma %.3f)\n",
-                c.x, c.y, c.response,
-                c.axes[0].angle, c.axes[0].sigma,
-                c.axes[1].angle, c.axes[1].sigma);
+            if (c.has_orientation) {
+                std::printf(
+                    "(%.2f, %.2f) response=%.3f  "
+                    "axis0=%.3f rad (sigma %.3f)  axis1=%.3f rad (sigma %.3f)\n",
+                    c.x, c.y, c.response,
+                    c.axes[0].angle, c.axes[0].sigma,
+                    c.axes[1].angle, c.axes[1].sigma);
+            } else {
+                std::printf("(%.2f, %.2f) response=%.3f  (orientation skipped)\n",
+                            c.x, c.y, c.response);
+            }
         }
     } catch (const chess_corners::Error& err) {
         std::fprintf(stderr, "detection failed (status %d): %s\n",
@@ -145,6 +152,8 @@ int main(void) {
     const uint8_t *pixels = /* width * height grayscale bytes */;
 
     cc_config cfg = cc_config_chess();   /* or cc_config_radon(), ... */
+    cfg.threshold = 60.0f;               /* ChESS: absolute floor on raw response */
+    /* cfg.orientation_method = CC_ORIENTATION_NONE;  // skip the per-corner fit */
 
     cc_result result;
     cc_status status = cc_detect_u8(pixels, width, height, &cfg, &result);
@@ -157,6 +166,7 @@ int main(void) {
     for (size_t i = 0; i < result.len; ++i) {
         const cc_corner *c = &result.corners[i];
         printf("(%.2f, %.2f) response=%.3f\n", c->x, c->y, c->response);
+        /* c->axes[0..1] are valid only when c->has_orientation == 1. */
     }
 
     /* The library owns result.corners. Release it exactly once. */
@@ -194,6 +204,13 @@ struct layout. You can also call `chess_corners::check_abi()` once at
 startup. In plain C, compare `cc_abi_version()` against the value you
 built against and refuse to proceed if they differ.
 
+**Config threshold.** `cc_config` carries a single `threshold` field —
+just a `float`, with no separate kind tag and no threshold-kind
+constants. ChESS reads it as an absolute floor on the raw response
+(default `30`); the Radon presets read it as a fraction in `[0, 1]` of
+the per-frame maximum (default `0.01`). See [Part III §3.3.1](part-03-chess-detector.md#331-thresholding-and-nms)
+and [Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline).
+
 **Corner fields.** `cc_corner` (and the C++ `Corner`) mirror the Rust
 `CornerDescriptor`: a subpixel `x`, `y` in full-resolution input
 pixels, a raw detector `response`, and two local grid `axes`, each
@@ -201,7 +218,10 @@ carrying an `angle` and its 1σ angular uncertainty `sigma`, both in
 radians. The polarity convention is identical on every binding:
 `axes[0].angle` lies in `[0, π)` and `axes[1].angle` in
 `(axes[0].angle, axes[0].angle + π)`, with the counter-clockwise arc
-between them crossing a dark sector. See
+between them crossing a dark sector. The `axes` are valid only when
+`has_orientation` is `1` (the default); selecting `CC_ORIENTATION_NONE`
+skips the per-corner fit, sets `has_orientation` to `0`, and zeroes
+`axes`. See
 [Part I §1.4](part-01-orientation.md#14-the-cornerdescriptor-output)
 for the field semantics and
 [Part III §3.4](part-03-chess-detector.md#34-corner-descriptors) for

@@ -31,7 +31,9 @@ families:
 4. Threshold, suppress non-maxima, and reject isolated peaks.
 5. Refine each accepted seed with the active per-detector refiner.
 6. Merge near duplicates in input-image coordinates.
-7. Build `CornerDescriptor` values with a two-axis orientation fit.
+7. Build `CornerDescriptor` values, optionally with a two-axis
+   orientation fit (skipped when orientation is disabled, leaving each
+   descriptor's `axes` as `None`).
 
 The ChESS path computes the Bennett-Lasenby ring response
 `R = SR - DR - 16 * |mean_ring - mean_cross|` at radius 5 or 10. The
@@ -45,12 +47,15 @@ at the top level:
 
 - `strategy`: `DetectionStrategy::Chess(ChessConfig)` or
   `DetectionStrategy::Radon(RadonConfig)`.
-- `threshold`: `Threshold::Absolute(value)` or
-  `Threshold::Relative(fraction)`.
+- `threshold`: a single `f32`. ChESS reads it as an absolute floor on
+  the raw response (default `30`); Radon as a fraction in `[0, 1]` of
+  the per-frame maximum (default `0.01`).
 - `multiscale`: `SingleScale` or `Pyramid { levels, min_size,
   refinement_radius }`.
 - `upscale`: disabled or fixed integer pre-upscale.
-- `orientation_method`: `RingFit` or `DiskFit`.
+- `orientation_method`: `RingFit`, `DiskFit`, or disabled
+  (`without_orientation()`), which skips the fit and leaves `axes` as
+  `None`.
 - `merge_radius`: duplicate-suppression distance in input pixels.
 
 Detector-specific fields live inside the active strategy. This avoids
@@ -69,9 +74,11 @@ pub trait CornerRefiner {
 ```
 
 `ChessRefiner` carries `CenterOfMass`, `Förstner`, `SaddlePoint`, and
-optionally `Ml`. `RadonRefiner` carries `RadonPeak` and `CenterOfMass`.
-Each variant owns its tuning struct, so switching variants cannot leave
-old tuning fields active by accident.
+optionally `Ml`. Each variant owns its tuning struct, so switching
+variants cannot leave old tuning fields active by accident. The Radon
+detector does not use a pluggable refiner; its subpixel step is the
+built-in 3-point Gaussian peak fit configured via
+`RadonConfig.peak_fit`.
 
 `RefineResult` reports the refined point, a refiner-specific score, and
 `RefineStatus` (`Accepted`, `Rejected`, `OutOfBounds`, or
@@ -87,7 +94,7 @@ dependencies:
 |---------|--------|
 | `image` | `image::GrayImage` integration |
 | `rayon` | parallel response/refinement work |
-| `simd` | portable-SIMD inner loops where implemented |
+| `simd` | optional high-performance path: portable `std::simd` inner loops (nightly only) |
 | `par_pyramid` | SIMD/Rayon pyramid downsampling |
 | `tracing` | structured diagnostic spans |
 | `ml-refiner` | ONNX-backed ML refinement |
@@ -109,6 +116,10 @@ x, y, response,
 axis0_angle, axis0_sigma, axis1_angle, axis1_sigma
 ```
 
+When orientation is disabled (`without_orientation()`), the four axis
+columns are `NaN` for every row; the array shape is unchanged.
+
 The WebAssembly package exposes the same detector/configuration concepts
 for JavaScript and TypeScript, returning a `Float32Array` with the same
-stride-7 corner layout.
+stride-7 corner layout (the four axis values are likewise `NaN` when
+orientation is disabled).

@@ -55,12 +55,6 @@ typedef enum cc_status {
 typedef uint32_t cc_strategy_t;
 
 /**
- * Acceptance-threshold interpretation tag stored in
- * `cc_config::threshold_kind`.
- */
-typedef uint32_t cc_threshold_kind_t;
-
-/**
  * Subpixel-refiner tag stored in `cc_config::refiner`.
  *
  * Refiner-specific tuning is not exposed over the flat ABI; the selected
@@ -87,14 +81,10 @@ typedef struct cc_config {
    */
   cc_strategy_t strategy;
   /**
-   * One of the `CC_THRESHOLD_*` constants; selects how `threshold_value`
-   * is interpreted.
+   * Acceptance threshold. ChESS reads it as an absolute response floor;
+   * Radon as a fraction of the per-frame maximum.
    */
-  cc_threshold_kind_t threshold_kind;
-  /**
-   * Acceptance threshold; units depend on `threshold_kind`.
-   */
-  float threshold_value;
+  float threshold;
   /**
    * Non-maximum-suppression half-radius in working-resolution pixels.
    */
@@ -154,9 +144,16 @@ typedef struct cc_corner {
    */
   float response;
   /**
-   * The two local grid-axis directions.
+   * The two local grid-axis directions. Valid only when
+   * `has_orientation` is `1`; zeroed otherwise.
    */
   struct cc_axis axes[2];
+  /**
+   * `1` when `axes` holds a fitted orientation, `0` when the
+   * orientation fit was skipped (`CC_ORIENTATION_NONE`) and `axes`
+   * is zeroed.
+   */
+  uint8_t has_orientation;
 } cc_corner;
 
 /**
@@ -186,16 +183,6 @@ typedef struct cc_result {
 #define CC_STRATEGY_RADON 1
 
 /**
- * Read `cc_config::threshold_value` as an absolute score floor.
- */
-#define CC_THRESHOLD_ABSOLUTE 0
-
-/**
- * Read `cc_config::threshold_value` as a fraction of the per-frame max.
- */
-#define CC_THRESHOLD_RELATIVE 1
-
-/**
  * Center-of-mass refiner. Valid for both strategies.
  */
 #define CC_REFINER_CENTER_OF_MASS 0
@@ -211,11 +198,6 @@ typedef struct cc_result {
 #define CC_REFINER_SADDLE_POINT 2
 
 /**
- * Radon-peak refiner. Valid for the Radon strategy only.
- */
-#define CC_REFINER_RADON_PEAK 3
-
-/**
  * 16-sample ring Gauss-Newton fit (the default).
  */
 #define CC_ORIENTATION_RING_FIT 0
@@ -224,6 +206,12 @@ typedef struct cc_result {
  * Full-disk crossing-line estimator with a ring-fit fallback.
  */
 #define CC_ORIENTATION_DISK_FIT 1
+
+/**
+ * Skip the per-corner orientation fit. Detected corners then have
+ * `cc_corner::has_orientation == 0` and a zeroed `axes` array.
+ */
+#define CC_ORIENTATION_NONE 2
 
 #ifdef __cplusplus
 extern "C" {

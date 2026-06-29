@@ -22,14 +22,13 @@
 
 use chess_corners::{
     ChessError, ChessRefiner, CornerDescriptor, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, OrientationMethod, RadonRefiner, Threshold,
+    MultiscaleConfig, OrientationMethod,
 };
 
 use crate::{
     cc_axis, cc_config, cc_corner, cc_refiner_t, cc_status, CC_ORIENTATION_DISK_FIT,
-    CC_ORIENTATION_RING_FIT, CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, CC_REFINER_RADON_PEAK,
-    CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS, CC_STRATEGY_RADON, CC_THRESHOLD_ABSOLUTE,
-    CC_THRESHOLD_RELATIVE,
+    CC_ORIENTATION_NONE, CC_ORIENTATION_RING_FIT, CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER,
+    CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS, CC_STRATEGY_RADON,
 };
 
 /// Convert a flat [`cc_config`] into a facade [`DetectorConfig`].
@@ -40,11 +39,7 @@ use crate::{
 /// tuning, upscaling, and the cross-level merge radius — are taken from the
 /// selected strategy preset.
 pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_status> {
-    let threshold = match cfg.threshold_kind {
-        CC_THRESHOLD_ABSOLUTE => Threshold::Absolute(cfg.threshold_value),
-        CC_THRESHOLD_RELATIVE => Threshold::Relative(cfg.threshold_value),
-        _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
-    };
+    let threshold = cfg.threshold;
 
     let multiscale = if cfg.multiscale != 0 {
         MultiscaleConfig::pyramid_default()
@@ -52,9 +47,10 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
         MultiscaleConfig::SingleScale
     };
 
-    let orientation_method = match cfg.orientation_method {
-        CC_ORIENTATION_RING_FIT => OrientationMethod::RingFit,
-        CC_ORIENTATION_DISK_FIT => OrientationMethod::DiskFit,
+    let orientation_method: Option<OrientationMethod> = match cfg.orientation_method {
+        CC_ORIENTATION_RING_FIT => Some(OrientationMethod::RingFit),
+        CC_ORIENTATION_DISK_FIT => Some(OrientationMethod::DiskFit),
+        CC_ORIENTATION_NONE => None,
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
     };
 
@@ -73,25 +69,23 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
             };
             DetectorConfig::chess().with_chess(|c| c.refiner = refiner)
         }
-        CC_STRATEGY_RADON => {
-            let refiner = match cfg.refiner {
-                CC_REFINER_CENTER_OF_MASS => RadonRefiner::center_of_mass(),
-                CC_REFINER_RADON_PEAK => RadonRefiner::radon_peak(),
-                _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
-            };
-            DetectorConfig::radon().with_radon(|r| r.refiner = refiner)
-        }
+        // Radon has no pluggable refiner (subpixel is its Gaussian peak
+        // fit); the shared `refiner` tag is ignored for this strategy.
+        CC_STRATEGY_RADON => DetectorConfig::radon(),
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
     };
 
-    Ok(base
+    let base = base
         .with_threshold(threshold)
         .with_multiscale(multiscale)
-        .with_orientation_method(orientation_method)
         .with_detection(|d| {
             d.nms_radius = nms_radius;
             d.min_cluster_size = min_cluster_size;
-        }))
+        });
+    Ok(match orientation_method {
+        Some(method) => base.with_orientation_method(method),
+        None => base.without_orientation(),
+    })
 }
 
 /// Flatten a facade [`DetectorConfig`] into a [`cc_config`].
@@ -102,27 +96,24 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
 pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
     let (strategy, refiner) = match config.strategy {
         DetectionStrategy::Chess(c) => (CC_STRATEGY_CHESS, chess_refiner_tag(c.refiner)),
-        DetectionStrategy::Radon(r) => (CC_STRATEGY_RADON, radon_refiner_tag(r.refiner)),
+        // Radon has no pluggable refiner; report the default tag (ignored
+        // for Radon on the round-trip back through `to_detector_config`).
+        DetectionStrategy::Radon(_) => (CC_STRATEGY_RADON, CC_REFINER_CENTER_OF_MASS),
         _ => (CC_STRATEGY_CHESS, CC_REFINER_CENTER_OF_MASS),
-    };
-    let (threshold_kind, threshold_value) = match config.threshold {
-        Threshold::Absolute(v) => (CC_THRESHOLD_ABSOLUTE, v),
-        Threshold::Relative(v) => (CC_THRESHOLD_RELATIVE, v),
-        _ => (CC_THRESHOLD_ABSOLUTE, 0.0),
     };
     let multiscale = match config.multiscale {
         MultiscaleConfig::SingleScale => 0,
         _ => 1,
     };
     let orientation_method = match config.orientation_method {
-        OrientationMethod::RingFit => CC_ORIENTATION_RING_FIT,
-        OrientationMethod::DiskFit => CC_ORIENTATION_DISK_FIT,
-        _ => CC_ORIENTATION_RING_FIT,
+        None => CC_ORIENTATION_NONE,
+        Some(OrientationMethod::RingFit) => CC_ORIENTATION_RING_FIT,
+        Some(OrientationMethod::DiskFit) => CC_ORIENTATION_DISK_FIT,
+        Some(_) => CC_ORIENTATION_RING_FIT,
     };
     cc_config {
         strategy,
-        threshold_kind,
-        threshold_value,
+        threshold: config.threshold,
         nms_radius: config.detection.nms_radius,
         min_cluster_size: config.detection.min_cluster_size,
         refiner,
@@ -142,30 +133,39 @@ fn chess_refiner_tag(refiner: ChessRefiner) -> cc_refiner_t {
     }
 }
 
-fn radon_refiner_tag(refiner: RadonRefiner) -> cc_refiner_t {
-    match refiner {
-        RadonRefiner::RadonPeak(_) => CC_REFINER_RADON_PEAK,
-        RadonRefiner::CenterOfMass(_) => CC_REFINER_CENTER_OF_MASS,
-        _ => CC_REFINER_CENTER_OF_MASS,
-    }
-}
-
 /// Convert a facade [`CornerDescriptor`] into a [`cc_corner`].
+///
+/// When the descriptor's orientation fit was skipped (`axes` is `None`),
+/// `has_orientation` is `0` and `axes` is zeroed; otherwise `has_orientation`
+/// is `1` and `axes` carries the fitted directions.
 pub(crate) fn corner_to_ffi(corner: &CornerDescriptor) -> cc_corner {
-    cc_corner {
-        x: corner.x,
-        y: corner.y,
-        response: corner.response,
-        axes: [
-            cc_axis {
-                angle: corner.axes[0].angle,
-                sigma: corner.axes[0].sigma,
-            },
-            cc_axis {
-                angle: corner.axes[1].angle,
-                sigma: corner.axes[1].sigma,
-            },
-        ],
+    match corner.axes {
+        Some(axes) => cc_corner {
+            x: corner.x,
+            y: corner.y,
+            response: corner.response,
+            axes: [
+                cc_axis {
+                    angle: axes[0].angle,
+                    sigma: axes[0].sigma,
+                },
+                cc_axis {
+                    angle: axes[1].angle,
+                    sigma: axes[1].sigma,
+                },
+            ],
+            has_orientation: 1,
+        },
+        None => cc_corner {
+            x: corner.x,
+            y: corner.y,
+            response: corner.response,
+            axes: [cc_axis {
+                angle: 0.0,
+                sigma: 0.0,
+            }; 2],
+            has_orientation: 0,
+        },
     }
 }
 
@@ -180,12 +180,11 @@ pub(crate) fn map_error(err: &ChessError) -> cc_status {
 
 /// Fallback config returned only if a preset constructor were to panic (it
 /// cannot in practice). All-zero tags select single-scale ChESS with the
-/// center-of-mass refiner and an absolute-zero threshold.
+/// center-of-mass refiner and a zero threshold.
 pub(crate) fn zeroed_config() -> cc_config {
     cc_config {
         strategy: CC_STRATEGY_CHESS,
-        threshold_kind: CC_THRESHOLD_ABSOLUTE,
-        threshold_value: 0.0,
+        threshold: 0.0,
         nms_radius: 0,
         min_cluster_size: 0,
         refiner: CC_REFINER_CENTER_OF_MASS,

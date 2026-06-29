@@ -204,7 +204,6 @@ The four built-in refiners:
 * **CenterOfMass** (default; response-map centroid)
 * **Förstner** (structure-tensor)
 * **SaddlePoint** (quadratic Hessian fit)
-* **RadonPeak** (paired with the Radon detector)
 
 **Rule:** default settings must reproduce existing behavior unless the user opts in.
 

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chess_corners::{ChessRing, Threshold};
+use chess_corners::ChessRing;
 use clap::{Parser, Subcommand};
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
@@ -13,10 +13,7 @@ use log::LevelFilter;
 #[cfg(not(feature = "tracing"))]
 use std::str::FromStr;
 
-use commands::{
-    apply_overrides, load_config, run_detection, ChessRefinerSel, DetectionOverrides,
-    RadonRefinerSel,
-};
+use commands::{apply_overrides, load_config, run_detection, ChessRefinerSel, DetectionOverrides};
 
 #[cfg(feature = "tracing")]
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -56,16 +53,12 @@ enum Commands {
         /// Output overlay PNG path override.
         #[arg(long)]
         output_png: Option<PathBuf>,
-        /// Absolute threshold override. Mutually exclusive with
-        /// `--threshold-relative`. Accepted values are non-negative
-        /// floats in the detector's native score units.
+        /// Acceptance threshold override. ChESS reads it as an absolute
+        /// floor on the raw response (non-negative, native score units);
+        /// Radon as a fraction in `[0, 1]` of the per-frame response
+        /// maximum.
         #[arg(long)]
-        threshold_absolute: Option<f32>,
-        /// Relative threshold override (fraction in `[0, 1]` of the
-        /// per-frame response maximum). Mutually exclusive with
-        /// `--threshold-absolute`.
-        #[arg(long)]
-        threshold_relative: Option<f32>,
+        threshold: Option<f32>,
         /// Override the ChESS ring (`canonical` or `broad`). Has no
         /// effect on the Radon strategy.
         #[arg(long)]
@@ -81,11 +74,6 @@ enum Commands {
         /// strategy is Radon.
         #[arg(long)]
         chess_refiner: Option<String>,
-        /// Override the Radon subpixel refiner (`radon_peak`,
-        /// `center_of_mass`). Has no effect when the active strategy
-        /// is ChESS.
-        #[arg(long)]
-        radon_refiner: Option<String>,
         /// Integer upscale factor (2, 3, or 4). If set, enables
         /// pre-pipeline bilinear upscaling. Pass `0` or omit to leave
         /// the JSON config value unchanged.
@@ -110,13 +98,11 @@ fn main() -> Result<()> {
             merge_radius,
             output_json,
             output_png,
-            threshold_absolute,
-            threshold_relative,
+            threshold,
             chess_ring,
             nms_radius,
             min_cluster_size,
             chess_refiner,
-            radon_refiner,
             upscale_factor,
             #[cfg(feature = "tracing")]
             json_trace,
@@ -124,14 +110,6 @@ fn main() -> Result<()> {
             #[cfg(feature = "tracing")]
             init_tracing(json_trace);
             let mut cfg = load_config(&config)?;
-            let threshold = match (threshold_absolute, threshold_relative) {
-                (Some(_), Some(_)) => anyhow::bail!(
-                    "--threshold-absolute and --threshold-relative are mutually exclusive",
-                ),
-                (Some(v), None) => Some(Threshold::Absolute(v)),
-                (None, Some(v)) => Some(Threshold::Relative(v)),
-                (None, None) => None,
-            };
             let overrides = DetectionOverrides {
                 pyramid_levels,
                 pyramid_min_size,
@@ -144,7 +122,6 @@ fn main() -> Result<()> {
                 nms_radius,
                 min_cluster_size,
                 chess_refiner: parse_flag_enum::<ChessRefinerSel>(chess_refiner.as_deref())?,
-                radon_refiner: parse_flag_enum::<RadonRefinerSel>(radon_refiner.as_deref())?,
                 upscale_factor,
             };
             apply_overrides(&mut cfg, overrides);
