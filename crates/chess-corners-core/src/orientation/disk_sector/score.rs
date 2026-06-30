@@ -107,7 +107,6 @@ pub(super) fn score_pair(
 /// (one row per candidate, containing `tanh(d_p(θ, w)/w)` for each of
 /// `data.n` disk pixels). The body matches `score_pair` exactly except
 /// the `tanh` calls have been replaced by array reads.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn score_pair_cached(
     data: &DiskData,
     theta0: f32,

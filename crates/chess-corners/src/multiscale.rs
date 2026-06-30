@@ -20,19 +20,18 @@ use crate::ml_refiner;
 use crate::{DetectionStrategy, DetectorConfig};
 use box_image_pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
 #[cfg(feature = "ml-refiner")]
-use chess_corners_core::unstable::chess_response_u8_patch;
+use chess_corners_core::chess_response_u8_patch;
 #[cfg(feature = "ml-refiner")]
-use chess_corners_core::unstable::ChessParams;
+use chess_corners_core::ChessParams;
 #[cfg(feature = "ml-refiner")]
 use chess_corners_core::ResponseMap;
 #[cfg(feature = "ml-refiner")]
 use chess_corners_core::{chess_response_u8, detect_corners_from_response_with_refiner, Roi};
 use chess_corners_core::{describe_corners, merge_corners_simple, Corner};
-use chess_corners_core::{
-    unstable::RefinerKind, CornerRefiner, ImageView, OrientationMethod, RadonBuffers,
-    RadonDetector, Refiner,
-};
 use chess_corners_core::{ChessBuffers, ChessDetector, CornerDescriptor, DenseDetector};
+use chess_corners_core::{
+    CornerRefiner, ImageView, OrientationMethod, RadonBuffers, RadonDetector, Refiner, RefinerKind,
+};
 
 /// Bridge from `chess_corners_core::ImageView` to `box_image_pyramid::ImageView`.
 fn to_pyramid_view(v: ImageView<'_>) -> box_image_pyramid::ImageView<'_> {
@@ -221,7 +220,7 @@ struct DetectorShape<'r> {
 /// — e.g. the ChESS quadratic / Radon 3-point Gaussian); image-domain
 /// refinement (`CenterOfMassRefiner`, `ForstnerRefiner`, …) runs as a
 /// separate post-detection stage via
-/// [`refine_corners_on_image`](chess_corners_core::unstable::refine_corners_on_image).
+/// [`refine_corners_on_image`](chess_corners_core::refine_corners_on_image).
 ///
 /// `descriptor_ring_radius` and `orientation_method` are sourced from
 /// the ChESS-derived params even when the active detector is Radon —
@@ -455,8 +454,7 @@ pub(crate) fn detect_with_buffers(
             // Orientation method is top-level on DetectorConfig.
             let shape = DetectorShape {
                 refiner_kind: &refiner_kind,
-                descriptor_ring_radius: chess_corners_core::unstable::ChessParams::default()
-                    .ring_radius(),
+                descriptor_ring_radius: chess_corners_core::ChessParams::default().ring_radius(),
                 orientation_method: cfg.orientation_method,
                 merge_radius: cfg.merge_radius,
             };

@@ -26,7 +26,7 @@ pub fn find_corners_u8(
 }
 
 /// Compute corners starting from an 8-bit grayscale image using a custom refiner.
-pub fn find_corners_u8_with_refiner(
+pub(crate) fn find_corners_u8_with_refiner(
     img: &[u8],
     w: usize,
     h: usize,
@@ -53,11 +53,11 @@ pub fn detect_corners_from_response(resp: &ResponseMap, params: &ChessParams) ->
 
 /// Detector variant that accepts a user-provided refiner implementation.
 ///
-/// Wires [`detect_peaks_from_response`] (stage 1: threshold + NMS +
-/// cluster-filter on the response map) into [`refine_corners_on_image`]
-/// (stage 2: image-domain subpixel refinement). The two stages are
-/// available individually for callers that want to inspect or replace
-/// either half.
+/// Wires [`detect_peaks_from_response_with_refine_radius`] (stage 1:
+/// threshold + NMS + cluster-filter on the response map) into
+/// [`refine_corners_on_image`] (stage 2: image-domain subpixel
+/// refinement). The two stages are available individually for callers
+/// that want to inspect or replace either half.
 pub fn detect_corners_from_response_with_refiner(
     resp: &ResponseMap,
     params: &ChessParams,
@@ -76,23 +76,11 @@ pub fn detect_corners_from_response_with_refiner(
 /// this stage — image-domain subpixel refinement runs separately in
 /// [`refine_corners_on_image`].
 ///
-/// The border margin accounts for the ring radius and the NMS window
-/// only; if a downstream refiner needs additional border, the fused
-/// helper [`detect_corners_from_response_with_refiner`] handles that
-/// by deferring to a private variant that also takes the refiner
-/// radius.
-#[cfg_attr(
-    feature = "tracing",
-    instrument(level = "debug", skip(resp, params), fields(w = resp.w, h = resp.h))
-)]
-pub fn detect_peaks_from_response(resp: &ResponseMap, params: &ChessParams) -> Vec<Corner> {
-    detect_peaks_from_response_with_refine_radius(resp, params, 0)
-}
-
-/// Stage 1 of ChESS detection: same as [`detect_peaks_from_response`]
-/// but extends the border margin by `refine_radius` extra pixels so
-/// that an image-domain refiner with the given patch half-width can
-/// safely operate on every accepted peak.
+/// The border margin accounts for the ring radius and the NMS window,
+/// plus `refine_radius` extra pixels so that an image-domain refiner
+/// with the given patch half-width can safely operate on every
+/// accepted peak. Pass `refine_radius = 0` when no downstream
+/// image-domain refiner needs the extra border.
 ///
 /// Used by the [`DenseDetector`](crate::DenseDetector) trait
 /// implementor for ChESS, which threads the refiner radius from the

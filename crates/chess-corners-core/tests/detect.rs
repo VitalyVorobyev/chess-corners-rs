@@ -1,22 +1,10 @@
-#[cfg(feature = "simd")]
-use chess_corners_core::unstable::chess_response_u8_scalar;
-use chess_corners_core::unstable::{
-    chess_response_u8_patch, ring_offsets, ChessParams, RING10, RING5,
-};
 use chess_corners_core::{
-    chess_response_u8, detect_corners_from_response, find_corners_u8, ResponseMap, Roi,
+    chess_response_u8, chess_response_u8_patch, detect_corners_from_response, find_corners_u8,
+    ChessParams, ResponseMap, Roi,
 };
 
 fn idx(w: usize, x: usize, y: usize) -> usize {
     y * w + x
-}
-
-#[test]
-fn ring_offsets_switch_with_radius() {
-    assert_eq!(ring_offsets(5), &RING5);
-    assert_eq!(ring_offsets(10), &RING10);
-    // Any unknown radius currently falls back to the canonical r=5 offsets.
-    assert_eq!(ring_offsets(3), &RING5);
 }
 
 #[test]
@@ -30,92 +18,6 @@ fn response_on_uniform_image_is_zero() {
     assert_eq!(resp.width(), w);
     assert_eq!(resp.height(), h);
     assert!(resp.data().iter().all(|v| v.abs() < 1e-6));
-}
-
-#[cfg(feature = "simd")]
-#[test]
-fn simd_matches_scalar_reasonably() {
-    let params = ChessParams::default();
-    let img = image::GrayImage::from_fn(256, 256, |x, y| image::Luma([(x ^ y) as u8]));
-    let w = img.width() as usize;
-    let h = img.height() as usize;
-
-    let ref_map = chess_response_u8_scalar(img.as_raw(), w, h, &params);
-    let simd_map = chess_response_u8(img.as_raw(), w, h, &params);
-
-    let eps = 1e-3_f32;
-    for (a, b) in ref_map.data().iter().zip(simd_map.data().iter()) {
-        assert!((a - b).abs() <= eps, "diff: {a} vs {b}");
-    }
-}
-
-#[cfg(all(feature = "simd", feature = "rayon"))]
-#[test]
-fn simd_parallel_matches_scalar() {
-    let params = ChessParams::default();
-    let img = image::GrayImage::from_fn(192, 192, |x, y| {
-        image::Luma([(x.wrapping_mul(7) ^ y) as u8])
-    });
-    let w = img.width() as usize;
-    let h = img.height() as usize;
-
-    let ref_map = chess_response_u8_scalar(img.as_raw(), w, h, &params);
-    let simd_map = chess_response_u8(img.as_raw(), w, h, &params);
-
-    let eps = 1e-3_f32;
-    for (a, b) in ref_map.data().iter().zip(simd_map.data().iter()) {
-        assert!((a - b).abs() <= eps, "diff: {a} vs {b}");
-    }
-}
-
-#[test]
-fn response_matches_manual_ring_layout() {
-    let params = ChessParams::default();
-    let w = 11usize;
-    let h = 11usize;
-    let cx = 5usize;
-    let cy = 5usize;
-    let mut img = vec![0u8; w * h];
-
-    // Populate the 16 ring samples with the sequence 0..15.
-    for (i, (dx, dy)) in RING5.iter().enumerate() {
-        let x = (cx as i32 + dx) as usize;
-        let y = (cy as i32 + dy) as usize;
-        img[idx(w, x, y)] = i as u8;
-    }
-
-    // Fill the 5-pixel cross used in the local mean with distinct values.
-    for (dx, dy, v) in [
-        (0, 0, 10u8),
-        (0, -1, 20u8),
-        (0, 1, 30u8),
-        (1, 0, 40u8),
-        (-1, 0, 50u8),
-    ] {
-        let x = (cx as i32 + dx) as usize;
-        let y = (cy as i32 + dy) as usize;
-        img[idx(w, x, y)] = v;
-    }
-
-    let resp = chess_response_u8(&img, w, h, &params);
-    let center = resp.at(cx, cy);
-
-    // Expected value computed from the ring/cross assignments above.
-    let expected = -392.0_f32;
-    assert!(
-        (center - expected).abs() < 1e-3,
-        "expected center response {expected}, got {center}"
-    );
-
-    for (i, v) in resp.data().iter().enumerate() {
-        if i == idx(w, cx, cy) {
-            continue;
-        }
-        assert!(
-            v.abs() < 1e-6,
-            "non-center response should stay zero (idx={i}, val={v})"
-        );
-    }
 }
 
 #[test]

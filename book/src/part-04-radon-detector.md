@@ -72,8 +72,7 @@ independent of `r`:
 Each SAT is built in one pass over the image. A ray sum then costs two
 table lookups: `S = T[end] − T[one past start]`. The construction
 logic and the lookup pattern are in the Radon response source inside
-`chess-corners-core` (see `chess_corners_core::unstable` for the
-sub-stage entry points exposed without semver guarantees).
+`chess-corners-core`.
 
 ### SAT element type
 
@@ -95,7 +94,7 @@ controls this:
   SATs are built; all subsequent steps run at the higher resolution.
   This is the paper default and the facade preset value.
 
-Higher factors are clamped to 2 (`chess_corners_core::unstable::MAX_IMAGE_UPSAMPLE`). The response
+Higher factors are clamped to 2. The response
 map and detected peaks live at working resolution; the detector
 divides peak coordinates by `image_upsample` before returning them,
 so output coordinates are always in the input pixel frame.

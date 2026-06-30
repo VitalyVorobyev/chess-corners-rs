@@ -13,10 +13,9 @@
 //! corners under hostile conditions, proving the code path earns its
 //! keep.
 
-use chess_corners_core::unstable::ChessParams;
 use chess_corners_core::{
     chess_response_u8, detect_corners_from_response, detect_peaks_from_radon, radon_response_u8,
-    RadonBuffers, RadonDetectorParams,
+    ChessParams, RadonBuffers, RadonDetectorParams,
 };
 use chess_corners_testutil::{aa_chessboard, expected_corner_count, gaussian_blur};
 

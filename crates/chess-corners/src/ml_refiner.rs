@@ -1,8 +1,8 @@
 //! ML subpixel refiner integration (feature-gated).
 
 use chess_corners_core::{
-    unstable::{detect_peaks_from_response_with_refine_radius, ChessParams, RefinerKind},
-    Corner, CornerRefiner, ImageView, RefineContext, RefineStatus, Refiner, ResponseMap,
+    detect_peaks_from_response_with_refine_radius, ChessParams, Corner, CornerRefiner, ImageView,
+    RefineContext, RefineStatus, Refiner, RefinerKind, ResponseMap,
 };
 use chess_corners_ml::{MlModel, ModelSource};
 use log::{info, warn};

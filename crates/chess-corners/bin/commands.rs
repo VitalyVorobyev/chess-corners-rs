@@ -350,7 +350,6 @@ pub fn load_config(path: &Path) -> Result<DetectionConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chess_corners::low_level;
     use std::path::PathBuf;
 
     fn empty_overrides() -> DetectionOverrides {
@@ -446,7 +445,7 @@ mod tests {
             d.nms_radius = 5;
             d.min_cluster_size = 3;
         });
-        let chess = low_level::to_chess_params(&cfg);
+        let chess = cfg.chess_params();
         assert_eq!(chess.nms_radius, 5);
         assert_eq!(chess.min_cluster_size, 3);
 
@@ -454,7 +453,7 @@ mod tests {
             d.nms_radius = 6;
             d.min_cluster_size = 2;
         });
-        let radon = low_level::to_radon_detector_params(&cfg);
+        let radon = cfg.radon_detector_params();
         assert_eq!(radon.nms_radius, 6);
         assert_eq!(radon.min_cluster_size, 2);
     }

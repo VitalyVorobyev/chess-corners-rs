@@ -86,6 +86,16 @@ strategy structs keep only strategy-specific knobs (`ray_radius`,
 
 ### API-03 — Hide internal types leaking at the core root
 
+> **Superseded by DEBT-01/02 (M6).** Hiding `ChessParams`/`RefinerKind` in
+> `unstable` proved incoherent: the root-public `chess_response_u8` /
+> `find_corners_u8` / `detect_corners_from_response` *require* `ChessParams`,
+> so the stable contract was uncallable without a "no-semver" type. M6 deleted
+> `chess_corners_core::unstable` and the facade `chess_corners::low_level`,
+> promoting the genuinely-needed types to the documented crate root and
+> demoting the rest to `pub(crate)`. The Radon-primitive `pub(crate)`
+> demotions below still stand. See `BACKLOG.md` `DEBT-01`/`DEBT-02`. The
+> original API-03 text is retained for the historical record.
+
 **Status: landed.** `ChessParams` and `RefinerKind` moved off the
 `chess-corners-core` crate root into `chess_corners_core::unstable`
 (they cannot be `pub(crate)` because the facade, benches, and core

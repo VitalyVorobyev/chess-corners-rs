@@ -63,14 +63,12 @@ use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use chess_corners::low_level::{to_chess_params, to_radon_detector_params};
 use chess_corners::{ChessRefiner, DetectorConfig, OrientationMethod};
-use chess_corners_core::unstable::{
-    detect_peaks_from_response_with_refine_radius, refine_corners_on_image, ChessParams,
-};
 use chess_corners_core::{
-    chess_response_u8, describe_corners, detect_peaks_from_radon, merge_corners_simple,
-    radon_response_u8, CornerDescriptor, CornerRefiner, ImageView, RadonBuffers, Refiner,
+    chess_response_u8, describe_corners, detect_peaks_from_radon,
+    detect_peaks_from_response_with_refine_radius, merge_corners_simple, radon_response_u8,
+    refine_corners_on_image, ChessParams, CornerDescriptor, CornerRefiner, ImageView, RadonBuffers,
+    Refiner,
 };
 use image::{imageops::FilterType, ImageReader, Rgb, RgbImage};
 use serde_json::json;
@@ -234,7 +232,7 @@ fn measure_chess(
     warmup: usize,
     reps: usize,
 ) -> (Vec<CornerDescriptor>, StageTimes) {
-    let params = to_chess_params(cfg);
+    let params = cfg.chess_params();
     let method = cfg.orientation_method;
     let desc_radius = params.ring_radius();
     let merge_radius = cfg.merge_radius;
@@ -299,7 +297,7 @@ fn measure_radon(
     warmup: usize,
     reps: usize,
 ) -> (Vec<CornerDescriptor>, StageTimes) {
-    let params = to_radon_detector_params(cfg);
+    let params = cfg.radon_detector_params();
     let method = cfg.orientation_method;
     // The facade samples descriptors at the canonical r=5 ring for the
     // Radon strategy (it has no descriptor-ring knob of its own).

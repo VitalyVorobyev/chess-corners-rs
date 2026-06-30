@@ -4,9 +4,14 @@
 //!
 //! The crate exposes a deliberate low-level contract through its
 //! crate root: response computation ([`chess_response_u8`],
-//! [`radon_response_u8`]), corner detection ([`find_corners_u8`],
-//! [`detect_corners_from_response`]), pluggable subpixel refinement
-//! (the [`CornerRefiner`] trait and built-in refiners), the two-axis
+//! [`chess_response_u8_patch`], [`radon_response_u8`]), corner
+//! detection ([`find_corners_u8`], [`detect_corners_from_response`])
+//! and its individual stages — threshold + NMS via
+//! [`detect_peaks_from_response_with_refine_radius`] and image-domain
+//! refinement via [`refine_corners_on_image`] — the [`ChessParams`]
+//! configuration consumed by those stages together with its
+//! [`RefinerKind`] refiner selector, pluggable subpixel refinement (the
+//! [`CornerRefiner`] trait and built-in refiners), the two-axis
 //! orientation fit ([`fit_axes_at_point`], [`describe_corners`]), and
 //! the [`ImageView`] borrowed-buffer type. The detector pipeline
 //! composes three orthogonal stages — detection, refinement, and
@@ -15,11 +20,6 @@
 //! Most users should work through the `chess-corners` facade crate rather than
 //! depending on `chess-corners-core` directly. Depend on this crate only when
 //! you need raw response maps, custom refiners, or the Radon detector primitives.
-//!
-//! Implementation-specific primitives that benches, experiments, and
-//! advanced callers occasionally need — ring offset tables and the
-//! scalar reference response path — live under [`unstable`], which
-//! carries no semver guarantee.
 //!
 //! # Features
 //!
@@ -62,14 +62,13 @@ mod orientation;
 mod params;
 mod refine;
 
-pub mod unstable;
+/// Low-level ChESS detection parameters consumed by the response and
+/// detection stages. The `chess-corners` facade lowers its
+/// `DetectorConfig` onto this type; depend on it directly when driving
+/// the response and detection stages without going through the facade.
+pub use crate::params::ChessParams;
 
-// Internal name resolution only. `ChessParams` is an implementation-level
-// parameter type; its public path is [`unstable::ChessParams`], not the
-// crate root.
-pub(crate) use crate::params::ChessParams;
-
-pub use crate::detect::chess::response::{chess_response_u8, Roi};
+pub use crate::detect::chess::response::{chess_response_u8, chess_response_u8_patch, Roi};
 pub use crate::detect::dense::{ChessBuffers, ChessDetector, DenseDetector, RadonDetector};
 pub use crate::detect::radon::primitives::PeakFitMode;
 pub use crate::detect::radon::{
@@ -77,15 +76,17 @@ pub use crate::detect::radon::{
     RadonResponseView,
 };
 pub use crate::detect::{
-    detect_corners_from_response, detect_corners_from_response_with_refiner, find_corners_u8,
-    merge_corners_simple, AxisEstimate, Corner, CornerDescriptor,
+    detect_corners_from_response, detect_corners_from_response_with_refiner,
+    detect_peaks_from_response_with_refine_radius, find_corners_u8, merge_corners_simple,
+    refine_corners_on_image, AxisEstimate, Corner, CornerDescriptor,
 };
 pub use crate::orientation::{
     describe_corners, fit_axes_at_point, fit_axes_from_samples, AxisFitResult, OrientationMethod,
 };
 pub use crate::refine::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
-    RefineContext, RefineResult, RefineStatus, Refiner, SaddlePointConfig, SaddlePointRefiner,
+    RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind, SaddlePointConfig,
+    SaddlePointRefiner,
 };
 pub use imageview::ImageView;
 

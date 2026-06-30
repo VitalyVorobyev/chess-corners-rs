@@ -35,9 +35,7 @@
 //!     > book/src/img/bench/bench_sweep.json
 //! ```
 
-use chess_corners::low_level::ImageView;
-use chess_corners_core::chess_response_u8;
-use chess_corners_core::unstable::ChessParams;
+use chess_corners_core::{chess_response_u8, ChessParams, ImageView};
 use chess_corners_testutil::{aa_chessboard, add_gaussian_noise, gaussian_blur};
 
 #[path = "../tests/common/refiner_harness.rs"]

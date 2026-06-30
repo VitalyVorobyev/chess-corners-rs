@@ -1,11 +1,10 @@
 //! Low-level ChESS detection parameters.
 //!
 //! [`ChessParams`] is the parameter bundle consumed by the ChESS
-//! response and detection stages. It is re-exported from
-//! [`crate::unstable`] rather than the crate root: it is an
-//! implementation-level translation target for the `chess-corners`
-//! facade and the benchmarks, not part of the stable low-level
-//! contract.
+//! response and detection stages. It is re-exported from the crate
+//! root as part of the low-level contract: the `chess-corners` facade
+//! lowers its `DetectorConfig` onto it, and callers driving the
+//! response and detection stages directly construct it themselves.
 
 use crate::detect::chess::ring::RingOffsets;
 use crate::orientation::OrientationMethod;
@@ -75,7 +74,7 @@ impl ChessParams {
     }
 
     #[inline]
-    pub fn ring(&self) -> RingOffsets {
+    pub(crate) fn ring(&self) -> RingOffsets {
         RingOffsets::from_radius(self.ring_radius())
     }
 }

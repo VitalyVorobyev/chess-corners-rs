@@ -36,6 +36,7 @@ mod score;
 mod search;
 
 use super::ring_fit;
+use crate::imageview::ImageView;
 use data::extract_disk;
 use geometry::{line_separation, pair_disagreement};
 use score::{
@@ -79,11 +80,8 @@ const LAZY_DISK_SEP_DEG_MAX: f32 = 110.0;
 /// rotated 90° relative to the true lines yields `A < 0`, which
 /// `canonicalize` resolves into the matching `axes[0]` slot of the
 /// ring fit.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn fit(
-    img: &[u8],
-    w: usize,
-    h: usize,
+    view: ImageView<'_>,
     cx: f32,
     cy: f32,
     radius: u32,
@@ -102,7 +100,7 @@ pub(crate) fn fit(
         return fallback;
     }
 
-    let Some(data) = extract_disk(img, w, h, cx, cy, radius) else {
+    let Some(data) = extract_disk(view.data, view.width, view.height, cx, cy, radius) else {
         return fallback;
     };
     let Some(fit) = best_disk_fit(&data, fallback.theta1, fallback.theta2) else {
@@ -202,6 +200,22 @@ mod tests {
         pair_disagreement(a0, a1, b0, b1)
     }
 
+    /// Run the disk fit over a `size × size` synthetic test image. The
+    /// fixtures are always exactly `size × size`, so the view is
+    /// infallible.
+    fn fit_image(
+        img: &[u8],
+        size: usize,
+        cx: f32,
+        cy: f32,
+        radius: u32,
+        samples: &[f32; 16],
+        phi: &[f32; 16],
+    ) -> ring_fit::TwoAxisFit {
+        let view = ImageView::from_u8_slice(size, size, img).expect("test image is size × size");
+        fit(view, cx, cy, radius, samples, phi)
+    }
+
     #[test]
     fn recovers_projective_disk_axes() {
         let size = 41usize;
@@ -214,7 +228,7 @@ mod tests {
         let phi = ring_angles(ring);
         let samples = sample_ring(&img, size, size, cx, cy, ring);
 
-        let fit = fit(&img, size, size, cx, cy, 5, &samples, &phi);
+        let fit = fit_image(&img, size, cx, cy, 5, &samples, &phi);
         assert!(
             pair_err(fit.theta1, fit.theta2, target0, target1) < 3.0_f32.to_radians(),
             "fit={fit:?}"
@@ -231,7 +245,7 @@ mod tests {
         let phi = ring_angles(ring);
         let samples = sample_ring(&img, size, size, 4.0, 4.0, ring);
         let fallback = ring_fit::fit_ring(&samples, &phi);
-        let fit = fit(&img, size, size, 4.0, 4.0, 5, &samples, &phi);
+        let fit = fit_image(&img, size, 4.0, 4.0, 5, &samples, &phi);
 
         assert!((fit.theta1 - fallback.theta1).abs() < 1e-6);
         assert!((fit.theta2 - fallback.theta2).abs() < 1e-6);
@@ -254,7 +268,7 @@ mod tests {
         let phi = ring_angles(ring);
         let samples = sample_ring(&img, size, size, cx, cy, ring);
 
-        let fit = fit(&img, size, size, cx, cy, 5, &samples, &phi);
+        let fit = fit_image(&img, size, cx, cy, 5, &samples, &phi);
         let err = pair_err(fit.theta1, fit.theta2, target0, target1);
         assert!(
             err < 5.0_f32.to_radians(),
@@ -278,7 +292,7 @@ mod tests {
         let phi = ring_angles(ring);
         let samples = sample_ring(&img, size, size, cx, cy, ring);
 
-        let fit = fit(&img, size, size, cx, cy, 5, &samples, &phi);
+        let fit = fit_image(&img, size, cx, cy, 5, &samples, &phi);
         let err = pair_err(fit.theta1, fit.theta2, target0, target1);
         assert!(
             err < 3.0_f32.to_radians(),
@@ -310,7 +324,7 @@ mod tests {
             "synthetic clean orthogonal must trip the gate; fallback={fallback:?}"
         );
 
-        let fit = fit(&img, size, size, cx, cy, 5, &samples, &phi);
+        let fit = fit_image(&img, size, cx, cy, 5, &samples, &phi);
         assert_eq!(fit.theta1.to_bits(), fallback.theta1.to_bits());
         assert_eq!(fit.theta2.to_bits(), fallback.theta2.to_bits());
         assert_eq!(fit.amp.to_bits(), fallback.amp.to_bits());
@@ -336,7 +350,7 @@ mod tests {
         let samples = sample_ring(&img, size, size, cx, cy, ring);
         let fallback = ring_fit::fit_ring(&samples, &phi);
 
-        let fit = fit(&img, size, size, cx, cy, 5, &samples, &phi);
+        let fit = fit_image(&img, size, cx, cy, 5, &samples, &phi);
         let dt1 = geometry::line_delta(fit.theta1, fallback.theta1);
         let dt2 = geometry::line_delta(fit.theta2, fallback.theta2);
         let one_deg = 1.0_f32.to_radians();
@@ -362,7 +376,7 @@ mod tests {
         let phi = ring_angles(ring);
         let samples = sample_ring(&img, size, size, cx, cy, ring);
 
-        let fit = fit(&img, size, size, cx, cy, 5, &samples, &phi);
+        let fit = fit_image(&img, size, cx, cy, 5, &samples, &phi);
         let err = pair_err(fit.theta1, fit.theta2, target0, target1);
         assert!(
             err < 3.0_f32.to_radians(),
