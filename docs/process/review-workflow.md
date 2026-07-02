@@ -109,8 +109,8 @@ A fresh Opus context catches things the Implementer might have missed.
 The artifact produced by this workflow lives at the project root:
 
 ```markdown
-# Pre-Release Review — calib-targets-rs
-*Reviewed: 2026-04-01*
+# Pre-Release Review — chess-corners-rs
+*Reviewed: YYYY-MM-DD*
 *Scope: full workspace*
 
 ## Review Verdict          <-- added by Reviewer
@@ -125,7 +125,7 @@ The artifact produced by this workflow lives at the project root:
 ### [001] Inconsistent MSRV across crates
 - **Severity**: P1
 - **Category**: workspace
-- **Location**: `crates/calib-targets-print/Cargo.toml:5`
+- **Location**: `crates/chess-corners-core/Cargo.toml:5`
 - **Status**: verified
 - **Problem**: ...
 - **Fix**: ...
@@ -134,11 +134,11 @@ The artifact produced by this workflow lives at the project root:
 ...
 
 ## Out-of-Scope Pointers
-- Potential numerical issue in homography solver → run /calibration-review
+- Potential numerical issue in the orientation fit → run /calibration-review
 
 ## Strong Points
-- Clean trait design in calib-targets-core
-- Comprehensive regression test suite in charuco
+- Clean trait design in chess-corners-core
+- Comprehensive snapshot regression suite
 ```
 
 ## Typical Session
@@ -225,49 +225,13 @@ traceability link between design and review:
 ### Typical Session
 
 ```
-you:    let's design the marker grid alignment algorithm
-claude: [invokes /algo-design, writes docs/DESIGN-marker-grid-alignment.md]
-        Design complete. Next steps:
-        1. Implement the design
-        2. /algo-review — check correctness
-        3. /calibration-review — verify geometry conventions
+you:    let's design the DiskFit orientation estimator
+claude: [invokes /algo-design, writes docs/DESIGN-diskfit-orientation.md]
+        Design complete. Next: implement, then /algo-review and
+        /calibration-review.
 you:    [implements over several conversation turns]
 you:    review this
-claude: [invokes /algo-review, cross-references DESIGN-marker-grid-alignment.md]
-        3 findings: ...
+claude: [invokes /algo-review, cross-references the DESIGN doc] 3 findings: ...
 you:    pre-release check
 claude: [invokes /rust-workspace-review, runs 3-agent pipeline]
-```
-
----
-
-## Complete Skill Map
-
-```
-FEATURE DEVELOPMENT                          PRE-RELEASE
-(interactive, single context)                (3-agent pipeline)
-
-┌──────────────┐
-│  algo-design  │──── produces ──── docs/DESIGN-*.md
-└──────┬───────┘                        │
-       │ implement                      │ cross-references
-       ▼                                ▼
-┌──────────────┐                 ┌─────────────────────────┐
-│  algo-review  │                │  rust-workspace-review   │
-│  (correctness,│                │  (design, quality, sec,  │
-│   numerical)  │                │   tests, docs, workspace)│
-└──────────────┘                 │  Architect → Implement   │
-                                 │           → Review       │
-┌──────────────────┐             └─────────────────────────┘
-│calibration-review│
-│  (CV domain)     │
-└──────────────────┘
-
-┌──────────────┐
-│perf-architect │
-│  (hot paths)  │
-├──────────────┤
-│ hotpath-rust  │
-│criterion-bench│
-└──────────────┘
 ```

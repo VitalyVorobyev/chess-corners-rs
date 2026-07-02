@@ -151,10 +151,10 @@ The Pareto frontier, fast-to-slow:
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.05 px               | OpenCV's iterative gradient refiner.                                  |
 | `ML (ONNX)`         | ~250 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row in this fixture.               |
 
-The OpenCV timing in earlier revisions of this chapter was reported
-at ~300 µs because the measurement loop included fixture construction;
-the refinement-only value (~2.7 µs) is what the table above quotes.
-See `tools/book/opencv_subpix_sweep.py` for the exact measurement
+A measurement loop that includes fixture construction in the timed
+region reports ~300 µs for `cv2.cornerSubPix`; the refinement-only
+value (~2.7 µs) is what the table above quotes. See
+`tools/book/opencv_subpix_sweep.py` for the exact measurement
 boundaries.
 
 ## 7.7 Whole-pipeline throughput

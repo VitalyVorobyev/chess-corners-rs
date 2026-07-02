@@ -56,8 +56,8 @@ docs/
 - **Changelog**: `[Unreleased]` stays inline in the root `CHANGELOG.md`;
   released notes move under `changelog/X.Y.Z.md`.
 
-## The program at a glance
+## Program status
 
-`M1` planning (this) → **`M2` performance** (leads) → `M3` API `v1.0.0`
-freeze → `M4` site ∥ `M5` C++/vcpkg. The doc/comment sweep and SOLID/DRY
-cleanup run continuously. See [`ROADMAP.md`](ROADMAP.md).
+Milestones M1–M6 are done; only the 1.0.0 release act (`API-09`) is deferred by
+choice. See [`ROADMAP.md`](ROADMAP.md) for the milestone table and
+[`BACKLOG.md`](BACKLOG.md) for the task registry.
