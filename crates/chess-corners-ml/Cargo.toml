@@ -1,6 +1,6 @@
 [package]
 name = "chess-corners-ml"
-version.workspace = true
+version = "0.12.0"
 description = "ONNX-based ML refiner inference for chess-corners"
 edition.workspace = true
 license.workspace = true
