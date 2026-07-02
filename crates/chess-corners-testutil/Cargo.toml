@@ -1,6 +1,7 @@
 [package]
 name = "chess-corners-testutil"
 version.workspace = true
+description = "Dependency-free test fixtures shared by chess-corners-rs workspace crates (not published)"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

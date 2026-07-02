@@ -495,6 +495,10 @@ fn sat_to_f32(v: SatElem) -> f32 {
 /// Compute the dense Radon response into `buffers.response` and return
 /// a read-only [`RadonResponseView`] at **working resolution** (i.e.
 /// `input_dim × image_upsample`).
+///
+/// # Panics
+///
+/// Panics if `img.len() != w * h`.
 pub fn radon_response_u8<'a>(
     img: &[u8],
     w: usize,
@@ -502,7 +506,13 @@ pub fn radon_response_u8<'a>(
     params: &RadonDetectorParams,
     buffers: &'a mut RadonBuffers,
 ) -> RadonResponseView<'a> {
-    assert_eq!(img.len(), w * h, "img len must equal w*h");
+    assert_eq!(
+        img.len(),
+        w * h,
+        "radon_response_u8: img.len() ({}) must equal w*h ({w} * {h} = {})",
+        img.len(),
+        w * h,
+    );
     let up = params.image_upsample_clamped();
     buffers.ensure_capacity(w, h, up);
     let ww = buffers.working_w;
@@ -579,26 +589,31 @@ pub struct RadonResponseView<'a> {
 }
 
 impl<'a> RadonResponseView<'a> {
+    /// Width of the response map, at working resolution.
     #[inline]
     pub fn width(&self) -> usize {
         self.w
     }
 
+    /// Height of the response map, at working resolution.
     #[inline]
     pub fn height(&self) -> usize {
         self.h
     }
 
+    /// Raw response data in row-major order.
     #[inline]
     pub fn data(&self) -> &[f32] {
         self.data
     }
 
+    /// Response value at an integer working-resolution coordinate.
     #[inline]
     pub fn at(&self, x: usize, y: usize) -> f32 {
         self.data[y * self.w + x]
     }
 
+    /// Copy this borrowed view into an owned [`ResponseMap`].
     pub fn to_response_map(&self) -> ResponseMap {
         ResponseMap {
             w: self.w,
@@ -620,6 +635,15 @@ fn upsample_bilinear_2x_if_needed(img: &[u8], w: usize, h: usize, up: u32, out: 
 mod tests {
     use super::super::test_fixtures::synthetic_chessboard_aa;
     use super::*;
+
+    #[test]
+    #[should_panic(expected = "radon_response_u8: img.len()")]
+    fn radon_response_u8_panics_on_dimension_mismatch() {
+        let img = vec![0u8; 10];
+        let params = RadonDetectorParams::default();
+        let mut buffers = RadonBuffers::new();
+        let _ = radon_response_u8(&img, 4, 4, &params, &mut buffers);
+    }
 
     #[test]
     fn row_cumsum_matches_naive_sum() {

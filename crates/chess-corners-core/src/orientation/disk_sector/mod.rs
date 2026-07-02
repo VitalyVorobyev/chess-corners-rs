@@ -45,14 +45,14 @@ use score::{
 };
 use search::best_disk_fit;
 
-/// Lazy-disk gate threshold on the legacy fit's `rms / max(amp, 1.0)`.
+/// Lazy-disk gate threshold on the ring fit's `rms / max(amp, 1.0)`.
 /// Clean chessboard corners settle near `rel_rms ≈ 0.01` while the
 /// confused regimes the disk fit was added for (extreme skew, blurry
 /// edges, low contrast) sit at 0.1–0.4. 0.04 is comfortably below the
 /// `ACCEPT_REL_MARGIN = 0.03` margin that the disk fit must clear to
 /// take over, so any corner short-circuited here would have failed the
 /// margin test even after running the full disk fit. The headline
-/// extreme-skew cell (30°/150°) collapses the legacy fit to ~21° error
+/// extreme-skew cell (30°/150°) collapses the ring fit to ~21° error
 /// and inflates `rel_rms` well past 0.1; that case still pays the full
 /// disk cost.
 const LAZY_DISK_REL_RMS_MAX: f32 = 0.04;
@@ -62,7 +62,7 @@ const LAZY_DISK_REL_RMS_MAX: f32 = 0.04;
 /// outside this band: extreme skew and mis-converged baselines that snap
 /// to near-parallel axes. [70°, 110°] keeps clean orthogonal corners
 /// inside the lazy path while leaving margin for suspect corners with
-/// mis-aligned legacy axes.
+/// mis-aligned ring-fit axes.
 const LAZY_DISK_SEP_DEG_MIN: f32 = 70.0;
 const LAZY_DISK_SEP_DEG_MAX: f32 = 110.0;
 
@@ -91,8 +91,8 @@ pub(crate) fn fit(
     let fallback = ring_fit::fit_ring(samples, ring_phi);
 
     // Lazy-disk gate: most chessboard corners are well-fit by the
-    // legacy 16-ring path. Skip the ~131 µs disk fit when both signals
-    // agree the legacy result is already a confident orthogonal-ish
+    // ring-fit 16-ring path. Skip the ~131 µs disk fit when both signals
+    // agree the ring fit is already a confident orthogonal-ish
     // corner. Suspect corners (extreme skew, blurry edges, low
     // contrast) keep the high rel_rms or off-band separation that puts
     // them through the full disk path unchanged.
@@ -150,7 +150,7 @@ pub(crate) fn fit(
     }
 }
 
-/// Lazy-disk gate predicate. Returns `true` when the legacy fallback
+/// Lazy-disk gate predicate. Returns `true` when the ring fit
 /// already explains the ring well enough that the full disk fit is
 /// statistically guaranteed not to displace it via the
 /// `ACCEPT_REL_MARGIN`/`ACCEPT_REL_RATIO` route.
@@ -254,7 +254,7 @@ mod tests {
 
     /// Regression fixture from the disk-sector benchmark: extreme
     /// axis-skew (30°/150° crossing — 30° between lines) must recover
-    /// within a few degrees. The legacy fit collapsed to ≈21° error on
+    /// within a few degrees. The ring fit collapsed to ≈21° error on
     /// this case when the test was added; the disk fit must clear ≤5°.
     #[test]
     fn recovers_extreme_skew_30_150() {
@@ -278,7 +278,7 @@ mod tests {
     }
 
     /// Sharp-edge orthogonal corner. Width 0.35 mimics the
-    /// "blur=0" cell from the bench, where the legacy fit
+    /// "blur=0" cell from the bench, where the ring fit
     /// inflates to ~4.3° RMSE.
     #[test]
     fn recovers_sharp_orthogonal() {
@@ -302,7 +302,7 @@ mod tests {
     }
 
     /// Lazy-disk gate must short-circuit a clean orthogonal corner so
-    /// `fit()` returns the legacy fallback bit-exactly. The ~131 µs
+    /// `fit()` returns the ring fit bit-exactly. The ~131 µs
     /// disk fit only justifies its cost on suspect corners; a synthetic
     /// 90°-separation, mid-width corner is the canonical "easy" case.
     #[test]
@@ -334,7 +334,7 @@ mod tests {
     }
 
     /// Lazy-disk gate must NOT short-circuit the headline extreme-skew
-    /// case. The legacy fallback collapses to ~21° error on 30°/150°,
+    /// case. The ring fit collapses to ~21° error on 30°/150°,
     /// so the disk path must still run; we detect that by checking that
     /// at least one returned axis differs measurably from the fallback.
     #[test]

@@ -6,8 +6,11 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+documentation = "https://vitalyvorobyev.github.io/chess-corners-rs/api/box_image_pyramid"
+homepage = "https://vitalyvorobyev.github.io/chess-corners-rs"
 readme = "README.md"
 keywords = ["image-pyramid", "downsample", "box-filter", "computer-vision"]
+categories.workspace = true
 
 [lib]
 name = "box_image_pyramid"

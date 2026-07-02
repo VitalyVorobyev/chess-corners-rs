@@ -1,14 +1,13 @@
 //! Public API for sampling and fitting axes at a single point.
 //!
-//! Two entry points:
+//! [`fit_axes_at_point`] is the public entry point: it samples the
+//! 16-point ChESS ring around an image point and dispatches to the
+//! chosen [`OrientationMethod`]. This is the workhorse used by the
+//! descriptor pipeline and by the orientation benchmark.
 //!
-//! - [`fit_axes_at_point`] samples the 16-point ChESS ring around an
-//!   image point and dispatches to the chosen [`OrientationMethod`].
-//!   This is the workhorse used by the descriptor pipeline and by the
-//!   orientation benchmark.
-//! - [`fit_axes_from_samples`] takes pre-sampled ring values directly,
-//!   which is convenient for unit tests that don't want to construct a
-//!   real image. Both routes converge on the same dispatcher.
+//! A crate-private `fit_axes_from_samples` helper runs the same
+//! dispatch directly on pre-sampled ring values, for use by this
+//! module's own unit tests.
 
 use super::descriptor::{ring_angles, sample_ring};
 use super::{disk_sector, ring_fit, ring_fit_for_image, OrientationMethod};
@@ -17,9 +16,7 @@ use crate::imageview::ImageView;
 
 /// Result of a two-axis orientation fit at a single corner.
 ///
-/// This is the public mirror of the (crate-private) `TwoAxisFit` used
-/// by the descriptor path. All [`OrientationMethod`] variants populate
-/// the same fields.
+/// All [`OrientationMethod`] variants populate the same fields.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct AxisFitResult {
@@ -56,12 +53,10 @@ impl From<ring_fit::TwoAxisFit> for AxisFitResult {
 /// Sample the 16-point ChESS ring at `(cx, cy)` with `radius` and run
 /// the chosen orientation method.
 ///
-/// Public so the orientation benchmark can drive the fit directly
-/// without going through the detection pipeline.
+/// Useful for orientation estimates at externally-chosen points without
+/// running detection.
 pub fn fit_axes_at_point(
-    img: &[u8],
-    w: usize,
-    h: usize,
+    view: ImageView<'_>,
     cx: f32,
     cy: f32,
     radius: u32,
@@ -69,13 +64,7 @@ pub fn fit_axes_at_point(
 ) -> AxisFitResult {
     let ring = ring_offsets(radius);
     let ring_phi = ring_angles(ring);
-    let samples = sample_ring(img, w, h, cx, cy, ring);
-    let view = ImageView {
-        data: img,
-        width: w,
-        height: h,
-        origin: [0, 0],
-    };
+    let samples = sample_ring(view.data, view.width, view.height, cx, cy, ring);
     match method {
         OrientationMethod::RingFit => {
             ring_fit_for_image(view, cx, cy, radius, &samples, &ring_phi).into()
@@ -88,12 +77,12 @@ pub fn fit_axes_at_point(
 
 /// Run the chosen orientation method on pre-sampled ring values.
 ///
-/// Use this when you already have the 16 ring samples in hand (e.g.
-/// from a custom sampler or a synthetic test) and only need the fit.
-/// Image-dependent variants will fall back to the ring-only
-/// [`OrientationMethod::RingFit`] result when invoked through this
-/// helper.
-pub fn fit_axes_from_samples(
+/// Use this when you already have the 16 ring samples in hand and only
+/// need the fit. Image-dependent variants will fall back to the
+/// ring-only [`OrientationMethod::RingFit`] result when invoked through
+/// this helper.
+#[cfg(test)]
+pub(crate) fn fit_axes_from_samples(
     samples: &[f32; 16],
     ring_phi: &[f32; 16],
     method: OrientationMethod,
@@ -113,6 +102,7 @@ pub fn fit_axes_from_samples(
 mod tests {
     use super::{fit_axes_at_point, fit_axes_from_samples};
     use crate::detect::chess::ring::ring_offsets;
+    use crate::imageview::ImageView;
     use crate::OrientationMethod;
     use core::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
@@ -332,15 +322,9 @@ mod tests {
         }
 
         let from_samples = fit_axes_from_samples(&samples, &phi, OrientationMethod::RingFit);
-        let from_image = fit_axes_at_point(
-            &img,
-            w,
-            h,
-            cx as f32,
-            cy as f32,
-            5,
-            OrientationMethod::RingFit,
-        );
+        let view = ImageView::from_u8_slice(w, h, &img).expect("view dims match buffer");
+        let from_image =
+            fit_axes_at_point(view, cx as f32, cy as f32, 5, OrientationMethod::RingFit);
 
         assert!((from_samples.theta1 - from_image.theta1).abs() < 1e-2);
         assert!((from_samples.theta2 - from_image.theta2).abs() < 1e-2);
@@ -385,15 +369,8 @@ mod tests {
             img[(cy + dy) as usize * w + (cx + dx) as usize] = q;
         }
 
-        let fit = fit_axes_at_point(
-            &img,
-            w,
-            h,
-            cx as f32,
-            cy as f32,
-            10,
-            OrientationMethod::RingFit,
-        );
+        let view = ImageView::from_u8_slice(w, h, &img).expect("view dims match buffer");
+        let fit = fit_axes_at_point(view, cx as f32, cy as f32, 10, OrientationMethod::RingFit);
         let err = axis_pair_err(fit.theta1, fit.theta2, inner_t1, inner_t2);
         assert!(
             err < 2.0_f32.to_radians(),

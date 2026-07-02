@@ -64,6 +64,8 @@ impl Default for ChessParams {
 }
 
 impl ChessParams {
+    /// Ring radius in pixels selected by [`Self::use_radius10`]: `10`
+    /// when set, `5` otherwise.
     #[inline]
     pub fn ring_radius(&self) -> u32 {
         if self.use_radius10 {

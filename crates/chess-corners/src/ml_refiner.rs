@@ -178,20 +178,14 @@ pub(crate) fn detect_corners_with_ml(
     let mut results: Vec<Option<Corner>> = vec![None; candidates.len()];
     state.indices.clear();
 
-    for (idx, corner) in candidates.iter().enumerate() {
-        let offset = state.indices.len() * state.patch_area;
-        let patch_slice = &mut state.buffer[offset..offset + state.patch_area];
-        if extract_patch_u8_to_f32(image, corner.x, corner.y, state.patch_size, patch_slice)
-            .is_none()
-        {
-            stats.oob += 1;
-            results[idx] = apply_fallback(corner, &state.params, &ctx, &mut state.fallback_refiner);
-            continue;
-        }
-
-        stats.extracted += 1;
-        state.indices.push(idx);
-        if state.indices.len() == state.batch_size {
+    // Flush the currently-batched patches: run inference (with per-slot
+    // fallback on failure) and reset the index list. A macro rather than
+    // a closure or helper fn because it borrows several disjoint `state`
+    // fields plus the cfg-gated tracing accumulators — a closure would
+    // capture `state` wholesale (conflicting with the loop's own field
+    // borrows) and a free fn would need a dozen arguments.
+    macro_rules! flush_batch {
+        () => {{
             let input = BatchInput {
                 model,
                 patch_size: state.patch_size,
@@ -213,31 +207,29 @@ pub(crate) fn detect_corners_with_ml(
                 &mut stats,
             );
             state.indices.clear();
+        }};
+    }
+
+    for (idx, corner) in candidates.iter().enumerate() {
+        let offset = state.indices.len() * state.patch_area;
+        let patch_slice = &mut state.buffer[offset..offset + state.patch_area];
+        if extract_patch_u8_to_f32(image, corner.x, corner.y, state.patch_size, patch_slice)
+            .is_none()
+        {
+            stats.oob += 1;
+            results[idx] = apply_fallback(corner, &state.params, &ctx, &mut state.fallback_refiner);
+            continue;
+        }
+
+        stats.extracted += 1;
+        state.indices.push(idx);
+        if state.indices.len() == state.batch_size {
+            flush_batch!();
         }
     }
 
     if !state.indices.is_empty() {
-        let input = BatchInput {
-            model,
-            patch_size: state.patch_size,
-            buffer: &state.buffer,
-            candidates: &candidates,
-            params: &state.params,
-            ctx: &ctx,
-            #[cfg(feature = "tracing")]
-            infer_time: &mut infer_time,
-            #[cfg(feature = "tracing")]
-            infer_batches: &mut infer_batches,
-        };
-        run_batch(
-            input,
-            state.indices.len(),
-            &state.indices,
-            &mut state.fallback_refiner,
-            &mut results,
-            &mut stats,
-        );
-        state.indices.clear();
+        flush_batch!();
     }
 
     let mut out = Vec::with_capacity(candidates.len());
@@ -438,8 +430,8 @@ pub(crate) fn extract_patch_u8_to_f32(
     if patch_size == 0 {
         return None;
     }
-    let width = view.width as i32;
-    let height = view.height as i32;
+    let width = view.width() as i32;
+    let height = view.height() as i32;
     if width <= 0 || height <= 0 {
         return None;
     }
@@ -471,8 +463,8 @@ pub(crate) fn extract_patch_u8_to_f32(
         let y0 = gy.floor() as i32;
         let y1 = (y0 + 1).min(height - 1);
         let wy = gy - y0 as f32;
-        let row0 = (y0 as usize) * view.width;
-        let row1 = (y1 as usize) * view.width;
+        let row0 = (y0 as usize) * view.width();
+        let row1 = (y1 as usize) * view.width();
 
         for ix in 0..patch_size {
             let u = ix as f32 - half;
@@ -481,10 +473,10 @@ pub(crate) fn extract_patch_u8_to_f32(
             let x1 = (x0 + 1).min(width - 1);
             let wx = gx - x0 as f32;
 
-            let p00 = view.data[row0 + x0 as usize] as f32;
-            let p10 = view.data[row0 + x1 as usize] as f32;
-            let p01 = view.data[row1 + x0 as usize] as f32;
-            let p11 = view.data[row1 + x1 as usize] as f32;
+            let p00 = view.data()[row0 + x0 as usize] as f32;
+            let p10 = view.data()[row0 + x1 as usize] as f32;
+            let p01 = view.data()[row1 + x0 as usize] as f32;
+            let p11 = view.data()[row1 + x1 as usize] as f32;
 
             let w00 = (1.0 - wx) * (1.0 - wy);
             let w10 = wx * (1.0 - wy);

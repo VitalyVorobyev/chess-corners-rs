@@ -175,27 +175,6 @@ Three rules that keep the main conversation lean:
   that drifts into ambiguity is more expensive than two short ones
   with crisp briefs.
 
-## Worked example: this very plan
-
-The plan at
-`/Users/vitalyvorobyev/.claude/plans/i-updated-my-crate-stateless-axolotl.md`
-is a real example of this workflow:
-
-| Step | Agent | Why |
-|---|---|---|
-| Write this doc + the two agent files | `deep-implementer` (Opus) | Requires judgement — categorising which task goes to which model is the whole point of the doc. |
-| Plumb `OrientationMethod` re-exports through three files | `quick-implementer` (Sonnet) | One-line edits with `cargo` gates. Specifiable. |
-| Add `--orientation-method` CLI flag to two bench binaries | `quick-implementer` (Sonnet) | Clap arg + one-line override at the call site. Specifiable. |
-| Run the full bench matrix and report a markdown table | `quick-implementer` (Sonnet) | Pure orchestration of existing tooling. The data does the thinking. |
-| Regenerate 24 overlay PNGs into a gitignored tree | `quick-implementer` (Sonnet) | File-output orchestration. Mechanical. |
-| Read the table, decide on a default flip, write the impact report | main context (Opus) | Synthesis + numerical judgement. The user can interject mid-step. |
-
-The first dispatch gets one Opus pass. Steps 2-5 are five Sonnet
-passes (faster + cheaper). Step 6 stays in this conversation so the
-user can steer the conclusion. Total Opus context used in this
-conversation = the plan + the six step summaries; everything else
-lives inside subagent contexts.
-
 ## When a subagent fails
 
 If a `quick-implementer` reports back "I hit ambiguity at step 3, see

@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn chess_config_field_edits_propagate() {
-        let cfg = DetectorConfig::single_scale();
+        let cfg = DetectorConfig::chess();
         let mut chess = cfg.strategy().chess();
         chess.set_ring(ChessRing::Broad);
 
@@ -247,7 +247,7 @@ mod tests {
     fn detection_field_edits_propagate() {
         // Shared NMS / clustering knobs live on `detection` and are
         // honoured regardless of the active strategy.
-        let cfg = DetectorConfig::single_scale();
+        let cfg = DetectorConfig::chess();
         let mut detection = cfg.detection();
         detection.set_nms_radius(7);
         detection.set_min_cluster_size(3);
@@ -264,7 +264,7 @@ mod tests {
         // `JsValue` is wasm32-only. So we round-trip through the
         // snapshot, which exercises the same internal storage cells
         // without crossing the wasm-bindgen boundary.
-        let mut cfg = DetectorConfig::single_scale();
+        let mut cfg = DetectorConfig::chess();
         cfg.set_multiscale(&MultiscaleConfig::pyramid(4, 64, 5));
         assert_eq!(cfg.multiscale().kind(), "pyramid");
 
@@ -481,24 +481,6 @@ mod tests {
     }
 
     #[test]
-    fn single_scale_delegates_to_chess() {
-        // Deprecated shim must return an identical snapshot to chess().
-        let snap_compat = DetectorConfig::single_scale().snapshot();
-        let snap_new = DetectorConfig::chess().snapshot();
-        // Both must be Chess/SingleScale.
-        assert!(matches!(
-            snap_compat.strategy,
-            RsDetectionStrategy::Chess(_)
-        ));
-        assert!(matches!(
-            snap_compat.multiscale,
-            RsMultiscaleConfig::SingleScale
-        ));
-        // Threshold must match.
-        assert_eq!(snap_compat.threshold, snap_new.threshold);
-    }
-
-    #[test]
     fn pyramid_default_matches_chess_multiscale_preset() {
         let ms = MultiscaleConfig::pyramid_default();
         assert_eq!(ms.kind(), "pyramid");
@@ -692,7 +674,7 @@ mod tests {
 
     #[cfg(target_arch = "wasm32")]
     #[test]
-    fn with_radon_opts_ray_radius_and_image_upsample() {
+    fn with_radon_opts_round_trips_all_four_knobs() {
         let cfg = DetectorConfig::radon();
         let opts = js_sys::Object::new();
         js_sys::Reflect::set(
@@ -707,6 +689,18 @@ mod tests {
             &JsValue::from_f64(2.0),
         )
         .unwrap();
+        js_sys::Reflect::set(
+            &opts,
+            &JsValue::from_str("responseBlurRadius"),
+            &JsValue::from_f64(3.0),
+        )
+        .unwrap();
+        js_sys::Reflect::set(
+            &opts,
+            &JsValue::from_str("peakFit"),
+            &JsValue::from_f64(PeakFitMode::Gaussian as u8 as f64),
+        )
+        .unwrap();
         let cfg2 = cfg.with_radon(&opts).expect("with_radon must succeed");
         let snap = cfg2.snapshot();
         let RsDetectionStrategy::Radon(r) = snap.strategy else {
@@ -714,6 +708,14 @@ mod tests {
         };
         assert_eq!(r.ray_radius, 6);
         assert_eq!(r.image_upsample, 2);
+        assert_eq!(r.response_blur_radius, 3);
+        assert_eq!(r.peak_fit, chess_corners::PeakFitMode::Gaussian);
+
+        // Also assert through the nested RadonConfig wrapper, not just the
+        // snapshot, so this covers the same cell-backed surface the
+        // top-level `strategy.radon()` getter exposes.
+        assert_eq!(cfg2.strategy().radon().response_blur_radius(), 3);
+        assert_eq!(cfg2.strategy().radon().peak_fit(), PeakFitMode::Gaussian);
     }
 
     #[cfg(target_arch = "wasm32")]

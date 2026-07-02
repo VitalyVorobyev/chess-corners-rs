@@ -25,6 +25,9 @@
 //! can check against its own expectation to detect a header/library
 //! mismatch.
 
+// Justified: the C ABI surface uses C-style `cc_*` type names (structs,
+// enums, typedefs) to match the generated header and the wider C/C++
+// naming convention consumers expect, rather than Rust's `CamelCase`.
 #![allow(non_camel_case_types)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -72,6 +75,27 @@ pub const CC_ORIENTATION_DISK_FIT: cc_orientation_method_t = 1;
 /// Skip the per-corner orientation fit. Detected corners then have
 /// `cc_corner::has_orientation == 0` and a zeroed `axes` array.
 pub const CC_ORIENTATION_NONE: cc_orientation_method_t = 2;
+
+/// ChESS sampling-ring tag stored in `cc_config::chess_ring`.
+///
+/// Applies to the ChESS strategy only; ignored when `strategy` is
+/// `CC_STRATEGY_RADON`.
+pub type cc_chess_ring_t = u32;
+/// Paper-default radius-5 ring (16 samples).
+pub const CC_CHESS_RING_CANONICAL: cc_chess_ring_t = 0;
+/// Radius-10 ring: a larger support window that samples farther from
+/// the candidate centre.
+pub const CC_CHESS_RING_BROAD: cc_chess_ring_t = 1;
+
+/// Radon subpixel peak-fit tag stored in `cc_config::peak_fit`.
+///
+/// Applies to the Radon strategy only; ignored when `strategy` is
+/// `CC_STRATEGY_CHESS`.
+pub type cc_peak_fit_t = u32;
+/// Parabolic fit on the raw response values.
+pub const CC_PEAK_FIT_PARABOLIC: cc_peak_fit_t = 0;
+/// Parabolic fit on `log(response)` (Gaussian peak). The Radon default.
+pub const CC_PEAK_FIT_GAUSSIAN: cc_peak_fit_t = 1;
 
 // ─── Result types (library writes, C reads) ─────────────────────────────
 
@@ -126,9 +150,16 @@ pub struct cc_result {
 /// Flat, C-fillable detector configuration.
 ///
 /// Construct one with a preset (`cc_config_default`, `cc_config_chess`, …)
-/// and tweak the exposed fields. Knobs not represented here (per-strategy
-/// ring/ray geometry, refiner tuning, pre-detection upscaling, cross-level
-/// merge radius) fall back to the selected strategy preset's defaults.
+/// and tweak the exposed fields. Every `DetectorConfig` knob is
+/// representable here except two that fall back to library defaults:
+/// refiner-specific tuning (only the refiner *kind* is exposed) and the
+/// multiscale pyramid detail (level count, minimum size, refinement
+/// radius) behind the on/off `multiscale` switch.
+///
+/// Fields are grouped by applicability: `chess_ring` applies to the
+/// ChESS strategy only, while `ray_radius` / `image_upsample` /
+/// `response_blur_radius` / `peak_fit` apply to the Radon strategy only.
+/// Fields that do not apply to the active `strategy` are ignored.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct cc_config {
@@ -148,6 +179,33 @@ pub struct cc_config {
     /// `0` runs single-scale detection; any non-zero value enables the
     /// default three-level coarse-to-fine pyramid.
     pub multiscale: u32,
+    /// Cross-level duplicate-suppression radius in base-image pixels.
+    /// After coarse-level seeds are refined into the base image, refined
+    /// positions within this radius are merged into one output corner.
+    pub merge_radius: f32,
+    /// Pre-pipeline integer upscale factor. `0` disables upscaling (the
+    /// explicit off-state); `2`, `3`, or `4` upscale by that factor before
+    /// detection. Any other value (including `1`) is rejected with
+    /// `CC_ERR_UPSCALE`. Output coordinates are rescaled back to the input
+    /// pixel frame.
+    pub upscale_factor: u32,
+    /// One of the `CC_CHESS_RING_*` constants. Applies to the ChESS
+    /// strategy only; ignored for Radon.
+    pub chess_ring: cc_chess_ring_t,
+    /// Radon ray half-length in working-resolution pixels (ray has
+    /// `2·ray_radius + 1` samples). Applies to the Radon strategy only;
+    /// ignored for ChESS. Clamped to at least `1` by the core detector.
+    pub ray_radius: u32,
+    /// Radon image-level supersampling factor applied before ray
+    /// integration (`1` or `2`). Applies to the Radon strategy only;
+    /// ignored for ChESS. Values `≥ 3` are clamped to `2`.
+    pub image_upsample: u32,
+    /// Half-size of the box blur applied to the Radon response map (`0`
+    /// disables it). Applies to the Radon strategy only; ignored for ChESS.
+    pub response_blur_radius: u32,
+    /// One of the `CC_PEAK_FIT_*` constants. Applies to the Radon strategy
+    /// only; ignored for ChESS.
+    pub peak_fit: cc_peak_fit_t,
 }
 
 // ─── Status codes (library returns) ─────────────────────────────────────
@@ -352,7 +410,7 @@ pub extern "C" fn cc_status_str(status: cc_status) -> *const c_char {
 /// ABI version of this library. Bumped manually on any breaking ABI change.
 #[no_mangle]
 pub extern "C" fn cc_abi_version() -> u32 {
-    3
+    4
 }
 
 #[cfg(test)]
@@ -427,6 +485,47 @@ mod tests {
 
     #[test]
     fn abi_version_is_stable() {
-        assert_eq!(cc_abi_version(), 3);
+        assert_eq!(cc_abi_version(), 4);
+    }
+
+    #[test]
+    fn out_of_range_chess_ring_is_rejected() {
+        let mut cfg = cc_config_chess();
+        cfg.chess_ring = 99;
+        assert_eq!(
+            convert::to_detector_config(&cfg),
+            Err(cc_status::CC_ERR_INVALID_CONFIG)
+        );
+    }
+
+    #[test]
+    fn out_of_range_peak_fit_is_rejected() {
+        let mut cfg = cc_config_radon();
+        cfg.peak_fit = 99;
+        assert_eq!(
+            convert::to_detector_config(&cfg),
+            Err(cc_status::CC_ERR_INVALID_CONFIG)
+        );
+    }
+
+    #[test]
+    fn invalid_upscale_factor_is_rejected() {
+        // 0 is the explicit off-state (valid); 1 and 5 are invalid factors.
+        for bad in [1u32, 5, 8] {
+            let mut cfg = cc_config_chess();
+            cfg.upscale_factor = bad;
+            assert_eq!(
+                convert::to_detector_config(&cfg),
+                Err(cc_status::CC_ERR_UPSCALE),
+                "factor {bad} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn zero_upscale_factor_is_disabled() {
+        let mut cfg = cc_config_chess();
+        cfg.upscale_factor = 0;
+        assert!(convert::to_detector_config(&cfg).is_ok());
     }
 }

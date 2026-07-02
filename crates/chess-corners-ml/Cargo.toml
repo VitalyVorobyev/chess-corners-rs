@@ -1,6 +1,6 @@
 [package]
 name = "chess-corners-ml"
-version.workspace = true
+version = "0.12.0"
 description = "ONNX-based ML refiner inference for chess-corners"
 edition.workspace = true
 license.workspace = true
@@ -9,6 +9,7 @@ rust-version.workspace = true
 documentation = "https://vitalyvorobyev.github.io/chess-corners-rs/api/chess_corners_ml"
 homepage = "https://vitalyvorobyev.github.io/chess-corners-rs"
 keywords = ["chessboard", "chess-corners", "corner-detection", "computer-vision", "image-processing"]
+categories.workspace = true
 readme = "README.md"
 
 [lib]

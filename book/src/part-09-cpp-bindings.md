@@ -92,6 +92,9 @@ int main() {
         config.threshold = 60.0f;  // ChESS: absolute floor on raw response (default 30)
         // config.orientation_method = CC_ORIENTATION_DISK_FIT;  // alternative fit
         // config.orientation_method = CC_ORIENTATION_NONE;      // skip the fit
+        // config.chess_ring = CC_CHESS_RING_BROAD;  // radius-10 sampling ring
+        // config.upscale_factor = 2;                // 2x upscale before detection
+        // config.merge_radius = 4.0f;               // cross-level de-duplication
 
         std::vector<chess_corners::Corner> corners =
             chess_corners::detect(pixels, width, height, config);
@@ -203,6 +206,34 @@ matches the linked library fails loudly instead of reading a stale
 struct layout. You can also call `chess_corners::check_abi()` once at
 startup. In plain C, compare `cc_abi_version()` against the value you
 built against and refuse to proceed if they differ.
+
+**Configuration surface.** `cc_config` (and the C++ `Config`) expose every
+`DetectorConfig` knob except refiner-specific tuning (only the refiner
+*kind* is selectable) and the multiscale pyramid detail (level count,
+minimum size, refinement radius) behind the on/off `multiscale` switch.
+The fields group by applicability:
+
+- **Both strategies:** `strategy`, `threshold`, `nms_radius`,
+  `min_cluster_size`, `orientation_method`, `multiscale`, `merge_radius`,
+  and `upscale_factor`.
+- **ChESS only:** `refiner` (a `CC_REFINER_*` tag) and `chess_ring`
+  (`CC_CHESS_RING_CANONICAL` for the paper's radius-5 ring, or
+  `CC_CHESS_RING_BROAD` for radius-10).
+- **Radon only:** `ray_radius`, `image_upsample`, `response_blur_radius`,
+  and `peak_fit` (`CC_PEAK_FIT_GAUSSIAN` — the Radon default — or
+  `CC_PEAK_FIT_PARABOLIC`).
+
+Fields that do not apply to the active `strategy` are ignored, so it is
+safe to start from any preset and set only what you need.
+
+**Upscaling and validation.** `upscale_factor` is `0` to disable
+upscaling (the explicit off-state), or `2`/`3`/`4` to bilinearly upscale
+the input by that factor before detection; output coordinates are rescaled
+back to the input pixel frame. Any other value (including `1`) is rejected
+with `CC_ERR_UPSCALE`. An unknown enum tag in any field is rejected with
+`CC_ERR_INVALID_CONFIG`. In both cases `cc_detect_u8` returns the status
+without allocating a result — invalid configuration never panics or reads
+past the struct.
 
 **Config threshold.** `cc_config` carries a single `threshold` field —
 just a `float`, with no separate kind tag and no threshold-kind

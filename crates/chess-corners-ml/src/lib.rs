@@ -1,10 +1,12 @@
+#![warn(missing_docs)]
 //! ONNX-backed ML refiner for ChESS corner candidates.
 //!
-//! **Internal crate — not published to crates.io.**
-//! `chess-corners-ml` is an implementation detail of the chess-corners
-//! workspace. It backs the optional `ml-refiner` feature of the
-//! `chess-corners` facade crate and is not a public API contract; its
-//! surface may change without semver consideration.
+//! `chess-corners-ml` is a support crate that provides ONNX inference
+//! for the `chess-corners` facade's optional `ml-refiner` feature. It
+//! is published to crates.io as a dependency of `chess-corners`, but
+//! it is not designed as a standalone API: its surface follows the
+//! facade's ML-refiner needs and remains pre-1.0 (`0.x`), so it may
+//! change in minor releases.
 //!
 //! This crate provides [`MlModel`], a thin wrapper around a
 //! [tract-onnx](https://docs.rs/tract-onnx) runtime that predicts

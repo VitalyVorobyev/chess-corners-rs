@@ -28,7 +28,7 @@ fn bench_upscale(c: &mut Criterion) {
                     let mut buffers = UpscaleBuffers::new();
                     b.iter(|| {
                         let view = upscale_bilinear_u8(&src, w, h, factor, &mut buffers).unwrap();
-                        black_box(view.data.len())
+                        black_box(view.data().len())
                     });
                 },
             );
