@@ -25,6 +25,9 @@
 //! can check against its own expectation to detect a header/library
 //! mismatch.
 
+// Justified: the C ABI surface uses C-style `cc_*` type names (structs,
+// enums, typedefs) to match the generated header and the wider C/C++
+// naming convention consumers expect, rather than Rust's `CamelCase`.
 #![allow(non_camel_case_types)]
 #![deny(unsafe_op_in_unsafe_fn)]
 

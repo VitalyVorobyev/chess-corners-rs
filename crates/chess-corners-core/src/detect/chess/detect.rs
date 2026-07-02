@@ -15,12 +15,23 @@ use tracing::instrument;
 /// - chess_response_u8 (dense response map)
 /// - thresholding + NMS
 /// - subpixel refinement driven by [`ChessParams::refiner`]
+///
+/// # Panics
+///
+/// Panics if `img.len() != w * h`.
 pub fn find_corners_u8(
     img: &[u8],
     w: usize,
     h: usize,
     params: &ChessParams,
 ) -> Vec<CornerDescriptor> {
+    assert_eq!(
+        img.len(),
+        w * h,
+        "find_corners_u8: img.len() ({}) must equal w*h ({w} * {h} = {})",
+        img.len(),
+        w * h,
+    );
     let mut refiner = Refiner::from_kind(params.refiner.clone());
     find_corners_u8_with_refiner(img, w, h, params, &mut refiner)
 }
@@ -220,6 +231,14 @@ mod tests {
             }
         }
         img
+    }
+
+    #[test]
+    #[should_panic(expected = "find_corners_u8: img.len()")]
+    fn find_corners_u8_panics_on_dimension_mismatch() {
+        let img = vec![0u8; 10];
+        let params = ChessParams::default();
+        let _ = find_corners_u8(&img, 4, 4, &params);
     }
 
     #[test]

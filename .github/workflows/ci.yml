@@ -113,6 +113,11 @@ jobs:
         # The `simd` feature requires nightly, so it is excluded here.
         run: cargo build --workspace --no-default-features --features rayon
 
+      - name: Test (default features)
+        # Also verifies test code (not just library code) builds and passes
+        # on the declared MSRV.
+        run: cargo test --workspace
+
   python-build-smoke:
     name: Build wheel smoke test (linux)
     runs-on: ubuntu-latest

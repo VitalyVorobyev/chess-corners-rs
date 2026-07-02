@@ -142,3 +142,69 @@ impl<'a> DetectorDiagnostics<'a> {
         self.radon_heatmap_u8(img.as_raw(), img.width(), img.height())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Detector, DetectorConfig};
+    use chess_corners_testutil::aa_chessboard;
+
+    fn synthetic_board(size: usize) -> Vec<u8> {
+        aa_chessboard(size, 12, (0.0, 0.0), 20, 220)
+    }
+
+    #[test]
+    fn chess_response_map_is_plausibly_shaped_for_chess_strategy() {
+        let size = 96usize;
+        let img = synthetic_board(size);
+        let det = Detector::new(DetectorConfig::chess()).unwrap();
+
+        let map = det
+            .diagnostics()
+            .chess_response_u8(&img, size as u32, size as u32)
+            .unwrap();
+
+        assert_eq!(map.width(), size);
+        assert_eq!(map.height(), size);
+        assert_eq!(map.data().len(), size * size);
+        let max = map.data().iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            max > 0.0,
+            "expected a positive ChESS response somewhere on a synthetic board"
+        );
+    }
+
+    #[test]
+    fn radon_heatmap_is_plausibly_shaped_for_radon_strategy() {
+        let size = 96usize;
+        let img = synthetic_board(size);
+        let det = Detector::new(DetectorConfig::radon()).unwrap();
+
+        let map = det
+            .diagnostics()
+            .radon_heatmap_u8(&img, size as u32, size as u32)
+            .unwrap();
+
+        assert!(map.width() > 0 && map.height() > 0);
+        assert_eq!(map.data().len(), map.width() * map.height());
+        let max = map.data().iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            max > 0.0,
+            "expected a positive Radon response somewhere on a synthetic board"
+        );
+    }
+
+    #[test]
+    fn chess_response_u8_reports_dimension_mismatch() {
+        let det = Detector::with_default();
+        let img = vec![0u8; 10];
+        let err = det.diagnostics().chess_response_u8(&img, 8, 8).unwrap_err();
+        match err {
+            ChessError::DimensionMismatch { expected, actual } => {
+                assert_eq!(expected, 64);
+                assert_eq!(actual, 10);
+            }
+            other => panic!("expected ChessError::DimensionMismatch, got {other:?}"),
+        }
+    }
+}

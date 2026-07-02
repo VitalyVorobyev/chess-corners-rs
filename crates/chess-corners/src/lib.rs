@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! Ergonomic ChESS / Radon corner-detector facade over
 //! `chess-corners-core`.
 //!

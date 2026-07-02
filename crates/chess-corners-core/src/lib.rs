@@ -1,4 +1,5 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+#![warn(missing_docs)]
 //! Core primitives for ChESS/Radon response computation, subpixel
 //! refinement, and corner descriptors.
 //!

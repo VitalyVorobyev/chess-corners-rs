@@ -17,6 +17,7 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/VitalyVorobyev/chess-corners-rs"
 rust-version = "1.88"
+categories = ["computer-vision", "algorithms"]
 
 [workspace.dependencies]
 anyhow = "1"

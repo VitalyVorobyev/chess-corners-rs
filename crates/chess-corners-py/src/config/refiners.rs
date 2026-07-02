@@ -592,7 +592,7 @@ impl ChessRefiner {
             return Err(config_error("refiner: no unit variants available"));
         }
 
-        let dict = data.cast::<PyDict>().cloned().unwrap();
+        let dict = require_dict(data, "refiner")?;
         reject_unknown_keys(&dict, allowed, "refiner")?;
 
         let mut found: Option<&str> = None;

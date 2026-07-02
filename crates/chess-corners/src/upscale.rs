@@ -72,7 +72,12 @@ pub enum UpscaleError {
     /// The requested factor is not in the supported set {2, 3, 4}.
     InvalidFactor(u32),
     /// Upscaled dimensions would overflow `usize`.
-    DimensionOverflow { src: (usize, usize), factor: u32 },
+    DimensionOverflow {
+        /// Source `(width, height)` in pixels.
+        src: (usize, usize),
+        /// Requested integer upscale factor.
+        factor: u32,
+    },
     /// The image buffer length does not match the declared `src_w * src_h`.
     DimensionMismatch {
         /// Actual buffer length.
@@ -179,7 +184,10 @@ pub fn upscale_bilinear_u8<'a>(
     buffers.ensure(dst_w, dst_h);
 
     if src_w == 0 || src_h == 0 {
-        return Ok(ImageView::from_u8_slice(dst_w, dst_h, &buffers.buf[..dst_w * dst_h]).unwrap());
+        return Ok(
+            ImageView::from_u8_slice(dst_w, dst_h, &buffers.buf[..dst_w * dst_h])
+                .expect("dims match"),
+        );
     }
 
     let inv_k = 1.0f32 / factor as f32;
@@ -299,6 +307,20 @@ mod tests {
         assert!(json.contains("fixed"));
         let decoded: UpscaleConfig = serde_json::from_str(&json).expect("deserialize fixed");
         assert_eq!(decoded, cfg);
+    }
+
+    #[test]
+    fn upscale_bilinear_u8_reports_dimension_mismatch() {
+        let src = vec![0u8; 10]; // not 4*4
+        let mut buffers = UpscaleBuffers::new();
+        let err = upscale_bilinear_u8(&src, 4, 4, 2, &mut buffers).unwrap_err();
+        assert_eq!(
+            err,
+            UpscaleError::DimensionMismatch {
+                expected: 16,
+                actual: 10,
+            }
+        );
     }
 
     #[test]

@@ -126,6 +126,20 @@ mod tests {
     }
 
     #[test]
+    fn radon_heatmap_u8_reports_dimension_mismatch() {
+        let cfg = DetectorConfig::radon();
+        let img = vec![0u8; 10];
+        let err = radon_heatmap_u8(&img, 8, 8, &cfg).unwrap_err();
+        match err {
+            ChessError::DimensionMismatch { expected, actual } => {
+                assert_eq!(expected, 64);
+                assert_eq!(actual, 10);
+            }
+            other => panic!("expected ChessError::DimensionMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn heatmap_matches_core_path_no_upscale() {
         let (w, h) = (96usize, 72usize);
         let img = synthetic_board(w, h);

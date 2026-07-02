@@ -176,7 +176,7 @@ Quick reference when upgrading from 0.11.2:
 - **Detection knobs**: move `nms_radius` and `min_cluster_size` from
   `ChessConfig` / `RadonConfig` into `DetectorConfig::with_detection(…)`.
 - **Removed no-ops**: delete `RadonConfig.refiner`, `ChessConfig.descriptor_ring`,
-  and any use of `RadonRefiner`, `RadonPeakConfig`, `RadonPeakRefiner`, or
+  and any use of `RadonRefiner`, `RadonPeakConfig`, or
   `RefinerKind::RadonPeak`.
 - **`CornerDescriptor`**: remove reads of `.contrast` and `.fit_rms`; use
   `.response` for detection strength and `.axes[i].sigma` for per-axis

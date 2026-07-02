@@ -258,7 +258,13 @@ The orientation fit is the dominant per-corner cost, and it is optional. When it
 
 ## Binary size
 
-~196 KB raw, ~70 KB gzipped (single-scale, no parallelism, no SIMD, measured on 0.10.0).
+~186 KB raw, ~69 KB gzipped (single-scale, no parallelism, no SIMD; default features, no `--features` flags). Reproduce with:
+
+```bash
+wasm-pack build crates/chess-corners-wasm --target web --release
+```
+
+then measure `crates/chess-corners-wasm/pkg/*.wasm` directly and with `gzip -c <file>.wasm | wc -c`.
 
 ## License
 

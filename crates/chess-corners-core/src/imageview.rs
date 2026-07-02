@@ -12,6 +12,9 @@ pub struct ImageView<'a> {
 }
 
 impl<'a> ImageView<'a> {
+    /// Build a view over `data`, treated as `width * height` row-major
+    /// pixels with a zero origin. Returns `None` if `data.len() !=
+    /// width * height`.
     pub fn from_u8_slice(width: usize, height: usize, data: &'a [u8]) -> Option<Self> {
         if width.checked_mul(height)? != data.len() {
             return None;
@@ -24,6 +27,9 @@ impl<'a> ImageView<'a> {
         })
     }
 
+    /// Like [`Self::from_u8_slice`], but with a non-zero `origin` in
+    /// the coordinate system of the response map / base image.
+    /// Returns `None` under the same condition.
     pub fn with_origin(
         width: usize,
         height: usize,
@@ -62,6 +68,9 @@ impl<'a> ImageView<'a> {
         self.height
     }
 
+    /// Whether a `radius`-pixel square patch centered at `(cx, cy)` (in
+    /// this view's external, origin-adjusted frame) fits entirely inside
+    /// the view without clamping.
     #[inline]
     pub fn supports_patch(&self, cx: i32, cy: i32, radius: i32) -> bool {
         if self.width == 0 || self.height == 0 {
@@ -77,6 +86,9 @@ impl<'a> ImageView<'a> {
         gx - radius >= min_x && gy - radius >= min_y && gx + radius <= max_x && gy + radius <= max_y
     }
 
+    /// Nearest-pixel sample at an integer coordinate in the view's
+    /// external frame (`origin` applied, then clamped to the valid
+    /// pixel range). Returns `0.0` for an empty view.
     #[inline]
     pub fn sample(&self, gx: i32, gy: i32) -> f32 {
         if self.width == 0 || self.height == 0 {

@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! ONNX-backed ML refiner for ChESS corner candidates.
 //!
 //! `chess-corners-ml` is a support crate that provides ONNX inference
