@@ -17,8 +17,7 @@
 //! SIMD speedup for this kernel. (The `rayon` feature would also affect
 //! this entry point; leave it off to measure single-thread kernel cost.)
 
-use chess_corners_core::chess_response_u8;
-use chess_corners_core::unstable::ChessParams;
+use chess_corners_core::{chess_response_u8, ChessParams};
 use chess_corners_testutil::synth_chessboard;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;

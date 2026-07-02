@@ -44,10 +44,7 @@ builds on stable.
 Basic usage:
 
 ```rust
-use chess_corners_core::{
-    find_corners_u8,
-    unstable::{ChessParams, RefinerKind},
-};
+use chess_corners_core::{find_corners_u8, ChessParams, RefinerKind};
 
 fn detect(img: &[u8], w: usize, h: usize) {
     let mut params = ChessParams::default();

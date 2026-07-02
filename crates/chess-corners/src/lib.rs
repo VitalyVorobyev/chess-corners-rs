@@ -173,20 +173,18 @@
 //! response floor by ChESS and as a fraction of the per-frame maximum by
 //! Radon. [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
 //! and apply to both strategies. The detector translates this into
-//! lower-level parameter structs internally; those structs
-//! (`ChessParams`, `RadonDetectorParams`) are exposed for hand-composed
-//! pipelines in [`low_level`].
+//! lower-level parameter structs internally. To drive those stages
+//! yourself, lower a config with [`DetectorConfig::chess_params`],
+//! [`DetectorConfig::radon_detector_params`], or
+//! [`DetectorConfig::coarse_to_fine_params`] and call the stage
+//! functions re-exported from `chess-corners-core`.
 //!
-//! Two opt-in channels sit alongside the primary [`Detector`] API for
-//! callers who need more than a finished detection result. The curated
-//! low-level surface for hand-composing the detection pipeline
-//! (response -> detect -> describe), including its parameter structs and
-//! scratch buffers, lives in [`low_level`]; intermediate response maps
-//! and Radon heatmaps for debugging and visualization live in
-//! [`diagnostics`]. Both carry a weaker stability promise than the
-//! facade root and are not needed by typical consumers. For deeper
-//! internals (ring offsets, SAT views, scalar reference paths) depend on
-//! `chess-corners-core` directly.
+//! Intermediate response maps and Radon heatmaps for debugging and
+//! visualization live in the opt-in [`diagnostics`] module, which
+//! carries a weaker stability promise than the facade root and is not
+//! needed by typical consumers. For deeper internals (ring offsets, SAT
+//! views, scalar reference paths) depend on `chess-corners-core`
+//! directly.
 //!
 //! # Features
 //!
@@ -230,25 +228,36 @@ mod config;
 mod detector;
 pub mod diagnostics;
 mod error;
-pub mod low_level;
 #[cfg(feature = "ml-refiner")]
 mod ml_refiner;
 mod multiscale;
 mod radon;
 mod upscale;
 
-// The crate root surfaces only the stable facade: the detector, its
-// configuration and result types, and errors. Diagnostic outputs are
-// reachable via [`diagnostics`]; low-level pipeline stages, parameter
-// structs, and scratch buffers via [`low_level`]; deeper internals
-// (ring offsets, SAT views, scalar reference paths) via a direct
-// `chess-corners-core` dependency.
+// The crate root surfaces the stable facade: the detector, its
+// configuration and result types, errors, and the config-lowering and
+// pipeline-stage primitives for callers that compose the stages
+// themselves. Diagnostic outputs are reachable via [`diagnostics`];
+// deeper internals (ring offsets, SAT views, scalar reference paths)
+// via a direct `chess-corners-core` dependency.
 pub use crate::config::{
     ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig,
     MultiscaleConfig, RadonConfig,
 };
 pub use crate::error::ChessError;
-pub use crate::upscale::{UpscaleConfig, UpscaleError};
+
+/// Lowered coarse-to-fine multiscale parameters, produced by
+/// [`DetectorConfig::coarse_to_fine_params`] and consumed by the
+/// multiscale pipeline.
+pub use crate::multiscale::CoarseToFineParams;
+
+/// Optional pre-pipeline integer bilinear upscaling stage. These are the
+/// raw stage primitives behind [`UpscaleConfig`]; [`Detector`] applies
+/// the stage automatically, so they are only needed when composing the
+/// pipeline by hand.
+pub use crate::upscale::{
+    rescale_descriptors_to_input, upscale_bilinear_u8, UpscaleBuffers, UpscaleConfig, UpscaleError,
+};
 pub use chess_corners_core::{
     AxisEstimate, CenterOfMassConfig, CornerDescriptor, ForstnerConfig, OrientationMethod,
     PeakFitMode, SaddlePointConfig,

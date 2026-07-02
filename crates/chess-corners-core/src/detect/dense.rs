@@ -6,14 +6,14 @@
 //! (stage 2). Image-domain subpixel refinement (center-of-mass,
 //! Förstner, saddle-point, …) is **not** part of this trait — it runs
 //! detector-agnostically via
-//! [`crate::unstable::refine_corners_on_image`].
+//! [`crate::refine_corners_on_image`].
 //!
 //! Two zero-sized implementors live alongside the trait:
 //!
 //! - [`ChessDetector`] — wraps the ChESS response kernel
 //!   ([`crate::chess_response_u8`]) and the
 //!   threshold + NMS + cluster-filter stage
-//!   ([`crate::unstable::detect_peaks_from_response`]).
+//!   ([`crate::detect_peaks_from_response_with_refine_radius`]).
 //! - [`RadonDetector`] — wraps the whole-image Duda-Frese Radon
 //!   response ([`crate::radon_response_u8`]) and the
 //!   threshold + NMS + 3-point Gaussian peak-fit stage
@@ -62,7 +62,7 @@ mod private {
 /// Subpixel refinement on the *input image* (Förstner, saddle-point,
 /// center-of-mass, …) is NOT part of this trait — that runs as a
 /// post-detection stage via
-/// [`crate::unstable::refine_corners_on_image`], which is
+/// [`crate::refine_corners_on_image`], which is
 /// detector-agnostic.
 ///
 /// # Toolchain
@@ -208,10 +208,10 @@ pub struct ChessBuffers {
 /// Wraps the canonical 16-sample ring response
 /// ([`crate::chess_response_u8`]) and the
 /// threshold + NMS + cluster-filter peak detector
-/// ([`crate::unstable::detect_peaks_from_response`]). Subpixel
+/// ([`crate::detect_peaks_from_response_with_refine_radius`]). Subpixel
 /// refinement (center-of-mass, Förstner, saddle-point) is a separate
 /// detector-agnostic stage; see
-/// [`crate::unstable::refine_corners_on_image`].
+/// [`crate::refine_corners_on_image`].
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ChessDetector;
 

@@ -87,14 +87,18 @@ pub(super) fn histogram_candidates(data: &DiskData, base0: f32, base1: f32) -> C
     if max_v > 0.0 {
         let mut used = [false; HIST_BINS];
         for _ in 0..8 {
-            let mut best_i = 0usize;
-            let mut best_v = -1.0f32;
+            let mut best: Option<(usize, f32)> = None;
             for i in 0..HIST_BINS {
-                if !used[i] && smooth[i] > best_v {
-                    best_i = i;
-                    best_v = smooth[i];
+                if used[i] {
+                    continue;
+                }
+                if best.is_none_or(|(_, bv)| smooth[i] > bv) {
+                    best = Some((i, smooth[i]));
                 }
             }
+            let Some((best_i, best_v)) = best else {
+                break;
+            };
             if best_v < max_v * 0.12 {
                 break;
             }

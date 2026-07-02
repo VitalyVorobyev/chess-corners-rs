@@ -9,10 +9,10 @@
 //! resulting per-refiner numbers are directly comparable. Throughput
 //! is reported in seeds/second.
 
-use chess_corners_core::unstable::{ChessParams, RefinerKind};
 use chess_corners_core::{
-    chess_response_u8, detect_corners_from_response, CenterOfMassConfig, CornerRefiner,
-    ForstnerConfig, ImageView, RefineContext, Refiner, ResponseMap, SaddlePointConfig,
+    chess_response_u8, detect_corners_from_response, CenterOfMassConfig, ChessParams,
+    CornerRefiner, ForstnerConfig, ImageView, RefineContext, Refiner, RefinerKind, ResponseMap,
+    SaddlePointConfig,
 };
 use chess_corners_testutil::aa_chessboard;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};

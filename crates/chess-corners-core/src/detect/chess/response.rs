@@ -166,14 +166,10 @@ pub fn chess_response_u8(img: &[u8], w: usize, h: usize, params: &ChessParams) -
     }
 }
 
-/// Always uses the scalar implementation (no rayon, no SIMD),
-/// useful for reference/golden testing.
-pub fn chess_response_u8_scalar(
-    img: &[u8],
-    w: usize,
-    h: usize,
-    params: &ChessParams,
-) -> ResponseMap {
+/// Always uses the scalar implementation (no rayon, no SIMD); the
+/// golden reference for the SIMD-equivalence tests.
+#[cfg(all(test, feature = "simd"))]
+fn chess_response_u8_scalar(img: &[u8], w: usize, h: usize, params: &ChessParams) -> ResponseMap {
     compute_response_sequential_scalar(img, w, h, params)
 }
 
@@ -305,6 +301,7 @@ fn compute_response_sequential(
     ResponseMap { w, h, data }
 }
 
+#[cfg(all(test, feature = "simd"))]
 fn compute_response_sequential_scalar(
     img: &[u8],
     w: usize,
@@ -432,6 +429,11 @@ fn chess_response_at_u8(img: &[u8], w: usize, x: i32, y: i32, ring: &[(i32, i32)
     (sr as f32) - (dr as f32) - 16.0 * mr
 }
 
+// The scalar row kernel is the production path when SIMD is off; in a
+// SIMD build the dense paths use `compute_row_range_simd`, so the scalar
+// kernel survives only as the golden reference behind the
+// `#[cfg(all(test, feature = "simd"))]` scalar response above.
+#[cfg(any(not(feature = "simd"), test))]
 fn compute_row_range_scalar(
     img: &[u8],
     w: usize,
@@ -540,5 +542,101 @@ fn compute_row_range_simd(
         let resp = chess_response_at_u8(img, w, x as i32, y, ring);
         dst_row[px] = resp;
         x += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::detect::chess::ring::RING5;
+
+    fn idx(w: usize, x: usize, y: usize) -> usize {
+        y * w + x
+    }
+
+    #[test]
+    fn response_matches_manual_ring_layout() {
+        let params = ChessParams::default();
+        let w = 11usize;
+        let h = 11usize;
+        let cx = 5usize;
+        let cy = 5usize;
+        let mut img = vec![0u8; w * h];
+
+        // Populate the 16 ring samples with the sequence 0..15.
+        for (i, (dx, dy)) in RING5.iter().enumerate() {
+            let x = (cx as i32 + dx) as usize;
+            let y = (cy as i32 + dy) as usize;
+            img[idx(w, x, y)] = i as u8;
+        }
+
+        // Fill the 5-pixel cross used in the local mean with distinct values.
+        for (dx, dy, v) in [
+            (0, 0, 10u8),
+            (0, -1, 20u8),
+            (0, 1, 30u8),
+            (1, 0, 40u8),
+            (-1, 0, 50u8),
+        ] {
+            let x = (cx as i32 + dx) as usize;
+            let y = (cy as i32 + dy) as usize;
+            img[idx(w, x, y)] = v;
+        }
+
+        let resp = chess_response_u8(&img, w, h, &params);
+        let center = resp.at(cx, cy);
+
+        // Expected value computed from the ring/cross assignments above.
+        let expected = -392.0_f32;
+        assert!(
+            (center - expected).abs() < 1e-3,
+            "expected center response {expected}, got {center}"
+        );
+
+        for (i, v) in resp.data().iter().enumerate() {
+            if i == idx(w, cx, cy) {
+                continue;
+            }
+            assert!(
+                v.abs() < 1e-6,
+                "non-center response should stay zero (idx={i}, val={v})"
+            );
+        }
+    }
+
+    #[cfg(feature = "simd")]
+    #[test]
+    fn simd_matches_scalar_reasonably() {
+        let params = ChessParams::default();
+        let img = image::GrayImage::from_fn(256, 256, |x, y| image::Luma([(x ^ y) as u8]));
+        let w = img.width() as usize;
+        let h = img.height() as usize;
+
+        let ref_map = chess_response_u8_scalar(img.as_raw(), w, h, &params);
+        let simd_map = chess_response_u8(img.as_raw(), w, h, &params);
+
+        let eps = 1e-3_f32;
+        for (a, b) in ref_map.data().iter().zip(simd_map.data().iter()) {
+            assert!((a - b).abs() <= eps, "diff: {a} vs {b}");
+        }
+    }
+
+    #[cfg(all(feature = "simd", feature = "rayon"))]
+    #[test]
+    fn simd_parallel_matches_scalar() {
+        let params = ChessParams::default();
+        let img = image::GrayImage::from_fn(192, 192, |x, y| {
+            image::Luma([(x.wrapping_mul(7) ^ y) as u8])
+        });
+        let w = img.width() as usize;
+        let h = img.height() as usize;
+
+        let ref_map = chess_response_u8_scalar(img.as_raw(), w, h, &params);
+        let simd_map = chess_response_u8(img.as_raw(), w, h, &params);
+
+        let eps = 1e-3_f32;
+        for (a, b) in ref_map.data().iter().zip(simd_map.data().iter()) {
+            assert!((a - b).abs() <= eps, "diff: {a} vs {b}");
+        }
     }
 }

@@ -23,7 +23,6 @@ const GN_TOL: f32 = 1e-4;
 ///
 /// `centered_var` is the sample variance, used only to size the
 /// fallback `degenerate_fit` return when `amp_seed` is too small.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn fit_with_seed(
     samples: &[f32; 16],
     ring_phi: &[f32; 16],

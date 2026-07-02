@@ -59,8 +59,8 @@ ring point.
 
 ### 3.1.2 From parameters to rings
 
-`ChessParams` (in `chess-corners-core`, re-exported from
-`chess_corners_core::unstable`) controls which ring to use:
+`ChessParams` (re-exported from the `chess-corners-core` crate root)
+controls which ring to use:
 
 - `use_radius10` – when `true`, `ring_radius()` returns 10 instead of
   5.

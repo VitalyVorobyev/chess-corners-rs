@@ -11,6 +11,7 @@
 use super::{disk_fit_for_descriptor, ring_fit_for_image, OrientationMethod, TwoAxisFit};
 use crate::detect::chess::ring::ring_offsets;
 use crate::detect::{AxisEstimate, Corner, CornerDescriptor};
+use crate::imageview::ImageView;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 #[cfg(feature = "tracing")]
@@ -82,9 +83,19 @@ pub fn describe_corners(
     let ring = ring_offsets(radius);
     let ring_phi = ring_angles(ring);
     let full_disk_mask = full_disk_top_response_mask(&corners, method);
+    // Bundle the source buffer into a zero-origin view so the per-corner
+    // fit takes one argument instead of an `(img, w, h)` triple. Field
+    // access (not `ImageView::sample_*`) keeps the downstream sampling
+    // bit-identical.
+    let view = ImageView {
+        data: img,
+        width: w,
+        height: h,
+        origin: [0, 0],
+    };
 
     let describe = |(idx, c): (usize, Corner)| -> CornerDescriptor {
-        let samples = sample_ring(img, w, h, c.x, c.y, ring);
+        let samples = sample_ring(view.data, view.width, view.height, c.x, c.y, ring);
         let orientation_method = match &full_disk_mask {
             Some(mask) if !mask[idx] => OrientationMethod::RingFit,
             _ => method,
@@ -92,9 +103,7 @@ pub fn describe_corners(
         let fit = fit_two_axes_with_method(
             &samples,
             &ring_phi,
-            img,
-            w,
-            h,
+            view,
             c.x,
             c.y,
             radius,
@@ -177,25 +186,20 @@ pub(crate) fn ring_angles(ring: &[(i32, i32); 16]) -> [f32; 16] {
     out
 }
 
-#[allow(clippy::too_many_arguments)]
 #[inline]
 fn fit_two_axes_with_method(
     samples: &[f32; 16],
     ring_phi: &[f32; 16],
-    img: &[u8],
-    w: usize,
-    h: usize,
+    view: ImageView<'_>,
     cx: f32,
     cy: f32,
     radius: u32,
     method: OrientationMethod,
 ) -> TwoAxisFit {
     match method {
-        OrientationMethod::RingFit => {
-            ring_fit_for_image(img, w, h, cx, cy, radius, samples, ring_phi)
-        }
+        OrientationMethod::RingFit => ring_fit_for_image(view, cx, cy, radius, samples, ring_phi),
         OrientationMethod::DiskFit => {
-            disk_fit_for_descriptor(img, w, h, cx, cy, radius, samples, ring_phi)
+            disk_fit_for_descriptor(view, cx, cy, radius, samples, ring_phi)
         }
     }
 }

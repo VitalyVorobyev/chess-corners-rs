@@ -21,6 +21,7 @@ mod disk_sector;
 mod ring_fit;
 
 use crate::detect::chess::ring::ring_offsets;
+use crate::imageview::ImageView;
 use descriptor::{ring_angles, sample_ring};
 
 pub use api::{fit_axes_at_point, fit_axes_from_samples, AxisFitResult};
@@ -95,11 +96,8 @@ pub(crate) fn ring_fit_for_descriptor(samples: &[f32; 16], ring_phi: &[f32; 16])
 /// that outer trace can cross the wrong sectors. If the outer fit already
 /// looks suspicious, retry the canonical radius-5 trace and use it as a
 /// cheap safety fallback.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn ring_fit_for_image(
-    img: &[u8],
-    w: usize,
-    h: usize,
+    view: ImageView<'_>,
     cx: f32,
     cy: f32,
     radius: u32,
@@ -113,7 +111,7 @@ pub(crate) fn ring_fit_for_image(
 
     let inner_ring = ring_offsets(5);
     let inner_phi = ring_angles(inner_ring);
-    let inner_samples = sample_ring(img, w, h, cx, cy, inner_ring);
+    let inner_samples = sample_ring(view.data, view.width, view.height, cx, cy, inner_ring);
     let inner = ring_fit::fit_ring(&inner_samples, &inner_phi);
 
     if inner.amp >= 1.0 && inner.rms.is_finite() {
@@ -125,19 +123,16 @@ pub(crate) fn ring_fit_for_image(
 
 /// Crate-internal full-disk estimator entry, used by the descriptor's
 /// `OrientationMethod` dispatcher.
-#[allow(clippy::too_many_arguments)]
 #[inline]
 pub(crate) fn disk_fit_for_descriptor(
-    img: &[u8],
-    w: usize,
-    h: usize,
+    view: ImageView<'_>,
     cx: f32,
     cy: f32,
     radius: u32,
     samples: &[f32; 16],
     ring_phi: &[f32; 16],
 ) -> TwoAxisFit {
-    disk_sector::fit(img, w, h, cx, cy, radius, samples, ring_phi)
+    disk_sector::fit(view, cx, cy, radius, samples, ring_phi)
 }
 
 /// Crate-internal hook that exposes `canonicalize` only to the

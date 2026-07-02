@@ -4,22 +4,24 @@ Milestones toward `v1.0.0` and the supporting deliverables. Each milestone
 lists its goal, the tasks that satisfy it (IDs from [`BACKLOG.md`](BACKLOG.md)),
 its dependencies, and the exit criteria that close it.
 
-**Sequencing:** `M1 → M2 → M3 (API surface) → M4 site → M5 C++/vcpkg → tag 1.0.0`.
-The API *surface* freezes in M3, but the `1.0.0` **release** (version bump,
-`cargo-semver-checks`, tag → crates.io/PyPI/npm publish) is deferred to the
-end so the site and C++ bindings ship in the first release. The doc/comment
-sweep (`SWEEP-*`) and the SOLID/DRY cleanup (`SOLID-*`) are **continuous**,
-folded into the M2/M3 windows.
+**Sequencing:** `M1 → M2 → M3 (API surface) → M4 site → M5 C++/vcpkg → M6 design hardening → tag 1.0.0`.
+The API *surface* froze in M3, then M6 re-opened it for a final coherence and
+tech-debt pass before the freeze becomes a semver-locked contract. The `1.0.0`
+**release** (version bump, `cargo-semver-checks`, tag → crates.io/PyPI/npm
+publish) is deferred to the end — there is no schedule pressure — so the site,
+C++ bindings, and the hardened surface ship together in the first release. The
+doc/comment sweep (`SWEEP-*`) and the SOLID/DRY cleanup (`SOLID-*`) are
+**continuous**, folded into the M2/M3/M6 windows.
 
 ```
-M1 ──► M2 ──► M3 API surface ──► M4 site ──► M5 C++/vcpkg ──► tag 1.0.0
-(done) (done)   (frozen)        (current)                     (release)
+M1 ──► M2 ──► M3 API surface ──► M4 site ──► M5 C++/vcpkg ──► M6 hardening ──► tag 1.0.0
+(done) (done)  (re-frozen)       (done)      (done)          (done)           (deferred)
                      SWEEP-* / SOLID-* run continuously
 ```
 
 ---
 
-## M1 — Planning & knowledge-base backbone  ·  *this session*
+## M1 — Planning & knowledge-base backbone  ·  *done*
 
 **Goal.** A durable, multi-session plan: a clean `docs/` knowledge base, an
 algorithm index, and per-workstream design docs.
@@ -56,9 +58,12 @@ fold in `SOLID-01`.
 
 **Goal.** Freeze a minimal, clear, semver-stable surface. See
 [`design/api-v1.0.md`](design/api-v1.0.md). **Status:** surface freeze
-**done** (API-01..07 landed, all gates green on PR #63); the release steps
+**done** (API-01..07 landed, all gates green on PR #63), then **re-opened and
+re-frozen by M6** — the M3 freeze surfaced an incoherence (root-public functions
+required the `unstable`-only `ChessParams`), fixed in M6. The release steps
 `API-08` (`cargo-semver-checks` CI) and `API-09` (version bump + tag) are
-**deferred to after M4 + M5** so 1.0.0 ships with the site and C++ bindings.
+**deferred to after M4 + M5 + M6** so 1.0.0 ships with the site, C++ bindings,
+and the hardened surface.
 
 **Tasks.** `API-01..07` (done); `API-08`/`API-09` (deferred to release); fold
 in `SWEEP-01`. **Depends on:** M2 (so hot-path reshaping happens before the
@@ -66,7 +71,9 @@ surface freezes).
 
 **Exit criteria.**
 - ✅ `contrast`/`fit_rms` removed from `CornerDescriptor` across all bindings + snapshot.
-- ✅ `nms_radius`/`min_cluster_size` deduplicated; `ChessParams`/`RefinerKind` hidden in `unstable`.
+- ✅ `nms_radius`/`min_cluster_size` deduplicated. (`ChessParams`/`RefinerKind`
+  were moved to `unstable` here, then promoted to the documented crate root in
+  M6 once that proved incoherent — see DEBT-01.)
 - ✅ `ChessRefiner::Ml` honesty resolved; Python `.pyi` parity + guard test shipped.
 - ✅ `#[non_exhaustive]`/sealed-trait policy applied; MSRV stated; binding discriminants pinned.
 - 🟡 `cargo-semver-checks` CI (advisory) + `1.0.0` migration notes **landed**; version bump + tag deferred to the release step (after M4 deploy + M5 vcpkg).
@@ -102,6 +109,34 @@ draft whose registry finalization (real `v1.0.0` tag + SHA512 + cross-platform
   ⏳ vcpkg overlay port install verified at release (needs the tag + vcpkg).
 - ✅ C/C++ smoke + Rust marshalling-parity test in CI; example consumer builds.
 - ✅ Book Part IX documents C++ usage.
+
+## M6 — Design hardening before the freeze  ·  *done*
+
+**Goal.** A final pass to remove design debt and "agentic slop" *before* the
+1.0 surface becomes a semver-locked contract. The M3 freeze was mechanically
+correct but left an incoherent surface; this milestone makes it honest. See
+`BACKLOG.md` `DEBT-*`.
+
+**Tasks.** `DEBT-01..05`. **Depends on:** M3 (it hardens the M3 surface).
+
+**Exit criteria.**
+- ✅ `chess_corners_core::unstable` deleted; its types either promoted to the
+  documented crate root (`ChessParams`, `RefinerKind`, `chess_response_u8_patch`,
+  two stage fns) or demoted to `pub(crate)` (ring tables, scalar reference,
+  `MAX_IMAGE_UPSAMPLE`). Root-public functions are now callable without any
+  "no-semver" type. (DEBT-01)
+- ✅ Facade `chess_corners::low_level` escape-hatch deleted; config lowering is
+  exposed as `DetectorConfig::chess_params()` / `radon_detector_params()` /
+  `coarse_to_fine_params()`; hand-composers depend on `chess-corners-core`
+  directly. (DEBT-02)
+- ✅ `too_many_arguments` allow-cluster on the orientation/detector hot paths
+  retired by bundling `(img,w,h)` into the existing `ImageView`; the stale
+  allows removed. Zero unjustified `#[allow]` remain in that scope. (DEBT-03)
+- ✅ Disk-sector argmax sentinel (`-1.0f32`) replaced by `Option`. (DEBT-04)
+- ✅ Facade `config.rs` (1k lines) split into a cohesive `config/` module
+  (public paths byte-identical). (DEBT-05)
+- ✅ Pure visibility/organization refactors — detection results bit-stable; all
+  gates + WASM + Python (86/86) green.
 
 ## Continuous
 

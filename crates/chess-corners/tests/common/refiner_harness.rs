@@ -14,10 +14,9 @@
 
 use std::time::Instant;
 
-use chess_corners::low_level::ImageView;
 use chess_corners_core::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
-    RefineContext, RefineStatus, ResponseMap, SaddlePointConfig, SaddlePointRefiner,
+    ImageView, RefineContext, RefineStatus, ResponseMap, SaddlePointConfig, SaddlePointRefiner,
 };
 
 /// Sink for the two per-refiner measurements a driver records: one accuracy

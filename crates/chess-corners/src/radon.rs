@@ -14,7 +14,7 @@
 //! Use [`ResponseMap::width`] / [`ResponseMap::height`] for the actual
 //! dimensions; the working-to-input scale factor is
 //! `cfg.upscale.effective_factor() *
-//! low_level::to_radon_detector_params(cfg).image_upsample.clamp(1, 2)` (the
+//! cfg.radon_detector_params().image_upsample.clamp(1, 2)` (the
 //! Radon-side factor lives in the [`RadonConfig`](crate::RadonConfig)
 //! payload of [`DetectionStrategy::Radon`](crate::DetectionStrategy)).
 

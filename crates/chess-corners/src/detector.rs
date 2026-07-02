@@ -32,7 +32,8 @@ use chess_corners_core::{ChessBuffers, RadonBuffers};
 use crate::ml_refiner;
 use crate::multiscale;
 use crate::upscale::{self, UpscaleBuffers};
-use crate::{low_level::ImageView, ChessError, CornerDescriptor, DetectorConfig};
+use crate::{ChessError, CornerDescriptor, DetectorConfig};
+use chess_corners_core::ImageView;
 
 /// High-level chessboard-corner detector.
 ///
@@ -209,7 +210,6 @@ impl Detector {
         crate::diagnostics::DetectorDiagnostics::new(self)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn detect_view_inner(
         cfg: &DetectorConfig,
         pyramid: &mut PyramidBuffers,
@@ -222,7 +222,7 @@ impl Detector {
         #[cfg(feature = "ml-refiner")]
         if Self::is_ml_refiner(cfg) {
             if ml_state.is_none() {
-                let fallback = chess_corners_core::unstable::RefinerKind::CenterOfMass(
+                let fallback = chess_corners_core::RefinerKind::CenterOfMass(
                     chess_corners_core::CenterOfMassConfig::default(),
                 );
                 *ml_state = Some(ml_refiner::MlRefinerState::new(ml_params, &fallback));

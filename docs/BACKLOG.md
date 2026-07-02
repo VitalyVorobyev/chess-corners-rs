@@ -3,10 +3,17 @@
 Task registry for the program in [`ROADMAP.md`](ROADMAP.md). Design detail
 lives in the linked `design/` docs; this file is the task list.
 
-**Legend.** ID `<WS>-NN`, `WS ∈ {PERF, API, SITE, CPP, DOCS, SWEEP, SOLID}`
+**Legend.** ID `<WS>-NN`, `WS ∈ {PERF, API, SITE, CPP, DEBT, DOCS, SWEEP, SOLID}`
 (+ carried-over `ML/ALGO/PY`). Priority `P0`(blocker)–`P3`(nice-to-have).
 Status `todo | in-progress | blocked | done | wontfix`. **Milestone** links to
 the ROADMAP; **Deps** lists prerequisite IDs.
+
+**Release readiness (2026-06-30).** **No `P0`/`P1` task blocks the 1.0 design
+freeze.** All milestone work (M1–M6) is done; the surface is hardened and
+coherent. The only remaining release-critical item is `API-09` (the version
+bump + tag + publish), which is **deferred by choice** — there is no schedule
+pressure. Everything under *Post-1.0 / future* is `P2`/`P3` and is explicitly
+out of the 1.0 critical path.
 
 ## PERF — profiling & optimization  ·  M2 (leads)  ·  [design](design/perf-profiling.md)
 
@@ -31,13 +38,13 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 |----|-----|--------|-----------|------|------|
 | API-01 | P0 | done | M3 | — | Dropped `contrast`/`fit_rms` from `CornerDescriptor` + `new()`, Py (9→7 cols), WASM (stride 9→7), CLI JSON, book/README/CHANGELOG. σ math intact; snapshot counts bit-stable; all gates + maturin/pytest(79)/wasm-pack green. Net −59 LOC. Ripple → TOOL-01. |
 | API-02 | P1 | done | M3 | — | Lifted `nms_radius`/`min_cluster_size` to a shared `DetectionParams` on `DetectorConfig.detection` (Rust/Py/WASM/CLI/JSON); `with_detection` builders added; snapshot counts unchanged. |
-| API-03 | P1 | done | M3 | — | Moved `ChessParams`/`RefinerKind` off the core root into `chess_corners_core::unstable` (facade still re-exports at `low_level`); demoted Radon primitives (`ANGLES`/`DIR_COS`/`DIR_SIN`, `fit_peak_frac`, `box_blur_inplace`, `SatElem`) and the `ring`/`primitives` stage modules to `pub(crate)`. Behavior-identical; snapshot counts unchanged. |
+| API-03 | P1 | done | M3 | — | Moved `ChessParams`/`RefinerKind` off the core root into `chess_corners_core::unstable` (facade still re-exports at `low_level`); demoted Radon primitives (`ANGLES`/`DIR_COS`/`DIR_SIN`, `fit_peak_frac`, `box_blur_inplace`, `SatElem`) and the `ring`/`primitives` stage modules to `pub(crate)`. Behavior-identical; snapshot counts unchanged. **Superseded:** the `unstable` move proved incoherent (root-public fns required `ChessParams`) and was reversed by `DEBT-01`; the Radon-primitive demotions stand. |
 | API-04 | P2 | done | M3 | — | Feature-gated `ChessRefiner::Ml` (already cfg-gated since 0.11.0); removed the `chess_refiner_to_kind` silent-mapping helper. Behavior byte-identical; no user-visible change. |
 | API-05 | P1 | done | M3 | — | `.pyi` already complete (`detect`/`config`/`apply_config`/`radon_heatmap`) and factory names already match Rust (`chess`/`chess_multiscale`/`radon`/`radon_multiscale`; the RFC's `single_scale`/`multiscale_preset` "drift" was stale — `single_scale` is the faithful `MultiscaleConfig::SingleScale` ctor). Added a stub-vs-runtime parity guard test (pytest 82→83). |
 | API-06 | P1 | done | M3 | — | Sealed `DenseDetector`/`CornerRefiner` (private `Sealed` supertrait; removed the facade's only external impl, a no-op ML-seed refiner provably == a direct `detect_peaks_*` call); added `#[non_exhaustive]` to `CenterOfMassConfig`/`ForstnerConfig`/`SaddlePointConfig`/`RingOffsets`/`ChessBuffers`; documented MSRV (stable ≥ 1.88, `simd` = nightly). All gates + maturin/pytest(82)/wasm-pack green. |
 | API-07 | P2 | done | M3 | API-06 | Documented (no behavior change): unknown/future `#[non_exhaustive]` core variants map to each enum's documented default in the core→binding direction (forward-compat); user input is already strict (Python `reject_unknown_keys`; WASM typed getter/setter surface has no free-form keys). WASM discriminants were already explicit (`= 0/1/2`); added a `cargo test` pinning all four `#[wasm_bindgen]` enums (28→29) so reordering is caught. |
 | API-08 | P0 | done | M3 | API-01..07 | **Done.** `.github/workflows/semver-checks.yml` vs `v0.11.2`, advisory (`continue-on-error`) until 1.0.0 is the baseline — flips to blocking at API-09; auto-skips publish=false crates. Confirmed the only reported breaks are the intended API-01..07 + RADON-01/02 + SOLID-04 changes. |
-| API-09 | P0 | in-progress | M3 | API-08 | **Prep done.** 1.0.0 migration notes landed in CHANGELOG `[Unreleased]`. Remaining (release step, post-merge, gated on M4 deploy + M5 vcpkg): bump 0.11.2→1.0.0, move `[Unreleased]`→`docs/changelog/1.0.0.md`, `git tag v1.0.0` + publish, flip semver-checks to blocking. |
+| API-09 | P0 | blocked | M3 | API-08, M4, M5, M6 | **Release-gated (deferred by choice — no schedule pressure).** All technical prerequisites are done; this is the release act only. Remaining: bump 0.11.2→1.0.0, move `[Unreleased]`→`docs/changelog/1.0.0.md`, `git tag v1.0.0` + crates.io/PyPI/npm publish, compute the real vcpkg SHA512 + cross-platform `vcpkg install` (CPP-05), flip semver-checks to blocking. Awaiting the user's go decision. |
 
 ## SITE — GitHub Pages  ·  M4 (dep M3)  ·  [design](design/site-architecture.md)
 
@@ -61,6 +68,19 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | CPP-05 | P3 | done (draft) | M5 | CPP-04 | Overlay port `ports/chess-corners/` (`vcpkg.json` + `portfile.cmake` + README): `vcpkg_from_github`→cmake configure/install/config_fixup/fixup_pkgconfig/copyright, honours `VCPKG_LIBRARY_LINKAGE`, default features only. JSON validated; structure aligned to the CMake. **Release-finalization (in `ports/README.md`):** real `v1.0.0` tag + SHA512, `vcpkg install` on Linux/macOS/Windows × static/dynamic, then registry PR. Optional feature plumbing (rayon/simd/ml-refiner) is a scoped follow-up. vcpkg not installed here → not install-verified. |
 | CPP-06 | P3 | done | M5 | CPP-03 | Self-contained C++ example (synthetic 8×8 → 49 corners) + C smoke wired as CTest; `.github/workflows/cpp.yml` matrix (static+shared): header-drift gate → build → ctest → install → example via `find_package`. (Rust marshalling parity already in CPP-01's `parity.rs`.) |
 | CPP-07 | P3 | done | M5 | CPP-03 | Book Part IX "C++ bindings": why C-ABI + thin C++ header, install (find_package/pkg-config/vcpkg), compile-faithful C++ and C usage examples, reentrancy/ABI-guard notes. Contributing → Part X; cross-refs + SUMMARY updated; mdbook builds clean. |
+
+## DEBT — design hardening before the freeze  ·  M6
+
+| ID | Pri | Status | Milestone | Deps | Task |
+|----|-----|--------|-----------|------|------|
+| DEBT-01 | P1 | done | M6 | API-03 | **Done.** Deleted `chess_corners_core::unstable`. The root-public `chess_response_u8` / `find_corners_u8` / `detect_corners_from_response` required `ChessParams`, which lived only in `unstable` under a "may disappear in any patch" disclaimer — an incoherent surface. Promoted `ChessParams`, `RefinerKind`, `chess_response_u8_patch`, `detect_peaks_from_response_with_refine_radius`, `refine_corners_on_image` to the documented crate root; demoted `RING5/RING10/ring_offsets/RingOffsets`, `ChessParams::ring()`, `MAX_IMAGE_UPSAMPLE`, `find_corners_u8_with_refiner` to `pub(crate)`; `chess_response_u8_scalar` made test-only golden infra; deleted the dead `detect_peaks_from_response`. White-box tests relocated from `tests/` into in-crate unit modules. Pure visibility refactor; detection bit-stable. |
+| DEBT-02 | P1 | done | M6 | DEBT-01 | **Done.** Deleted the facade `chess_corners::low_level` escape-hatch module (no real "hand-composer" consumer — external code touched only three config-lowering helpers + `ImageView`). Exposed lowering as `pub` `DetectorConfig::chess_params()` / `radon_detector_params()` / `coarse_to_fine_params()`; rewired CLI/WASM/examples/benches; hand-composers depend on `chess-corners-core` directly. CHANGELOG `[Unreleased]` + Migration block + book/README swept. Net −186 LOC with DEBT-01. WASM + Python (86/86) green. |
+| DEBT-03 | P2 | done | M6 | — | **Done.** Retired the `too_many_arguments` `#[allow]` cluster on the orientation/detector hot paths. 4 genuine 8–9-arg sites fixed by collapsing `(img,w,h)` into the existing `Copy` `ImageView`; 3 were stale allows (suppressed nothing at clippy's default threshold) and removed. Zero unjustified `#[allow]` remain in scope; the 2 justified ones (py macro fallback, ml ONNX `SymbolScope`) kept with comments. Stack-only, no per-corner alloc, bit-exact. |
+| DEBT-04 | P3 | done | M6 | — | **Done.** Replaced the disk-sector argmax `-1.0f32` "no winner" sentinel (`orientation/disk_sector/candidates.rs`) with an explicit `Option<(usize, f32)>` (make-illegal-states-unrepresentable). Bit-exact — all smoothed-histogram values are ≥ 0; strict `>` first-index tie-break preserved. |
+| DEBT-05 | P3 | done | M6 | — | **Done.** Split the 1008-line facade `config.rs` into a cohesive `config/` module (`mod` + `chess`/`radon`/`multiscale`/`detection`/`tests`), mirroring the py/wasm split (SOLID-05). Public paths byte-identical; `lib.rs` `pub use` unchanged; 219 tests unchanged. |
+| DEBT-06 | P2 | todo | — | — | **Parked (post-1.0).** py/wasm config duplication (~5k LOC, ~40% structural). Largely inherent: PyO3 (dict parse / `reject_unknown_keys`) and wasm-bindgen (`Cell`/snapshot) need different representations of the one canonical `DetectorConfig`. A shared schema/codegen layer is a large, risky refactor with its own complexity cost — not worth it before 1.0. Revisit if a third binding or a config schema change forces the issue. |
+| DEBT-07 | P3 | todo | — | — | **Parked (post-1.0, likely wontfix).** Strategy-dispatch parallel `match` arms (Chess/Radon) at `multiscale.rs`, py `config/detector.rs`, wasm `config/strategy.rs`. Only two variants; new detector algorithms are out of scope (ROADMAP). Refactoring dispatch now is YAGNI; reconsider only if a third strategy lands. |
+| DEBT-08 | P3 | todo | — | — | **Parked (optional).** `detect/radon/response.rs` (~893 lines) is one kernel × {scalar, rayon, simd, ROI}. Splitting by variant can hurt readability of the shared math; defer unless the file grows further. |
 
 ## SWEEP — dev-history/internal reference cleanup  ·  continuous → M3
 
@@ -98,7 +118,12 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 | DOCS-04 | P3 | todo | — | — | Worked `no_std` examples for `chess-corners-core` |
 | DOCS-05 | P3 | todo | — | — | Regenerate the refiner benchmark plots under `book/src/img/bench/` (SVGs + `bench_sweep.json`) without the removed RadonPeak series so the charts match the RadonPeak-free prose. |
 
-## Carried-over / future (not yet milestoned)
+## Post-1.0 / future (not blocking 1.0)
+
+Carried-over and nice-to-have work, none of it on the 1.0 critical path. The
+scattered `P3` `todo` items in the sections above (`PERF-13`, `SOLID-02`,
+`SKILL-02/03`, `DOCS-02..05`, `DEBT-06..08`) and the `P2` `ML-*` items below are
+all deferred until after the 1.0 release.
 
 | ID | Pri | Status | Deps | Task |
 |----|-----|--------|------|------|

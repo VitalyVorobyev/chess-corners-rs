@@ -11,12 +11,12 @@
 //! cargo bench -p chess-corners-core --bench nms_scaling
 //! ```
 //!
-//! `detect_peaks_from_response_with_refine_radius` is reached through the
-//! `unstable` module (the curated home for bench-facing sub-stage entry
-//! points); it carries no semver guarantee.
+//! `detect_peaks_from_response_with_refine_radius` is a stage-level entry
+//! point re-exported from the `chess-corners-core` crate root.
 
-use chess_corners_core::chess_response_u8;
-use chess_corners_core::unstable::{detect_peaks_from_response_with_refine_radius, ChessParams};
+use chess_corners_core::{
+    chess_response_u8, detect_peaks_from_response_with_refine_radius, ChessParams,
+};
 use chess_corners_testutil::synth_chessboard;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;

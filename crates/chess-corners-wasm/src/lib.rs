@@ -37,7 +37,7 @@ pub mod config;
 
 use chess_corners::{
     diagnostics::{chess_response_u8, radon_heatmap_u8, ResponseMap},
-    low_level, Detector as RsDetector, DetectorConfig as RsDetectorConfig,
+    Detector as RsDetector, DetectorConfig as RsDetectorConfig,
 };
 use wasm_bindgen::prelude::*;
 
@@ -217,7 +217,7 @@ impl ChessDetector {
         width: u32,
         height: u32,
     ) -> js_sys::Float32Array {
-        let params = low_level::to_chess_params(self.inner.config());
+        let params = self.inner.config().chess_params();
         let resp = chess_response_u8(pixels, width as usize, height as usize, &params);
         let arr = js_sys::Float32Array::new_with_length(resp.data().len() as u32);
         arr.copy_from(resp.data());
@@ -321,7 +321,10 @@ impl ChessDetector {
         // even if the caller mutates upscale / Radon image_upsample
         // after this call.
         let upscale = self.inner.config().upscale.effective_factor().max(1);
-        let radon_up = low_level::to_radon_detector_params(self.inner.config())
+        let radon_up = self
+            .inner
+            .config()
+            .radon_detector_params()
             .image_upsample
             .clamp(1, 2);
         self.last_radon_scale = upscale * radon_up;

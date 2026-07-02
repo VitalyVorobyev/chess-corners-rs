@@ -2,7 +2,7 @@
 /// 16 point ring offsets. Order is clockwise starting at top.
 /// This is the FAST-16 pattern scaled to r=5 and rounded,
 /// matching the paper’s "radius 5, 16 samples" design.
-pub const RING5: [(i32, i32); 16] = [
+pub(crate) const RING5: [(i32, i32); 16] = [
     (0, -5),
     (2, -5),
     (3, -3),
@@ -22,7 +22,7 @@ pub const RING5: [(i32, i32); 16] = [
 ];
 
 /// Optional heavier-blur ring (same angles, r=10)
-pub const RING10: [(i32, i32); 16] = [
+pub(crate) const RING10: [(i32, i32); 16] = [
     (0, -10),
     (4, -10),
     (6, -6),
@@ -45,7 +45,7 @@ pub const RING10: [(i32, i32); 16] = [
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 #[non_exhaustive]
-pub enum RingOffsets {
+pub(crate) enum RingOffsets {
     /// FAST-16 offsets scaled to r=5.
     R5 = 5,
     /// Optional heavier-blur ring with r=10.
@@ -77,6 +77,19 @@ impl RingOffsets {
 
 #[inline]
 /// Get the 16-sample ring offsets for the requested radius.
-pub const fn ring_offsets(radius: u32) -> &'static [(i32, i32); 16] {
+pub(crate) const fn ring_offsets(radius: u32) -> &'static [(i32, i32); 16] {
     RingOffsets::from_radius(radius).offsets()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ring_offsets, RING10, RING5};
+
+    #[test]
+    fn ring_offsets_switch_with_radius() {
+        assert_eq!(ring_offsets(5), &RING5);
+        assert_eq!(ring_offsets(10), &RING10);
+        // Any unknown radius currently falls back to the canonical r=5 offsets.
+        assert_eq!(ring_offsets(3), &RING5);
+    }
 }

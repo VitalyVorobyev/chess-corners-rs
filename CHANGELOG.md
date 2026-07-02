@@ -49,6 +49,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Rust `DescriptorRing` enum, Python/WASM `descriptor_ring` field,
   CLI `--descriptor-ring` flag). Descriptors now always sample at the
   detector ring radius (`ring` / `ChessRing`).
+- **Breaking:** removed the `chess_corners_core::unstable` and
+  `chess_corners::low_level` modules. The low-level contract now lives on
+  the stable surface: `ChessParams`, `RefinerKind`,
+  `chess_response_u8_patch`, `detect_peaks_from_response_with_refine_radius`,
+  and `refine_corners_on_image` are re-exported from the
+  `chess-corners-core` crate root, while the ring-offset tables and the
+  scalar reference response path are now crate-internal. Lower a facade
+  `DetectorConfig` onto the core stages with the now-public
+  `DetectorConfig::chess_params()`, `radon_detector_params()`, and
+  `coarse_to_fine_params()`; the upscale stage primitives
+  (`upscale_bilinear_u8`, `UpscaleBuffers`, `rescale_descriptors_to_input`)
+  and `CoarseToFineParams` move to the `chess-corners` crate root.
 
 ### Changed
 
@@ -88,11 +100,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `CC_THRESHOLD_*` constants (it now carries a single `threshold`
   field), and `cc_corner` gains a `has_orientation` flag (`0` when the axis
   fields are unset). Check `cc_abi_version()`.
-- **Breaking:** `ChessParams` and `RefinerKind` moved off the
-  `chess-corners-core` crate root into the unstable, no-semver-guarantee
-  `chess_corners_core::unstable` namespace, where they are documented as
-  implementation-level translation types. The `chess-corners` facade
-  still re-exports both unchanged at `chess_corners::low_level`.
 - **Breaking:** the classic refiner config structs `CenterOfMassConfig`,
   `ForstnerConfig`, and `SaddlePointConfig` (matching `RadonPeakConfig`),
   and the `ChessBuffers` scratch carrier, are now `#[non_exhaustive]`, so
@@ -137,9 +144,13 @@ Quick reference when upgrading from 0.11.2:
   `.response` for detection strength and `.axes[i].sigma` for per-axis
   confidence. Handle `axes: Option<…>` — it is `None` when orientation is
   disabled.
-- **Moved internals**: `ChessParams` and `RefinerKind` are now in
-  `chess_corners_core::unstable` / `chess_corners::low_level`; they remain
-  accessible but carry no semver guarantee.
+- **Low-level surface**: `ChessParams`, `RefinerKind`,
+  `chess_response_u8_patch`, `detect_peaks_from_response_with_refine_radius`,
+  and `refine_corners_on_image` are now stable re-exports at the
+  `chess-corners-core` crate root; the `chess_corners_core::unstable` and
+  `chess_corners::low_level` modules are removed. Lower a facade config
+  with `DetectorConfig::chess_params()` / `radon_detector_params()` /
+  `coarse_to_fine_params()` (now public).
 - **Sealed traits**: `DenseDetector` and `CornerRefiner` can no longer be
   implemented outside the crate; select a backend through `RefinerKind`.
 - **Python**: `detect()` now returns a `Detections` object; replace
