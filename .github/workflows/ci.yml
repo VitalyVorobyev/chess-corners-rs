@@ -176,3 +176,75 @@ jobs:
           test -f crates/chess-corners-wasm/pkg/chess_corners_wasm.d.ts
           echo "WASM package built successfully"
           ls -lh crates/chess-corners-wasm/pkg/chess_corners_wasm_bg.wasm
+
+  python:
+    name: Python bindings test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+
+      - name: Select nightly Rust toolchain
+        run: rustup override set nightly
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          cache-on-failure: true
+
+      - name: Create virtualenv and install Python test deps
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install -U pip
+          python -m pip install maturin pytest numpy
+
+      - name: Build and install chess_corners (release, editable)
+        run: |
+          source .venv/bin/activate
+          maturin develop --release -m crates/chess-corners-py/Cargo.toml
+
+      - name: Run Python test suite
+        run: |
+          source .venv/bin/activate
+          pytest crates/chess-corners-py/python_tests -q
+
+  wasm-check:
+    name: WASM test compile-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          targets: wasm32-unknown-unknown
+
+      - name: Select nightly Rust toolchain
+        run: |
+          rustup override set nightly
+          rustup target add wasm32-unknown-unknown
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          cache-on-failure: true
+
+      # Waiver: this compile-checks the wasm32-gated `#[cfg(target_arch = "wasm32")]`
+      # value tests only; they are not executed here because no wasm-bindgen-test /
+      # browser test harness is configured (deliberate — see docs/BACKLOG.md if a
+      # future item adds one).
+      - name: cargo check --tests (wasm32-unknown-unknown)
+        run: cargo check -p chess-corners-wasm --target wasm32-unknown-unknown --tests
