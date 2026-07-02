@@ -81,7 +81,7 @@ pub use crate::detect::{
     refine_corners_on_image, AxisEstimate, Corner, CornerDescriptor,
 };
 pub use crate::orientation::{
-    describe_corners, fit_axes_at_point, fit_axes_from_samples, AxisFitResult, OrientationMethod,
+    describe_corners, fit_axes_at_point, AxisFitResult, OrientationMethod,
 };
 pub use crate::refine::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,

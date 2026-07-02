@@ -1,9 +1,9 @@
 /// Minimal grayscale view for refinement without taking a dependency on `image`.
 #[derive(Copy, Clone, Debug)]
 pub struct ImageView<'a> {
-    pub data: &'a [u8],
-    pub width: usize,
-    pub height: usize,
+    pub(crate) data: &'a [u8],
+    pub(crate) width: usize,
+    pub(crate) height: usize,
     /// Origin of the view in the coordinate system of the response map / base image.
     ///
     /// Use [`Self::origin`] to read this value from outside the crate. Setting the
@@ -42,6 +42,24 @@ impl<'a> ImageView<'a> {
     #[inline]
     pub fn origin(&self) -> [i32; 2] {
         self.origin
+    }
+
+    /// Return the raw pixel data backing this view.
+    #[inline]
+    pub fn data(&self) -> &'a [u8] {
+        self.data
+    }
+
+    /// Return the view's width in pixels.
+    #[inline]
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// Return the view's height in pixels.
+    #[inline]
+    pub fn height(&self) -> usize {
+        self.height
     }
 
     #[inline]

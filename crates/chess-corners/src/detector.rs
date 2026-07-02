@@ -103,21 +103,6 @@ impl Detector {
         Ok(())
     }
 
-    /// Mutable access to the active config for ad-hoc tweaks. The
-    /// caller is responsible for keeping the config valid; callers
-    /// that change [`DetectorConfig::upscale`] should use
-    /// [`Self::set_config`] instead so the upscale invariants are
-    /// re-validated.
-    pub fn config_mut(&mut self) -> &mut DetectorConfig {
-        // Drop ML state on raw mutation; the next detect call rebuilds
-        // it against whatever fallback refiner the new config implies.
-        #[cfg(feature = "ml-refiner")]
-        {
-            self.ml_state = None;
-        }
-        &mut self.cfg
-    }
-
     /// Detect chessboard corners from a raw 8-bit grayscale buffer.
     ///
     /// # Errors

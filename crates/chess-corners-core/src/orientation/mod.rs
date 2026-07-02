@@ -5,12 +5,10 @@
 //! uncertainties, and a residual RMS. The actual fit is pluggable via
 //! [`OrientationMethod`].
 //!
-//! Two public entry points are provided:
-//! - [`fit_axes_at_point`] (image input) — samples the ring at
-//!   `(cx, cy)` and dispatches to the chosen method.
-//! - [`fit_axes_from_samples`] (presampled input) — accepts the 16
-//!   ring samples directly; convenient for unit tests and for the
-//!   orientation benchmark when ring sampling is decoupled.
+//! [`fit_axes_at_point`] is the public entry point: it samples the
+//! ring at `(cx, cy)` and dispatches to the chosen method. A
+//! crate-private `fit_axes_from_samples` variant accepts pre-sampled
+//! ring values directly and backs this module's own unit tests.
 //!
 //! New algorithm variants plug into the [`OrientationMethod`] enum without
 //! breaking SemVer thanks to the `#[non_exhaustive]` attribute.
@@ -24,7 +22,7 @@ use crate::detect::chess::ring::ring_offsets;
 use crate::imageview::ImageView;
 use descriptor::{ring_angles, sample_ring};
 
-pub use api::{fit_axes_at_point, fit_axes_from_samples, AxisFitResult};
+pub use api::{fit_axes_at_point, AxisFitResult};
 pub use descriptor::describe_corners;
 
 /// Method used to fit the two grid axes at a detected corner.

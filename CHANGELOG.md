@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   useful when a downstream stage recovers board geometry and does not need
   per-corner orientation. With the fit skipped, detection returns the same
   corner positions with no axis data.
+- WASM/npm: `DetectorConfig.withRadon(options)` now accepts
+  `responseBlurRadius` and `peakFit`, covering all four Radon options —
+  parity with Python's `with_radon()`.
 
 ### Removed
 
@@ -57,10 +60,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `chess-corners-core` crate root, while the ring-offset tables and the
   scalar reference response path are now crate-internal. Lower a facade
   `DetectorConfig` onto the core stages with the now-public
-  `DetectorConfig::chess_params()`, `radon_detector_params()`, and
-  `coarse_to_fine_params()`; the upscale stage primitives
-  (`upscale_bilinear_u8`, `UpscaleBuffers`, `rescale_descriptors_to_input`)
-  and `CoarseToFineParams` move to the `chess-corners` crate root.
+  `DetectorConfig::chess_params()` and `radon_detector_params()`; the
+  upscale stage primitives (`upscale_bilinear_u8`, `UpscaleBuffers`,
+  `rescale_descriptors_to_input`) move to the `chess-corners` crate root.
+- **Breaking:** removed `CoarseToFineParams` and
+  `DetectorConfig::coarse_to_fine_params()` from the public API. The
+  lowered multiscale params were consumable only by internal pipeline
+  code, so there is no migration — no public API accepted the value.
+- **Breaking:** removed `Detector::config_mut`, which allowed replacing
+  the active config without validation. Migration: use
+  `Detector::set_config`, which re-validates the config before applying
+  it.
+- **Breaking:** removed `fit_axes_from_samples` from
+  `chess-corners-core`'s public API. Migration: use `fit_axes_at_point`
+  on an `ImageView`.
+- **Breaking (WASM/npm):** removed the deprecated `DetectorConfig`
+  `singleScale()` method. Migration: use the `DetectorConfig.chess()`
+  preset or the `multiscale` setters.
 
 ### Changed
 
@@ -100,6 +116,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the `CC_THRESHOLD_*` constants (it now carries a single `threshold`
   field), and `cc_corner` gains a `has_orientation` flag (`0` when the axis
   fields are unset). Check `cc_abi_version()`.
+- **Breaking (C ABI, version 4):** `cc_config` is extended to full
+  detector-config parity with new fields — `merge_radius`,
+  `upscale_factor`, `chess_ring`, `ray_radius`, `image_upsample`,
+  `response_blur_radius`, and `peak_fit` — changing the struct layout.
+  Check `cc_abi_version()`. Migration: reinitialize configs via the
+  `cc_config_*` preset functions and set the new fields as needed rather
+  than assuming the old layout.
+- **Breaking:** `chess_corners_core::fit_axes_at_point` now takes an
+  `ImageView<'_>` instead of separate `(img: &[u8], w: usize, h: usize)`
+  arguments. Migration: wrap the slice with
+  `ImageView::from_u8_slice(w, h, img)`.
+- **Breaking:** `chess_corners_core::ImageView`'s fields are no longer
+  public. Read them via the new `data()`, `width()`, and `height()`
+  accessors (alongside the existing `origin()`), and construct views
+  with `ImageView::from_u8_slice` / `ImageView::with_origin`.
 - **Breaking:** the classic refiner config structs `CenterOfMassConfig`,
   `ForstnerConfig`, and `SaddlePointConfig` (matching `RadonPeakConfig`),
   and the `ChessBuffers` scratch carrier, are now `#[non_exhaustive]`, so
@@ -128,6 +159,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   object. Detection results are unchanged.
 - Bump `numpy` to `0.29` and `pyo3` to `0.29`
 
+### Fixed
+
+- **Python:** `with_radon(refiner=...)` now raises `TypeError` instead of
+  silently ignoring the keyword. The Radon detector has never had a
+  pluggable refiner, so passing `refiner=` never changed detection
+  output — it now surfaces as an error instead of a silent no-op.
+
 ### Migration to 1.0.0
 
 Quick reference when upgrading from 0.11.2:
@@ -149,13 +187,30 @@ Quick reference when upgrading from 0.11.2:
   and `refine_corners_on_image` are now stable re-exports at the
   `chess-corners-core` crate root; the `chess_corners_core::unstable` and
   `chess_corners::low_level` modules are removed. Lower a facade config
-  with `DetectorConfig::chess_params()` / `radon_detector_params()` /
-  `coarse_to_fine_params()` (now public).
+  with `DetectorConfig::chess_params()` / `radon_detector_params()`.
 - **Sealed traits**: `DenseDetector` and `CornerRefiner` can no longer be
   implemented outside the crate; select a backend through `RefinerKind`.
 - **Python**: `detect()` now returns a `Detections` object; replace
   column-index access (`arr[:, 2]`) with named attributes (`det.response`,
   `det.xy`, `det.angles`, `det.sigmas`).
+- **Python**: drop any `with_radon(refiner=...)` call — the keyword now
+  raises `TypeError` instead of being silently ignored.
+- **`Detector::config_mut`**: replace with `Detector::set_config`, which
+  re-validates the config.
+- **Orientation at a point**: `fit_axes_from_samples` is gone; call
+  `fit_axes_at_point` on an `ImageView`. `fit_axes_at_point` itself now
+  takes an `ImageView<'_>` — wrap a raw slice with
+  `ImageView::from_u8_slice(w, h, img)`.
+- **`ImageView` access**: read fields via `data()` / `width()` /
+  `height()` / `origin()` instead of direct field access; construct with
+  `from_u8_slice` / `with_origin`.
+- **WASM/npm**: replace `DetectorConfig.singleScale()` with the
+  `DetectorConfig.chess()` preset or the `multiscale` setters.
+- **C ABI**: ABI version is now 4 (`cc_abi_version()`); `cc_config`'s
+  layout changed. Reinitialize configs via the `cc_config_*` preset
+  functions and set the new fields (`merge_radius`, `upscale_factor`,
+  `chess_ring`, `ray_radius`, `image_upsample`, `response_blur_radius`,
+  `peak_fit`) as needed.
 
 ## Past releases
 

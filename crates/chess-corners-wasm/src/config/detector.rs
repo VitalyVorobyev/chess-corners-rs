@@ -7,7 +7,7 @@ use super::multiscale::MultiscaleConfig;
 use super::refiners::ChessRefiner;
 use super::strategy::{DetectionParams, DetectionStrategy};
 use super::upscale::UpscaleConfig;
-use super::{cell, Cell, ChessRing, OrientationMethod};
+use super::{cell, Cell, ChessRing, OrientationMethod, PeakFitMode};
 
 // ---------------------------------------------------------------------------
 // DetectorConfig
@@ -104,19 +104,6 @@ impl DetectorConfig {
     #[wasm_bindgen(js_name = radonMultiscale)]
     pub fn radon_multiscale() -> Self {
         Self::from_value(RsDetectorConfig::radon_multiscale())
-    }
-
-    /// Deprecated — use `DetectorConfig.chess()` instead.
-    ///
-    /// Logs a `console.warn` and returns the same config as [`Self::chess`].
-    #[wasm_bindgen(js_name = singleScale)]
-    pub fn single_scale() -> Self {
-        #[cfg(target_arch = "wasm32")]
-        web_sys::console::warn_1(
-            &"DetectorConfig.singleScale() is deprecated; use DetectorConfig.chess() instead"
-                .into(),
-        );
-        Self::chess()
     }
 
     // ---- Chainable builder methods ----
@@ -246,9 +233,11 @@ impl DetectorConfig {
     /// Accepted keys (all optional):
     /// - `rayRadius`: integer
     /// - `imageUpsample`: integer
+    /// - `responseBlurRadius`: integer
+    /// - `peakFit`: `PeakFitMode`
     ///
     /// Unknown keys throw `Error("unexpected option: '<key>'")`.
-    /// JS: `cfg.withRadon({ rayRadius: 6, imageUpsample: 2 })`.
+    /// JS: `cfg.withRadon({ rayRadius: 6, imageUpsample: 2, responseBlurRadius: 1, peakFit: PeakFitMode.Gaussian })`.
     #[wasm_bindgen(js_name = withRadon)]
     pub fn with_radon(&self, opts: &js_sys::Object) -> Result<DetectorConfig, JsValue> {
         let mut out = self.deep_clone();
@@ -275,6 +264,24 @@ impl DetectorConfig {
                         .ok_or_else(|| JsValue::from_str("imageUpsample must be a number"))?
                         as u32;
                     out.strategy.radon().set_image_upsample(r);
+                }
+                "responseBlurRadius" => {
+                    let r = val
+                        .as_f64()
+                        .ok_or_else(|| JsValue::from_str("responseBlurRadius must be a number"))?
+                        as u32;
+                    out.strategy.radon().set_response_blur_radius(r);
+                }
+                "peakFit" => {
+                    let disc = val.as_f64().ok_or_else(|| {
+                        JsValue::from_str("peakFit must be a PeakFitMode enum value")
+                    })? as u8;
+                    let mode = if disc == PeakFitMode::Gaussian as u8 {
+                        PeakFitMode::Gaussian
+                    } else {
+                        PeakFitMode::Parabolic
+                    };
+                    out.strategy.radon().set_peak_fit(mode);
                 }
                 other => {
                     return Err(JsValue::from_str(&format!("unexpected option: '{other}'")));

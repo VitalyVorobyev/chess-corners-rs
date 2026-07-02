@@ -58,6 +58,26 @@ int main(void) {
         return 3;
     }
 
+    /* Invalid values in the new flat fields must map to a clean status
+     * (not a panic or UB). An out-of-range upscale factor is rejected with
+     * CC_ERR_UPSCALE; an unknown ring tag with CC_ERR_INVALID_CONFIG. */
+    cc_config bad_upscale = cc_config_chess();
+    bad_upscale.upscale_factor = 5; /* only 0 (off) and 2..4 are valid */
+    cc_result ignored = {NULL, 0};
+    if (cc_detect_u8(img, w, h, &bad_upscale, &ignored) != CC_ERR_UPSCALE) {
+        fprintf(stderr, "invalid upscale factor was not rejected\n");
+        free(img);
+        return 4;
+    }
+
+    cc_config bad_ring = cc_config_chess();
+    bad_ring.chess_ring = 99; /* unknown tag */
+    if (cc_detect_u8(img, w, h, &bad_ring, &ignored) != CC_ERR_INVALID_CONFIG) {
+        fprintf(stderr, "unknown ring tag was not rejected\n");
+        free(img);
+        return 5;
+    }
+
     free(img);
     printf("smoke OK\n");
     return 0;

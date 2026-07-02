@@ -36,7 +36,7 @@ use chess_corners_core::{
 /// Bridge from `chess_corners_core::ImageView` to `box_image_pyramid::ImageView`.
 fn to_pyramid_view(v: ImageView<'_>) -> box_image_pyramid::ImageView<'_> {
     // invariant: v was already validated as a coherent ImageView, so the pyramid view cannot fail.
-    box_image_pyramid::ImageView::new(v.width, v.height, v.data).unwrap()
+    box_image_pyramid::ImageView::new(v.width(), v.height(), v.data()).unwrap()
 }
 #[cfg(feature = "tracing")]
 use tracing::info_span;
@@ -47,7 +47,7 @@ use tracing::info_span;
 /// regime unless they explicitly opt into a pyramid.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
-pub struct CoarseToFineParams {
+pub(crate) struct CoarseToFineParams {
     /// Image pyramid shape and construction parameters.
     pub pyramid: PyramidParams,
     /// ROI radius at the coarse level (ignored when `pyramid.num_levels <= 1`).
@@ -70,12 +70,6 @@ impl Default for CoarseToFineParams {
             // merge duplicates within ~3 pixels
             merge_radius: 3.0,
         }
-    }
-}
-
-impl CoarseToFineParams {
-    pub fn new() -> Self {
-        Self::default()
     }
 }
 
@@ -186,8 +180,8 @@ fn make_roi_context(
         border,
         safe_margin,
         roi_r: roi_r_base.max(min_roi_r),
-        base_w_i: base.width as i32,
-        base_h_i: base.height as i32,
+        base_w_i: base.width() as i32,
+        base_h_i: base.height() as i32,
     }
 }
 
@@ -235,7 +229,7 @@ fn detect_multiscale<D: DenseDetector>(
     multiscale: Option<&CoarseToFineParams>,
     shape: &DetectorShape<'_>,
 ) -> Vec<CornerDescriptor> {
-    let base_view = ImageView::from_u8_slice(base.width, base.height, base.data)
+    let base_view = ImageView::from_u8_slice(base.width(), base.height(), base.data())
         .expect("base image dimensions must match buffer length");
 
     // The refiner only contributes to the ROI margin when the
@@ -261,9 +255,9 @@ fn detect_multiscale<D: DenseDetector>(
         let mut corners = detector.refine_peaks_on_image(peaks, base_view, &resp, &mut refiner);
         let merged = merge_corners_simple(&mut corners, shape.merge_radius);
         return describe_corners(
-            base.data,
-            base.width,
-            base.height,
+            base.data(),
+            base.width(),
+            base.height(),
             shape.descriptor_ring_radius,
             merged,
             shape.orientation_method,
@@ -365,8 +359,9 @@ fn detect_multiscale<D: DenseDetector>(
         // samples base pixels at (cx + x0, cy + y0). The detector
         // decides whether its response is forwardable to the refiner
         // (ChESS → yes, ResponseMap; Radon → no, returns peaks as-is).
-        let patch_image = ImageView::with_origin(base.width, base.height, base.data, [x0, y0])
-            .expect("base image dimensions must match buffer length");
+        let patch_image =
+            ImageView::with_origin(base.width(), base.height(), base.data(), [x0, y0])
+                .expect("base image dimensions must match buffer length");
         let mut patch_refined =
             detector.refine_peaks_on_image(patch_peaks, patch_image, &patch_resp, &mut refiner);
 
@@ -397,9 +392,9 @@ fn detect_multiscale<D: DenseDetector>(
     drop(merge_span);
 
     describe_corners(
-        base.data,
-        base.width,
-        base.height,
+        base.data(),
+        base.width(),
+        base.height(),
         shape.descriptor_ring_radius,
         merged,
         shape.orientation_method,
@@ -535,14 +530,14 @@ where
     let Some(cf) = cfg.coarse_to_fine_params() else {
         let detector = ChessDetector;
         let resp = detector.compute_response(base, params, chess_buffers);
-        let view = ImageView::from_u8_slice(base.width, base.height, base.data)
+        let view = ImageView::from_u8_slice(base.width(), base.height(), base.data())
             .expect("image dimensions must match buffer length");
         let mut raw = detect_fn(resp, params, Some(view));
         let merged = merge_corners_simple(&mut raw, cfg.merge_radius);
         return describe_corners(
-            base.data,
-            base.width,
-            base.height,
+            base.data(),
+            base.width(),
+            base.height(),
             params.ring_radius(),
             merged,
             params.orientation_method,
@@ -611,12 +606,14 @@ where
             Some(r) => r,
             None => continue,
         };
-        let patch_resp = chess_response_u8_patch(base.data, base.width, base.height, params, roi);
+        let patch_resp =
+            chess_response_u8_patch(base.data(), base.width(), base.height(), params, roi);
         if patch_resp.width() == 0 || patch_resp.height() == 0 {
             continue;
         }
-        let refine_view = ImageView::with_origin(base.width, base.height, base.data, [x0, y0])
-            .expect("base image dimensions must match buffer length");
+        let refine_view =
+            ImageView::with_origin(base.width(), base.height(), base.data(), [x0, y0])
+                .expect("base image dimensions must match buffer length");
         let mut patch_corners = detect_fn(&patch_resp, params, Some(refine_view));
         for pc in &mut patch_corners {
             pc.x += x0 as f32;
@@ -640,9 +637,9 @@ where
     drop(merge_span);
 
     describe_corners(
-        base.data,
-        base.width,
-        base.height,
+        base.data(),
+        base.width(),
+        base.height(),
         params.ring_radius(),
         merged,
         params.orientation_method,

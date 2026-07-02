@@ -306,9 +306,9 @@ mod tests {
         let src = vec![42u8; 8 * 6];
         let mut buffers = UpscaleBuffers::new();
         let view = upscale_bilinear_u8(&src, 8, 6, 2, &mut buffers).unwrap();
-        assert_eq!(view.width, 16);
-        assert_eq!(view.height, 12);
-        assert!(view.data.iter().all(|&v| v == 42));
+        assert_eq!(view.width(), 16);
+        assert_eq!(view.height(), 12);
+        assert!(view.data().iter().all(|&v| v == 42));
     }
 
     #[test]
@@ -316,9 +316,9 @@ mod tests {
         let src = [77u8];
         let mut buffers = UpscaleBuffers::new();
         let view = upscale_bilinear_u8(&src, 1, 1, 2, &mut buffers).unwrap();
-        assert_eq!(view.width, 2);
-        assert_eq!(view.height, 2);
-        assert!(view.data.iter().all(|&v| v == 77));
+        assert_eq!(view.width(), 2);
+        assert_eq!(view.height(), 2);
+        assert!(view.data().iter().all(|&v| v == 77));
     }
 
     #[test]
@@ -335,8 +335,8 @@ mod tests {
         let mut buffers = UpscaleBuffers::new();
         let view = upscale_bilinear_u8(&src, 8, 3, 2, &mut buffers).unwrap();
         // The upscaled image should stay monotonic along each row.
-        for r in 0..view.height {
-            let row = &view.data[r * view.width..(r + 1) * view.width];
+        for r in 0..view.height() {
+            let row = &view.data()[r * view.width()..(r + 1) * view.width()];
             for w in row.windows(2) {
                 assert!(w[1] >= w[0].saturating_sub(1), "non-monotonic row: {row:?}");
             }
@@ -348,9 +348,9 @@ mod tests {
         let src = vec![128u8; 5 * 4];
         let mut buffers = UpscaleBuffers::new();
         let view = upscale_bilinear_u8(&src, 5, 4, 3, &mut buffers).unwrap();
-        assert_eq!(view.width, 15);
-        assert_eq!(view.height, 12);
-        assert_eq!(view.data.len(), 180);
+        assert_eq!(view.width(), 15);
+        assert_eq!(view.height(), 12);
+        assert_eq!(view.data().len(), 180);
     }
 
     #[test]

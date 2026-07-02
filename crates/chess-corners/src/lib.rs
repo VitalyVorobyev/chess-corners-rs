@@ -155,10 +155,12 @@
 //!
 //! - `crates/chess-corners-py` (PyO3 / maturin) exposes a
 //!   `chess_corners.Detector` class whose `detect(image)` method
-//!   accepts a 2D `uint8` NumPy array and returns a `float32`
-//!   `(N, 7)` array with columns `[x, y, response,
-//!   axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`. See its
-//!   README for usage and configuration details.
+//!   accepts a 2D `uint8` NumPy array and returns a `Detections`
+//!   structure-of-arrays object with named fields: `.xy` (`(N, 2)`
+//!   float32), `.response` (`(N,)` float32), `.angles` (`(N, 2)`
+//!   float32, or `None` when orientation is disabled), and `.sigmas`
+//!   (`(N, 2)` float32, or `None` when orientation is disabled). See
+//!   its README for usage and configuration details.
 //! - `crates/chess-corners-wasm` (wasm-bindgen / wasm-pack) exposes
 //!   the same surface to JavaScript / TypeScript via the
 //!   `@vitavision/chess-corners` npm package.
@@ -174,9 +176,8 @@
 //! Radon. [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
 //! and apply to both strategies. The detector translates this into
 //! lower-level parameter structs internally. To drive those stages
-//! yourself, lower a config with [`DetectorConfig::chess_params`],
-//! [`DetectorConfig::radon_detector_params`], or
-//! [`DetectorConfig::coarse_to_fine_params`] and call the stage
+//! yourself, lower a config with [`DetectorConfig::chess_params`] or
+//! [`DetectorConfig::radon_detector_params`] and call the stage
 //! functions re-exported from `chess-corners-core`.
 //!
 //! Intermediate response maps and Radon heatmaps for debugging and
@@ -245,11 +246,6 @@ pub use crate::config::{
     MultiscaleConfig, RadonConfig,
 };
 pub use crate::error::ChessError;
-
-/// Lowered coarse-to-fine multiscale parameters, produced by
-/// [`DetectorConfig::coarse_to_fine_params`] and consumed by the
-/// multiscale pipeline.
-pub use crate::multiscale::CoarseToFineParams;
 
 /// Optional pre-pipeline integer bilinear upscaling stage. These are the
 /// raw stage primitives behind [`UpscaleConfig`]; [`Detector`] applies

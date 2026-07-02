@@ -133,7 +133,7 @@ chess-corners-ml    (ONNX inference, optional via ml-refiner feature)
 1. **Response** (`core/response.rs`) — Dense ChESS response using 16-sample rings
 2. **Detection** (`core/detect.rs`) — Thresholding + NMS + cluster filtering
 3. **Refinement** (`core/refine.rs`) — Pluggable trait with 3 built-in refiners: CenterOfMass, Förstner, SaddlePoint
-4. **Descriptors** (`core/descriptor.rs`) — Corner descriptors lifted from raw detections via `corners_to_descriptors_with_method`. Carries two-axis orientation with per-axis 1σ uncertainty.
+4. **Descriptors** (`core/descriptor.rs`) — Corner descriptors lifted from raw detections via `describe_corners`. Carries two-axis orientation with per-axis 1σ uncertainty.
 5. **Orientation methods** (`core/orientation/`) — Detector-agnostic. `RingFit` (default) runs a 16-sample ring Gauss-Newton fit; `DiskFit` is a full-disk crossing-line estimator with a lazy-gate fallback to `RingFit`. Both ChESS and Radon detectors share this stage.
 
 ### Multiscale Pipeline (`chess-corners`)

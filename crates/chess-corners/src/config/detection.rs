@@ -354,7 +354,7 @@ impl DetectorConfig {
     /// the same top-level multiscale settings. Use this when composing
     /// the multiscale stages directly instead of through
     /// [`Detector`](crate::Detector).
-    pub fn coarse_to_fine_params(&self) -> Option<CoarseToFineParams> {
+    pub(crate) fn coarse_to_fine_params(&self) -> Option<CoarseToFineParams> {
         let MultiscaleConfig::Pyramid {
             levels,
             min_size,

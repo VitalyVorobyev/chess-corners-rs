@@ -63,16 +63,22 @@ pub fn radon_heatmap_u8(
     let mut rb = RadonBuffers::new();
 
     if factor <= 1 {
-        let resp = radon_response_u8(view.data, view.width, view.height, &radon_params, &mut rb);
+        let resp = radon_response_u8(
+            view.data(),
+            view.width(),
+            view.height(),
+            &radon_params,
+            &mut rb,
+        );
         return Ok(resp.to_response_map());
     }
 
     let mut up_buffers = UpscaleBuffers::new();
     let upscaled = upscale::upscale_bilinear_u8(img, src_w, src_h, factor, &mut up_buffers)?;
     let resp = radon_response_u8(
-        upscaled.data,
-        upscaled.width,
-        upscaled.height,
+        upscaled.data(),
+        upscaled.width(),
+        upscaled.height(),
         &radon_params,
         &mut rb,
     );
