@@ -239,7 +239,7 @@ past the struct.
 just a `float`, with no separate kind tag and no threshold-kind
 constants. ChESS reads it as an absolute floor on the raw response
 (default `30`); the Radon presets read it as a fraction in `[0, 1]` of
-the per-frame maximum (default `0.01`). See [Part III §3.3.1](part-03-chess-detector.md#331-thresholding-and-nms)
+the per-frame maximum (default `0.28`). See [Part III §3.3.1](part-03-chess-detector.md#331-thresholding-and-nms)
 and [Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline).
 
 **Corner fields.** `cc_corner` (and the C++ `Corner`) mirror the Rust

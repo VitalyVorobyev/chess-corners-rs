@@ -294,6 +294,14 @@ pub unsafe extern "C" fn cc_detect_u8(
     cfg: *const cc_config,
     out: *mut cc_result,
 ) -> cc_status {
+    // SAFETY: `AssertUnwindSafe` is sound here because a caught panic
+    // discards the closure's captured state (`pixels`/`cfg`/`out` are
+    // `Copy` pointers, not shared mutable references) — there is no
+    // partially-mutated state left observable afterward. `detect_impl`'s
+    // own pointer preconditions are documented on this function's
+    // `# Safety` section and re-checked (null/dimension) before any
+    // dereference, so unwinding out of this boundary and reporting
+    // `CC_ERR_PANIC` is the only externally-visible effect of a panic.
     match catch_unwind(AssertUnwindSafe(|| unsafe {
         detect_impl(pixels, width, height, cfg, out)
     })) {
@@ -369,6 +377,15 @@ unsafe fn detect_impl(
 pub unsafe extern "C" fn cc_result_free(r: *mut cc_result) {
     // Dropping a `Box<[cc_corner]>` of plain data cannot panic, but trap
     // anyway so this function can never unwind across FFI.
+    //
+    // SAFETY: `AssertUnwindSafe` is sound because `free_impl` only
+    // consumes the raw pointer `r` (itself `Copy`) and never leaves
+    // shared mutable state half-updated before a possible panic point —
+    // it either fully nulls out `*r` or (on an unexpected panic from the
+    // infallible `Box::from_raw`/`drop`) the caller never touches `*r`
+    // again per this function's `# Safety` contract. `free_impl`'s own
+    // pointer preconditions are documented above and re-checked
+    // (null-safety) before any dereference.
     let _ = catch_unwind(AssertUnwindSafe(|| unsafe { free_impl(r) }));
 }
 

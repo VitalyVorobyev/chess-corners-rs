@@ -30,9 +30,9 @@ For a candidate pixel `(x, y)` and a ray half-length `r` (working-resolution
 pixels), we sum pixel intensities along four rays passing through the
 pixel at angles `α ∈ {0, π/4, π/2, 3π/4}`:
 
-```text
-S_α(x, y) = Σ_{k=-r}^{r}  I(x + k·cos α,  y + k·sin α)
-```
+\\[
+S_\alpha(x, y) = \sum_{k=-r}^{r} I(x + k \cos\alpha,\; y + k \sin\alpha)
+\\]
 
 The four sums `S₀, S_{π/4}, S_{π/2}, S_{3π/4}` sample two pairs of
 orthogonal directions (horizontal/vertical and the two diagonals). At
@@ -41,9 +41,9 @@ average toward opposite extremes; the other two cross the junction and
 average toward the scene mean. The **Radon response** is the squared
 gap between the largest and smallest ray sum:
 
-```text
-R(x, y) = (max_α S_α  −  min_α S_α)²
-```
+\\[
+R(x, y) = \left( \max_\alpha S_\alpha - \min_\alpha S_\alpha \right)^2
+\\]
 
 `R` is always non-negative. On the idealized checkerboard model used
 by the tests, it peaks at X-junctions and stays small on flat regions,
@@ -114,11 +114,11 @@ by the Radon refiner (see Part V):
    is the facade preset and matches the paper-style peak-fit pipeline.
 2. **Threshold.** The top-level `threshold` field feeds this stage as a
    **relative** fraction: pixels below `threshold · max(R)` are dropped
-   (default `0.01`, i.e. 1% of the per-frame maximum). The fraction is
+   (default `0.28`, i.e. 28% of the per-frame maximum). The fraction is
    relative rather than absolute because the Radon score
    `(max_α S_α − min_α S_α)²` is built from ray sums whose magnitude
    grows with ray length and image scale — no fixed `R` means "corner"
-   across resolutions, whereas "1% of this frame's peak" tracks the
+   across resolutions, whereas a fixed fraction of this frame's peak tracks the
    scene automatically. (ChESS, whose `R` has a stable per-corner scale,
    instead reads `threshold` as an absolute floor; see
    [Part III §3.3.1](part-03-chess-detector.md#331-thresholding-and-nms).)
@@ -147,7 +147,7 @@ no iteration. Implementation: `radon::fit_peak_frac` in
 | `ray_radius`            | 4       | Paper value at `image_upsample = 2`; 2 physical pixels of support.                                     |
 | `image_upsample`        | 2       | Paper default. Halves aliasing on the ray endpoints.                                                   |
 | `response_blur_radius`  | 1       | 3×3 box used by the preset and by the repository's Radon tests.                                        |
-| `threshold` (top-level) | 0.01    | Relative fraction of `max(R)`. `R ≥ 0` everywhere, so a non-zero floor is required; 0.01 (1% of the per-frame peak) is a conservative default. |
+| `threshold` (top-level) | 0.28    | Relative fraction of `max(R)`. `R ≥ 0` everywhere, so a non-zero floor is required; the default drops everything below 28% of the per-frame peak. |
 | `nms_radius` (`detection`)      | 4       | Matches `ray_radius` — local maxima should be at least one ray length apart. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `min_cluster_size` (`detection`)| 2       | Requires at least one supporting positive neighbor inside the NMS window. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `peak_fit`              | Gaussian | Log-space 3-point fit used by the paper-style pipeline; parabolic fit is also available.              |

@@ -1,4 +1,4 @@
-use chess_corners_core::PeakFitMode;
+use chess_corners_core::{PeakFitMode, RadonDetectorParams};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the whole-image Radon detector branch of
@@ -51,11 +51,14 @@ pub struct RadonConfig {
 
 impl Default for RadonConfig {
     fn default() -> Self {
+        // Single source of truth: mirror `RadonDetectorParams::default()`
+        // (chess-corners-core) rather than restating the paper defaults here.
+        let core_defaults = RadonDetectorParams::default();
         Self {
-            ray_radius: 4,
-            image_upsample: 2,
-            response_blur_radius: 1,
-            peak_fit: PeakFitMode::Gaussian,
+            ray_radius: core_defaults.ray_radius,
+            image_upsample: core_defaults.image_upsample,
+            response_blur_radius: core_defaults.response_blur_radius,
+            peak_fit: core_defaults.peak_fit,
         }
     }
 }

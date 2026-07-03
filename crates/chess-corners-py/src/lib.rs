@@ -266,6 +266,41 @@ impl Detector {
             .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
+    /// Return the intermediate dense ChESS response map for an image.
+    ///
+    /// This exposes the per-pixel ChESS response that the detector
+    /// computes internally as opt-in diagnostic evidence for debugging
+    /// and visualization. It is not part of the normal detection result
+    /// returned by `detect`.
+    fn chess_response<'py>(
+        &mut self,
+        py: Python<'py>,
+        image: &Bound<'py, PyAny>,
+    ) -> PyResult<Py<PyAny>> {
+        let (array, height, width) = extract_image(image)?;
+        let view = array.as_array();
+        let slice = view.as_slice().ok_or_else(|| {
+            PyValueError::new_err("image must be a C-contiguous uint8 array of shape (H, W)")
+        })?;
+
+        let width_u32 = u32::try_from(width)
+            .map_err(|_| PyValueError::new_err("image width exceeds u32::MAX"))?;
+        let height_u32 = u32::try_from(height)
+            .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
+
+        let map = py
+            .detach(|| {
+                self.inner
+                    .diagnostics()
+                    .chess_response_u8(slice, width_u32, height_u32)
+            })
+            .map_err(|e: chess_corners_rs::ChessError| PyValueError::new_err(e.to_string()))?;
+
+        let arr = Array2::from_shape_vec((map.height(), map.width()), map.data().to_vec())
+            .map_err(|_| PyValueError::new_err("failed to build response array"))?;
+        Ok(arr.into_pyarray(py).into_any().unbind())
+    }
+
     /// Return the intermediate dense Radon-response heatmap for an image.
     ///
     /// This exposes the per-pixel Radon response that the detector

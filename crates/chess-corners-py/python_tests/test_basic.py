@@ -140,6 +140,32 @@ def test_radon_heatmap_default_config():
     assert heatmap.shape[1] >= img.shape[1]
 
 
+def test_chess_response_shape_and_dtype():
+    img = _checkerboard(square_size=16, squares=8)
+    cfg = chess_corners.DetectorConfig.chess()
+
+    detector = chess_corners.Detector(cfg)
+    response = detector.chess_response(img)
+
+    # Unlike `radon_heatmap`, the ChESS response is computed at input
+    # resolution (no upscale stage applied), so the map matches the
+    # input shape exactly.
+    assert response.dtype == np.float32
+    assert response.shape == img.shape
+    assert float(response.max()) > 0.0
+
+
+def test_chess_response_default_config():
+    img = _checkerboard(square_size=16, squares=8)
+
+    detector = chess_corners.Detector()
+    response = detector.chess_response(img)
+
+    assert response.dtype == np.float32
+    assert response.ndim == 2
+    assert response.shape == img.shape
+
+
 def test_typed_config_passes_through_ffi_directly():
     """Native typed `DetectorConfig` reaches the detector without JSON serialization."""
 

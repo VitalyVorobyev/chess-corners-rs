@@ -101,24 +101,24 @@ From these values we compute:
 
 - `SR` – a “square” term that compares opposite quadrants on the ring:
 
-  ```text
-  SR = sum_{k=0..3} | (s[k] + s[k+8]) - (s[k+4] + s[k+12]) |
-  ```
+  \\[
+  SR = \sum_{k=0}^{3} \left| (s_k + s_{k+8}) - (s_{k+4} + s_{k+12}) \right|
+  \\]
 
 - `DR` – a “difference” term encouraging edge‑like structure:
 
-  ```text
-  DR = sum_{k=0..7} | s[k] - s[k+8] |
-  ```
+  \\[
+  DR = \sum_{k=0}^{7} \left| s_k - s_{k+8} \right|
+  \\]
 
 - `μₙ` – the mean of all 16 ring samples.
 - `μₗ` – the local mean of the 5‑pixel cross.
 
 The final ChESS response is:
 
-```text
-R = SR - DR - 16 * |μₙ - μₗ|
-```
+\\[
+R = SR - DR - 16 \left| \mu_n - \mu_l \right|
+\\]
 
 Intuitively:
 
@@ -316,9 +316,9 @@ The axis convention:
 The ring samples `s₀, …, s₁₅` at angles `φ₀, …, φ₁₅ = atan2(dy, dx)`
 are fitted to
 
-```text
-I(φ) = μ + A · tanh(β·sin(φ − θ₁)) · tanh(β·sin(φ − θ₂))
-```
+\\[
+I(\varphi) = \mu + A \cdot \tanh\bigl(\beta \sin(\varphi - \theta_1)\bigr) \cdot \tanh\bigl(\beta \sin(\varphi - \theta_2)\bigr)
+\\]
 
 with fixed `β = 4.0`. The four free parameters are:
 

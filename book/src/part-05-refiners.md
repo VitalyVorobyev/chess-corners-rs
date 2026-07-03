@@ -56,10 +56,10 @@ configured via `RadonConfig.peak_fit` (`PeakFitMode::Parabolic` or
 Operates on the ChESS response map. Computes the response-weighted
 centroid of a `(2r + 1)²` window around the seed:
 
-```text
-x_r = Σ_{p in W}  (x_p · R_p)  /  Σ_p R_p
-y_r = Σ_{p in W}  (y_p · R_p)  /  Σ_p R_p
-```
+\\[
+x_r = \frac{\sum_{p \in W} x_p \cdot R_p}{\sum_p R_p}, \qquad
+y_r = \frac{\sum_{p \in W} y_p \cdot R_p}{\sum_p R_p}
+\\]
 
 `R_p = max(R(x, y), 0)` clips negative responses so one strong
 negative pixel can't push the centroid outside the window.
@@ -82,17 +82,16 @@ Gradient-based. Solves a weighted least-squares system for the point
 closest (in a Mahalanobis sense) to all image-gradient lines in a
 local window. The structure tensor
 
-```text
-M = Σ_p  w_p · [ gx²  gx·gy ]
-               [ gx·gy  gy²  ]
-```
+\\[
+M = \sum_p w_p \begin{bmatrix} g_x^2 & g_x g_y \\ g_x g_y & g_y^2 \end{bmatrix}
+\\]
 
 is assembled with `3×3` central-difference gradients and radial
 weights `w_p = 1 / (1 + 0.5·‖p − seed‖²)`. The refined position is
 
-```text
-u = M⁻¹ · Σ_p  w_p · (p − seed) · [gx·gy]ᵀ
-```
+\\[
+u = M^{-1} \sum_p w_p \, (p - \mathrm{seed}) \, [g_x\ g_y]^{\mathsf T}
+\\]
 
 Rejections:
 

@@ -55,7 +55,7 @@ pub struct RadonDetectorParams {
     pub ray_radius: u32,
     /// Image-level supersampling factor. `1` operates on the input
     /// pixel grid; `2` bilinearly upsamples first (paper default).
-    /// M1 supports the set `{1, 2}`; values `>= 3` are clamped to `2`
+    /// Supports the set `{1, 2}`; values `>= 3` are clamped to `2`
     /// (the crate-internal `MAX_IMAGE_UPSAMPLE`). Higher factors are
     /// future work.
     pub image_upsample: u32,
@@ -85,8 +85,8 @@ impl Default for RadonDetectorParams {
             response_blur_radius: 1,
             peak_fit: PeakFitMode::Gaussian,
             threshold_rel: Self::DEFAULT_THRESHOLD_REL,
-            nms_radius: 4,
-            min_cluster_size: 2,
+            nms_radius: Self::DEFAULT_NMS_RADIUS,
+            min_cluster_size: Self::DEFAULT_MIN_CLUSTER_SIZE,
         }
     }
 }
@@ -104,6 +104,16 @@ impl RadonDetectorParams {
     /// only well-formed corners; this value is calibrated on the public
     /// reference images.
     pub const DEFAULT_THRESHOLD_REL: f32 = 0.28;
+
+    /// Default non-maximum-suppression half-radius, in working-resolution
+    /// pixels. Wider than the ChESS default to suit the wider Radon
+    /// response peak. Single source of truth shared with the
+    /// `chess-corners` facade's Radon presets.
+    pub const DEFAULT_NMS_RADIUS: u32 = 4;
+    /// Default minimum count of positive-response neighbours required to
+    /// accept a cluster. Single source of truth shared with the
+    /// `chess-corners` facade's Radon presets.
+    pub const DEFAULT_MIN_CLUSTER_SIZE: u32 = 2;
 
     /// Clamp `image_upsample` into the supported set `{1, 2}`.
     /// Values outside that range are silently clamped to

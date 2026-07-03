@@ -309,6 +309,14 @@ class Detector:
     def detect(self, image: np.ndarray) -> Detections: ...
     def config(self) -> DetectorConfig: ...
     def apply_config(self, cfg: DetectorConfig | None) -> None: ...
+    def chess_response(self, image: np.ndarray) -> np.ndarray:
+        """Return the intermediate dense ChESS response map.
+
+        Opt-in diagnostic evidence for debugging and visualization —
+        the per-pixel ChESS response computed internally — not part of
+        the normal detection result returned by :meth:`detect`.
+        """
+        ...
     def radon_heatmap(self, image: np.ndarray) -> np.ndarray:
         """Return the intermediate dense Radon-response heatmap.
 

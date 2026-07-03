@@ -10,10 +10,12 @@ the ROADMAP; **Deps** lists prerequisite IDs.
 
 **Status.** All milestone work (M1–M6) is done; the 1.0 surface is hardened and
 coherent. No `P0`/`P1` blocks the 1.0 freeze. The only remaining
-release-critical item is `API-09` (version bump + tag + publish), deferred by
-choice. Everything under *Post-1.0 / future* is `P2`/`P3`, off the 1.0 critical
-path. The pre-release campaign on `release/v1.0.0-prep` (see
-`docs/API_REVISION.md`) is folded into this state.
+release-critical item is `API-09` (version bump + tag + publish), now
+**in-progress**: the version bump and changelog cut landed in `0c50c768e`;
+remaining is tag, publish, and the vcpkg SHA512 finalize. Everything under
+*Post-1.0 / future* is `P2`/`P3`, off the 1.0 critical path. The pre-release
+campaign on `release/v1.0.0-prep` (see `docs/API_REVISION.md`) is folded into
+this state.
 
 ## PERF — profiling & optimization  ·  M2  ·  [design](design/perf-profiling.md)
 
@@ -44,7 +46,7 @@ path. The pre-release campaign on `release/v1.0.0-prep` (see
 | API-06 | P1 | done | M3 | — | Sealed `DenseDetector`/`CornerRefiner`; added `#[non_exhaustive]` to remaining public configs; documented MSRV (stable ≥ 1.88, `simd` = nightly). |
 | API-07 | P2 | done | M3 | API-06 | Documented core→binding unknown-variant → default mapping (forward-compat); caller input stays strict; pinned WASM enum discriminants. |
 | API-08 | P0 | done | M3 | API-01..07 | Advisory `cargo-semver-checks` CI vs `v0.11.2` (`continue-on-error`); flips to blocking at API-09. |
-| API-09 | P0 | blocked | M3 | API-08, M4, M5, M6 | **Release act (deferred by choice).** Bump 0.11.2→1.0.0, move `[Unreleased]`→`docs/changelog/1.0.0.md`, tag + publish (crates.io/PyPI/npm), finalize vcpkg (CPP-05), flip semver-checks to blocking. Awaiting the go decision. |
+| API-09 | P0 | in-progress | M3 | API-08, M4, M5, M6 | **Release act.** Bump 0.11.2→1.0.0 and move `[Unreleased]`→`docs/changelog/1.0.0.md` done (`0c50c768e`). Remaining: tag + publish (crates.io/PyPI/npm), finalize vcpkg SHA512 (CPP-05), flip semver-checks to blocking. |
 
 ## SITE — GitHub Pages  ·  M4 (dep M3)  ·  [design](design/site-architecture.md)
 
@@ -74,7 +76,7 @@ path. The pre-release campaign on `release/v1.0.0-prep` (see
 | ID | Pri | Status | Milestone | Deps | Task |
 |----|-----|--------|-----------|------|------|
 | DEBT-01 | P1 | done | M6 | API-03 | Deleted `chess_corners_core::unstable` (root-public fns required `ChessParams`, which lived only there — incoherent); promoted the genuinely-needed types to the crate root, demoted the rest to `pub(crate)`. Visibility-only; detection bit-stable. |
-| DEBT-02 | P1 | done | M6 | DEBT-01 | Deleted the facade `chess_corners::low_level` escape hatch; exposed lowering as `DetectorConfig::chess_params()` / `radon_detector_params()` / `coarse_to_fine_params()`. |
+| DEBT-02 | P1 | done | M6 | DEBT-01 | Deleted the facade `chess_corners::low_level` escape hatch; exposed lowering as public `DetectorConfig::chess_params()` / `radon_detector_params()`. `coarse_to_fine_params()` was subsequently withdrawn to `pub(crate)` (multiscale internals aren't part of the stable API) — see `crates/chess-corners/src/config/detection.rs`. |
 | DEBT-03 | P2 | done | M6 | — | Retired the `too_many_arguments` `#[allow]` cluster by bundling `(img,w,h)` into `ImageView`; the 3 justified allows kept with comments. |
 | DEBT-04 | P3 | done | M6 | — | Replaced the disk-sector argmax `-1.0f32` sentinel with `Option` (make-illegal-states-unrepresentable); bit-exact. |
 | DEBT-05 | P3 | done | M6 | — | Split the facade `config.rs` into a cohesive `config/` module; public paths byte-identical. |

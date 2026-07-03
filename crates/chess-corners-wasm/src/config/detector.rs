@@ -76,14 +76,15 @@ impl DetectorConfig {
 
 #[wasm_bindgen]
 impl DetectorConfig {
-    /// Construct a `DetectorConfig` with library defaults
-    /// (single-scale ChESS, absolute threshold = 0.0).
+    /// Construct a `DetectorConfig` with library defaults — equivalent to
+    /// [`Self::chess`] (single-scale ChESS; see that preset's absolute
+    /// threshold).
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self::from_value(RsDetectorConfig::default())
     }
 
-    /// Single-scale ChESS preset. JS: `DetectorConfig.chess()`.
+    /// Single-scale ChESS preset (absolute threshold 30.0). JS: `DetectorConfig.chess()`.
     pub fn chess() -> Self {
         Self::from_value(RsDetectorConfig::chess())
     }
@@ -94,7 +95,8 @@ impl DetectorConfig {
         Self::from_value(RsDetectorConfig::chess_multiscale())
     }
 
-    /// Whole-image Radon detector preset (relative threshold 0.01).
+    /// Whole-image Radon detector preset (relative threshold 0.28, the
+    /// `chess-corners-core` `RadonDetectorParams::DEFAULT_THRESHOLD_REL`).
     /// JS: `DetectorConfig.radon()`.
     pub fn radon() -> Self {
         Self::from_value(RsDetectorConfig::radon())

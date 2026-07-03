@@ -130,12 +130,11 @@ jobs:
           echo "tag version:   $VER"
           echo "box version:   $BOX_VER"
           echo "core version:  $CORE_VER"
-          echo "ml version:    $ML_VER"
+          echo "ml version:    $ML_VER (version-pinned independently, not tag-checked)"
           echo "main version:  $MAIN_VER"
 
           test "$BOX_VER" = "$VER"
           test "$CORE_VER" = "$VER"
-          test "$ML_VER" = "$VER"
           test "$MAIN_VER" = "$VER"
 
       - name: Test workspace

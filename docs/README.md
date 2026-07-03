@@ -26,6 +26,7 @@ docs/
   README.md          ← you are here (KB index)
   ROADMAP.md         ← milestones + sequencing
   BACKLOG.md         ← task registry (IDs, priority, status, deps)
+  API_REVISION.md    ← working doc: pre-1.0.0 API-contract audit (delete after release)
   design/            ← architecture + per-workstream design docs / RFCs
     architecture.md          crate layering & data flow
     algorithms-index.md      atomic-algorithm map + DAG
@@ -58,6 +59,7 @@ docs/
 
 ## Program status
 
-Milestones M1–M6 are done; only the 1.0.0 release act (`API-09`) is deferred by
-choice. See [`ROADMAP.md`](ROADMAP.md) for the milestone table and
+Milestones M1–M6 are done; the 1.0.0 release act (`API-09`) is in progress —
+version bump and changelog cut landed, tag/publish/vcpkg-finalize remain. See
+[`ROADMAP.md`](ROADMAP.md) for the milestone table and
 [`BACKLOG.md`](BACKLOG.md) for the task registry.

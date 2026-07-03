@@ -11,9 +11,10 @@ the M2/M3/M6 windows.
 
 All milestones are **done**. The `1.0.0` **release act** (`API-09`: version
 bump, `cargo-semver-checks` flip to blocking, tag → crates.io/PyPI/npm publish,
-vcpkg registry finalization) is deferred by choice — there is no schedule
-pressure, so the site, C++ bindings, and hardened surface ship together in the
-first release.
+vcpkg registry finalization) is **in progress**: the version bump (workspace
+→ `1.0.0`, `chess-corners-ml` → `0.12.0`) and changelog cut
+(`docs/changelog/1.0.0.md`) landed in `0c50c768e`. Remaining: tag `v1.0.0`,
+publish to crates.io/PyPI/npm, and finalize the vcpkg port SHA512.
 
 ## Milestones
 
@@ -26,13 +27,14 @@ first release.
 | M5 | vcpkg-installable C/C++ binding | `CPP-01..07` | done | `chess-corners-capi` + cbindgen header + C++ header + CMake `find_package`; vcpkg port is a verified-local draft (registry finalize at release). See [`design/cpp-vcpkg-bindings.md`](design/cpp-vcpkg-bindings.md). |
 | M6 | Design hardening before the freeze becomes semver-locked | `DEBT-01..05` | done | Deleted `unstable`/`low_level` escape hatches; config lowering exposed as `DetectorConfig` methods; argmax sentinel → `Option`; facade `config.rs` split. Detection bit-stable. |
 
-## Release act (deferred)
+## Release act (in progress)
 
 `API-08` shipped advisory `cargo-semver-checks` in CI (baseline `v0.11.2`).
-`API-09` is the release act only: bump `0.11.2 → 1.0.0`, flip semver-checks to
+`API-09` is the release act: bump `0.11.2 → 1.0.0`, flip semver-checks to
 blocking, tag `v1.0.0`, publish to crates.io/PyPI/npm, and finalize the vcpkg
-port (real tag + SHA512 + cross-platform `vcpkg install`, `CPP-05`). Awaiting
-the go decision.
+port (real tag + SHA512 + cross-platform `vcpkg install`, `CPP-05`). The
+version bump and changelog cut landed in `0c50c768e`; remaining: tag,
+publish, and the vcpkg SHA512 finalize.
 
 ## Continuous
 

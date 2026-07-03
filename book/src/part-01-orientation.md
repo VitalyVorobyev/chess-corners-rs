@@ -217,3 +217,8 @@ cargo run -p chess-corners --release --bin chess-corners -- \
 Every surface consumes the same `DetectorConfig` JSON schema. Examples
 live under `config/`. The next part walks through the public API in
 all four surfaces.
+
+---
+
+Next: [Part II](part-02-using-the-detector.md) walks through the
+public API in all four surfaces.

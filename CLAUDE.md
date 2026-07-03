@@ -109,24 +109,31 @@ cargo run -p chess-corners --release --bin chess-corners -- run config/chess_cli
 
 ## Workspace Architecture
 
-Six crates with strict layering (see AGENTS.md for full rules):
+Eight crates with strict layering (see AGENTS.md for full rules):
 
 ```
-chess-corners-py    (PyO3 bindings, module name: chess_corners)
-chess-corners-wasm  (wasm-bindgen bindings, npm package: @vitavision/chess-corners)
+chess-corners-py     (PyO3 bindings, module name: chess_corners)
+chess-corners-wasm   (wasm-bindgen bindings, npm package: @vitavision/chess-corners)
+chess-corners-capi   (C ABI: cbindgen header, cc_config/cc_result, panic-trapped boundary)
        ↓
-chess-corners       (High-level facade, multiscale pipeline, CLI)
+chess-corners        (High-level facade, multiscale pipeline, CLI)
        ↓
-chess-corners-core  (Low-level core: response, detection, refinement)
+chess-corners-core   (Low-level core: response, detection, refinement)
 
-box-image-pyramid   (Standalone u8 pyramid, 2x box-filter downsample)
-chess-corners-ml    (ONNX inference, optional via ml-refiner feature)
+box-image-pyramid      (Standalone u8 pyramid, 2x box-filter downsample)
+chess-corners-ml       (ONNX inference, optional via ml-refiner feature)
+chess-corners-testutil (Dev-only shared test fixtures; publish = false)
 ```
 
 **Dependency rules:**
 - `chess-corners-core` must NOT depend on `chess-corners`
 - `box-image-pyramid` is fully independent (zero chess-specific coupling, reusable in other projects)
 - Core algorithms go in `core`; convenience wrappers, builders, and feature gating go in the facade
+- `chess-corners-capi` depends only on the facade; its C header is generated via
+  `cargo run -p chess-corners-capi --bin generate-ffi-header --features generate-header`
+  (run with `--check` to verify no drift — see gates below)
+- `chess-corners-testutil` is a dev-only leaf (`publish = false`): zero-dep shared
+  fixtures/blur/noise helpers consumed by other crates' `[dev-dependencies]`
 
 ### Core Algorithm Pipeline
 
@@ -178,6 +185,9 @@ Notes:
   surface changes.
 - WASM: `wasm-pack build crates/chess-corners-wasm --target web` when
   the JS-facing API changes.
+- C ABI: `cargo run -p chess-corners-capi --bin generate-ffi-header
+  --features generate-header -- --check` when the facade's C-visible
+  surface changes; fails if the committed header has drifted.
 
 ## Documentation conventions
 

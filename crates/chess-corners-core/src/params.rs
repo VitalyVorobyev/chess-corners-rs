@@ -55,8 +55,8 @@ impl Default for ChessParams {
             // "R > 0 ⇒ corner". The facade raises this to a denoise
             // floor for real images.
             threshold: 0.0,
-            nms_radius: 2,
-            min_cluster_size: 2,
+            nms_radius: Self::DEFAULT_NMS_RADIUS,
+            min_cluster_size: Self::DEFAULT_MIN_CLUSTER_SIZE,
             refiner: RefinerKind::default(),
             orientation_method: Some(OrientationMethod::default()),
         }
@@ -64,6 +64,15 @@ impl Default for ChessParams {
 }
 
 impl ChessParams {
+    /// Default non-maximum-suppression half-radius, in pixels. Single
+    /// source of truth shared with the `chess-corners` facade's
+    /// `DetectionParams` default.
+    pub const DEFAULT_NMS_RADIUS: u32 = 2;
+    /// Default minimum count of positive-response neighbours required to
+    /// accept a cluster. Single source of truth shared with the
+    /// `chess-corners` facade's `DetectionParams` default.
+    pub const DEFAULT_MIN_CLUSTER_SIZE: u32 = 2;
+
     /// Ring radius in pixels selected by [`Self::use_radius10`]: `10`
     /// when set, `5` otherwise.
     #[inline]
