@@ -24,7 +24,7 @@ namespace chess_corners {
 /// Checked against `cc_abi_version()` before each detection (see
 /// `check_abi()`); a mismatch means the header and the linked library are
 /// incompatible and detection throws rather than reading a stale layout.
-inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 3;
+inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 4;
 
 /// One local grid-axis direction with its 1-sigma angular uncertainty.
 ///
@@ -78,6 +78,11 @@ private:
 /// Start from a preset (`Config::chess()`, `Config::radon_multiscale()`, ...)
 /// and tweak the public members. The default-constructed `Config` matches
 /// `Config::chess()`.
+///
+/// `chess_ring` applies to the ChESS strategy only; `ray_radius`,
+/// `image_upsample`, `response_blur_radius`, and `peak_fit` apply to the
+/// Radon strategy only. Fields that do not apply to the active `strategy`
+/// are ignored.
 struct Config {
     cc_strategy_t strategy;
     float threshold;
@@ -86,6 +91,13 @@ struct Config {
     cc_refiner_t refiner;
     cc_orientation_method_t orientation_method;
     std::uint32_t multiscale;
+    float merge_radius;
+    std::uint32_t upscale_factor;
+    cc_chess_ring_t chess_ring;
+    std::uint32_t ray_radius;
+    std::uint32_t image_upsample;
+    std::uint32_t response_blur_radius;
+    cc_peak_fit_t peak_fit;
 
     /// Defaults to the single-scale ChESS preset.
     Config() noexcept : Config(from_c(cc_config_chess())) {}
@@ -100,6 +112,13 @@ struct Config {
         out.refiner = c.refiner;
         out.orientation_method = c.orientation_method;
         out.multiscale = c.multiscale;
+        out.merge_radius = c.merge_radius;
+        out.upscale_factor = c.upscale_factor;
+        out.chess_ring = c.chess_ring;
+        out.ray_radius = c.ray_radius;
+        out.image_upsample = c.image_upsample;
+        out.response_blur_radius = c.response_blur_radius;
+        out.peak_fit = c.peak_fit;
         return out;
     }
 
@@ -113,6 +132,13 @@ struct Config {
         c.refiner = refiner;
         c.orientation_method = orientation_method;
         c.multiscale = multiscale;
+        c.merge_radius = merge_radius;
+        c.upscale_factor = upscale_factor;
+        c.chess_ring = chess_ring;
+        c.ray_radius = ray_radius;
+        c.image_upsample = image_upsample;
+        c.response_blur_radius = response_blur_radius;
+        c.peak_fit = peak_fit;
         return c;
     }
 

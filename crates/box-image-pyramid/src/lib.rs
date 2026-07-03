@@ -1,4 +1,5 @@
 #![cfg_attr(all(feature = "simd", feature = "par_pyramid"), feature(portable_simd))]
+#![warn(missing_docs)]
 //! Minimal image pyramid using 2x box-filter downsampling.
 //!
 //! This crate provides a simple, efficient image pyramid for u8 grayscale

@@ -5,7 +5,7 @@
 //! `disk_sector::fit` directly) but go through the public API to confirm the
 //! dispatch wiring and fallback paths are correct end-to-end.
 
-use chess_corners_core::{fit_axes_at_point, OrientationMethod};
+use chess_corners_core::{fit_axes_at_point, ImageView, OrientationMethod};
 use core::f32::consts::PI;
 
 // ---------------------------------------------------------------------------
@@ -62,8 +62,9 @@ fn disk_fit_recovers_extreme_skew_30_150() {
     let target0 = 30.0_f32.to_radians();
     let target1 = 150.0_f32.to_radians();
     let img = synthetic_corner(size, target0, target1, 0.7);
+    let view = ImageView::from_u8_slice(size, size, &img).expect("view dims match buffer");
 
-    let fit = fit_axes_at_point(&img, size, size, cx, cy, 5, OrientationMethod::DiskFit);
+    let fit = fit_axes_at_point(view, cx, cy, 5, OrientationMethod::DiskFit);
     let err = pair_err(fit.theta1, fit.theta2, target0, target1);
     assert!(
         err < 5.0_f32.to_radians(),
@@ -95,9 +96,10 @@ fn disk_fit_lazy_gate_matches_ring_fit_on_clean_orthogonal() {
     let theta0 = 0.0_f32.to_radians();
     let theta1 = 90.0_f32.to_radians();
     let img = synthetic_corner(size, theta0, theta1, 1.0);
+    let view = ImageView::from_u8_slice(size, size, &img).expect("view dims match buffer");
 
-    let lut = fit_axes_at_point(&img, size, size, cx, cy, 5, OrientationMethod::RingFit);
-    let disk = fit_axes_at_point(&img, size, size, cx, cy, 5, OrientationMethod::DiskFit);
+    let lut = fit_axes_at_point(view, cx, cy, 5, OrientationMethod::RingFit);
+    let disk = fit_axes_at_point(view, cx, cy, 5, OrientationMethod::DiskFit);
 
     // The lazy gate fires and returns the ring-fit fallback bit-identically.
     assert_eq!(
@@ -185,11 +187,10 @@ fn canonical_axes_match_across_methods() {
             let theta0 = (axis0_deg as f32).to_radians();
             let theta1 = theta0 + sep_deg.to_radians();
             let img = synthetic_corner(size, theta0, theta1, width);
+            let view = ImageView::from_u8_slice(size, size, &img).expect("view dims match buffer");
 
-            let ring =
-                fit_axes_at_point(&img, size, size, cx, cy, radius, OrientationMethod::RingFit);
-            let disk =
-                fit_axes_at_point(&img, size, size, cx, cy, radius, OrientationMethod::DiskFit);
+            let ring = fit_axes_at_point(view, cx, cy, radius, OrientationMethod::RingFit);
+            let disk = fit_axes_at_point(view, cx, cy, radius, OrientationMethod::DiskFit);
 
             // (1) Same unordered axis set (mod π).
             let set_err = pair_err(disk.theta1, disk.theta2, ring.theta1, ring.theta2);
@@ -240,9 +241,10 @@ fn disk_fit_border_falls_back_to_ring_fit() {
     let cx = 4.0f32;
     let cy = 4.0f32;
     let img = synthetic_corner(size, 0.2, 1.2, 1.0);
+    let view = ImageView::from_u8_slice(size, size, &img).expect("view dims match buffer");
 
-    let lut = fit_axes_at_point(&img, size, size, cx, cy, 5, OrientationMethod::RingFit);
-    let disk = fit_axes_at_point(&img, size, size, cx, cy, 5, OrientationMethod::DiskFit);
+    let lut = fit_axes_at_point(view, cx, cy, 5, OrientationMethod::RingFit);
+    let disk = fit_axes_at_point(view, cx, cy, 5, OrientationMethod::DiskFit);
 
     // Border → extract_disk returns None → falls back to ring-fit bit-identically.
     assert_eq!(

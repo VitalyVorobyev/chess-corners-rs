@@ -68,12 +68,35 @@ typedef uint32_t cc_refiner_t;
 typedef uint32_t cc_orientation_method_t;
 
 /**
+ * ChESS sampling-ring tag stored in `cc_config::chess_ring`.
+ *
+ * Applies to the ChESS strategy only; ignored when `strategy` is
+ * `CC_STRATEGY_RADON`.
+ */
+typedef uint32_t cc_chess_ring_t;
+
+/**
+ * Radon subpixel peak-fit tag stored in `cc_config::peak_fit`.
+ *
+ * Applies to the Radon strategy only; ignored when `strategy` is
+ * `CC_STRATEGY_CHESS`.
+ */
+typedef uint32_t cc_peak_fit_t;
+
+/**
  * Flat, C-fillable detector configuration.
  *
  * Construct one with a preset (`cc_config_default`, `cc_config_chess`, …)
- * and tweak the exposed fields. Knobs not represented here (per-strategy
- * ring/ray geometry, refiner tuning, pre-detection upscaling, cross-level
- * merge radius) fall back to the selected strategy preset's defaults.
+ * and tweak the exposed fields. Every `DetectorConfig` knob is
+ * representable here except two that fall back to library defaults:
+ * refiner-specific tuning (only the refiner *kind* is exposed) and the
+ * multiscale pyramid detail (level count, minimum size, refinement
+ * radius) behind the on/off `multiscale` switch.
+ *
+ * Fields are grouped by applicability: `chess_ring` applies to the
+ * ChESS strategy only, while `ray_radius` / `image_upsample` /
+ * `response_blur_radius` / `peak_fit` apply to the Radon strategy only.
+ * Fields that do not apply to the active `strategy` are ignored.
  */
 typedef struct cc_config {
   /**
@@ -106,6 +129,47 @@ typedef struct cc_config {
    * default three-level coarse-to-fine pyramid.
    */
   uint32_t multiscale;
+  /**
+   * Cross-level duplicate-suppression radius in base-image pixels.
+   * After coarse-level seeds are refined into the base image, refined
+   * positions within this radius are merged into one output corner.
+   */
+  float merge_radius;
+  /**
+   * Pre-pipeline integer upscale factor. `0` disables upscaling (the
+   * explicit off-state); `2`, `3`, or `4` upscale by that factor before
+   * detection. Any other value (including `1`) is rejected with
+   * `CC_ERR_UPSCALE`. Output coordinates are rescaled back to the input
+   * pixel frame.
+   */
+  uint32_t upscale_factor;
+  /**
+   * One of the `CC_CHESS_RING_*` constants. Applies to the ChESS
+   * strategy only; ignored for Radon.
+   */
+  cc_chess_ring_t chess_ring;
+  /**
+   * Radon ray half-length in working-resolution pixels (ray has
+   * `2·ray_radius + 1` samples). Applies to the Radon strategy only;
+   * ignored for ChESS. Clamped to at least `1` by the core detector.
+   */
+  uint32_t ray_radius;
+  /**
+   * Radon image-level supersampling factor applied before ray
+   * integration (`1` or `2`). Applies to the Radon strategy only;
+   * ignored for ChESS. Values `≥ 3` are clamped to `2`.
+   */
+  uint32_t image_upsample;
+  /**
+   * Half-size of the box blur applied to the Radon response map (`0`
+   * disables it). Applies to the Radon strategy only; ignored for ChESS.
+   */
+  uint32_t response_blur_radius;
+  /**
+   * One of the `CC_PEAK_FIT_*` constants. Applies to the Radon strategy
+   * only; ignored for ChESS.
+   */
+  cc_peak_fit_t peak_fit;
 } cc_config;
 
 /**
@@ -212,6 +276,27 @@ typedef struct cc_result {
  * `cc_corner::has_orientation == 0` and a zeroed `axes` array.
  */
 #define CC_ORIENTATION_NONE 2
+
+/**
+ * Paper-default radius-5 ring (16 samples).
+ */
+#define CC_CHESS_RING_CANONICAL 0
+
+/**
+ * Radius-10 ring: a larger support window that samples farther from
+ * the candidate centre.
+ */
+#define CC_CHESS_RING_BROAD 1
+
+/**
+ * Parabolic fit on the raw response values.
+ */
+#define CC_PEAK_FIT_PARABOLIC 0
+
+/**
+ * Parabolic fit on `log(response)` (Gaussian peak). The Radon default.
+ */
+#define CC_PEAK_FIT_GAUSSIAN 1
 
 #ifdef __cplusplus
 extern "C" {

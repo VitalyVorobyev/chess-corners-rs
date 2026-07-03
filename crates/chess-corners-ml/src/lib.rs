@@ -1,10 +1,12 @@
+#![warn(missing_docs)]
 //! ONNX-backed ML refiner for ChESS corner candidates.
 //!
-//! **Internal crate — not published to crates.io.**
-//! `chess-corners-ml` is an implementation detail of the chess-corners
-//! workspace. It backs the optional `ml-refiner` feature of the
-//! `chess-corners` facade crate and is not a public API contract; its
-//! surface may change without semver consideration.
+//! `chess-corners-ml` is a support crate that provides ONNX inference
+//! for the `chess-corners` facade's optional `ml-refiner` feature. It
+//! is published to crates.io as a dependency of `chess-corners`, but
+//! it is not designed as a standalone API: its surface follows the
+//! facade's ML-refiner needs and remains pre-1.0 (`0.x`), so it may
+//! change in minor releases.
 //!
 //! This crate provides [`MlModel`], a thin wrapper around a
 //! [tract-onnx](https://docs.rs/tract-onnx) runtime that predicts
@@ -36,7 +38,7 @@
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 #[cfg(feature = "embed-model")]
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use tract_onnx::prelude::tract_ndarray::{Array4, Ix2};
 use tract_onnx::prelude::*;
 
@@ -246,8 +248,8 @@ const EMBED_META_JSON: &[u8] = include_bytes!(concat!(
 
 #[cfg(feature = "embed-model")]
 fn embedded_model_path() -> Result<PathBuf> {
-    // `OnceLock::get_or_init` serializes the writes across threads in
-    // this process. Without it, parallel `#[test]` runs all entered
+    // Serializing the write phase across threads in this process is load
+    // bearing. Without it, parallel `#[test]` runs all entered
     // `write_if_changed`, the second `std::fs::write` truncated the
     // file to 0 bytes mid-rewrite, and a concurrent `tract_onnx`
     // model load saw an empty `.data` slice and panicked
@@ -258,19 +260,39 @@ fn embedded_model_path() -> Result<PathBuf> {
     // atomic write-then-rename in `write_if_changed` ensures the
     // file is either at its old contents or at its new contents,
     // never partially written.
+    //
+    // `OnceLock::get_or_try_init` (which would express this directly) is
+    // still nightly-only (`once_cell_try`), and this crate ships to
+    // stable-toolchain consumers, so init is hand-rolled as a
+    // double-checked lock: `PATH.get()` is the fast, lock-free path once
+    // initialized; `INIT_LOCK` serializes the (rare) first-time write so
+    // a temp-dir I/O failure returns `Err` instead of panicking.
     static PATH: OnceLock<PathBuf> = OnceLock::new();
-    let path = PATH.get_or_init(|| {
-        let dir = std::env::temp_dir().join("chess_corners_ml");
-        std::fs::create_dir_all(&dir).expect("create ML model temp dir");
-        let onnx_path = dir.join(EMBED_ONNX_NAME);
-        let data_path = dir.join(EMBED_ONNX_DATA_NAME);
-        // Write `.data` before `.onnx` so tract never sees an `.onnx`
-        // that references a missing or partially-written `.data`.
-        write_if_changed(&data_path, EMBED_ONNX_DATA).expect("write embedded ONNX data");
-        write_if_changed(&onnx_path, EMBED_ONNX).expect("write embedded ONNX model");
-        onnx_path
-    });
-    Ok(path.clone())
+    static INIT_LOCK: Mutex<()> = Mutex::new(());
+
+    if let Some(path) = PATH.get() {
+        return Ok(path.clone());
+    }
+
+    let _guard = INIT_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(path) = PATH.get() {
+        return Ok(path.clone());
+    }
+
+    let dir = std::env::temp_dir().join("chess_corners_ml");
+    std::fs::create_dir_all(&dir).context("create ML model temp dir")?;
+    let onnx_path = dir.join(EMBED_ONNX_NAME);
+    let data_path = dir.join(EMBED_ONNX_DATA_NAME);
+    // Write `.data` before `.onnx` so tract never sees an `.onnx`
+    // that references a missing or partially-written `.data`.
+    write_if_changed(&data_path, EMBED_ONNX_DATA).context("write embedded ONNX data")?;
+    write_if_changed(&onnx_path, EMBED_ONNX).context("write embedded ONNX model")?;
+    // `set` cannot fail: `INIT_LOCK` is still held, and `get()` was
+    // just re-checked above.
+    let _ = PATH.set(onnx_path.clone());
+    Ok(onnx_path)
 }
 
 /// Write `data` to `path` only if the file doesn't already contain

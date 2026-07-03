@@ -231,7 +231,7 @@ impl MultiscaleConfig {
             debug_assert_eq!(tag, "single_scale");
             return Ok(Self::from_rs(RsMultiscaleConfig::SingleScale));
         }
-        let dict = data.cast::<PyDict>().cloned().unwrap();
+        let dict = require_dict(data, "multiscale")?;
         reject_unknown_keys(&dict, &["single_scale", "pyramid"], "multiscale")?;
         let has_single = dict.get_item("single_scale")?.is_some();
         let has_pyramid = dict.get_item("pyramid")?.is_some();

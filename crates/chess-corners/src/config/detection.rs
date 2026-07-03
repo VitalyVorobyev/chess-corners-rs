@@ -43,8 +43,8 @@ impl Default for DetectionParams {
     fn default() -> Self {
         // Matches the ChESS presets; `DetectorConfig::default()` is `chess()`.
         Self {
-            nms_radius: 2,
-            min_cluster_size: 2,
+            nms_radius: ChessParams::DEFAULT_NMS_RADIUS,
+            min_cluster_size: ChessParams::DEFAULT_MIN_CLUSTER_SIZE,
         }
     }
 }
@@ -191,8 +191,8 @@ impl DetectorConfig {
             strategy: DetectionStrategy::Radon(RadonConfig::default()),
             threshold: RadonDetectorParams::DEFAULT_THRESHOLD_REL,
             detection: DetectionParams {
-                nms_radius: 4,
-                min_cluster_size: 2,
+                nms_radius: RadonDetectorParams::DEFAULT_NMS_RADIUS,
+                min_cluster_size: RadonDetectorParams::DEFAULT_MIN_CLUSTER_SIZE,
             },
             multiscale: MultiscaleConfig::SingleScale,
             ..Self::chess()
@@ -204,14 +204,8 @@ impl DetectorConfig {
     /// machinery for less full-resolution detector work on large frames.
     pub fn radon_multiscale() -> Self {
         Self {
-            strategy: DetectionStrategy::Radon(RadonConfig::default()),
-            threshold: RadonDetectorParams::DEFAULT_THRESHOLD_REL,
-            detection: DetectionParams {
-                nms_radius: 4,
-                min_cluster_size: 2,
-            },
             multiscale: MultiscaleConfig::pyramid_default(),
-            ..Self::chess()
+            ..Self::radon()
         }
     }
 
@@ -354,7 +348,7 @@ impl DetectorConfig {
     /// the same top-level multiscale settings. Use this when composing
     /// the multiscale stages directly instead of through
     /// [`Detector`](crate::Detector).
-    pub fn coarse_to_fine_params(&self) -> Option<CoarseToFineParams> {
+    pub(crate) fn coarse_to_fine_params(&self) -> Option<CoarseToFineParams> {
         let MultiscaleConfig::Pyramid {
             levels,
             min_size,

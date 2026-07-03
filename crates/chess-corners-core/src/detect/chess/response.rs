@@ -54,18 +54,22 @@ impl Roi {
         }
     }
 
+    /// Left edge of the ROI (inclusive).
     #[inline]
     pub fn x0(&self) -> usize {
         self.x0
     }
+    /// Top edge of the ROI (inclusive).
     #[inline]
     pub fn y0(&self) -> usize {
         self.y0
     }
+    /// Right edge of the ROI (exclusive).
     #[inline]
     pub fn x1(&self) -> usize {
         self.x1
     }
+    /// Bottom edge of the ROI (exclusive).
     #[inline]
     pub fn y1(&self) -> usize {
         self.y1
@@ -150,11 +154,22 @@ fn ring_from_params(params: &ChessParams) -> (RingOffsets, &'static [(i32, i32);
 /// All feature combinations produce the same output values (within a
 /// small tolerance for floating‑point rounding), and differ only in
 /// performance characteristics.
+///
+/// # Panics
+///
+/// Panics if `img.len() != w * h`.
 #[cfg_attr(
     feature = "tracing",
     instrument(level = "info", skip(img, params), fields(w, h))
 )]
 pub fn chess_response_u8(img: &[u8], w: usize, h: usize, params: &ChessParams) -> ResponseMap {
+    assert_eq!(
+        img.len(),
+        w * h,
+        "chess_response_u8: img.len() ({}) must equal w*h ({w} * {h} = {})",
+        img.len(),
+        w * h,
+    );
     // rayon path compiled only when feature is enabled
     #[cfg(feature = "rayon")]
     {
@@ -185,6 +200,10 @@ fn chess_response_u8_scalar(img: &[u8], w: usize, h: usize, params: &ChessParams
 /// SIMD, and optional `rayon` row kernels as [`chess_response_u8`], so ROI
 /// refinement benefits from the same feature combinations as the full-frame
 /// response path.
+///
+/// # Panics
+///
+/// Panics if `img.len() != img_w * img_h` (the *full* image, not the ROI).
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -200,6 +219,13 @@ pub fn chess_response_u8_patch(
     params: &ChessParams,
     roi: Roi,
 ) -> ResponseMap {
+    assert_eq!(
+        img.len(),
+        img_w * img_h,
+        "chess_response_u8_patch: img.len() ({}) must equal img_w*img_h ({img_w} * {img_h} = {})",
+        img.len(),
+        img_w * img_h,
+    );
     let Roi { x0, y0, x1, y1 } = roi;
 
     // Clamp ROI to the image bounds
@@ -552,6 +578,23 @@ mod tests {
 
     fn idx(w: usize, x: usize, y: usize) -> usize {
         y * w + x
+    }
+
+    #[test]
+    #[should_panic(expected = "chess_response_u8: img.len()")]
+    fn chess_response_u8_panics_on_dimension_mismatch() {
+        let img = vec![0u8; 10];
+        let params = ChessParams::default();
+        let _ = chess_response_u8(&img, 4, 4, &params);
+    }
+
+    #[test]
+    #[should_panic(expected = "chess_response_u8_patch: img.len()")]
+    fn chess_response_u8_patch_panics_on_dimension_mismatch() {
+        let img = vec![0u8; 10];
+        let params = ChessParams::default();
+        let roi = Roi::new(0, 0, 2, 2).unwrap();
+        let _ = chess_response_u8_patch(&img, 4, 4, &params, roi);
     }
 
     #[test]

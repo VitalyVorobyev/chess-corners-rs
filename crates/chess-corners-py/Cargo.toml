@@ -16,6 +16,10 @@ path = "src/lib.rs"
 doc = false
 
 [features]
+# `ml-refiner` is default-on deliberately: pip/maturin wheel users cannot
+# toggle Cargo features at install time, so the published wheel is
+# batteries-included (bundles tract-onnx + the embedded ONNX model) rather
+# than shipping a crippled default that silently lacks `ChessRefiner.ml()`.
 default = ["ml-refiner"]
 ml-refiner = ["chess-corners/ml-refiner"]
 

@@ -6,7 +6,7 @@ use pyo3::types::{PyDict, PyType};
 
 use super::parse::{
     accept_dict_or_bare_string, config_error, extract_int, json_dumps, json_loads,
-    reject_unknown_keys,
+    reject_unknown_keys, require_dict,
 };
 
 // ---------------------------------------------------------------------------
@@ -141,7 +141,7 @@ impl UpscaleConfig {
             debug_assert_eq!(tag, "disabled");
             return Ok(Self::from_rs(RsUpscaleConfig::Disabled));
         }
-        let dict = data.cast::<PyDict>().cloned().unwrap();
+        let dict = require_dict(data, "upscale")?;
         reject_unknown_keys(&dict, &["disabled", "fixed"], "upscale")?;
         let has_disabled = dict.get_item("disabled")?.is_some();
         let has_fixed = dict.get_item("fixed")?.is_some();

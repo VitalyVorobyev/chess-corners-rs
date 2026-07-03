@@ -103,21 +103,6 @@ impl Detector {
         Ok(())
     }
 
-    /// Mutable access to the active config for ad-hoc tweaks. The
-    /// caller is responsible for keeping the config valid; callers
-    /// that change [`DetectorConfig::upscale`] should use
-    /// [`Self::set_config`] instead so the upscale invariants are
-    /// re-validated.
-    pub fn config_mut(&mut self) -> &mut DetectorConfig {
-        // Drop ML state on raw mutation; the next detect call rebuilds
-        // it against whatever fallback refiner the new config implies.
-        #[cfg(feature = "ml-refiner")]
-        {
-            self.ml_state = None;
-        }
-        &mut self.cfg
-    }
-
     /// Detect chessboard corners from a raw 8-bit grayscale buffer.
     ///
     /// # Errors
@@ -252,5 +237,72 @@ impl Detector {
             &cfg.strategy,
             crate::DetectionStrategy::Chess(c) if matches!(c.refiner, crate::ChessRefiner::Ml)
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::UpscaleConfig;
+    use chess_corners_testutil::aa_chessboard;
+
+    fn synthetic_board(size: usize) -> Vec<u8> {
+        aa_chessboard(size, 12, (0.0, 0.0), 20, 220)
+    }
+
+    #[test]
+    fn detect_u8_reports_dimension_mismatch() {
+        let mut det = Detector::with_default();
+        let img = vec![0u8; 10];
+        let err = det.detect_u8(&img, 8, 8).unwrap_err();
+        match err {
+            ChessError::DimensionMismatch { expected, actual } => {
+                assert_eq!(expected, 64);
+                assert_eq!(actual, 10);
+            }
+            other => panic!("expected ChessError::DimensionMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_config_valid_swap_changes_detection_outcome() {
+        let size = 96usize;
+        let img = synthetic_board(size);
+
+        let mut det = Detector::new(DetectorConfig::chess().with_threshold(30.0)).unwrap();
+        let low_threshold = det.detect_u8(&img, size as u32, size as u32).unwrap();
+        assert!(
+            !low_threshold.is_empty(),
+            "expected corners at the default threshold"
+        );
+
+        det.set_config(DetectorConfig::chess().with_threshold(5000.0))
+            .expect("valid upscale config");
+        let high_threshold = det.detect_u8(&img, size as u32, size as u32).unwrap();
+        assert!(
+            high_threshold.len() < low_threshold.len(),
+            "raising the response threshold far above real corner strengths \
+             must suppress detections: low={} high={}",
+            low_threshold.len(),
+            high_threshold.len()
+        );
+    }
+
+    #[test]
+    fn set_config_rejects_invalid_upscale_and_leaves_detector_usable() {
+        let mut det = Detector::new(DetectorConfig::chess()).unwrap();
+        let original_upscale = det.config().upscale;
+
+        let bad = DetectorConfig::chess().with_upscale(UpscaleConfig::fixed(5));
+        let err = det.set_config(bad).unwrap_err();
+        assert!(matches!(err, ChessError::Upscale(_)));
+
+        // The failed swap must not have mutated the active config.
+        assert_eq!(det.config().upscale, original_upscale);
+
+        // The detector must still be usable after the rejected swap.
+        let img = synthetic_board(64);
+        let corners = det.detect_u8(&img, 64, 64).unwrap();
+        assert!(!corners.is_empty());
     }
 }

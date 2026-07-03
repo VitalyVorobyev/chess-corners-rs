@@ -61,7 +61,7 @@ inside a `DetectionStrategy` variant. Top-level fields are
 
 ```python
 cfg = chess_corners.DetectorConfig.chess()  # ChESS, no pyramid
-cfg.threshold = 60.0  # plain float; ChESS = absolute response floor (default 30), Radon = fraction of per-frame max (default 0.01)
+cfg.threshold = 60.0  # plain float; ChESS = absolute response floor (default 30), Radon = fraction of per-frame max (default 0.28)
 cfg.merge_radius = 3.0
 
 # Enable the coarse-to-fine pyramid (both detectors honour this):
@@ -240,7 +240,9 @@ uv pip install --python .venv/bin/python Pillow
 
 ## ML refiner
 
-If the bindings are built with the `ml-refiner` feature, the ML
-pipeline is selected by passing `ChessRefiner.ml()` as the active
-variant on the ChESS strategy. The ML refiner runs a small ONNX model
-on normalized intensity patches around each candidate.
+The published wheel is built with the `ml-refiner` feature on by
+default (pip install cannot toggle Cargo features), so `ChessRefiner.ml()`
+is always available out of the box. The ML pipeline is selected by
+passing `ChessRefiner.ml()` as the active variant on the ChESS
+strategy. The ML refiner runs a small ONNX model on normalized
+intensity patches around each candidate.

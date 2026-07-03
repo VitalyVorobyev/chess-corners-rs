@@ -109,31 +109,38 @@ cargo run -p chess-corners --release --bin chess-corners -- run config/chess_cli
 
 ## Workspace Architecture
 
-Six crates with strict layering (see AGENTS.md for full rules):
+Eight crates with strict layering (see AGENTS.md for full rules):
 
 ```
-chess-corners-py    (PyO3 bindings, module name: chess_corners)
-chess-corners-wasm  (wasm-bindgen bindings, npm package: @vitavision/chess-corners)
+chess-corners-py     (PyO3 bindings, module name: chess_corners)
+chess-corners-wasm   (wasm-bindgen bindings, npm package: @vitavision/chess-corners)
+chess-corners-capi   (C ABI: cbindgen header, cc_config/cc_result, panic-trapped boundary)
        ↓
-chess-corners       (High-level facade, multiscale pipeline, CLI)
+chess-corners        (High-level facade, multiscale pipeline, CLI)
        ↓
-chess-corners-core  (Low-level core: response, detection, refinement)
+chess-corners-core   (Low-level core: response, detection, refinement)
 
-box-image-pyramid   (Standalone u8 pyramid, 2x box-filter downsample)
-chess-corners-ml    (ONNX inference, optional via ml-refiner feature)
+box-image-pyramid      (Standalone u8 pyramid, 2x box-filter downsample)
+chess-corners-ml       (ONNX inference, optional via ml-refiner feature)
+chess-corners-testutil (Dev-only shared test fixtures; publish = false)
 ```
 
 **Dependency rules:**
 - `chess-corners-core` must NOT depend on `chess-corners`
 - `box-image-pyramid` is fully independent (zero chess-specific coupling, reusable in other projects)
 - Core algorithms go in `core`; convenience wrappers, builders, and feature gating go in the facade
+- `chess-corners-capi` depends only on the facade; its C header is generated via
+  `cargo run -p chess-corners-capi --bin generate-ffi-header --features generate-header`
+  (run with `--check` to verify no drift — see gates below)
+- `chess-corners-testutil` is a dev-only leaf (`publish = false`): zero-dep shared
+  fixtures/blur/noise helpers consumed by other crates' `[dev-dependencies]`
 
 ### Core Algorithm Pipeline
 
-1. **Response** (`core/response.rs`) — Dense ChESS response using 16-sample rings
-2. **Detection** (`core/detect.rs`) — Thresholding + NMS + cluster filtering
-3. **Refinement** (`core/refine.rs`) — Pluggable trait with 3 built-in refiners: CenterOfMass, Förstner, SaddlePoint
-4. **Descriptors** (`core/descriptor.rs`) — Corner descriptors lifted from raw detections via `corners_to_descriptors_with_method`. Carries two-axis orientation with per-axis 1σ uncertainty.
+1. **Response** (`core/detect/chess/response.rs`, `core/detect/radon/response.rs`) — Dense ChESS / Radon response computation
+2. **Detection** (`core/detect/`) — Thresholding + NMS + cluster filtering
+3. **Refinement** (`core/refine/`) — Pluggable trait with 3 built-in refiners: CenterOfMass, Förstner, SaddlePoint
+4. **Descriptors** (`core/orientation/descriptor.rs`) — Corner descriptors lifted from raw detections via `describe_corners`. Carries two-axis orientation with per-axis 1σ uncertainty.
 5. **Orientation methods** (`core/orientation/`) — Detector-agnostic. `RingFit` (default) runs a 16-sample ring Gauss-Newton fit; `DiskFit` is a full-disk crossing-line estimator with a lazy-gate fallback to `RingFit`. Both ChESS and Radon detectors share this stage.
 
 ### Multiscale Pipeline (`chess-corners`)
@@ -178,6 +185,9 @@ Notes:
   surface changes.
 - WASM: `wasm-pack build crates/chess-corners-wasm --target web` when
   the JS-facing API changes.
+- C ABI: `cargo run -p chess-corners-capi --bin generate-ffi-header
+  --features generate-header -- --check` when the facade's C-visible
+  surface changes; fails if the committed header has drifted.
 
 ## Documentation conventions
 

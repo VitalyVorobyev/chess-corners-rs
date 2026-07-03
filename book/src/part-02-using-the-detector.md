@@ -15,7 +15,7 @@ active strategy variant.
 | Top-level field       | Type                                                                                                                                              |
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
 | `strategy`            | `DetectionStrategy::Chess(ChessConfig)` or `DetectionStrategy::Radon(RadonConfig)` — selects the detector and carries its tuning.                  |
-| `threshold`           | A single `f32`. ChESS reads it as an absolute floor on the raw response (default `30`); Radon reads it as a fraction in `[0, 1]` of the per-frame maximum (default `0.01`). See [Part III §3.3.1](part-03-chess-detector.md#331-thresholding-and-nms) and [Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline). |
+| `threshold`           | A single `f32`. ChESS reads it as an absolute floor on the raw response (default `30`); Radon reads it as a fraction in `[0, 1]` of the per-frame maximum (default `0.28`). See [Part III §3.3.1](part-03-chess-detector.md#331-thresholding-and-nms) and [Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline). |
 | `detection`           | `DetectionParams { nms_radius, min_cluster_size }` — shared NMS and cluster-filter knobs honoured by both detectors.                              |
 | `multiscale`          | `MultiscaleConfig::SingleScale` or `MultiscaleConfig::Pyramid { levels, min_size, refinement_radius }`. Honoured by both detectors.                |
 | `upscale`             | `UpscaleConfig::Disabled` or `UpscaleConfig::Fixed(factor)` (`factor ∈ {2, 3, 4}`). Pre-pipeline bilinear upscaling for low-resolution inputs.    |
@@ -75,7 +75,7 @@ Add the facade crate:
 
 ```toml
 [dependencies]
-chess-corners = "0.11"
+chess-corners = "1.0"
 image = "0.25"          # optional, for GrayImage integration
 ```
 

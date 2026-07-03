@@ -109,17 +109,14 @@ paths sort final outputs by stable keys before returning.
 The Python package exposes a Python-native `chess_corners.Detector` and
 configuration classes that round-trip through the same JSON shape as the
 Rust facade. `Detector.detect(image)` accepts a 2D C-contiguous `uint8`
-NumPy array and returns a `float32 (N, 7)` array:
-
-```text
-x, y, response,
-axis0_angle, axis0_sigma, axis1_angle, axis1_sigma
-```
-
-When orientation is disabled (`without_orientation()`), the four axis
-columns are `NaN` for every row; the array shape is unchanged.
+NumPy array and returns a structure-of-arrays `Detections` object with
+named fields — `.xy` (`(N, 2)`), `.response` (`(N,)`), `.angles`
+(`(N, 2)`), `.sigmas` (`(N, 2)`) — where `.angles` / `.sigmas` are `None`
+when orientation is disabled (`without_orientation()`).
 
 The WebAssembly package exposes the same detector/configuration concepts
-for JavaScript and TypeScript, returning a `Float32Array` with the same
-stride-7 corner layout (the four axis values are likewise `NaN` when
-orientation is disabled).
+for JavaScript and TypeScript, returning a flat stride-7 `Float32Array`
+(`x, y, response, axis0_angle, axis0_sigma, axis1_angle, axis1_sigma`; the
+four axis values are `NaN` when orientation is disabled).
+
+The exact per-binding shapes are the rustdoc/book reference.

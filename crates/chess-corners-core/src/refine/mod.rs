@@ -50,9 +50,13 @@ mod private {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RefineStatus {
+    /// Refinement converged; the result's `x`/`y` are usable.
     Accepted,
+    /// The refiner ran but the result failed its acceptance criterion.
     Rejected,
+    /// The seed is too close to the image border for the refiner's patch window.
     OutOfBounds,
+    /// The patch lacks enough structure for a reliable estimate.
     IllConditioned,
 }
 
@@ -106,6 +110,7 @@ pub struct RefineResult {
 }
 
 impl RefineResult {
+    /// Build a [`RefineStatus::Accepted`] result at `xy` with the given `score`.
     #[inline]
     pub fn accepted(xy: [f32; 2], score: f32) -> Self {
         Self {
@@ -203,8 +208,11 @@ impl Default for RefinerKind {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Refiner {
+    /// 5×5 weighted centroid on the response map.
     CenterOfMass(CenterOfMassRefiner),
+    /// Gradient structure-tensor refinement on the image patch.
     Forstner(ForstnerRefiner),
+    /// Quadratic surface fit on the image patch.
     SaddlePoint(SaddlePointRefiner),
 }
 

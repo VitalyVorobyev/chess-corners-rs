@@ -72,7 +72,7 @@ Reading the CDF:
 
 - **Förstner** and **cv2.cornerSubPix** have the lowest errors on
   clean data, with mean around 0.06 px and `p95` around 0.10 px.
-- **CenterOfMass** and **ML (ONNX v4)** land around 0.09 px mean /
+- **CenterOfMass** and **ML (ONNX)** land around 0.09 px mean /
   0.15 px `p95`.
 - **SaddlePoint** has a fat right tail on this fixture: its
   parabolic fit becomes ill-conditioned on a subset of the 36
@@ -104,7 +104,7 @@ Log-y axis, same shaded band as §7.3.
 ![Accuracy vs additive noise σ](img/bench/accuracy_vs_noise.png)
 
 This is the regime where the ML refiner has the lowest mean error in
-the plot. At `σ_noise ≥ 8` gray levels, the ONNX v4 model is ahead of
+the plot. At `σ_noise ≥ 8` gray levels, the ML (ONNX) model is ahead of
 the hand-coded methods on this synthetic fixture. The model was trained
 with noise augmentation over `σ ∈ [0, 10]`; that is the strongest
 supported explanation for the result here. Validate this separately on
@@ -149,12 +149,12 @@ The Pareto frontier, fast-to-slow:
 | `Förstner`          | ~60 ns        | 0.06 px               | Lowest clean-data mean error; degrades with blur.                     |
 | `SaddlePoint`       | ~120 ns       | 0.11 px               | Stable across conditions; best geometric result on the blur row.      |
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.05 px               | OpenCV's iterative gradient refiner.                                  |
-| `ML (ONNX v4)`      | ~250 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row in this fixture.               |
+| `ML (ONNX)`         | ~250 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row in this fixture.               |
 
-The OpenCV timing in earlier revisions of this chapter was reported
-at ~300 µs because the measurement loop included fixture construction;
-the refinement-only value (~2.7 µs) is what the table above quotes.
-See `tools/book/opencv_subpix_sweep.py` for the exact measurement
+A measurement loop that includes fixture construction in the timed
+region reports ~300 µs for `cv2.cornerSubPix`; the refinement-only
+value (~2.7 µs) is what the table above quotes. See
+`tools/book/opencv_subpix_sweep.py` for the exact measurement
 boundaries.
 
 ## 7.7 Whole-pipeline throughput

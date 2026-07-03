@@ -123,7 +123,7 @@ pub mod ml {
         fn extract(&mut self, view: ImageView<'_>, x: f32, y: f32) -> Option<()> {
             let ps = self.patch_size;
             let half = (ps as f32 - 1.0) * 0.5;
-            let (w, h) = (view.width as f32, view.height as f32);
+            let (w, h) = (view.width() as f32, view.height() as f32);
             if x - half < 0.0 || y - half < 0.0 || x + half > w - 1.0 || y + half > h - 1.0 {
                 return None;
             }

@@ -36,7 +36,9 @@
 //! cargo bench -p chess-corners-core --bench descriptor_fit
 //! ```
 
-use chess_corners_core::{describe_corners, fit_axes_at_point, Corner, OrientationMethod};
+use chess_corners_core::{
+    describe_corners, fit_axes_at_point, Corner, ImageView, OrientationMethod,
+};
 use chess_corners_testutil::{
     synth_chessboard, synth_chessboard_soft, synth_chessboard_warped, ORIENT_CORNER, ORIENT_DIM,
 };
@@ -129,12 +131,11 @@ fn bench_orientation_fit(c: &mut Criterion) {
     let mut group = c.benchmark_group("orientation_fit");
     group.throughput(Throughput::Elements(1));
     for (label, img, (x, y), method) in cases {
+        let view = ImageView::from_u8_slice(dim, dim, img).expect("view dims match buffer");
         group.bench_function(label, |b| {
             b.iter(|| {
                 black_box(fit_axes_at_point(
-                    black_box(img),
-                    dim,
-                    dim,
+                    black_box(view),
                     black_box(x),
                     black_box(y),
                     RADIUS,

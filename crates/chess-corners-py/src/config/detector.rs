@@ -198,13 +198,12 @@ impl DetectorConfig {
     /// it is replaced with a default `RadonConfig` before applying kwargs.
     /// Top-level fields (threshold, multiscale, etc.) are preserved.
     ///
-    /// Accepted kwargs: `refiner`, `ray_radius`, `image_upsample`,
+    /// Accepted kwargs: `ray_radius`, `image_upsample`,
     /// `response_blur_radius`, `peak_fit`. The shared NMS / clustering
     /// knobs moved to `with_detection`.
     #[pyo3(signature = (**kwargs))]
     fn with_radon(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         const RADON_FIELDS: &[&str] = &[
-            "refiner",
             "ray_radius",
             "image_upsample",
             "response_blur_radius",
