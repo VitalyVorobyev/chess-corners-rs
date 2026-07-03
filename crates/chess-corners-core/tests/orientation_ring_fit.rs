@@ -85,3 +85,65 @@ fn describe_corners_none_skips_orientation_keeps_positions() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// `fit_axes_at_point` honours the view origin
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fit_axes_at_point_applies_view_origin() {
+    use chess_corners_core::{fit_axes_at_point, ImageView};
+
+    // Synthetic checkerboard with a corner junction at (24, 24).
+    let w = 48usize;
+    let h = 48usize;
+    let period = 12i32;
+    let mut img = vec![0u8; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let rx = ((x as i32) / period) & 1;
+            let ry = ((y as i32) / period) & 1;
+            img[y * w + x] = if rx ^ ry == 0 { 40 } else { 215 };
+        }
+    }
+
+    let (cx, cy) = (24.0f32, 24.0f32);
+    let origin = [5i32, 7i32];
+
+    for method in [OrientationMethod::RingFit, OrientationMethod::DiskFit] {
+        let plain = ImageView::from_u8_slice(w, h, &img).unwrap();
+        let base = fit_axes_at_point(plain, cx, cy, 5, method);
+
+        // Same backing pixels, non-zero origin: external coordinates are
+        // shifted by the origin and must land on the same samples.
+        let shifted = ImageView::with_origin(w, h, &img, origin).unwrap();
+        let fit = fit_axes_at_point(
+            shifted,
+            cx - origin[0] as f32,
+            cy - origin[1] as f32,
+            5,
+            method,
+        );
+
+        assert_eq!(
+            fit.theta1.to_bits(),
+            base.theta1.to_bits(),
+            "theta1 mismatch for {method:?}"
+        );
+        assert_eq!(
+            fit.theta2.to_bits(),
+            base.theta2.to_bits(),
+            "theta2 mismatch for {method:?}"
+        );
+        assert_eq!(
+            fit.amp.to_bits(),
+            base.amp.to_bits(),
+            "amp mismatch for {method:?}"
+        );
+        assert_eq!(
+            fit.rms.to_bits(),
+            base.rms.to_bits(),
+            "rms mismatch for {method:?}"
+        );
+    }
+}

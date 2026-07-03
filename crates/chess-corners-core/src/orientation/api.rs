@@ -53,6 +53,9 @@ impl From<ring_fit::TwoAxisFit> for AxisFitResult {
 /// Sample the 16-point ChESS ring at `(cx, cy)` with `radius` and run
 /// the chosen orientation method.
 ///
+/// `(cx, cy)` are in the view's external frame — the view's origin is
+/// applied before sampling, matching [`ImageView::sample_bilinear`].
+///
 /// Useful for orientation estimates at externally-chosen points without
 /// running detection.
 pub fn fit_axes_at_point(
@@ -62,6 +65,15 @@ pub fn fit_axes_at_point(
     radius: u32,
     method: OrientationMethod,
 ) -> AxisFitResult {
+    // Fold the origin into the center and continue on a zero-origin
+    // view: the samplers below index the backing slice directly.
+    let [ox, oy] = view.origin();
+    let cx = cx + ox as f32;
+    let cy = cy + oy as f32;
+    let view = ImageView {
+        origin: [0, 0],
+        ..view
+    };
     let ring = ring_offsets(radius);
     let ring_phi = ring_angles(ring);
     let samples = sample_ring(view.data, view.width, view.height, cx, cy, ring);
