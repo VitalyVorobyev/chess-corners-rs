@@ -170,7 +170,7 @@ at the same site:
 
 ```toml
 [dependencies]
-chess-corners = "1.0"
+chess-corners = "1.1"
 image = { version = "0.25", features = ["png", "jpeg"] }  # pick the formats your code decodes
 ```
 

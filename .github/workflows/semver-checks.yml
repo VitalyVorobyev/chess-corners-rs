@@ -36,12 +36,7 @@ jobs:
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
           rust-toolchain: manual
-          # Publishable crates only. Explicit list guards against the action
-          # processing publish = false members (chess-corners-capi, -py, -wasm,
-          # chess-corners-testutil) which have no crates.io baseline to diff
-          # against and would pollute / abort the run.
-          package: |
-            box-image-pyramid
-            chess-corners-core
-            chess-corners
-            chess-corners-ml
+          # No `package` filter: cargo-semver-checks skips `publish = false`
+          # members (chess-corners-capi, -py, -wasm, chess-corners-testutil)
+          # on its own, so the whole workspace resolves to exactly the four
+          # publishable crates.
