@@ -40,6 +40,7 @@ serde = { workspace = true, default-features = false, features = ["derive"] }
 # `chess-corners-testutil` is an unpublished workspace dev-utility.
 chess-corners-testutil = { path = "../chess-corners-testutil" }
 criterion.workspace = true
+# In-memory buffer types only (no decode/encode), so no codec features needed.
 image.workspace = true
 serde_json.workspace = true
 

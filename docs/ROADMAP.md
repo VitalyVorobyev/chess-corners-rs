@@ -9,12 +9,16 @@ before the freeze becomes a semver-locked contract. `SWEEP-*` (public-surface
 dev-history cleanup) and `SOLID-*` (DRY/cohesion) run continuously, folded into
 the M2/M3/M6 windows.
 
-All milestones are **done**. The `1.0.0` **release act** (`API-09`: version
-bump, `cargo-semver-checks` flip to blocking, tag → crates.io/PyPI/npm publish,
-vcpkg registry finalization) is **in progress**: the version bump (workspace
-→ `1.0.0`, `chess-corners-ml` → `0.12.0`) and changelog cut
-(`docs/changelog/1.0.0.md`) landed in `0c50c768e`. Remaining: tag `v1.0.0`,
-publish to crates.io/PyPI/npm, and finalize the vcpkg port SHA512.
+All milestones are **done**. The `1.0.0` **release act** (`API-09`) shipped:
+`chess-corners`, `chess-corners-core`, and `box-image-pyramid` are published
+on crates.io and PyPI at `1.0.0`. Two residuals carried forward: the npm
+package `@vitavision/chess-corners` never got its `wasm-v1.0.0` tag and is
+still at `0.11.2`, and the vcpkg port SHA512 is still a placeholder
+(`CPP-05`). The workspace is now in the `1.1.0` **release act**: version bump
+to `1.1.0`, `cargo-semver-checks` flipped from advisory to blocking (baseline
+auto-detected from the published `1.0.0`), the `image` codec-free dependency
+fix for #68, and an ONNX runtime bump + MSRV `1.91`. The npm publish and
+vcpkg SHA512 residuals carry into this release act too.
 
 ## Milestones
 
@@ -29,12 +33,23 @@ publish to crates.io/PyPI/npm, and finalize the vcpkg port SHA512.
 
 ## Release act (in progress)
 
-`API-08` shipped advisory `cargo-semver-checks` in CI (baseline `v0.11.2`).
-`API-09` is the release act: bump `0.11.2 → 1.0.0`, flip semver-checks to
-blocking, tag `v1.0.0`, publish to crates.io/PyPI/npm, and finalize the vcpkg
-port (real tag + SHA512 + cross-platform `vcpkg install`, `CPP-05`). The
-version bump and changelog cut landed in `0c50c768e`; remaining: tag,
-publish, and the vcpkg SHA512 finalize.
+`API-09` (the `1.0.0` release act) is done: `chess-corners`,
+`chess-corners-core`, and `box-image-pyramid` were tagged and published to
+crates.io, and the Python bindings published to PyPI, at `1.0.0`. Two
+residuals were not completed and carry into `1.1.0`:
+
+- **npm publish** — no `wasm-v1.0.0` tag was ever pushed, so
+  `@vitavision/chess-corners` is still at `0.11.2` on npm (`DEBT-11`).
+- **vcpkg SHA512** — `ports/chess-corners/portfile.cmake` still has the
+  placeholder `SHA512 0` (`CPP-05`).
+
+The `1.1.0` release act (this cycle) bumps the workspace version
+`1.0.0 → 1.1.0`, flips `cargo-semver-checks` from advisory to a blocking CI
+gate now that `1.0.0` is a valid crates.io baseline (`API-08`), removes the
+`image` crate's default-features codec bundle (fixes #68, `DEBT-09`), and
+bumps the ONNX runtime + MSRV to `1.91` (`DEBT-10`). The npm publish and
+vcpkg SHA512 residuals remain open and are expected to close alongside or
+shortly after `1.1.0`, since they don't require a new Rust release.
 
 ## Continuous
 

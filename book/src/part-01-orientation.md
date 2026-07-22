@@ -170,15 +170,15 @@ at the same site:
 
 ```toml
 [dependencies]
-chess-corners = "1.0"
-image = "0.25"      # if you want GrayImage integration
+chess-corners = "1.1"
+image = { version = "0.25", features = ["png", "jpeg"] }  # pick the formats your code decodes
 ```
 
 Feature flags on the `chess-corners` facade:
 
 | Feature       | Effect                                                                 |
 |---------------|------------------------------------------------------------------------|
-| `image`       | Default. `image::GrayImage` convenience entry points.                  |
+| `image`       | Default. `image::GrayImage` convenience entry points, no image-format codecs. |
 | `rayon`       | Parallelize response computation and multiscale refinement over cores. |
 | `simd`        | Optional high-performance path: `std::simd` for the ChESS kernel. Nightly only. |
 | `par_pyramid` | SIMD / Rayon acceleration inside the pyramid downsampler.              |
@@ -186,11 +186,17 @@ Feature flags on the `chess-corners` facade:
 | `ml-refiner`  | Enable the ONNX-backed refiner (`chess-corners-ml` dependency).        |
 | `cli`         | Build the `chess-corners` binary.                                      |
 
+The `image` feature only wires up in-memory buffer types (`GrayImage`,
+`ImageBuffer`, `Luma`) — it enables no image-format codec, so
+`chess-corners` never decodes or encodes a file itself. If your code
+calls `image::open` or `ImageReader::decode`, declare the formats you
+need on your own `image` dependency, as in the snippet above.
+
 All feature combinations produce the same numerical results;
 features only affect performance and observability. The stable
 scalar/autovectorized build is the supported, portable baseline —
 correct on every target and fast enough for typical use; it needs
-Rust 1.88 or newer. `simd` layers portable `std::simd` on top for
+Rust 1.91 or newer. `simd` layers portable `std::simd` on top for
 extra throughput and is the only feature that requires a nightly
 toolchain.
 

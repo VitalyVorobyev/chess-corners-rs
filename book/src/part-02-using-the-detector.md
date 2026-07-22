@@ -75,7 +75,7 @@ Add the facade crate:
 
 ```toml
 [dependencies]
-chess-corners = "1.0"
+chess-corners = "1.1"
 image = "0.25"          # optional, for GrayImage integration
 ```
 
@@ -356,7 +356,8 @@ cargo run -p chess-corners --release --bin chess-corners -- \
 
 The CLI:
 
-- Loads the image at the config's `image` field.
+- Loads the image at the config's `image` field. Supported input
+  formats are PNG, JPEG, TIFF, BMP, WebP and GIF.
 - Picks single-scale or multiscale from the top-level `multiscale` field.
 - Picks ChESS or Radon from `strategy` (the top-level variant).
 - Picks the refiner from the strategy's nested `refiner` block.

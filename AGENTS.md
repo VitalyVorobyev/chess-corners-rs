@@ -104,7 +104,7 @@ run under the same orchestrator. See
 
 **Toolchain:** nightly is pinned via `rust-toolchain.toml` (the `simd`
 feature needs nightly `portable_simd`). The default/stable build has an
-MSRV of **Rust 1.88** (`rust-version` in `Cargo.toml`).
+MSRV of **Rust 1.91** (`rust-version` in `Cargo.toml`).
 
 Before opening a PR, run the full gate sequence (CLAUDE.md is canonical):
 

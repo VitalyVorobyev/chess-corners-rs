@@ -71,7 +71,7 @@ The C ABI (see [`cpp-vcpkg-bindings.md`](cpp-vcpkg-bindings.md)) maps the post-D
   (external literal construction already impossible) are deliberately skipped.
   `DenseDetector` and `CornerRefiner` are **sealed** via a private `Sealed`
   supertrait — external impls are not a supported extension point, so the trait
-  signatures stay free to evolve post-1.0. MSRV: stable ≥ 1.88; `simd` =
+  signatures stay free to evolve post-1.0. MSRV: stable ≥ 1.91; `simd` =
   nightly.
 - **Unknown-variant handling (`API-07`).** "Map unknown → documented default"
   happens **only** in the core→binding direction, as the forward-compat shim for
