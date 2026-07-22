@@ -9,15 +9,18 @@ Status `todo | in-progress | blocked | done | wontfix`. **Milestone** links to
 the ROADMAP; **Deps** lists prerequisite IDs.
 
 **Status.** All milestone work (M1–M6) is done; the 1.0 surface is hardened and
-coherent. `API-09` (the 1.0.0 release act) is **done**: `chess-corners`,
-`chess-corners-core`, and `box-image-pyramid` are published on crates.io and
-PyPI at `1.0.0`; `cargo-semver-checks` is now a blocking CI gate (baseline
-auto-detected from the published `1.0.0`). Two residuals from that release
-carry into `1.1.0`: the npm package `@vitavision/chess-corners` is still at
-`0.11.2` (`wasm-v1.0.0` was never tagged/published — `DEBT-11`), and the
-vcpkg port SHA512 remains a placeholder (`CPP-05`). This release also lands
-the `image` codec-free dependency fix for #68 (`DEBT-09`) and the ONNX
-runtime bump + MSRV `1.91` (`DEBT-10`). Everything under *Post-1.0 / future*
+coherent. **`1.1.0` shipped to every channel**: `chess-corners`,
+`chess-corners-core` and `box-image-pyramid` at `1.1.0` plus
+`chess-corners-ml` at `0.13.0` on crates.io, `chess-corners` `1.1.0` on PyPI,
+and `@vitavision/chess-corners` `1.1.0` on npm — which also cleared the
+`DEBT-11` residual that had left npm stranded at `0.11.2` through the whole
+1.0.0 cycle. The release carried the `image` codec-free dependency fix for
+\#68 (`DEBT-09`) and the ONNX runtime bump + MSRV `1.91` (`DEBT-10`).
+`cargo-semver-checks` is now a genuinely blocking CI gate: flipping it off
+advisory exposed that its `package:` filter had always been malformed, so the
+job had never actually checked anything. One residual remains open —
+`CPP-05`, the vcpkg port, which now carries a real SHA512 but has still never
+been install-verified on any platform. Everything under *Post-1.0 / future*
 is `P2`/`P3`, off the release-critical path. The pre-release campaign on
 `release/v1.0.0-prep` (see `docs/API_REVISION.md`) is folded into this
 state.
@@ -72,7 +75,7 @@ state.
 | CPP-02 | P2 | done | M5 | CPP-01 | `cbindgen.toml` + generator bin (with `--check` drift mode) → committed `include/chess_corners.h`. |
 | CPP-03 | P2 | done | M5 | CPP-02 | Header-only `chess_corners.hpp` (C++17): value types, RAII `ResultGuard`, throwing `detect()`, compile/run ABI guard. |
 | CPP-04 | P2 | done | M5 | CPP-01 | `CMakeLists.txt` + package config: `find_package(chess-corners CONFIG)`; static + shared; relocatable pkg-config `.pc`. |
-| CPP-05 | P3 | done (draft) | M5 | CPP-04 | Overlay vcpkg port (`ports/chess-corners/`). Release-finalization (real `v1.0.0` tag + SHA512, cross-platform `vcpkg install`, registry PR) tracked in `ports/README.md`; not install-verified here. |
+| CPP-05 | P3 | in-progress | M5 | CPP-04 | Overlay vcpkg port (`ports/chess-corners/`). Manifest now targets `1.1.0` with the real source-tarball SHA512, so it is installable. Still **never install-verified**: cross-platform `vcpkg install` (both linkages) and the registry PR remain open — see `ports/README.md`. |
 | CPP-06 | P3 | done | M5 | CPP-03 | Self-contained C++ example + C smoke wired as CTest; `.github/workflows/cpp.yml` matrix (static + shared). |
 | CPP-07 | P3 | done | M5 | CPP-03 | Book Part IX "C++ bindings". |
 
@@ -90,7 +93,7 @@ state.
 | DEBT-08 | P3 | todo | — | — | Parked (optional). Splitting `detect/radon/response.rs` by variant can hurt shared-math readability; defer unless the file grows further. |
 | DEBT-09 | P2 | done | — | — | Set the `image` workspace dependency to `default-features = false`, dropping bundled codec decoders the crate doesn't need; fixes #68. |
 | DEBT-10 | P2 | done | — | — | Bumped the `tract-onnx` ONNX runtime and raised MSRV to `1.91` (`rust-version` in `[workspace.package]`). |
-| DEBT-11 | P1 | todo | — | — | Publish `@vitavision/chess-corners` to npm: push the missing `wasm-v1.0.0` tag (and now `wasm-v1.1.0`) to trigger the npm release workflow; npm is still stuck at `0.11.2`. |
+| DEBT-11 | P1 | done | — | — | Published `@vitavision/chess-corners` to npm. `wasm-v1.1.0` closed the gap left by the never-pushed `wasm-v1.0.0`; npm `latest` moved `0.11.2` → `1.1.0`. |
 
 ## SWEEP — dev-history/internal reference cleanup  ·  M3
 
