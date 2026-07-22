@@ -28,28 +28,31 @@ vcpkg SHA512 residuals carry into this release act too.
 | M2 | Perf: bench every atomic hot path, profiling automation, CI regression gate | `PERF-01..12`, `SOLID-01` | done | Atomic benches + `tools/profile.sh` + CI bench gate (≤2% median drift, `bench-gate.yml`); baselines in `tools/perf/`. See [`design/perf-profiling.md`](design/perf-profiling.md). |
 | M3 | Freeze a minimal semver-stable public surface | `API-01..07` | done | Fields dropped, config dedup, sealed traits, `#[non_exhaustive]`, MSRV stated; re-opened + re-frozen by M6. See [`design/api-v1.0.md`](design/api-v1.0.md). |
 | M4 | GitHub Pages site: landing → book → API → demo → performance | `SITE-01..06` | done | `/`, `/book/`, `/api/`, `/demo/`, `/performance/` assembled by `docs.yml`; `scripts/build-site.sh` reproduces locally. See [`design/site-architecture.md`](design/site-architecture.md). |
-| M5 | vcpkg-installable C/C++ binding | `CPP-01..07` | done | `chess-corners-capi` + cbindgen header + C++ header + CMake `find_package`; vcpkg port is a verified-local draft (registry finalize at release). See [`design/cpp-vcpkg-bindings.md`](design/cpp-vcpkg-bindings.md). |
+| M5 | vcpkg-installable C/C++ binding | `CPP-01..07` | done | `chess-corners-capi` + cbindgen header + C++ header + CMake `find_package`; vcpkg port targets `1.1.0` with a real SHA512 but is not install-verified (`CPP-05`). See [`design/cpp-vcpkg-bindings.md`](design/cpp-vcpkg-bindings.md). |
 | M6 | Design hardening before the freeze becomes semver-locked | `DEBT-01..05` | done | Deleted `unstable`/`low_level` escape hatches; config lowering exposed as `DetectorConfig` methods; argmax sentinel → `Option`; facade `config.rs` split. Detection bit-stable. |
 
-## Release act (in progress)
+## Release act
 
-`API-09` (the `1.0.0` release act) is done: `chess-corners`,
-`chess-corners-core`, and `box-image-pyramid` were tagged and published to
-crates.io, and the Python bindings published to PyPI, at `1.0.0`. Two
-residuals were not completed and carry into `1.1.0`:
+`API-09` (the `1.0.0` release act) shipped to crates.io and PyPI but left two
+residuals: no `wasm-v1.0.0` tag was ever pushed, stranding npm at `0.11.2`
+(`DEBT-11`), and the vcpkg portfile kept a placeholder `SHA512 0` (`CPP-05`).
 
-- **npm publish** — no `wasm-v1.0.0` tag was ever pushed, so
-  `@vitavision/chess-corners` is still at `0.11.2` on npm (`DEBT-11`).
-- **vcpkg SHA512** — `ports/chess-corners/portfile.cmake` still has the
-  placeholder `SHA512 0` (`CPP-05`).
+**`1.1.0` is released on every channel** — `v1.1.0` and `wasm-v1.1.0` are
+tagged; crates.io has `chess-corners`, `chess-corners-core` and
+`box-image-pyramid` at `1.1.0` plus `chess-corners-ml` at `0.13.0`; PyPI has
+`1.1.0` (3 wheels + sdist); npm `latest` is `1.1.0`, closing `DEBT-11`. The
+release removes the `image` crate's default-features codec bundle (fixes #68,
+`DEBT-09`), bumps the ONNX runtime and raises MSRV to `1.91` (`DEBT-10`), and
+turns `cargo-semver-checks` into a blocking CI gate now that `1.0.0` is a
+valid crates.io baseline (`API-08`) — the flip immediately exposed that the
+job's `package:` filter had always been malformed, so it had never actually
+checked anything.
 
-The `1.1.0` release act (this cycle) bumps the workspace version
-`1.0.0 → 1.1.0`, flips `cargo-semver-checks` from advisory to a blocking CI
-gate now that `1.0.0` is a valid crates.io baseline (`API-08`), removes the
-`image` crate's default-features codec bundle (fixes #68, `DEBT-09`), and
-bumps the ONNX runtime + MSRV to `1.91` (`DEBT-10`). The npm publish and
-vcpkg SHA512 residuals remain open and are expected to close alongside or
-shortly after `1.1.0`, since they don't require a new Rust release.
+One residual stays open: **`CPP-05`**. The vcpkg port now targets `1.1.0`
+with the real source-tarball SHA512, so it is installable, but it has never
+been exercised by a real `vcpkg install` on any platform. Cross-platform
+verification and the registry PR are tracked in
+[`ports/README.md`](../ports/README.md).
 
 ## Continuous
 
