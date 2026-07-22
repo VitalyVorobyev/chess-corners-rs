@@ -1,16 +1,9 @@
 name: semver-checks
 
-# Advisory semver-compatibility gate for publishable crates.
+# Blocking semver-compatibility gate for the publishable crates.
 #
-# Status: ADVISORY (continue-on-error: true) until 1.0.0 is tagged.
-# The pre-1.0 API-0x series introduced intentional breaking changes
-# (dropped fields, moved types, sealed traits, unified threshold config,
-# etc.) that will correctly be flagged here relative to the v0.11.2
-# baseline. This job therefore informs rather than blocks.
-#
-# After 1.0.0 is released and becomes the crates.io baseline, flip
-# continue-on-error to false and drop the --baseline-rev pin to let
-# the action auto-detect the latest published version (see API-09).
+# Runs cargo-semver-checks against the latest published crates.io
+# baseline for each package and fails the job on any breaking change.
 
 on:
   push:
@@ -20,7 +13,7 @@ on:
 
 jobs:
   semver-checks:
-    name: cargo semver-checks (advisory)
+    name: cargo semver-checks
     runs-on: ubuntu-latest
 
     steps:
@@ -38,22 +31,15 @@ jobs:
           cache-bin: false
           cache-on-failure: true
 
-      - name: Check semver compatibility against v0.11.2
-        # Advisory until 1.0.0 is tagged; see file-level comment above.
-        # Flip continue-on-error to false and drop --baseline-rev once
-        # 1.0.0 is the crates.io baseline (API-09).
-        continue-on-error: true
+      - name: Check semver compatibility
+        continue-on-error: false
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
           rust-toolchain: manual
-          # Pin baseline explicitly — the publishable crates have not yet
-          # been released beyond 0.11.2 with these breaks, so auto-detect
-          # from crates.io would pick the wrong version.
-          baseline-rev: v0.11.2
           # Publishable crates only. Explicit list guards against the action
           # processing publish = false members (chess-corners-capi, -py, -wasm,
           # chess-corners-testutil) which have no crates.io baseline to diff
-          # against and would pollute / abort the advisory output.
+          # against and would pollute / abort the run.
           package: |
             box-image-pyramid
             chess-corners-core

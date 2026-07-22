@@ -9,13 +9,18 @@ Status `todo | in-progress | blocked | done | wontfix`. **Milestone** links to
 the ROADMAP; **Deps** lists prerequisite IDs.
 
 **Status.** All milestone work (M1–M6) is done; the 1.0 surface is hardened and
-coherent. No `P0`/`P1` blocks the 1.0 freeze. The only remaining
-release-critical item is `API-09` (version bump + tag + publish), now
-**in-progress**: the version bump and changelog cut landed in `0c50c768e`;
-remaining is tag, publish, and the vcpkg SHA512 finalize. Everything under
-*Post-1.0 / future* is `P2`/`P3`, off the 1.0 critical path. The pre-release
-campaign on `release/v1.0.0-prep` (see `docs/API_REVISION.md`) is folded into
-this state.
+coherent. `API-09` (the 1.0.0 release act) is **done**: `chess-corners`,
+`chess-corners-core`, and `box-image-pyramid` are published on crates.io and
+PyPI at `1.0.0`; `cargo-semver-checks` is now a blocking CI gate (baseline
+auto-detected from the published `1.0.0`). Two residuals from that release
+carry into `1.1.0`: the npm package `@vitavision/chess-corners` is still at
+`0.11.2` (`wasm-v1.0.0` was never tagged/published — `DEBT-11`), and the
+vcpkg port SHA512 remains a placeholder (`CPP-05`). This release also lands
+the `image` codec-free dependency fix for #68 (`DEBT-09`) and the ONNX
+runtime bump + MSRV `1.91` (`DEBT-10`). Everything under *Post-1.0 / future*
+is `P2`/`P3`, off the release-critical path. The pre-release campaign on
+`release/v1.0.0-prep` (see `docs/API_REVISION.md`) is folded into this
+state.
 
 ## PERF — profiling & optimization  ·  M2  ·  [design](design/perf-profiling.md)
 
@@ -45,8 +50,8 @@ this state.
 | API-05 | P1 | done | M3 | — | `.pyi` parity confirmed complete and factory names match Rust; added a stub-vs-runtime parity guard test. |
 | API-06 | P1 | done | M3 | — | Sealed `DenseDetector`/`CornerRefiner`; added `#[non_exhaustive]` to remaining public configs; documented MSRV (stable ≥ 1.88, `simd` = nightly). |
 | API-07 | P2 | done | M3 | API-06 | Documented core→binding unknown-variant → default mapping (forward-compat); caller input stays strict; pinned WASM enum discriminants. |
-| API-08 | P0 | done | M3 | API-01..07 | Advisory `cargo-semver-checks` CI vs `v0.11.2` (`continue-on-error`); flips to blocking at API-09. |
-| API-09 | P0 | in-progress | M3 | API-08, M4, M5, M6 | **Release act.** Bump 0.11.2→1.0.0 and move `[Unreleased]`→`docs/changelog/1.0.0.md` done (`0c50c768e`). Remaining: tag + publish (crates.io/PyPI/npm), finalize vcpkg SHA512 (CPP-05), flip semver-checks to blocking. |
+| API-08 | P0 | done | M3 | API-01..07 | Advisory `cargo-semver-checks` CI vs `v0.11.2` (`continue-on-error`); flipped to blocking once `1.0.0` became the crates.io baseline (1.1.0 prep). |
+| API-09 | P0 | done | M3 | API-08, M4, M5, M6 | **Release act.** Bumped 0.11.2→1.0.0, moved `[Unreleased]`→`docs/changelog/1.0.0.md`, tagged `v1.0.0`, and published to crates.io + PyPI. npm publish did not happen — no `wasm-v1.0.0` tag was pushed, so `@vitavision/chess-corners` stayed at `0.11.2` (carried forward as `DEBT-11`); vcpkg SHA512 finalize also carried forward (`CPP-05`). |
 
 ## SITE — GitHub Pages  ·  M4 (dep M3)  ·  [design](design/site-architecture.md)
 
@@ -83,6 +88,9 @@ this state.
 | DEBT-06 | P2 | todo | — | — | Parked (post-1.0). py/wasm config duplication is largely inherent to PyO3 vs wasm-bindgen; a shared codegen layer isn't worth its complexity before 1.0. Revisit if a third binding or a schema change forces it. |
 | DEBT-07 | P3 | todo | — | — | Parked (post-1.0, likely wontfix). Strategy-dispatch parallel `match` arms — only two variants and new detectors are out of scope, so refactoring dispatch now is YAGNI. |
 | DEBT-08 | P3 | todo | — | — | Parked (optional). Splitting `detect/radon/response.rs` by variant can hurt shared-math readability; defer unless the file grows further. |
+| DEBT-09 | P2 | done | — | — | Set the `image` workspace dependency to `default-features = false`, dropping bundled codec decoders the crate doesn't need; fixes #68. |
+| DEBT-10 | P2 | done | — | — | Bumped the `tract-onnx` ONNX runtime and raised MSRV to `1.91` (`rust-version` in `[workspace.package]`). |
+| DEBT-11 | P1 | todo | — | — | Publish `@vitavision/chess-corners` to npm: push the missing `wasm-v1.0.0` tag (and now `wasm-v1.1.0`) to trigger the npm release workflow; npm is still stuck at `0.11.2`. |
 
 ## SWEEP — dev-history/internal reference cleanup  ·  M3
 

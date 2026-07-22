@@ -144,7 +144,8 @@ is the built-in 3-point Gaussian peak fit, selected via
 
 The CLI uses the same `DetectorConfig` schema, combined with
 application fields such as `image`, `output_json`, `output_png`,
-`log_level`, and `ml`.
+`log_level`, and `ml`. It reads PNG, JPEG, TIFF, BMP, WebP and GIF
+input images.
 
 See:
 
@@ -184,7 +185,7 @@ pyramid levels.
 
 ## Feature flags
 
-- `image` (default): `image::GrayImage` integration
+- `image` (default): `image::GrayImage` integration, no image-format codecs
 - `rayon`: parallel response/refinement
 - `simd`: optional high-performance path — portable `std::simd` in the core response path (nightly only)
 - `par_pyramid`: SIMD/`rayon` in pyramid construction
@@ -192,8 +193,18 @@ pyramid levels.
 - `ml-refiner`: ONNX-backed ML refinement
 - `cli`: build the `chess-corners` binary
 
+`image` only wires up in-memory buffer types (`GrayImage`,
+`ImageBuffer`, `Luma`) — it enables no image-format codec, so this
+crate never decodes or encodes a file itself. If your code calls
+`image::open` or `ImageReader::decode`, declare the formats you need
+on your own `image` dependency:
+
+```toml
+image = { version = "0.25", features = ["png", "jpeg"] }
+```
+
 The stable scalar/autovectorized build is the supported, portable
 baseline — correct and fast enough for typical use. It requires Rust
-**1.88** or newer (`rust-version` in `Cargo.toml`). The `simd` feature
+**1.91** or newer (`rust-version` in `Cargo.toml`). The `simd` feature
 uses `std::simd` and is the only feature that needs a nightly
 toolchain; every other feature builds on stable.

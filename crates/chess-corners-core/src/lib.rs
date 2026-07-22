@@ -49,7 +49,7 @@
 //!
 //! # Minimum supported Rust version
 //!
-//! The default (stable) build requires Rust **1.88** or newer, as
+//! The default (stable) build requires Rust **1.91** or newer, as
 //! declared by `rust-version` in `Cargo.toml`. The optional `simd`
 //! feature uses `portable_simd` and therefore requires a **nightly**
 //! toolchain; every other feature builds on stable.

@@ -30,7 +30,14 @@ simd = ["chess-corners-core/simd", "box-image-pyramid/simd"]
 tracing = ["chess-corners-core/tracing", "dep:tracing", "box-image-pyramid/tracing"]
 ml-refiner = ["dep:chess-corners-ml"]
 par_pyramid = ["box-image-pyramid/par_pyramid"]
-cli = ["dep:clap", "dep:anyhow", "dep:serde_json", "dep:tracing-subscriber"]
+# The CLI decodes arbitrary user-supplied files and writes PNG overlays,
+# so it — not the library — owns the codec set.
+cli = [
+  "dep:clap", "dep:anyhow", "dep:serde_json", "dep:tracing-subscriber",
+  "image",
+  "image/png", "image/jpeg", "image/tiff",
+  "image/bmp", "image/webp", "image/gif",
+]
 
 [[bin]]
 name = "chess-corners"
@@ -56,7 +63,8 @@ clap = { workspace = true, optional = true }
 # `chess-corners-testutil` is an unpublished workspace dev-utility.
 chess-corners-testutil = { path = "../chess-corners-testutil" }
 criterion.workspace = true
-image.workspace = true
+# Tests, examples and benches decode `testimages/*.png`; `perf_overlay` writes PNG.
+image = { workspace = true, features = ["png"] }
 serde_json.workspace = true
 rayon.workspace = true
 

@@ -233,7 +233,8 @@ cargo run -p chess-corners --release --bin chess-corners -- \
 ```
 
 The CLI loads an image and JSON config, runs the detector, then writes
-a JSON summary and optional overlay PNG. Useful config examples:
+a JSON summary and optional overlay PNG. It reads PNG, JPEG, TIFF, BMP,
+WebP and GIF input images. Useful config examples:
 
 - [`config/chess_algorithm_config_example.json`](config/chess_algorithm_config_example.json)
   — pure `DetectorConfig`, shared by Rust and Python.
@@ -246,7 +247,7 @@ a JSON summary and optional overlay PNG. Useful config examples:
 
 | Feature | Effect |
 |---------|--------|
-| `image` | `image::GrayImage` entry points |
+| `image` | `image::GrayImage` entry points, no image-format codecs |
 | `rayon` | Parallel response/refinement work |
 | `simd` | Optional high-performance path: `std::simd` ChESS kernels; nightly only |
 | `par_pyramid` | SIMD/Rayon paths inside `box-image-pyramid` |
@@ -255,11 +256,22 @@ a JSON summary and optional overlay PNG. Useful config examples:
 | `cli` | Builds the `chess-corners` binary |
 | `radon-sat-u32` | Uses `u32` Radon SATs for lower memory with an input-size cap |
 
+The `image` feature only wires up in-memory buffer types
+(`GrayImage`, `ImageBuffer`, `Luma`) — it does not enable any
+image-format codec, so `chess-corners` itself never decodes or
+encodes a file. If your own code calls `image::open` or
+`ImageReader::decode`, declare the formats you need on your own
+`image` dependency:
+
+```toml
+image = { version = "0.25", features = ["png", "jpeg"] }
+```
+
 Feature flags should affect performance or observability, not the
 numerical output. Deterministic ordering is part of the public contract.
 The stable scalar/autovectorized build is the supported, portable
 baseline — correct on every target and fast enough for typical use; it
-needs Rust 1.88 or newer. Only `simd` requires a nightly toolchain.
+needs Rust 1.91 or newer. Only `simd` requires a nightly toolchain.
 
 ## Diligence Statement
 

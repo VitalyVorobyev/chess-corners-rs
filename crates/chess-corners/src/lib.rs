@@ -40,7 +40,7 @@
 //!
 //! ```no_run
 //! use chess_corners::{ChessRefiner, Detector, DetectorConfig};
-//! use image::io::Reader as ImageReader;
+//! use image::ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let img = ImageReader::open("board.png")?
@@ -214,7 +214,7 @@
 //!
 //! # Minimum supported Rust version
 //!
-//! The default (stable) build requires Rust **1.88** or newer, as
+//! The default (stable) build requires Rust **1.91** or newer, as
 //! declared by `rust-version` in `Cargo.toml`. The optional `simd`
 //! feature uses `portable_simd` and therefore requires a **nightly**
 //! toolchain; every other feature builds on stable.

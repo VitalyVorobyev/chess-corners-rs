@@ -30,6 +30,7 @@ tracing = { workspace = true, optional = true }
 [dev-dependencies]
 criterion.workspace = true
 fast_image_resize.workspace = true
+# In-memory buffer types only (no decode/encode), so no codec features needed.
 image.workspace = true
 resize.workspace = true
 rgb.workspace = true

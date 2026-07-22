@@ -36,7 +36,7 @@ Feature flags:
 - `tracing` – emit structured spans around response and detector code
   for profiling.
 
-The default (stable) build requires Rust **1.88** or newer
+The default (stable) build requires Rust **1.91** or newer
 (`rust-version` in `Cargo.toml`). The `simd` feature uses
 `portable_simd` and needs a nightly toolchain; every other feature
 builds on stable.

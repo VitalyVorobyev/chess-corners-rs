@@ -37,10 +37,12 @@
 
 use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 #[cfg(feature = "embed-model")]
 use std::sync::{Mutex, OnceLock};
 use tract_onnx::prelude::tract_ndarray::{Array4, Ix2};
 use tract_onnx::prelude::*;
+use tract_onnx::tract_hir::infer::Factoid;
 
 /// Specifies where [`MlModel::load`] should read the ONNX model from.
 #[derive(Clone, Debug)]
@@ -62,15 +64,8 @@ pub enum ModelSource {
 /// `[N, 3]` with columns `[dx, dy, conf_logit]`. Only `dx` and `dy`
 /// are currently used; `conf_logit` is ignored.
 pub struct MlModel {
-    model: TypedRunnableModel<TypedModel>,
+    model: Arc<TypedRunnableModel>,
     patch_size: usize,
-    // `SymbolScope` owns the `Symbol` object for the dynamic batch
-    // dimension "N". Dropping it before `model` would leave the compiled
-    // graph with a dangling reference to the scope's internal table, so
-    // this field must be kept alive for the lifetime of `MlModel` even
-    // though it is never explicitly read after construction.
-    #[allow(dead_code)]
-    symbols: SymbolScope,
 }
 
 impl MlModel {
@@ -110,10 +105,21 @@ impl MlModel {
         let mut model = tract_onnx::onnx()
             .model_for_path(&model_path)
             .with_context(|| format!("load ONNX model from {}", model_path.display()))?;
-        let symbols = SymbolScope::default();
-        let batch = symbols.sym("N");
+        // Pin the input to `[batch, 1, patch_size, patch_size]`, keeping
+        // whatever batch dimension the ONNX graph already declares.
+        // Symbolic dimensions are interned per graph in `Graph::symbols`;
+        // a symbol minted in a different scope cannot be unified with the
+        // graph's own dimensions, so the batch symbol is only created here
+        // when the graph leaves that axis unspecified.
+        let batch = model
+            .input_fact(0)
+            .context("read ML refiner input fact")?
+            .shape
+            .dim(0)
+            .and_then(|d| d.concretize())
+            .unwrap_or_else(|| model.symbols.sym("N").to_dim());
         let shape = tvec!(
-            batch.to_dim(),
+            batch,
             1.to_dim(),
             (patch_size as i64).to_dim(),
             (patch_size as i64).to_dim()
@@ -127,11 +133,7 @@ impl MlModel {
             .into_runnable()
             .context("make ONNX model runnable")?;
 
-        Ok(Self {
-            model,
-            patch_size,
-            symbols,
-        })
+        Ok(Self { model, patch_size })
     }
 
     /// Side length (in pixels) of the square intensity patch the model expects.
@@ -178,7 +180,7 @@ impl MlModel {
             .run(tvec!(input.into_tvalue()))
             .context("run ONNX inference")?;
         let output = result[0]
-            .to_array_view::<f32>()
+            .to_plain_array_view::<f32>()
             .context("read ONNX output")?
             .into_dimensionality::<Ix2>()
             .context("reshape ONNX output")?;
