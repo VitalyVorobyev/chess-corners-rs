@@ -1,5 +1,5 @@
 # ===========================================================================
-# chess-corners — vcpkg overlay portfile (release-ready DRAFT, targets v1.0.0)
+# chess-corners — vcpkg overlay portfile
 # ===========================================================================
 # Packages the C/C++ bindings of the Rust `chess-corners` workspace (crate
 # `chess-corners-capi`) behind a CMake package config and a pkg-config file,
@@ -24,11 +24,9 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO VitalyVorobyev/chess-corners-rs
     REF "v${VERSION}"
-    # TODO(release): replace 0 with the real SHA512 of the v1.0.0 source
-    # tarball. It cannot be computed before the tag exists. The first
-    # `vcpkg install` with `SHA512 0` downloads the archive and prints the
-    # actual hash to paste here. (Use `--head` to test before the tag.)
-    SHA512 0
+    # SHA512 of https://github.com/VitalyVorobyev/chess-corners-rs/archive/v1.1.0.tar.gz
+    # Recompute whenever `version` in vcpkg.json changes.
+    SHA512 b86d687459ae04a5f4266d07d7d5140e6cfcaa89dbf700e8c5ed199ab47e5c74e6d714541535387a3bb5bb8ab11231a922af6b36c1d81bd9fac8c6c551e92c20
     HEAD_REF main
 )
 
