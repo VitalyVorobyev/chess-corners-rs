@@ -203,16 +203,30 @@ impl Detector {
     ///
     /// # Parity with `detect_u8`
     ///
-    /// Every corner [`Detector::detect_u8`] reports whose peak lies more
-    /// than `ring_radius + nms_radius` pixels inside the clamped `roi` (on
-    /// every side) is returned here with a **bit-identical `response`** and
-    /// a position that agrees to within floating-point rounding (well under
-    /// `1e-3` px). The integer peak detection is exact; only the sub-pixel
-    /// refinement rounds differently, because it runs in the ROI-local
-    /// coordinate frame — the same numerical relationship a coarse-to-fine
-    /// multiscale run has to a full-frame single-scale run. Corners nearer
-    /// the ROI edge — or nearer than the detector support to the image
-    /// border — may differ or be absent.
+    /// Parity is defined against a **single-scale, non-upscaled**
+    /// [`Detector::detect_u8`] run — [`multiscale`](DetectorConfig::multiscale)
+    /// set to `SingleScale` and [`upscale`](DetectorConfig::upscale)
+    /// disabled, as in the [`DetectorConfig::chess`] and
+    /// [`DetectorConfig::radon`] presets. When a pyramid or upscale
+    /// section is active, `detect_u8` detects on resampled images that
+    /// this path never builds, so its output is not comparable
+    /// corner-for-corner.
+    ///
+    /// Against that run, every **ChESS** corner whose peak lies more
+    /// than `ring_radius + nms_radius` pixels inside the clamped `roi`
+    /// (on every side) is returned here with a **bit-identical
+    /// `response`** and a position that agrees to within floating-point
+    /// rounding (well under `1e-3` px). The integer peak detection is
+    /// exact; only the sub-pixel refinement rounds differently, because
+    /// it runs in the ROI-local coordinate frame — the same numerical
+    /// relationship a coarse-to-fine multiscale run has to a full-frame
+    /// single-scale run. The **Radon** strategy recomputes its response
+    /// over the carved patch (prefix-sum accumulation restarts at the
+    /// patch origin), so its parity is approximate: interior corners
+    /// reappear, but response values and subpixel positions carry a
+    /// small floating-point drift rather than being bit-exact. Corners
+    /// nearer the ROI edge — or nearer than the detector support to the
+    /// image border — may differ or be absent under either strategy.
     ///
     /// # Errors
     ///
@@ -602,6 +616,70 @@ mod tests {
                 near,
                 "Radon ROI corner ({:.2},{:.2}) has no nearby full-frame corner",
                 sc.x, sc.y
+            );
+        }
+    }
+
+    /// A Radon corner whose integer peak sits exactly ON the ROI
+    /// boundary (subpixel position just inside it) must still be
+    /// returned. The carved patch has to reserve the extra pixel
+    /// `detect_peaks_from_radon` keeps for its 3-point peak fit —
+    /// with a margin of only `ray + nms` the boundary peak lands in
+    /// the excluded patch border and silently disappears (regression
+    /// for the `RadonDetector::roi_border` off-by-one).
+    #[test]
+    fn radon_roi_keeps_boundary_peaks() {
+        let size = 129usize;
+        let mut img = aa_chessboard(size, 12, (0.4, 0.6), 30, 220);
+        gaussian_blur(&mut img, size, 1.2);
+        let w = size as u32;
+
+        for upsample in [1u32, 2] {
+            let cfg = DetectorConfig::radon().with_radon(|r| r.image_upsample = upsample);
+            let mut det = Detector::new(cfg).unwrap();
+            let full = det.detect_u8(&img, w, w).unwrap();
+            assert!(!full.is_empty(), "full-frame Radon must find corners");
+
+            // Put an ROI boundary exactly on each corner's integer
+            // peak, on the side that keeps the subpixel position
+            // inside the half-open ROI: the min edge when the position
+            // sits right of / below the peak, the max edge otherwise.
+            // Corners whose position is nearly centred on the peak are
+            // skipped — their half-open membership is ambiguous.
+            let mut checked = 0usize;
+            for fc in &full {
+                let px = fc.x.round();
+                let py = fc.y.round();
+                let (fx, fy) = (fc.x - px, fc.y - py);
+                if fx.abs() < 0.05 || fy.abs() < 0.05 {
+                    continue;
+                }
+                let (px, py) = (px as usize, py as usize);
+                let (x0, x1) = if fx > 0.0 {
+                    (px, (px + 50).min(size))
+                } else {
+                    ((px + 1).saturating_sub(50), px + 1)
+                };
+                let (y0, y1) = if fy > 0.0 {
+                    (py, (py + 50).min(size))
+                } else {
+                    ((py + 1).saturating_sub(50), py + 1)
+                };
+                let region = roi(x0, y0, x1, y1);
+                let sub = det.detect_u8_roi(&img, w, w, region).unwrap();
+                let found = sub
+                    .iter()
+                    .any(|sc| (sc.x - fc.x).abs() < 0.5 && (sc.y - fc.y).abs() < 0.5);
+                assert!(
+                    found,
+                    "upsample={upsample}: boundary corner ({:.3},{:.3}) dropped from ROI ({x0},{y0})-({x1},{y1})",
+                    fc.x, fc.y
+                );
+                checked += 1;
+            }
+            assert!(
+                checked >= 3,
+                "upsample={upsample}: expected several boundary-peak corners to check, got {checked}"
             );
         }
     }
