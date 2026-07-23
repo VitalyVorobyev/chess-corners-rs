@@ -32,7 +32,7 @@ use chess_corners_core::{ChessBuffers, RadonBuffers};
 use crate::ml_refiner;
 use crate::multiscale;
 use crate::upscale::{self, UpscaleBuffers};
-use crate::{ChessError, CornerDescriptor, DetectorConfig};
+use crate::{ChessError, CornerDescriptor, DetectorConfig, Roi};
 use chess_corners_core::ImageView;
 
 /// High-level chessboard-corner detector.
@@ -176,6 +176,106 @@ impl Detector {
         self.detect_u8(img.as_raw(), img.width(), img.height())
     }
 
+    /// Detect chessboard corners inside a rectangular region `roi` of a
+    /// raw 8-bit grayscale image.
+    ///
+    /// Returns the corners whose detected peak lies inside `roi`, each
+    /// refined and described exactly as [`Detector::detect_u8`] would: the
+    /// same configured refiner and the same orientation/descriptor stage.
+    /// Coordinates are in the full input-image pixel frame. Both detection
+    /// strategies (ChESS and Radon) are supported.
+    ///
+    /// # Single-scale only
+    ///
+    /// ROI detection is single-scale local detection by definition: the
+    /// [`multiscale`](DetectorConfig::multiscale) and
+    /// [`upscale`](DetectorConfig::upscale) sections of the active config
+    /// do **not** apply on this path. For whole-image detection — including
+    /// the coarse-to-fine pyramid and the pre-pipeline upscaling stage —
+    /// use [`Detector::detect_u8`] / [`Detector::detect`].
+    ///
+    /// # ROI clamping
+    ///
+    /// A `roi` extending past the image is clamped to the image bounds
+    /// (matching the multiscale ROI-carving behaviour). A fully
+    /// out-of-range or degenerate post-clamp `roi` returns `Ok(vec![])`,
+    /// not an error.
+    ///
+    /// # Parity with `detect_u8`
+    ///
+    /// Every corner [`Detector::detect_u8`] reports whose peak lies more
+    /// than `ring_radius + nms_radius` pixels inside the clamped `roi` (on
+    /// every side) is returned here with a **bit-identical `response`** and
+    /// a position that agrees to within floating-point rounding (well under
+    /// `1e-3` px). The integer peak detection is exact; only the sub-pixel
+    /// refinement rounds differently, because it runs in the ROI-local
+    /// coordinate frame — the same numerical relationship a coarse-to-fine
+    /// multiscale run has to a full-frame single-scale run. Corners nearer
+    /// the ROI edge — or nearer than the detector support to the image
+    /// border — may differ or be absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ChessError::DimensionMismatch`] if `img.len() != width *
+    /// height`. With the `ml-refiner` feature, returns
+    /// `ChessError::RoiRefinerUnsupported` when the configuration selects
+    /// the ML refiner: the ML refiner runs a whole-frame model pipeline
+    /// this path does not carry, and the refiner selection is never
+    /// silently downgraded — use [`Detector::detect_u8`] for ML refinement.
+    pub fn detect_u8_roi(
+        &mut self,
+        img: &[u8],
+        width: u32,
+        height: u32,
+        roi: Roi,
+    ) -> Result<Vec<CornerDescriptor>, ChessError> {
+        let src_w = width as usize;
+        let src_h = height as usize;
+        let expected = src_w * src_h;
+        if img.len() != expected {
+            return Err(ChessError::DimensionMismatch {
+                expected,
+                actual: img.len(),
+            });
+        }
+
+        // The ML refiner has no ROI-path plumbing; refuse rather than
+        // silently downgrading to the core default refiner.
+        #[cfg(feature = "ml-refiner")]
+        if Self::is_ml_refiner(&self.cfg) {
+            return Err(ChessError::RoiRefinerUnsupported);
+        }
+
+        let view =
+            ImageView::from_u8_slice(src_w, src_h, img).expect("dimensions were checked above");
+        Ok(multiscale::detect_roi_with_buffers(
+            view,
+            roi,
+            &self.cfg,
+            &mut self.chess_buffers,
+            &mut self.radon_buffers,
+        ))
+    }
+
+    /// Detect chessboard corners inside a rectangular region `roi` of an
+    /// [`image::GrayImage`].
+    ///
+    /// See [`Detector::detect_u8_roi`] for the ROI contract, the
+    /// single-scale caveat, the clamping behaviour, and the parity
+    /// guarantee.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Detector::detect_u8_roi`].
+    #[cfg(feature = "image")]
+    pub fn detect_roi(
+        &mut self,
+        img: &image::GrayImage,
+        roi: Roi,
+    ) -> Result<Vec<CornerDescriptor>, ChessError> {
+        self.detect_u8_roi(img.as_raw(), img.width(), img.height(), roi)
+    }
+
     /// Borrow a detector-bound diagnostics accessor.
     ///
     /// The returned [`DetectorDiagnostics`](crate::diagnostics::DetectorDiagnostics)
@@ -244,10 +344,18 @@ impl Detector {
 mod tests {
     use super::*;
     use crate::UpscaleConfig;
-    use chess_corners_testutil::aa_chessboard;
+    use chess_corners_testutil::{aa_chessboard, gaussian_blur};
 
     fn synthetic_board(size: usize) -> Vec<u8> {
         aa_chessboard(size, 12, (0.0, 0.0), 20, 220)
+    }
+
+    fn roi(x0: usize, y0: usize, x1: usize, y1: usize) -> Roi {
+        Roi::new(x0, y0, x1, y1).expect("valid roi")
+    }
+
+    fn bit_eq(a: f32, b: f32) -> bool {
+        a.to_bits() == b.to_bits()
     }
 
     #[test]
@@ -304,5 +412,210 @@ mod tests {
         let img = synthetic_board(64);
         let corners = det.detect_u8(&img, 64, 64).unwrap();
         assert!(!corners.is_empty());
+    }
+
+    #[test]
+    fn detect_u8_roi_reports_dimension_mismatch() {
+        let mut det = Detector::with_default();
+        let img = vec![0u8; 10];
+        let err = det.detect_u8_roi(&img, 8, 8, roi(0, 0, 4, 4)).unwrap_err();
+        assert!(matches!(err, ChessError::DimensionMismatch { .. }));
+    }
+
+    /// Full-frame ChESS corners lying more than `ring_radius + nms_radius`
+    /// (= 7 for the default ring) inside an interior ROI must reappear from
+    /// `detect_u8_roi` with a bit-identical response and a position that
+    /// matches to floating-point rounding. The inflated patch reproduces
+    /// the full-frame response bit-for-bit, so the integer peak and its
+    /// response strength are exact; the sub-pixel centroid runs in the
+    /// ROI-local frame and rounds by ~1 ULP relative to the global-frame
+    /// centroid (the same effect the coarse-to-fine path exhibits).
+    #[test]
+    fn chess_roi_matches_full_frame_on_interior() {
+        let size = 100usize;
+        let img = aa_chessboard(size, 12, (0.35, 0.7), 20, 220);
+        let mut det = Detector::new(DetectorConfig::chess()).unwrap();
+
+        let full = det.detect_u8(&img, size as u32, size as u32).unwrap();
+        let sub = det
+            .detect_u8_roi(&img, size as u32, size as u32, roi(20, 20, 80, 80))
+            .unwrap();
+
+        // ring_radius(5) + nms_radius(2) for the default ChESS config.
+        let border = 7.0f32;
+        let (rx0, ry0, rx1, ry1) = (20.0f32, 20.0, 80.0, 80.0);
+        let mut checked = 0usize;
+        for fc in &full {
+            let strictly_inside = fc.x > rx0 + border
+                && fc.x < rx1 - border
+                && fc.y > ry0 + border
+                && fc.y < ry1 - border;
+            if !strictly_inside {
+                continue;
+            }
+            // Response (raw peak strength) is frame-independent → exact.
+            // Position agrees to floating-point rounding of the ROI shift.
+            let found = sub.iter().any(|sc| {
+                bit_eq(sc.response, fc.response)
+                    && (sc.x - fc.x).abs() < 1e-3
+                    && (sc.y - fc.y).abs() < 1e-3
+            });
+            assert!(
+                found,
+                "interior corner ({:.4},{:.4}) r={:.4} missing or outside parity tolerance in ROI result",
+                fc.x, fc.y, fc.response
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= 4,
+            "expected several strictly-interior corners to compare, got {checked}"
+        );
+    }
+
+    /// A ROI whose top-left is far from the origin must return corners in
+    /// the global (base-image) frame. If the coordinates were patch-local
+    /// they would not coincide with any full-frame corner position.
+    #[test]
+    fn chess_roi_coordinates_are_global() {
+        let size = 100usize;
+        let img = aa_chessboard(size, 12, (0.35, 0.7), 20, 220);
+        let mut det = Detector::new(DetectorConfig::chess()).unwrap();
+
+        let full = det.detect_u8(&img, size as u32, size as u32).unwrap();
+        let sub = det
+            .detect_u8_roi(&img, size as u32, size as u32, roi(48, 48, 92, 92))
+            .unwrap();
+
+        assert!(!sub.is_empty(), "expected corners in the interior ROI");
+        for sc in &sub {
+            let matched = full
+                .iter()
+                .any(|fc| (fc.x - sc.x).abs() < 0.01 && (fc.y - sc.y).abs() < 0.01);
+            assert!(
+                matched,
+                "ROI corner ({:.3},{:.3}) does not match any full-frame (global) corner",
+                sc.x, sc.y
+            );
+        }
+    }
+
+    #[test]
+    fn roi_edges_and_out_of_bounds() {
+        let size = 100usize;
+        let img = aa_chessboard(size, 12, (0.35, 0.7), 20, 220);
+        let mut det = Detector::new(DetectorConfig::chess()).unwrap();
+        let w = size as u32;
+
+        // ROI flush against the top-left image border: no panic, still
+        // finds interior corners away from the border.
+        let border_roi = det.detect_u8_roi(&img, w, w, roi(0, 0, 45, 45)).unwrap();
+        assert!(
+            !border_roi.is_empty(),
+            "expected corners in a border-touching ROI"
+        );
+
+        // ROI smaller than the detector support: Ok(empty), no panic.
+        let tiny = det.detect_u8_roi(&img, w, w, roi(50, 50, 53, 53)).unwrap();
+        assert!(tiny.is_empty(), "sub-support ROI must yield no corners");
+
+        // Partially out-of-range ROI clamps to the image bounds (must not
+        // panic or error).
+        let _clamped = det
+            .detect_u8_roi(&img, w, w, roi(80, 80, 300, 300))
+            .unwrap();
+
+        // Fully out-of-range ROI is degenerate after clamping → empty.
+        let gone = det
+            .detect_u8_roi(&img, w, w, roi(150, 150, 300, 300))
+            .unwrap();
+        assert!(
+            gone.is_empty(),
+            "fully out-of-range ROI must yield no corners"
+        );
+    }
+
+    #[test]
+    fn roi_respects_orientation_config() {
+        let size = 100usize;
+        let img = aa_chessboard(size, 12, (0.35, 0.7), 20, 220);
+        let w = size as u32;
+        let region = roi(24, 24, 84, 84);
+
+        let mut with_axes = Detector::new(DetectorConfig::chess()).unwrap();
+        let described = with_axes.detect_u8_roi(&img, w, w, region).unwrap();
+        assert!(!described.is_empty());
+        assert!(
+            described.iter().all(|c| c.axes.is_some()),
+            "default config must attach orientation axes"
+        );
+
+        let mut no_axes = Detector::new(DetectorConfig::chess().without_orientation()).unwrap();
+        let bare = no_axes.detect_u8_roi(&img, w, w, region).unwrap();
+        assert!(!bare.is_empty());
+        assert!(
+            bare.iter().all(|c| c.axes.is_none()),
+            "without_orientation() must skip the orientation fit"
+        );
+    }
+
+    #[test]
+    fn roi_detection_is_deterministic() {
+        let size = 100usize;
+        let img = aa_chessboard(size, 12, (0.35, 0.7), 20, 220);
+        let w = size as u32;
+        let region = roi(20, 20, 80, 80);
+        let mut det = Detector::new(DetectorConfig::chess()).unwrap();
+
+        let a = det.detect_u8_roi(&img, w, w, region).unwrap();
+        let b = det.detect_u8_roi(&img, w, w, region).unwrap();
+        assert_eq!(a.len(), b.len(), "corner count must be stable");
+        for (ca, cb) in a.iter().zip(&b) {
+            assert!(
+                bit_eq(ca.x, cb.x) && bit_eq(ca.y, cb.y) && bit_eq(ca.response, cb.response),
+                "ROI detection must be bit-deterministic"
+            );
+        }
+    }
+
+    /// Radon smoke: ROI detection is non-empty and every ROI corner lies
+    /// close to a full-frame corner from the same region. Radon computes
+    /// its response on the copied ROI, so patch and full-frame subpixel
+    /// positions agree only within a small tolerance (not bit-exact).
+    #[test]
+    fn radon_roi_smoke_matches_full_frame() {
+        let size = 129usize;
+        let mut img = aa_chessboard(size, 12, (0.4, 0.6), 30, 220);
+        gaussian_blur(&mut img, size, 1.2);
+        let w = size as u32;
+        let mut det = Detector::new(DetectorConfig::radon()).unwrap();
+
+        let full = det.detect_u8(&img, w, w).unwrap();
+        let sub = det.detect_u8_roi(&img, w, w, roi(36, 36, 96, 96)).unwrap();
+
+        assert!(!sub.is_empty(), "Radon ROI detection must find corners");
+        for sc in &sub {
+            let near = full
+                .iter()
+                .any(|fc| (fc.x - sc.x).abs() < 2.0 && (fc.y - sc.y).abs() < 2.0);
+            assert!(
+                near,
+                "Radon ROI corner ({:.2},{:.2}) has no nearby full-frame corner",
+                sc.x, sc.y
+            );
+        }
+    }
+
+    #[cfg(feature = "ml-refiner")]
+    #[test]
+    fn roi_rejects_ml_refiner_without_silent_downgrade() {
+        let size = 64usize;
+        let img = synthetic_board(size);
+        let cfg = DetectorConfig::chess().with_chess(|c| c.refiner = crate::ChessRefiner::Ml);
+        let mut det = Detector::new(cfg).unwrap();
+        let err = det
+            .detect_u8_roi(&img, size as u32, size as u32, roi(10, 10, 50, 50))
+            .unwrap_err();
+        assert!(matches!(err, ChessError::RoiRefinerUnsupported));
     }
 }
