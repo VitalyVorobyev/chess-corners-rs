@@ -63,8 +63,16 @@ jobs:
           key: critcmp-0.1.8-${{ runner.os }}
 
       - name: Install critcmp
-        # No-op when the cached binary is already present at this version.
-        run: cargo install critcmp --version 0.1.8 --locked
+        # Skip when the cached binary is already present: the cache stores
+        # only ~/.cargo/bin/critcmp (not cargo's .crates.toml install
+        # registry), so an unconditional `cargo install` rebuilds and then
+        # refuses to overwrite the untracked binary ("already exists in
+        # destination"). The cache key pins the version, so presence of the
+        # file implies the right build.
+        run: |
+          if [ ! -x ~/.cargo/bin/critcmp ]; then
+            cargo install critcmp --version 0.1.8 --locked
+          fi
 
       - name: Run gate (PR head vs merge-base, same runner)
         # ADVISORY on shared GitHub-hosted runners: observed ±13% run-to-run

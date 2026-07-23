@@ -25,6 +25,7 @@ use chess_corners_core::{ChessBuffers, ChessDetector, CornerDescriptor, DenseDet
 use chess_corners_core::{ChessParams, ResponseMap};
 use chess_corners_core::{
     CornerRefiner, ImageView, OrientationMethod, RadonBuffers, RadonDetector, Refiner, RefinerKind,
+    Roi,
 };
 
 /// Bridge from `chess_corners_core::ImageView` to `box_image_pyramid::ImageView`.
@@ -477,6 +478,113 @@ fn detect_multiscale<D: DenseDetector>(
 // Detector-typed entry points (called by the facade Detector dispatch)
 // ---------------------------------------------------------------------------
 
+/// A detection pipeline that runs over whichever [`DenseDetector`] the
+/// active [`DetectionStrategy`] selects. Implemented once per entry
+/// point (full-frame multiscale, single-scale ROI); the strategy →
+/// detector/params/[`DetectorShape`] lowering lives solely in
+/// [`dispatch_strategy`], so the two entry points cannot drift on how a
+/// strategy is configured.
+trait StrategyPipeline {
+    fn run<D: DenseDetector>(
+        self,
+        base: ImageView<'_>,
+        detector: &D,
+        params: &D::Params,
+        buffers: &mut D::Buffers,
+        shape: &DetectorShape<'_>,
+    ) -> Vec<CornerDescriptor>;
+}
+
+/// Lower `cfg.strategy` into the concrete detector marker, its params,
+/// its scratch buffers, and the shared post-detection [`DetectorShape`],
+/// then hand them to `pipeline`. This is the single place the
+/// ChESS/Radon per-strategy configuration is assembled; entry points
+/// supply only the pipeline body.
+fn dispatch_strategy(
+    base: ImageView<'_>,
+    cfg: &DetectorConfig,
+    chess_buffers: &mut ChessBuffers,
+    radon_buffers: &mut RadonBuffers,
+    pipeline: impl StrategyPipeline,
+) -> Vec<CornerDescriptor> {
+    match &cfg.strategy {
+        DetectionStrategy::Chess(_) => {
+            let chess_params = cfg.chess_params();
+            let refiner_kind = chess_params.refiner.clone();
+            let shape = DetectorShape {
+                refiner_kind: &refiner_kind,
+                descriptor_ring_radius: chess_params.ring_radius(),
+                orientation_method: chess_params.orientation_method,
+                merge_radius: cfg.merge_radius,
+            };
+            pipeline.run(base, &ChessDetector, &chess_params, chess_buffers, &shape)
+        }
+        DetectionStrategy::Radon(_) => {
+            let radon_params = cfg.radon_detector_params();
+            // Radon's subpixel is its built-in Gaussian peak fit:
+            // `refine_peaks_on_image` is a no-op and `refines_on_image()`
+            // is false, so this refiner kind is constructed but never
+            // applied. Use the cheapest default.
+            let refiner_kind = RefinerKind::default();
+            let shape = DetectorShape {
+                refiner_kind: &refiner_kind,
+                // Radon strategies don't carry a descriptor-ring knob;
+                // descriptors sample the canonical r=5 ring downstream.
+                // Orientation method is top-level on DetectorConfig.
+                descriptor_ring_radius: chess_corners_core::ChessParams::default().ring_radius(),
+                orientation_method: cfg.orientation_method,
+                merge_radius: cfg.merge_radius,
+            };
+            pipeline.run(base, &RadonDetector, &radon_params, radon_buffers, &shape)
+        }
+    }
+}
+
+/// [`StrategyPipeline`] for the full-frame coarse-to-fine detector.
+struct MultiscaleRun<'a> {
+    pyramid_buffers: &'a mut PyramidBuffers,
+    multiscale: Option<CoarseToFineParams>,
+}
+
+impl StrategyPipeline for MultiscaleRun<'_> {
+    fn run<D: DenseDetector>(
+        self,
+        base: ImageView<'_>,
+        detector: &D,
+        params: &D::Params,
+        buffers: &mut D::Buffers,
+        shape: &DetectorShape<'_>,
+    ) -> Vec<CornerDescriptor> {
+        detect_multiscale(
+            base,
+            detector,
+            params,
+            buffers,
+            self.pyramid_buffers,
+            self.multiscale.as_ref(),
+            shape,
+        )
+    }
+}
+
+/// [`StrategyPipeline`] for the single-scale ROI detector.
+struct RoiRun {
+    roi: Roi,
+}
+
+impl StrategyPipeline for RoiRun {
+    fn run<D: DenseDetector>(
+        self,
+        base: ImageView<'_>,
+        detector: &D,
+        params: &D::Params,
+        buffers: &mut D::Buffers,
+        shape: &DetectorShape<'_>,
+    ) -> Vec<CornerDescriptor> {
+        detect_roi_generic(base, self.roi, detector, params, buffers, shape)
+    }
+}
+
 /// Detect corners through the generic orchestrator. The `cfg.strategy`
 /// selects between [`ChessDetector`] and [`RadonDetector`]; both
 /// flow through the same control flow.
@@ -488,54 +596,130 @@ pub(crate) fn detect_with_buffers(
     radon_buffers: &mut RadonBuffers,
 ) -> Vec<CornerDescriptor> {
     let multiscale = cfg.coarse_to_fine_params();
+    dispatch_strategy(
+        base,
+        cfg,
+        chess_buffers,
+        radon_buffers,
+        MultiscaleRun {
+            pyramid_buffers,
+            multiscale,
+        },
+    )
+}
 
-    match &cfg.strategy {
-        DetectionStrategy::Chess(_) => {
-            let chess_params = cfg.chess_params();
-            let refiner_kind = chess_params.refiner.clone();
-            let shape = DetectorShape {
-                refiner_kind: &refiner_kind,
-                descriptor_ring_radius: chess_params.ring_radius(),
-                orientation_method: chess_params.orientation_method,
-                merge_radius: cfg.merge_radius,
-            };
-            detect_multiscale(
-                base,
-                &ChessDetector,
-                &chess_params,
-                chess_buffers,
-                pyramid_buffers,
-                multiscale.as_ref(),
-                &shape,
-            )
-        }
-        DetectionStrategy::Radon(_) => {
-            let radon_params = cfg.radon_detector_params();
-            // Radon's subpixel is its built-in Gaussian peak fit:
-            // `refine_peaks_on_image` is a no-op and `refines_on_image()`
-            // is false, so this refiner kind is constructed but never
-            // applied. Use the cheapest default.
-            let refiner_kind = RefinerKind::default();
-            // Radon strategies don't carry a descriptor-ring knob;
-            // descriptors sample the canonical r=5 ring downstream.
-            // Orientation method is top-level on DetectorConfig.
-            let shape = DetectorShape {
-                refiner_kind: &refiner_kind,
-                descriptor_ring_radius: chess_corners_core::ChessParams::default().ring_radius(),
-                orientation_method: cfg.orientation_method,
-                merge_radius: cfg.merge_radius,
-            };
-            detect_multiscale(
-                base,
-                &RadonDetector,
-                &radon_params,
-                radon_buffers,
-                pyramid_buffers,
-                multiscale.as_ref(),
-                &shape,
-            )
-        }
+/// Detect corners inside `roi` of `base` at full resolution. The
+/// `cfg.strategy` selects between [`ChessDetector`] and [`RadonDetector`];
+/// both flow through [`detect_roi_generic`]. This is single-scale local
+/// detection: the config's multiscale/upscale sections do not participate.
+pub(crate) fn detect_roi_with_buffers(
+    base: ImageView<'_>,
+    roi: Roi,
+    cfg: &DetectorConfig,
+    chess_buffers: &mut ChessBuffers,
+    radon_buffers: &mut RadonBuffers,
+) -> Vec<CornerDescriptor> {
+    dispatch_strategy(base, cfg, chess_buffers, radon_buffers, RoiRun { roi })
+}
+
+/// Single-scale ROI corner detection.
+///
+/// Carves an inflated ROI patch — the user ROI grown by the detector's
+/// peak-detection margin (response support + NMS + image-refiner
+/// half-width) and clamped to the image — so a corner sitting on the ROI
+/// edge is still fully inside the carved patch. It then runs the same
+/// response → peak → image-domain-refine composition one coarse-to-fine
+/// ROI tile uses (`DetectorStep::refine_roi`), keeps only peaks whose
+/// detected position lands inside the (un-inflated, clamped) `roi`,
+/// maps them into the base-image frame, and produces descriptors through
+/// the shared merge + describe stage.
+///
+/// A fully out-of-range or degenerate post-clamp ROI yields no corners.
+fn detect_roi_generic<D: DenseDetector>(
+    base: ImageView<'_>,
+    roi: Roi,
+    detector: &D,
+    params: &D::Params,
+    detector_buffers: &mut D::Buffers,
+    shape: &DetectorShape<'_>,
+) -> Vec<CornerDescriptor> {
+    let base_w = base.width() as i32;
+    let base_h = base.height() as i32;
+
+    // Clamp the requested ROI to image bounds; matches the multiscale
+    // ROI-carving behaviour. A degenerate post-clamp ROI has no interior.
+    let ux0 = (roi.x0() as i32).clamp(0, base_w);
+    let uy0 = (roi.y0() as i32).clamp(0, base_h);
+    let ux1 = (roi.x1() as i32).clamp(0, base_w);
+    let uy1 = (roi.y1() as i32).clamp(0, base_h);
+    if ux1 <= ux0 || uy1 <= uy0 {
+        return Vec::new();
     }
+
+    // The image-domain refiner only widens the required margin when the
+    // detector actually consumes it (Radon's refine step is a no-op, so
+    // `refines_on_image()` is false and no refiner margin is added).
+    let refine_border = if detector.refines_on_image() {
+        refiner_radius(shape.refiner_kind)
+    } else {
+        0
+    };
+    // Inflate by the full peak-detection margin so a corner on the ROI
+    // edge keeps `roi_border + refine_border` pixels of support inside the
+    // carved patch — the same margin `detect_corners` drops from the patch
+    // border — and is detected/refined bit-identically to the full frame.
+    let inflate = detector.roi_border(params) + refine_border;
+    let ix0 = (ux0 - inflate).max(0);
+    let iy0 = (uy0 - inflate).max(0);
+    let ix1 = (ux1 + inflate).min(base_w);
+    let iy1 = (uy1 + inflate).min(base_h);
+
+    // Dense response over the inflated patch; peaks are patch-local.
+    let resp =
+        detector.compute_response_patch(base, (ix0, iy0, ix1, iy1), params, detector_buffers);
+    let peaks = detector.detect_corners(&resp, params, refine_border);
+    if peaks.is_empty() {
+        return Vec::new();
+    }
+
+    // Keep only peaks whose detected position (mapped to the base frame)
+    // lies inside the clamped user ROI. This never emits a corner outside
+    // `roi`, regardless of how far the patch was inflated.
+    let kept: Vec<Corner> = peaks
+        .into_iter()
+        .filter(|c| {
+            let gx = c.x + ix0 as f32;
+            let gy = c.y + iy0 as f32;
+            gx >= ux0 as f32 && gx < ux1 as f32 && gy >= uy0 as f32 && gy < uy1 as f32
+        })
+        .collect();
+    if kept.is_empty() {
+        return Vec::new();
+    }
+
+    // Image-domain refinement over the base image with origin at the
+    // patch top-left: the refiner sees patch-local seeds and samples base
+    // pixels at (seed + origin), so its output matches the full-frame
+    // refiner. Detectors whose refine step is a no-op return peaks as-is.
+    let mut refiner = Refiner::from_kind(shape.refiner_kind.clone());
+    let patch_image = ImageView::with_origin(base.width(), base.height(), base.data(), [ix0, iy0])
+        .expect("base image dimensions must match buffer length");
+    let mut refined = detector.refine_peaks_on_image(kept, patch_image, &resp, &mut refiner);
+    // Shift patch-local refined positions back into the base frame.
+    for c in &mut refined {
+        c.x += ix0 as f32;
+        c.y += iy0 as f32;
+    }
+
+    let merged = merge_corners_simple(&mut refined, shape.merge_radius);
+    describe_corners(
+        base.data(),
+        base.width(),
+        base.height(),
+        shape.descriptor_ring_radius,
+        merged,
+        shape.orientation_method,
+    )
 }
 
 // ---------------------------------------------------------------------------

@@ -380,11 +380,15 @@ impl DenseDetector for RadonDetector {
         // Radon operates at working resolution; the ROI is sliced in
         // base-image pixels, so the border-in-base-pixels accounts
         // for the working-resolution support divided by the
-        // upsample. ray_radius and nms_radius are in working pixels.
+        // upsample. ray_radius and nms_radius are in working pixels;
+        // the extra +1 is the pixel `detect_peaks_from_radon` reserves
+        // for its 3-point peak fit — its scan starts at
+        // `ray + nms + 1`, so the margin must cover that pixel too or
+        // a peak on the ROI boundary falls in the excluded border.
         let up = params.image_upsample_clamped() as i32;
         let ray = params.ray_radius_clamped() as i32;
         let nms = params.nms_radius as i32;
-        ((ray + nms + up - 1) / up).max(0)
+        (((ray + nms + 1) + up - 1) / up).max(0)
     }
 
     fn refine_peaks_on_image(

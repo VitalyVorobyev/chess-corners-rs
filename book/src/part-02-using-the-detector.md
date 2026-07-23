@@ -75,7 +75,7 @@ Add the facade crate:
 
 ```toml
 [dependencies]
-chess-corners = "1.1"
+chess-corners = "1.2"
 image = "0.25"          # optional, for GrayImage integration
 ```
 
@@ -200,6 +200,25 @@ with `a0.sigma` / `a1.sigma` their 1σ angular uncertainties. It is
 [Part VI §6.5](part-06-orientation-methods.md#65-choosing-a-method)).
 See [Part III §3.4](part-03-chess-detector.md#34-corner-descriptors)
 for the fit and the polarity convention.
+
+### 2.2.6 Detecting inside a region of interest
+
+`Detector::detect_u8_roi` / `Detector::detect_roi` restrict detection
+to a rectangular `Roi` of a larger image instead of scanning the
+whole frame:
+
+```rust
+use chess_corners::{Detector, DetectorConfig, Roi};
+
+let roi = Roi::new(100, 100, 400, 400).expect("valid roi");
+let corners = detector.detect_roi(&img, roi)?;
+```
+
+Returned corner coordinates are in the full input-image pixel frame,
+not ROI-local. This path is single-scale only — the active config's
+`multiscale` and `upscale` sections do not apply — and supports both
+ChESS and Radon. An out-of-range `roi` is clamped to the image bounds
+rather than erroring.
 
 ## 2.3 Python
 
