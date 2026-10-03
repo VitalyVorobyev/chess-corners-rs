@@ -4,12 +4,13 @@ use serde::{Deserialize, Serialize};
 ///
 /// JSON shape mirrors [`crate::UpscaleConfig`]:
 ///
-/// - `{ "single_scale": null }` — run the detector once on the full image.
+/// - `"single_scale"` — run the detector once on the full image.
 /// - `{ "pyramid": { "levels": 3, "min_size": 128, "refinement_radius": 3 } }`
 ///   — build an image pyramid, detect seeds on the coarsest level, and
 ///   refine each seed into the base image. Honoured by both ChESS and
 ///   Radon strategies.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum MultiscaleConfig {
@@ -18,14 +19,18 @@ pub enum MultiscaleConfig {
     SingleScale,
     /// Coarse-to-fine pyramid detection.
     Pyramid {
-        /// Number of pyramid levels (≥ 1). Level 0 is the base image;
-        /// each subsequent level is a 2× box-filter downsample.
+        /// Number of pyramid levels (integer `>= 1`, at most 255). Level 0
+        /// is the base image; each subsequent level is a 2× box-filter
+        /// downsample.
+        #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
         levels: u8,
-        /// Minimum short-edge length in pixels. The pyramid stops once
-        /// the next level would fall below this size.
+        /// Minimum short-edge length of a pyramid level, in pixels. The
+        /// pyramid stops once the next level would fall below this size.
+        #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
         min_size: usize,
         /// ROI half-radius at the coarse level used to refine each seed
-        /// into the base image, in coarse-level pixels.
+        /// into the base image, in coarse-level pixels (integer `>= 0`).
+        #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
         refinement_radius: u32,
     },
 }

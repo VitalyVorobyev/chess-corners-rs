@@ -46,6 +46,13 @@ jobs:
         if: matrix.toolchain == 'stable'
         run: cargo fmt --all --check
 
+      - name: detector config schema is up to date
+        # Regenerates schemas/detector_config.json from the Rust config types
+        # (default features, no ml-refiner) and fails on any drift from the
+        # committed copy. Fix with `cargo run -p xtask -- emit-schemas`.
+        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
+        run: cargo run -p xtask -- emit-schemas --check
+
       - name: clippy
         # `--all-features` enables the `simd` feature, which gates on
         # `#![feature(portable_simd)]` and therefore requires nightly.
@@ -176,6 +183,37 @@ jobs:
           test -f crates/chess-corners-wasm/pkg/chess_corners_wasm.d.ts
           echo "WASM package built successfully"
           ls -lh crates/chess-corners-wasm/pkg/chess_corners_wasm_bg.wasm
+
+      - name: Ship the detector config schema in the package
+        # Mirrors release-npm.yml: wasm-pack does not know about schemas/, so
+        # copy it into pkg/ and list it in package.json `files`.
+        run: |
+          PKG=crates/chess-corners-wasm/pkg
+          mkdir -p "$PKG/schemas"
+          cp schemas/*.json "$PKG/schemas/"
+          jq '.files += ["schemas"]' "$PKG/package.json" > "$PKG/package.json.tmp"
+          mv "$PKG/package.json.tmp" "$PKG/package.json"
+          grep -q 'fromJson' "$PKG/chess_corners_wasm.d.ts"
+          grep -q 'toJson' "$PKG/chess_corners_wasm.d.ts"
+          grep -q 'default_detector_config_json' "$PKG/chess_corners_wasm.d.ts"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: JSON config smoke test (node)
+        # Runs the built package under Node: fromJson / toJson round trips,
+        # defaults, f32 formatting and error messages.
+        run: node crates/chess-corners-wasm/tests/smoke.mjs crates/chess-corners-wasm/pkg
+
+      - name: npm pack dry-run lists the schema
+        working-directory: crates/chess-corners-wasm/pkg
+        run: |
+          npm pack --dry-run --json > pack.json
+          jq -r '.[0].files[].path' pack.json | sort
+          jq -e '.[0].files | map(.path) | index("schemas/detector_config.json")' pack.json
+          rm pack.json
 
   python:
     name: Python bindings test suite

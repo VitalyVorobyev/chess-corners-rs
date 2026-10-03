@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// ChESS sampling ring radius. Selects the `r=5` (canonical) or `r=10`
 /// (broad) ring used by the dense response kernel.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum ChessRing {
@@ -29,6 +30,7 @@ pub enum ChessRing {
 /// no shared discriminator + parallel-tuning-struct shape, so
 /// switching variants can never leave a stale config field behind.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum ChessRefiner {
@@ -84,6 +86,7 @@ impl ChessRefiner {
 /// - [`refiner`](ChessConfig::refiner) — select and configure the
 ///   subpixel refinement backend.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 #[non_exhaustive]
 pub struct ChessConfig {

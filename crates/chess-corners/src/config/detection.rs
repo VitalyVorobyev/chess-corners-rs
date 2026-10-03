@@ -23,19 +23,20 @@ use super::{ChessConfig, ChessRefiner, ChessRing, MultiscaleConfig, RadonConfig}
 /// The defaults match the ChESS presets; the Radon presets raise
 /// `nms_radius` to `4` to suit the wider Radon response peak.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 #[non_exhaustive]
 pub struct DetectionParams {
-    /// Non-maximum-suppression half-radius in working-resolution pixels.
-    /// Only the highest-response pixel within this radius is kept.
-    /// Reduce when corners are packed closer than `2·nms_radius` pixels;
-    /// increase to suppress near-duplicate detections on blurry images.
+    /// Non-maximum-suppression half-radius, in working-resolution pixels
+    /// (integer `>= 0`). Only the highest-response pixel within this radius
+    /// is kept: reduce when corners are packed closer than `2·nms_radius`
+    /// pixels, increase to suppress near-duplicates on blurry images.
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub nms_radius: u32,
     /// Minimum number of positive-response neighbours within the NMS
-    /// window that a candidate must have to be accepted. Increase to
-    /// require a stronger local cluster of response, suppressing isolated
-    /// noise peaks at the cost of potentially missing weak corners near
-    /// image boundaries.
+    /// window that a candidate must have to be accepted (integer `>= 0`,
+    /// unitless count). Increase to suppress isolated noise peaks, at the
+    /// cost of possibly missing weak corners near image boundaries.
     pub min_cluster_size: u32,
 }
 
@@ -59,6 +60,7 @@ impl Default for DetectionParams {
 /// the active detector are simply unreachable, so the type system
 /// enforces correctness instead of silently ignoring fields.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum DetectionStrategy {
@@ -112,29 +114,34 @@ impl Default for DetectionStrategy {
 /// - [`merge_radius`](DetectorConfig::merge_radius) — duplicate-suppression
 ///   radius across pyramid levels. See the field docs below.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 #[non_exhaustive]
 pub struct DetectorConfig {
     /// Detector dispatch: ChESS or Radon, each carrying its own tuning.
     pub strategy: DetectionStrategy,
-    /// Detector acceptance threshold.
+    /// Detector acceptance threshold (`>= 0`).
     ///
     /// ChESS reads it as an absolute floor on the raw response
     /// `R = SR − DR − 16·MR`: a candidate is kept when `R` exceeds it.
     /// Useful floors run roughly `30..=300` depending on image contrast;
-    /// the [`chess`](Self::chess) preset defaults to `30`, which suppresses
-    /// texture noise while keeping well-formed corners.
+    /// the default is `30`, which suppresses texture noise while keeping
+    /// well-formed corners.
     /// Radon reads it as a fraction in `[0.0, 1.0]` of the per-frame
     /// maximum response, because Radon's `(max − min)²` score scales
     /// with image size and has no portable absolute scale.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub threshold: f32,
     /// Shared non-maximum-suppression and peak-clustering thresholds.
     /// Honoured by both strategies. See [`DetectionParams`].
     pub detection: DetectionParams,
     /// Coarse-to-fine multiscale configuration. `SingleScale` skips
-    /// the pyramid entirely. Honoured by both strategies.
+    /// the pyramid entirely; `Pyramid` detects seeds on a coarse level and
+    /// refines them into the base image. Honoured by both strategies.
     pub multiscale: MultiscaleConfig,
-    /// Pre-pipeline integer upscaling. `Disabled` skips the stage.
+    /// Pre-pipeline integer bilinear upscaling for low-resolution inputs.
+    /// `Disabled` skips the stage; `Fixed(k)` upscales by the unitless
+    /// factor `k` in `{2, 3, 4}`. Output coordinates stay in input pixels.
     pub upscale: UpscaleConfig,
     /// Orientation-fit method used when building corner descriptors, or
     /// `None` to skip the per-corner fit entirely. When `None`, every
@@ -142,14 +149,14 @@ pub struct DetectorConfig {
     /// unaffected. Skipping orientation is the cheaper path for consumers
     /// that derive board geometry themselves.
     pub orientation_method: Option<OrientationMethod>,
-    /// Advanced tuning. Merge radius in base-image pixels for
-    /// cross-level and cross-seed duplicate suppression. After seeds
-    /// detected at coarser pyramid levels are refined into the base
-    /// image, any two refined positions within this radius are merged
-    /// into a single output corner. Default is `3.0` px. Increase if
-    /// you see duplicate detections near the same physical corner;
-    /// decrease if distinct corners closer than `2·merge_radius` pixels
-    /// are being merged.
+    /// Advanced tuning. Merge radius for cross-level and cross-seed
+    /// duplicate suppression, in base-image pixels (`>= 0`, default `3.0`).
+    /// After coarse-level seeds are refined into the base image, any two
+    /// refined positions within this radius are merged into one corner:
+    /// increase if you see duplicates of the same physical corner, decrease
+    /// if distinct corners closer than `2·merge_radius` pixels get merged.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub merge_radius: f32,
 }
 

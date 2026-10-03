@@ -15,32 +15,39 @@ use serde::{Deserialize, Serialize};
 /// appropriate for most scenes; adjust only if you observe excessive
 /// rejection or acceptance of clearly-wrong refinements.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 #[non_exhaustive]
 pub struct SaddlePointConfig {
-    /// Half-size of the image patch used for the surface fit
-    /// (full patch is `2·radius+1` × `2·radius+1`). Default is `2`
+    /// Half-size of the image patch used for the surface fit, in image
+    /// pixels (integer `>= 1`; the patch is `(2·radius+1)²`). Default `2`
     /// (5×5 patch).
     ///
     /// Advanced tuning.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub radius: i32,
-    /// The Hessian determinant of the fitted quadratic must be more
-    /// negative than `-det_margin` (i.e. `det(H) < -det_margin`) for
-    /// a saddle to be confirmed. Increase to require a sharper saddle
-    /// before accepting.
+    /// Margin on the Hessian determinant of the fitted quadratic
+    /// (unitless, `>= 0`): a saddle is confirmed only when
+    /// `det(H) < -det_margin`. Increase to require a sharper saddle.
     ///
     /// Advanced tuning.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub det_margin: f32,
-    /// Maximum displacement (pixels) from the seed to the fitted
-    /// stationary point. Refinements with a larger displacement are
-    /// rejected. Mirrors `ForstnerConfig::max_offset`.
+    /// Maximum displacement from the seed to the fitted stationary point,
+    /// in pixels (`>= 0`); refinements that move farther are rejected.
+    /// The effective bound is also capped at `radius + 0.5`.
     ///
     /// Advanced tuning.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub max_offset: f32,
-    /// Minimum absolute value of `det(H)`. Rejects near-flat surfaces
-    /// where the determinant is too close to zero to be meaningful.
+    /// Minimum absolute value of `det(H)` (unitless, `>= 0`). Rejects
+    /// near-flat surfaces whose determinant is too close to zero to be
+    /// meaningful.
     ///
     /// Advanced tuning.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub min_abs_det: f32,
 }
 

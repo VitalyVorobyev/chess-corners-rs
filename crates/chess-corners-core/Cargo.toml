@@ -28,12 +28,16 @@ tracing = ["dep:tracing"]
 # which in practice limits the detector to images of roughly 16 MP
 # (255 · W · H ≤ u32::MAX). Without this feature, i64 is used.
 radon-sat-u32 = []
+# Opt-in: derive `schemars::JsonSchema` for the serde-serializable config
+# types so a JSON Schema of the detector config can be generated.
+schemars = ["dep:schemars"]
 
 [dependencies]
 rayon = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 log.workspace = true
 serde = { workspace = true, default-features = false, features = ["derive"] }
+schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Path-only (no version) so it is stripped from the published manifest;

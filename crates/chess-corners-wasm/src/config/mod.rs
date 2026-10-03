@@ -177,6 +177,7 @@ impl From<RsOrientationMethod> for OrientationMethod {
 // Re-exports
 // ---------------------------------------------------------------------------
 
+pub(crate) use detector::config_to_json;
 pub use detector::DetectorConfig;
 pub use multiscale::MultiscaleConfig;
 pub use refiners::{CenterOfMassConfig, ChessRefiner, ForstnerConfig, SaddlePointConfig};

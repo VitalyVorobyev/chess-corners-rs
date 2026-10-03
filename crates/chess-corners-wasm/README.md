@@ -205,6 +205,31 @@ snapshot.strategy.chess.nmsRadius = 4;
 detector.applyConfig(snapshot);
 ```
 
+### JSON configuration and schema
+
+A config can also be read and written as JSON, for example by a
+schema-driven settings form. The package ships the JSON Schema
+(draft 2020-12) of that JSON at `schemas/detector_config.json`; the
+descriptions, defaults and numeric bounds come from the Rust docs.
+
+```ts
+import init, { DetectorConfig, ChessDetector, default_detector_config_json } from '@vitavision/chess-corners';
+
+await init();
+const json = JSON.parse(default_detector_config_json()); // plain object, snake_case keys
+json.threshold = 40;
+json.strategy = { radon: { ray_radius: 4 } };            // externally tagged enum
+const cfg = DetectorConfig.fromJson(JSON.stringify(json)); // throws Error on bad JSON
+const detector = ChessDetector.withConfig(cfg);
+const roundTrip = JSON.parse(cfg.toJson());
+```
+
+Every key is optional; omitted fields take their defaults, so `'{}'` is the
+default config. Unknown keys are ignored. The schema describes the default
+build (no ML refiner). In a bundler the schema file can be imported from
+`@vitavision/chess-corners/schemas/detector_config.json`; the package has
+no `exports` map, so any deep import path works.
+
 ## API Reference
 
 ### `ChessDetector`
@@ -258,7 +283,7 @@ The orientation fit is the dominant per-corner cost, and it is optional. When it
 
 ## Binary size
 
-~186 KB raw, ~69 KB gzipped (single-scale, no parallelism, no SIMD; default features, no `--features` flags). Reproduce with:
+~253 KB raw, ~97 KB gzipped (single-scale, no parallelism, no SIMD; default features, no `--features` flags; includes the JSON config path). Reproduce with:
 
 ```bash
 wasm-pack build crates/chess-corners-wasm --target web --release

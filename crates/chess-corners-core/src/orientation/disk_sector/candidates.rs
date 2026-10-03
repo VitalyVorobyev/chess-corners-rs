@@ -186,8 +186,8 @@ pub(super) fn closest_candidate(candidates: &CandidateSet, target: f32) -> Optio
     let target_w = wrap_pi(target);
     let mut best_i = 0usize;
     let mut best_d = f32::INFINITY;
-    for c in 0..candidates.n {
-        let d = line_delta(candidates.angles[c], target_w);
+    for (c, &angle) in candidates.angles[..candidates.n].iter().enumerate() {
+        let d = line_delta(angle, target_w);
         if d < best_d {
             best_d = d;
             best_i = c;

@@ -166,8 +166,8 @@ pub(super) fn score_pair_cached(
 /// where possible.
 pub(super) fn edge_pair_score(data: &DiskData, theta0: f32, theta1: f32) -> f32 {
     let mut total = 0.0f32;
-    for i in 0..data.n {
-        total += data.grad_weights[i];
+    for &w in &data.grad_weights[..data.n] {
+        total += w;
     }
     if total <= 1e-9 {
         return 0.0;
@@ -199,8 +199,8 @@ pub(super) fn precompute_edge_alignments(
     out: &mut [f32; super::candidates::MAX_CANDIDATES],
 ) -> f32 {
     let mut total = 0.0f32;
-    for p in 0..data.n {
-        total += data.grad_weights[p];
+    for &w in &data.grad_weights[..data.n] {
+        total += w;
     }
     if total <= 1e-9 {
         return 0.0;

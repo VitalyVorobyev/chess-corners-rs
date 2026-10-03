@@ -18,19 +18,20 @@ use serde::{Deserialize, Serialize};
 /// JSON shape mirrors the other enum-with-payload knobs
 /// (`MultiscaleConfig`):
 ///
-/// - `{ "disabled": null }` — no upscaling (default).
+/// - `"disabled"` — no upscaling (default).
 /// - `{ "fixed": 2 }` — upscale by an integer factor before detection.
 ///   Allowed factors: `{2, 3, 4}`. Output corner coordinates are
 ///   rescaled back to the original input-pixel frame by the facade.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum UpscaleConfig {
     /// Do not upscale.
     #[default]
     Disabled,
-    /// Upscale by a fixed integer factor (allowed: 2, 3, 4).
-    Fixed(u32),
+    /// Upscale by a fixed integer factor (unitless; allowed: 2, 3, 4).
+    Fixed(#[cfg_attr(feature = "schemars", schemars(range(min = 2, max = 4)))] u32),
 }
 
 impl UpscaleConfig {
