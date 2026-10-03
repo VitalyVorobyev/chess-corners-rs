@@ -162,8 +162,7 @@ pub(super) fn best_disk_fit_uncached(
 ) -> Option<Fit> {
     for i in 0..candidates.n {
         let a0 = candidates.angles[i];
-        for j in i + 1..candidates.n {
-            let a1 = candidates.angles[j];
+        for &a1 in &candidates.angles[i + 1..candidates.n] {
             if !super::geometry::valid_pair(a0, a1) {
                 continue;
             }
@@ -338,8 +337,8 @@ fn refine_fit_scalar(data: &DiskData, seed: Fit) -> Fit {
 #[inline]
 fn edge_weight_total(data: &DiskData) -> f32 {
     let mut total = 0.0f32;
-    for p in 0..data.n {
-        total += data.grad_weights[p];
+    for &w in &data.grad_weights[..data.n] {
+        total += w;
     }
     total
 }
