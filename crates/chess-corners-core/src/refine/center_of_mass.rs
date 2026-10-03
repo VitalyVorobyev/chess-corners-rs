@@ -13,15 +13,18 @@ use serde::{Deserialize, Serialize};
 /// computed over a `(2·radius+1)²` patch on the ChESS response map
 /// centered at the rounded seed position.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 #[non_exhaustive]
 pub struct CenterOfMassConfig {
-    /// Half-width of the centroid window in response-map pixels.
-    /// Default is `2` (a 5×5 window). Increasing this value makes the
-    /// centroid less sensitive to single-pixel noise but may merge
-    /// energy from nearby corners.
+    /// Half-width of the centroid window, in response-map pixels (integer
+    /// `>= 0`; the window is `(2·radius+1)²`). Default `2` (a 5×5 window);
+    /// larger values smooth single-pixel noise but may merge energy from
+    /// nearby corners.
     ///
     /// Advanced tuning. The default is appropriate for most scenes.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub radius: i32,
 }
 

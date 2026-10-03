@@ -22,25 +22,29 @@ use serde::{Deserialize, Serialize};
 /// for typical camera images. Adjust them only when you have a specific
 /// reason (e.g. a non-standard image resolution or SNR budget).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 #[non_exhaustive]
 pub struct RadonConfig {
-    /// Advanced tuning. Half-length of each Radon ray in
-    /// working-resolution pixels. The ray has `2·ray_radius + 1`
-    /// samples. Paper default at `image_upsample = 2` is `ray_radius = 4`.
-    /// Shorter rays are faster but integrate less signal; longer rays are
-    /// more discriminating but may cross into neighbouring cells.
+    /// Advanced tuning. Half-length of each Radon ray, in
+    /// working-resolution pixels (integer `>= 1`; the ray has
+    /// `2·ray_radius + 1` samples). Paper default at `image_upsample = 2`
+    /// is `4`. Shorter rays are faster but integrate less signal; longer
+    /// rays are more discriminating but may cross into neighbouring cells.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub ray_radius: u32,
-    /// Image-level supersampling factor applied before ray integration.
-    /// `1` operates on the input grid; `2` (paper default) is equivalent
-    /// to bilinearly upsampling the input first, giving sub-pixel ray
-    /// positioning. Values ≥ 3 are clamped to 2 by the core detector.
+    /// Image-level supersampling factor applied before ray integration
+    /// (`1` or `2`). `1` operates on the input grid; `2` (paper default)
+    /// bilinearly upsamples the input first, giving sub-pixel ray
+    /// positioning. The core detector clamps values outside `1..=2`.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1, max = 2)))]
     pub image_upsample: u32,
     /// Advanced tuning. Half-size of the box blur applied to the Radon
-    /// response map after integration. `0` disables blurring; `1`
-    /// (default) yields a 3×3 box, smoothing quantisation noise in the
-    /// response. Increase only on very high-SNR images where extra
-    /// smoothing is unwanted.
+    /// response map after integration, in working-resolution pixels
+    /// (integer `>= 0`). `0` disables blurring; the default `1` yields a
+    /// 3×3 box that smooths quantisation noise.
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub response_blur_radius: u32,
     /// Advanced tuning. Peak-fit mode for the 3-point subpixel
     /// refinement of the response-map argmax. `Gaussian` (default) fits

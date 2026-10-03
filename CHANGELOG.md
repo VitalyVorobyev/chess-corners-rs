@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Detailed notes for prior releases live under `docs/changelog/`.
 
+- [1.3.0](docs/changelog/1.3.0.md) — 2026-10-03
 - [1.2.0](docs/changelog/1.2.0.md) — 2026-07-23
 - [1.1.0](docs/changelog/1.1.0.md) — 2026-07-22
 - [1.0.0](docs/changelog/1.0.0.md) — 2026-07-02

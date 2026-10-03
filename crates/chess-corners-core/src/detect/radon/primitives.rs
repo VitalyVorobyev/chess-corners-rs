@@ -12,6 +12,7 @@ use rayon::prelude::*;
 
 /// Subpixel peak-fitting mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum PeakFitMode {

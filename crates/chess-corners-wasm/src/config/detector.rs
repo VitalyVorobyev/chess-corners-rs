@@ -52,6 +52,20 @@ impl DetectorConfig {
         }
     }
 
+    /// Build from a plain JS value shaped like `chess_corners::DetectorConfig`
+    /// (as produced by `JSON.parse`). Missing fields take their defaults;
+    /// unknown keys are ignored (serde's default behaviour).
+    fn from_js_value(value: JsValue) -> Result<Self, JsError> {
+        serde_wasm_bindgen::from_value::<RsDetectorConfig>(value)
+            .map(Self::from_value)
+            .map_err(|e| JsError::new(&format!("invalid DetectorConfig JSON: {}", error_text(&e))))
+    }
+
+    /// Serialize to JSON text in the shape of `chess_corners::DetectorConfig`.
+    pub(crate) fn to_json_text(&self) -> Result<String, JsError> {
+        config_to_json(&self.snapshot())
+    }
+
     /// Create a deep-independent copy by round-tripping through the Rust
     /// snapshot. Used by builder methods so edits on the returned config
     /// do not alias the source's cells.
@@ -106,6 +120,38 @@ impl DetectorConfig {
     #[wasm_bindgen(js_name = radonMultiscale)]
     pub fn radon_multiscale() -> Self {
         Self::from_value(RsDetectorConfig::radon_multiscale())
+    }
+
+    // ---- JSON interchange ----
+
+    /// Parse a `DetectorConfig` from JSON in the same shape as
+    /// `schemas/detector_config.json` shipped in the npm package (the
+    /// serde shape of `chess_corners::DetectorConfig`: snake_case keys,
+    /// externally tagged enums such as `{"chess": {...}}`).
+    ///
+    /// Every field is optional; omitted fields take their library
+    /// defaults, so `"{}"` yields the default config, and unknown keys are
+    /// ignored. Throws an `Error` when the text is not valid JSON (the
+    /// engine's `SyntaxError`) or a value has the wrong type or an unknown
+    /// enum variant (message such as `invalid type: string "high",
+    /// expected f32`). Semantic validation (for example the
+    /// allowed upscale factors) happens when the config is handed to
+    /// `ChessDetector.withConfig` / `applyConfig`.
+    /// JS: `DetectorConfig.fromJson('{"threshold": 40}')`.
+    #[wasm_bindgen(js_name = fromJson)]
+    pub fn from_json(json: &str) -> Result<DetectorConfig, JsValue> {
+        // Parsing is delegated to the host's `JSON.parse`, so a syntax error
+        // surfaces as the engine's own `SyntaxError` with its position info.
+        let value = js_sys::JSON::parse(json)?;
+        Ok(Self::from_js_value(value)?)
+    }
+
+    /// Serialize this config to JSON (compact, same shape as
+    /// `schemas/detector_config.json`). Round-trips through
+    /// [`Self::from_json`]. JS: `JSON.parse(cfg.toJson())`.
+    #[wasm_bindgen(js_name = toJson)]
+    pub fn to_json(&self) -> Result<String, JsError> {
+        self.to_json_text()
     }
 
     // ---- Chainable builder methods ----
@@ -427,4 +473,124 @@ fn apply_chess_refiner_from_js(_cfg: &mut DetectorConfig, _val: JsValue) -> Resu
     Err(JsValue::from_str(
         "refiner cannot be set via the options object; use .withChessRefiner(refiner) instead",
     ))
+}
+
+/// `serde-wasm-bindgen` errors display as `Error: <message>`; drop the prefix.
+fn error_text(e: &serde_wasm_bindgen::Error) -> String {
+    let text = e.to_string();
+    text.strip_prefix("Error: ")
+        .map_or(text.clone(), str::to_owned)
+}
+
+/// Serialize a facade config to JSON text via `serde-wasm-bindgen` and the
+/// host's `JSON.stringify`.
+///
+/// `serde-wasm-bindgen` widens `f32` to `f64`, so `0.28_f32` would print as
+/// `0.2800000011920929`. [`shorten_f32`] restores the shortest decimal that
+/// still names the same `f32`, matching the committed JSON Schema defaults.
+pub(crate) fn config_to_json(cfg: &RsDetectorConfig) -> Result<String, JsError> {
+    let value = serde_wasm_bindgen::to_value(cfg).map_err(|e| {
+        JsError::new(&format!(
+            "failed to serialize DetectorConfig: {}",
+            error_text(&e)
+        ))
+    })?;
+    shorten_f32(&value);
+    let text = js_sys::JSON::stringify(&value)
+        .map_err(|_| JsError::new("failed to serialize DetectorConfig: JSON.stringify threw"))?;
+    Ok(String::from(text))
+}
+
+/// Recursively replace each non-integer number that is exactly an `f32`
+/// with the shortest decimal string (<= 9 significant digits) that parses
+/// back to the same `f32`. Config values are plain objects and scalars.
+fn shorten_f32(value: &JsValue) {
+    if !value.is_object() {
+        return;
+    }
+    let keys = js_sys::Object::keys(value.unchecked_ref::<js_sys::Object>());
+    for i in 0..keys.length() {
+        let key = keys.get(i);
+        let Ok(child) = js_sys::Reflect::get(value, &key) else {
+            continue;
+        };
+        if let Some(n) = child.as_f64() {
+            if let Some(short) = shortest_f32_decimal(n) {
+                let _ = js_sys::Reflect::set(value, &key, &JsValue::from_f64(short));
+            }
+        } else {
+            shorten_f32(&child);
+        }
+    }
+}
+
+fn shortest_f32_decimal(n: f64) -> Option<f64> {
+    let as_f32 = n as f32;
+    if !n.is_finite() || n.fract() == 0.0 || f64::from(as_f32) != n {
+        return None;
+    }
+    let num = js_sys::Number::from(n);
+    (1..=9u8).find_map(|digits| {
+        let text = num.to_precision(digits).ok()?;
+        let candidate = js_sys::parse_float(&String::from(text));
+        (candidate as f32 == as_f32).then_some(candidate)
+    })
+}
+
+#[cfg(test)]
+mod json_tests {
+    //! Off-wasm tests pin the serde contract that `fromJson` / `toJson`
+    //! delegate to (the glue itself needs a JS host; it is exercised by
+    //! `crates/chess-corners-wasm/tests/smoke.mjs` against the built package).
+    use super::*;
+
+    fn presets() -> [(&'static str, RsDetectorConfig); 4] {
+        [
+            ("chess", RsDetectorConfig::chess()),
+            ("chess_multiscale", RsDetectorConfig::chess_multiscale()),
+            ("radon", RsDetectorConfig::radon()),
+            ("radon_multiscale", RsDetectorConfig::radon_multiscale()),
+        ]
+    }
+
+    #[test]
+    fn presets_round_trip_through_wrapper_and_json() {
+        for (name, preset) in presets() {
+            let snapshot = DetectorConfig::from_value(preset).snapshot();
+            assert_eq!(snapshot, preset, "{name}: wrapper round trip");
+            let json = serde_json::to_string(&snapshot).unwrap();
+            let back: RsDetectorConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, preset, "{name}: {json}");
+        }
+    }
+
+    #[test]
+    fn json_is_snake_case_externally_tagged() {
+        let json = serde_json::to_value(
+            DetectorConfig::from_value(RsDetectorConfig::radon_multiscale()).snapshot(),
+        )
+        .unwrap();
+        assert!(json.get("merge_radius").is_some(), "{json}");
+        assert!(json["strategy"].get("radon").is_some(), "{json}");
+        assert!(json["multiscale"].get("pyramid").is_some(), "{json}");
+        assert_eq!(json["upscale"], "disabled");
+    }
+
+    #[test]
+    fn empty_and_partial_json_fill_defaults() {
+        let empty: RsDetectorConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(empty, RsDetectorConfig::default());
+        let partial: RsDetectorConfig = serde_json::from_str(
+            r#"{"threshold": 55.0, "strategy": {"radon": {"ray_radius": 6}}}"#,
+        )
+        .unwrap();
+        assert_eq!(partial.threshold, 55.0);
+        match partial.strategy {
+            chess_corners::DetectionStrategy::Radon(r) => {
+                assert_eq!(r.ray_radius, 6);
+                assert_eq!(r.image_upsample, 2, "unspecified field keeps default");
+            }
+            other => panic!("expected radon strategy, got {other:?}"),
+        }
+    }
 }

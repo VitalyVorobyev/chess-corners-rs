@@ -15,37 +15,40 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration for the [`ForstnerRefiner`].
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 #[non_exhaustive]
 pub struct ForstnerConfig {
-    /// Half-size of the local gradient window (full window is
-    /// `2*radius+1`). A radius of 2 gives a 5×5 patch — large enough to
-    /// capture the gradient structure around a corner while staying
-    /// local.
+    /// Half-size of the local gradient window, in image pixels (integer
+    /// `>= 1`; the window is `(2·radius+1)²`). Default `2` gives a 5×5
+    /// patch, large enough to capture the gradient structure around a
+    /// corner while staying local.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub radius: i32,
-    /// Minimum trace of the structure tensor (sum of eigenvalues).
-    /// Rejects flat regions where gradient energy is too low. The
-    /// value 25.0 corresponds roughly to an average gradient magnitude
-    /// of ~5 per pixel in a 5×5 window (5² = 25), filtering out
-    /// textureless areas.
+    /// Minimum trace of the structure tensor (sum of eigenvalues; `>= 0`,
+    /// in squared gradient units). Rejects flat regions with too little
+    /// gradient energy; the default `25.0` is roughly a mean gradient
+    /// magnitude of 5 per pixel in a 5×5 window.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub min_trace: f32,
     /// Minimum determinant of the structure tensor (product of
-    /// eigenvalues). Guards against singular or near-singular systems
-    /// where the least-squares solution is numerically unstable. 1e-3
-    /// is a conservative floor that rejects only truly degenerate
-    /// cases.
+    /// eigenvalues; `>= 0`). Guards against singular systems where the
+    /// least-squares solution is numerically unstable; the default `1e-3`
+    /// rejects only truly degenerate cases.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub min_det: f32,
-    /// Maximum ratio of the larger to the smaller eigenvalue. A high
-    /// condition number indicates an edge rather than a corner (one
-    /// dominant gradient direction). The threshold 50.0 is permissive
-    /// — standard Harris/Förstner literature suggests values in the
-    /// 10–100 range depending on noise level and corner sharpness.
+    /// Maximum ratio of the larger to the smaller structure-tensor
+    /// eigenvalue (unitless, `>= 1`). A high ratio indicates an edge
+    /// rather than a corner; the default `50.0` is permissive (literature
+    /// values span roughly 10–100).
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1.0)))]
     pub max_condition_number: f32,
-    /// Maximum displacement (in pixels) from the initial integer seed
-    /// to the refined subpixel location. Offsets larger than ~1.5 px
-    /// suggest the seed was mislocated and the refinement is
-    /// extrapolating rather than interpolating; such results are
-    /// rejected.
+    /// Maximum displacement from the initial integer seed to the refined
+    /// location, in pixels (`>= 0`). Larger offsets suggest a mislocated
+    /// seed and the result is rejected; the default is `1.5`.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub max_offset: f32,
 }
 

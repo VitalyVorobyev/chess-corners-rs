@@ -47,6 +47,22 @@ pub use crate::config::{
     SaddlePointConfig, UpscaleConfig,
 };
 
+/// Default detector configuration as a JSON string, in the same shape as
+/// `schemas/detector_config.json` (the serde shape of
+/// `chess_corners::DetectorConfig`). Equivalent to
+/// `new DetectorConfig().toJson()`. Feed the result, edited, to
+/// `DetectorConfig.fromJson`.
+#[wasm_bindgen]
+pub fn default_detector_config_json() -> Result<String, JsError> {
+    crate::config::config_to_json(&RsDetectorConfig::default())
+}
+
+/// Camel-case alias for [`default_detector_config_json`].
+#[wasm_bindgen(js_name = defaultDetectorConfigJson)]
+pub fn default_detector_config_json_alias() -> Result<String, JsError> {
+    default_detector_config_json()
+}
+
 /// Convert RGBA pixels to grayscale using BT.601 luminance weights.
 fn rgba_to_gray(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
     let npix = (width * height) as usize;

@@ -56,6 +56,7 @@ state.
 | API-08 | P0 | done | M3 | API-01..07 | Advisory `cargo-semver-checks` CI vs `v0.11.2` (`continue-on-error`); flipped to blocking once `1.0.0` became the crates.io baseline (1.1.0 prep). |
 | API-09 | P0 | done | M3 | API-08, M4, M5, M6 | **Release act.** Bumped 0.11.2→1.0.0, moved `[Unreleased]`→`docs/changelog/1.0.0.md`, tagged `v1.0.0`, and published to crates.io + PyPI. npm publish did not happen — no `wasm-v1.0.0` tag was pushed, so `@vitavision/chess-corners` stayed at `0.11.2` (carried forward as `DEBT-11`); vcpkg SHA512 finalize also carried forward (`CPP-05`). |
 | API-10 | P2 | done | — | — | Facade ROI detection entry point: `Detector::detect_u8_roi`/`detect_roi` + `Roi` re-export, single-scale, ChESS and Radon. |
+| API-11 | P2 | done | — | — | Detector-config JSON Schema (`schemars` feature, `cargo xtask emit-schemas`, `schemas/detector_config.json` shipped in the npm package) and WASM `DetectorConfig.fromJson` / `toJson` / `default_detector_config_json`. |
 
 ## SITE — GitHub Pages  ·  M4 (dep M3)  ·  [design](design/site-architecture.md)
 

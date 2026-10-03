@@ -42,6 +42,7 @@ pub use descriptor::describe_corners;
 // `f32` payloads disqualify the enum from `Eq` derive; we keep
 // `PartialEq` only and rely on the manual variants for matching.
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 #[serde(rename_all = "snake_case")]
 pub enum OrientationMethod {
