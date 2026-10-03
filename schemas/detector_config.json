@@ -404,8 +404,7 @@
     "multiscale": {
       "$ref": "#/$defs/MultiscaleConfig",
       "default": "single_scale",
-      "description": "Coarse-to-fine multiscale configuration. `SingleScale` skips\nthe pyramid entirely; `Pyramid` detects seeds on a coarse level and\nrefines them into the base image. Honoured by both strategies.",
-      "x-primary": true
+      "description": "Coarse-to-fine multiscale configuration. `SingleScale` skips\nthe pyramid entirely; `Pyramid` detects seeds on a coarse level and\nrefines them into the base image. Honoured by both strategies."
     },
     "orientation_method": {
       "anyOf": [
@@ -431,22 +430,19 @@
           "ring": "canonical"
         }
       },
-      "description": "Detector dispatch: ChESS or Radon, each carrying its own tuning.",
-      "x-primary": true
+      "description": "Detector dispatch: ChESS or Radon, each carrying its own tuning."
     },
     "threshold": {
       "default": 30.0,
       "description": "Detector acceptance threshold (`>= 0`).\n\nChESS reads it as an absolute floor on the raw response\n`R = SR − DR − 16·MR`: a candidate is kept when `R` exceeds it.\nUseful floors run roughly `30..=300` depending on image contrast;\nthe default is `30`, which suppresses texture noise while keeping\nwell-formed corners.\nRadon reads it as a fraction in `[0.0, 1.0]` of the per-frame\nmaximum response, because Radon's `(max − min)²` score scales\nwith image size and has no portable absolute scale.",
       "format": "float",
       "minimum": 0.0,
-      "type": "number",
-      "x-primary": true
+      "type": "number"
     },
     "upscale": {
       "$ref": "#/$defs/UpscaleConfig",
       "default": "disabled",
-      "description": "Pre-pipeline integer bilinear upscaling for low-resolution inputs.\n`Disabled` skips the stage; `Fixed(k)` upscales by the unitless\nfactor `k` in `{2, 3, 4}`. Output coordinates stay in input pixels.",
-      "x-primary": true
+      "description": "Pre-pipeline integer bilinear upscaling for low-resolution inputs.\n`Disabled` skips the stage; `Fixed(k)` upscales by the unitless\nfactor `k` in `{2, 3, 4}`. Output coordinates stay in input pixels."
     }
   },
   "title": "DetectorConfig",

@@ -119,7 +119,6 @@ impl Default for DetectionStrategy {
 #[non_exhaustive]
 pub struct DetectorConfig {
     /// Detector dispatch: ChESS or Radon, each carrying its own tuning.
-    #[cfg_attr(feature = "schemars", schemars(extend("x-primary" = true)))]
     pub strategy: DetectionStrategy,
     /// Detector acceptance threshold (`>= 0`).
     ///
@@ -132,7 +131,6 @@ pub struct DetectorConfig {
     /// maximum response, because Radon's `(max − min)²` score scales
     /// with image size and has no portable absolute scale.
     #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
-    #[cfg_attr(feature = "schemars", schemars(extend("x-primary" = true)))]
     pub threshold: f32,
     /// Shared non-maximum-suppression and peak-clustering thresholds.
     /// Honoured by both strategies. See [`DetectionParams`].
@@ -140,12 +138,10 @@ pub struct DetectorConfig {
     /// Coarse-to-fine multiscale configuration. `SingleScale` skips
     /// the pyramid entirely; `Pyramid` detects seeds on a coarse level and
     /// refines them into the base image. Honoured by both strategies.
-    #[cfg_attr(feature = "schemars", schemars(extend("x-primary" = true)))]
     pub multiscale: MultiscaleConfig,
     /// Pre-pipeline integer bilinear upscaling for low-resolution inputs.
     /// `Disabled` skips the stage; `Fixed(k)` upscales by the unitless
     /// factor `k` in `{2, 3, 4}`. Output coordinates stay in input pixels.
-    #[cfg_attr(feature = "schemars", schemars(extend("x-primary" = true)))]
     pub upscale: UpscaleConfig,
     /// Orientation-fit method used when building corner descriptors, or
     /// `None` to skip the per-corner fit entirely. When `None`, every
