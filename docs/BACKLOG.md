@@ -18,9 +18,12 @@ and `@vitavision/chess-corners` `1.1.0` on npm — which also cleared the
 \#68 (`DEBT-09`) and the ONNX runtime bump + MSRV `1.91` (`DEBT-10`).
 `cargo-semver-checks` is now a genuinely blocking CI gate: flipping it off
 advisory exposed that its `package:` filter had always been malformed, so the
-job had never actually checked anything. One residual remains open —
-`CPP-05`, the vcpkg port, which now carries a real SHA512 but has still never
-been install-verified on any platform. Everything under *Post-1.0 / future*
+job had never actually checked anything. `1.2.0` (facade ROI detection) and
+`1.3.0` (detector-config JSON Schema + WASM JSON config path) have since
+shipped on every channel at `1.3.0` (`chess-corners-ml` unchanged at
+`0.13.0`). One residual remains open — `CPP-05`, the vcpkg port, which carries
+a real SHA512 but still targets `1.1.0` and has never been install-verified on
+any platform. Everything under *Post-1.0 / future*
 is `P2`/`P3`, off the release-critical path. The pre-release campaign on
 `release/v1.0.0-prep` (see `docs/API_REVISION.md`) is folded into this
 state.
@@ -77,7 +80,7 @@ state.
 | CPP-02 | P2 | done | M5 | CPP-01 | `cbindgen.toml` + generator bin (with `--check` drift mode) → committed `include/chess_corners.h`. |
 | CPP-03 | P2 | done | M5 | CPP-02 | Header-only `chess_corners.hpp` (C++17): value types, RAII `ResultGuard`, throwing `detect()`, compile/run ABI guard. |
 | CPP-04 | P2 | done | M5 | CPP-01 | `CMakeLists.txt` + package config: `find_package(chess-corners CONFIG)`; static + shared; relocatable pkg-config `.pc`. |
-| CPP-05 | P3 | in-progress | M5 | CPP-04 | Overlay vcpkg port (`ports/chess-corners/`). Manifest now targets `1.1.0` with the real source-tarball SHA512, so it is installable. Still **never install-verified**: cross-platform `vcpkg install` (both linkages) and the registry PR remain open — see `ports/README.md`. |
+| CPP-05 | P3 | in-progress | M5 | CPP-04 | Overlay vcpkg port (`ports/chess-corners/`). Manifest targets `1.1.0` (not yet bumped for `1.2.0`/`1.3.0`) with the real source-tarball SHA512, so it is installable. Still **never install-verified**: cross-platform `vcpkg install` (both linkages) and the registry PR remain open — see `ports/README.md`. |
 | CPP-06 | P3 | done | M5 | CPP-03 | Self-contained C++ example + C smoke wired as CTest; `.github/workflows/cpp.yml` matrix (static + shared). |
 | CPP-07 | P3 | done | M5 | CPP-03 | Book Part IX "C++ bindings". |
 

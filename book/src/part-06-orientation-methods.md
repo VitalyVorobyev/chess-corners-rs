@@ -197,4 +197,5 @@ The patch overlays in §6.3 are reproducible via
 ---
 
 Next: [Part VII](part-07-multiscale-and-pyramids.md) covers the
-multiscale pipeline that drives the detector across a Gaussian pyramid.
+multiscale pipeline that drives the detector across a 2× box-filter
+image pyramid.
