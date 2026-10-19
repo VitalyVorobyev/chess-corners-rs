@@ -1,8 +1,9 @@
 # Design: C++ bindings via vcpkg
 
-**Status:** Implemented (`CPP-01..07`); the vcpkg overlay port is verified
-locally, with registry finalization (real `v1.0.0` tag + SHA512 + cross-platform
-`vcpkg install`) deferred to the 1.0 release. **Workstream:** `CPP-*` (ROADMAP
+**Status:** Implemented (`CPP-01..07`); the vcpkg overlay port targets `1.1.0`
+with the real source-tarball SHA512 but has never been exercised by a real
+`vcpkg install`; cross-platform verification and the registry PR remain open
+(`CPP-05`, see [`../../ports/README.md`](../../ports/README.md)). **Workstream:** `CPP-*` (ROADMAP
 milestone **M5**, depends on **M3** API freeze). **Approach:** a C ABI generated
 with `cbindgen`, wrapped by a thin hand-written C++ header, packaged with CMake
 and shipped as a vcpkg port.

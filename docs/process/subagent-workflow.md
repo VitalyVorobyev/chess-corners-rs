@@ -57,10 +57,9 @@ model and in the role description in their definition.
 If you need a one-off agent with a different model than the named
 agents, fall back to `subagent_type: "general-purpose"` with an
 explicit `model: "sonnet" | "opus"` override. This is also the
-fallback when a session was started before these agent files were
-loaded — `.claude/agents/*.md` is only read at session start, so a
-named agent created in one session is dispatchable starting in the
-next session.
+fallback when a named agent is not listed in the current session
+(for example, one whose definition was added after the session
+started).
 
 ## Pick the right agent
 
@@ -79,9 +78,9 @@ mechanical reader could verify it. Examples:
   threading it through to call site C."
 - "Run command X with permutations P1, P2, P3 and aggregate the JSON
   outputs into this markdown table shape: <shape>."
-- "Regenerate every overlay PNG under bench_results/ for the 6 input
-  images, in two algorithm × two method modes; confirm 24 files
-  exist."
+- "Regenerate the overlay PNGs under bench_results/ for the
+  testimages/ inputs in both detectors × both orientation methods;
+  confirm the expected file count."
 - "Apply the fix described in REVIEW.md item N: <one-line problem,
   one-line fix>."
 - "Format / lint / test the workspace and report any failures."
@@ -94,10 +93,10 @@ files it touched plus any failures it could not resolve.
 
 Dispatch here when at least one of the following is true:
 
-- **Numerical or geometric reasoning is on the critical path.** New
-  cell-test predicate; new homography solver path; tightening the
-  axis-alignment tolerance; deciding what's a wrong `(i, j)` label
-  vs an acceptable miss.
+- **Numerical or geometric reasoning is on the critical path.** A new
+  NMS or cluster-filter threshold; a refiner or orientation-fit change;
+  tightening the axis-alignment tolerance; deciding what's a false
+  detection vs an acceptable miss.
 - **The fix is not specifiable up front.** "Detector misses corner X
   on image Y; figure out where in the pipeline it's dropped and fix
   the root cause." That requires reading the pipeline, hypothesising,
@@ -113,8 +112,7 @@ Dispatch here when at least one of the following is true:
 - **Domain depth matters more than throughput.** Anything that should
   be cross-checked against the
   [calibration-target-detector](../../.claude/agents/calibration-target-detector.md)
-  knowledge base or the disclosure / evidence-driven debugging rules
-  in `.claude/CLAUDE.md`.
+  knowledge base or the measured-data rule in the root `CLAUDE.md`.
 
 In short: if you cannot write the prompt without including phrases
 like "figure out", "diagnose", "decide whether", or "redesign",
@@ -140,13 +138,12 @@ Subagent prompts must stand alone. The agent has no memory of this
 conversation. Every prompt should contain:
 
 1. **Goal in one sentence.** What "done" looks like.
-2. **Concrete file paths and line numbers.** Not "the bench harness"
-   — `crates/calib-targets-bench/src/bin/bench.rs` lines 22-46 (CLI
-   parser), line 282 (algorithm injection point).
-3. **Existing functions / utilities to reuse.** "There's already a
-   `default_chess_config()` in `crates/calib-targets/src/detect.rs:55`
-   — call it and mutate `orientation_method` rather than constructing
-   a new config from scratch."
+2. **Concrete file paths and line numbers.** Not "the refiner code"
+   — `crates/chess-corners-core/src/refine/mod.rs:186` (`RefinerKind`).
+3. **Existing functions / utilities to reuse.** "Start from
+   `ChessRefiner::center_of_mass()` in
+   `crates/chess-corners/src/config/chess.rs` rather than constructing
+   the config by hand."
 4. **Constraints and conventions.** "Must keep `cargo doc` warning-free.
    Must add `#[non_exhaustive]` on new public param structs.
    Output overlays go under `bench_results/` — do **not** stage them."

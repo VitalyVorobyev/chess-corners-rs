@@ -12,13 +12,14 @@ the M2/M3/M6 windows.
 All milestones are **done**. The `1.0.0` **release act** (`API-09`) shipped:
 `chess-corners`, `chess-corners-core`, and `box-image-pyramid` are published
 on crates.io and PyPI at `1.0.0`. Two residuals carried forward: the npm
-package `@vitavision/chess-corners` never got its `wasm-v1.0.0` tag and is
-still at `0.11.2`, and the vcpkg port SHA512 is still a placeholder
-(`CPP-05`). The workspace is now in the `1.1.0` **release act**: version bump
-to `1.1.0`, `cargo-semver-checks` flipped from advisory to blocking (baseline
-auto-detected from the published `1.0.0`), the `image` codec-free dependency
-fix for #68, and an ONNX runtime bump + MSRV `1.91`. The npm publish and
-vcpkg SHA512 residuals carry into this release act too.
+package `@vitavision/chess-corners` never got its `wasm-v1.0.0` tag and was
+stranded at `0.11.2` (closed by `1.1.0`, `DEBT-11`), and the vcpkg port SHA512
+was a placeholder (`CPP-05`). `1.1.0`, `1.2.0` (facade ROI detection) and
+`1.3.0` (detector-config JSON Schema + WASM JSON config path) have since
+shipped on every channel — crates.io, PyPI and npm are at `1.3.0`
+(`chess-corners-ml` stays at `0.13.0`). The only open release residual is
+`CPP-05`: the vcpkg port still targets `1.1.0` and has never been
+install-verified.
 
 ## Milestones
 
@@ -28,7 +29,7 @@ vcpkg SHA512 residuals carry into this release act too.
 | M2 | Perf: bench every atomic hot path, profiling automation, CI regression gate | `PERF-01..12`, `SOLID-01` | done | Atomic benches + `tools/profile.sh` + CI bench gate (≤2% median drift, `bench-gate.yml`); baselines in `tools/perf/`. See [`design/perf-profiling.md`](design/perf-profiling.md). |
 | M3 | Freeze a minimal semver-stable public surface | `API-01..07` | done | Fields dropped, config dedup, sealed traits, `#[non_exhaustive]`, MSRV stated; re-opened + re-frozen by M6. See [`design/api-v1.0.md`](design/api-v1.0.md). |
 | M4 | GitHub Pages site: landing → book → API → demo → performance | `SITE-01..06` | done | `/`, `/book/`, `/api/`, `/demo/`, `/performance/` assembled by `docs.yml`; `scripts/build-site.sh` reproduces locally. See [`design/site-architecture.md`](design/site-architecture.md). |
-| M5 | vcpkg-installable C/C++ binding | `CPP-01..07` | done | `chess-corners-capi` + cbindgen header + C++ header + CMake `find_package`; vcpkg port targets `1.1.0` with a real SHA512 but is not install-verified (`CPP-05`). See [`design/cpp-vcpkg-bindings.md`](design/cpp-vcpkg-bindings.md). |
+| M5 | vcpkg-installable C/C++ binding | `CPP-01..07` | done | `chess-corners-capi` + cbindgen header + C++ header + CMake `find_package`; vcpkg port carries a real SHA512 but still targets `1.1.0` (not bumped for `1.2.0`/`1.3.0`) and is not install-verified (`CPP-05`). See [`design/cpp-vcpkg-bindings.md`](design/cpp-vcpkg-bindings.md). |
 | M6 | Design hardening before the freeze becomes semver-locked | `DEBT-01..05` | done | Deleted `unstable`/`low_level` escape hatches; config lowering exposed as `DetectorConfig` methods; argmax sentinel → `Option`; facade `config.rs` split. Detection bit-stable. |
 
 ## Release act
@@ -48,9 +49,16 @@ valid crates.io baseline (`API-08`) — the flip immediately exposed that the
 job's `package:` filter had always been malformed, so it had never actually
 checked anything.
 
-One residual stays open: **`CPP-05`**. The vcpkg port now targets `1.1.0`
-with the real source-tarball SHA512, so it is installable, but it has never
-been exercised by a real `vcpkg install` on any platform. Cross-platform
+**`1.2.0` and `1.3.0` are released on every channel** — `v1.2.0`,
+`wasm-v1.2.0`, `v1.3.0` and `wasm-v1.3.0` are tagged; crates.io, PyPI and npm
+`latest` are at `1.3.0` (`chess-corners-ml` unchanged at `0.13.0`). See
+[`changelog/1.2.0.md`](changelog/1.2.0.md) and
+[`changelog/1.3.0.md`](changelog/1.3.0.md).
+
+One residual stays open: **`CPP-05`**. The vcpkg port targets `1.1.0` with
+the real source-tarball SHA512, so it is installable, but it was not bumped
+for `1.2.0`/`1.3.0` and has never been exercised by a real `vcpkg install` on
+any platform. Cross-platform
 verification and the registry PR are tracked in
 [`ports/README.md`](../ports/README.md).
 

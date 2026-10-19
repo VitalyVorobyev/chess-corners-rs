@@ -62,9 +62,8 @@ cc detect.c $(pkg-config --cflags --libs chess-corners) -o detect
 ```
 
 **vcpkg.** An overlay port under `ports/` integrates the library into
-vcpkg-based projects; it becomes a fully supported port at the 1.0
-release. Until then, consume it as an overlay (`--overlay-ports`) from
-a vcpkg manifest.
+vcpkg-based projects. It is not in the vcpkg registry yet, so consume
+it as an overlay (`--overlay-ports`) from a vcpkg manifest.
 
 ## 9.3 Using the library from C++
 

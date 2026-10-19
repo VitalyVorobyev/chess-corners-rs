@@ -16,7 +16,7 @@ The codebase prioritizes:
 * **Correctness & robustness** (blur, glare, low contrast, partial boards)
 * **API stability** (small, well-documented public API in `chess-corners`)
 
-If you are an automated agent (Codex, etc.), follow these rules strictly.
+These rules apply to automated agents (Codex, Claude Code, etc.).
 
 **Before large work, read the knowledge base** under
 [`docs/`](docs/README.md): `docs/ROADMAP.md` (milestones to `v1.0.0`),
@@ -71,8 +71,9 @@ camera calibration — those are downstream concerns. The pipeline:
    or the Radon SAT detector), behind the `DenseDetector` trait.
 2. **Detection** — threshold → non-maximum suppression → cluster filter
    (Radon adds a 3-point Gaussian peak fit).
-3. **Refinement** — one of four built-in subpixel refiners chosen via
-   `RefinerKind` (see §6).
+3. **Refinement** — one of four built-in subpixel refiners: three in
+   core's `RefinerKind`, plus the ML refiner in the facade's
+   `ChessRefiner` (see §6).
 4. **Orientation** — two-axis grid-direction fit per corner (`RingFit`
    default, or `DiskFit`) with calibrated per-axis uncertainty.
 5. **Descriptors** — the output `CornerDescriptor { x, y, response, axes }`.
@@ -165,7 +166,9 @@ when practical, not only the source tree import.
 
 * `chess-corners` is the compatibility boundary. Keep its public API stable.
 * `box-image-pyramid` should remain a small, stable API for the fixed 2x grayscale pyramid use case.
-* If behavior changes, gate it behind configuration or feature flags.
+* If behavior changes, keep the existing default and expose the new behavior
+  as an opt-in config value or feature flag (a real need, not a speculative
+  knob — see CLAUDE.md KISS/YAGNI).
 
 ---
 
@@ -204,6 +207,7 @@ The four built-in refiners:
 * **CenterOfMass** (default; response-map centroid)
 * **Förstner** (structure-tensor)
 * **SaddlePoint** (quadratic Hessian fit)
+* **Ml** (ONNX patch model; facade `ChessRefiner::Ml`, `ml-refiner` feature)
 
 **Rule:** default settings must reproduce existing behavior unless the user opts in.
 
@@ -302,5 +306,5 @@ Suggested commit prefixes:
 When trade-offs conflict (speed vs accuracy, stability vs cleanup):
 
 * Preserve correctness + backwards compatibility first.
-* Add configuration/feature flags for opt-in behavior.
+* Make new behavior opt-in rather than changing a default.
 * Add tests and (if needed) a benchmark to justify the change.

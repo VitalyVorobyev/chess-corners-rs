@@ -159,10 +159,10 @@ positions you use.
 Rust API documentation builds alongside this book and is published
 at the same site:
 
-- [`chess-corners` API reference](api/chess_corners/index.html)
-- [`chess-corners-core` API reference](api/chess_corners_core/index.html)
-- [`box-image-pyramid` API reference](api/box_image_pyramid/index.html)
-- [`chess-corners-ml` API reference](api/chess_corners_ml/index.html)
+- [`chess-corners` API reference](../api/chess_corners/index.html)
+- [`chess-corners-core` API reference](../api/chess_corners_core/index.html)
+- [`box-image-pyramid` API reference](../api/box_image_pyramid/index.html)
+- [`chess-corners-ml` API reference](../api/chess_corners_ml/index.html)
 
 ## 1.6 Installation and features
 

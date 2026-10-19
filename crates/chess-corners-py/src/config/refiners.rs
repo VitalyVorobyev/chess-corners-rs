@@ -16,7 +16,7 @@ use super::parse::{
 // CenterOfMassConfig
 // ---------------------------------------------------------------------------
 
-#[pyclass(module = "chess_corners", skip_from_py_object)]
+#[pyclass(module = "chess_corners")]
 #[derive(Clone, Debug)]
 pub struct CenterOfMassConfig {
     pub(crate) inner: RsCenterOfMassConfig,
@@ -87,7 +87,7 @@ impl CenterOfMassConfig {
 // ForstnerConfig
 // ---------------------------------------------------------------------------
 
-#[pyclass(module = "chess_corners", skip_from_py_object)]
+#[pyclass(module = "chess_corners")]
 #[derive(Clone, Debug)]
 pub struct ForstnerConfig {
     pub(crate) inner: RsForstnerConfig,
@@ -223,7 +223,7 @@ impl ForstnerConfig {
 // SaddlePointConfig
 // ---------------------------------------------------------------------------
 
-#[pyclass(module = "chess_corners", skip_from_py_object)]
+#[pyclass(module = "chess_corners")]
 #[derive(Clone, Debug)]
 pub struct SaddlePointConfig {
     pub(crate) inner: RsSaddlePointConfig,
@@ -363,7 +363,7 @@ impl ChessRefinerKind {
 /// `.saddle_point(...)`, or `.ml()` (requires the `ml-refiner`
 /// feature). Each variant carries its own tuning struct as a
 /// payload, so switching variants cannot leave a stale field behind.
-#[pyclass(module = "chess_corners", skip_from_py_object)]
+#[pyclass(module = "chess_corners")]
 #[derive(Clone, Debug)]
 pub struct ChessRefiner {
     kind: ChessRefinerKind,

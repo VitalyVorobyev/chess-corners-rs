@@ -40,18 +40,18 @@ existing architecture; if it would introduce duplication, leak internals,
 add a dominated alternative, widen the public surface needlessly, or
 otherwise degrade the design, **say so and offer the cleaner alternative**
 rather than building it as-stated. When the better design needs a breaking
-change and the crate is pre-1.0, prefer the better design (see *Decisive
-cleanup*). Every change should leave the workspace's design and style
-better than it found them.
+change, propose it with its semver cost stated: the published crates are
+past 1.0 and `cargo-semver-checks` blocks unplanned breaks (AGENTS.md §10).
+Every change should leave the workspace's design and style better than it
+found them.
 
 ## Project planning & knowledge base
 
 The internal knowledge base lives under [`docs/`](docs/README.md) (not
 published; design rationale is allowed there). Consult it before large work:
 
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — milestones toward `v1.0.0`. Current
-  order: **M2 performance (leads) → M3 API v1.0 freeze → M4 site ∥ M5
-  C++/vcpkg**; the doc sweep and SOLID/DRY cleanup run continuously.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — milestone status and the current
+  release act; the doc sweep and SOLID/DRY cleanup run continuously.
 - [`docs/BACKLOG.md`](docs/BACKLOG.md) — task registry (`<WS>-NN` IDs,
   priority, status, deps). Keep it in sync with the ROADMAP and update status
   as work lands.
@@ -228,9 +228,9 @@ sweep ALL of:
 
 - Rust enum + dispatcher arms.
 - Rust public re-exports (`pub use`) in facade and crate roots.
-- Python bindings (`crates/chess-corners-py/src/config.rs`,
-  Python tests, `python/chess_corners/__init__.py`).
-- WASM bindings (`crates/chess-corners-wasm/src/config.rs` — and its
+- Python bindings (`crates/chess-corners-py/src/config/`, Python tests,
+  `crates/chess-corners-py/python/chess_corners/__init__.py`).
+- WASM bindings (`crates/chess-corners-wasm/src/config/` — and its
   parametrised tests; renumber discriminants to stay contiguous if
   no external pin is found).
 - README, book chapters, CHANGELOG bullets.
@@ -240,7 +240,9 @@ sweep ALL of:
   encoded the dropped lineage).
 
 If a method A is strictly dominated by method B at equivalent cost,
-drop A — even if it has been there for a while. Diagnostic-only paths
+drop A — even if it has been there for a while. In the published crates
+that removal is semver-major: mark A `#[deprecated]` in a minor release
+and remove it in the next major. Diagnostic-only paths
 ("kept for comparison") that no longer feed active development go too.
 
 ### Book (mdBook)
@@ -333,7 +335,7 @@ output (build logs, `cargo test` outputs > 100 lines, parameter sweeps,
 - **Delegate verbose-output work.** Anything that produces > ~200 lines
   of output and needs only a verdict back (build verification, `maturin
   develop`, full `cargo test` runs, the orientation Python sweep, ONNX
-  parity checks) goes to a subagent that summarises in < 400 words.
+  parity checks) goes to a subagent that returns only the verdict.
   Don't read raw `metrics.json` or build logs in the main thread.
 - **Background mode for long-running, non-blocking tasks.** A 10–15 min
   Python sweep, an ONNX export, or a `wasm-pack` build that doesn't
@@ -369,31 +371,15 @@ output (build logs, `cargo test` outputs > 100 lines, parameter sweeps,
   from your conversation. Include file paths, current state, hard
   constraints, validation steps, and the report format you want back.
   Terse prompts produce terse, generic work.
-- **Cap report length.** Always tell the subagent "report under N
-  words" — 250 for routine work, 400 for nuanced work. Without a cap
-  agents tend toward overlong narration.
-
-### Typical bench/perf cadence in this repo
-
-For a 4-phase perf optimization (e.g. the 2026-05 disk-sector work):
-
-1. Main agent does the analysis + Phase 1 (lowest-risk, bit-near-identical
-   change) inline so the perf shape is clear.
-2. Subsequent phases are delegated:
-   - Algorithmic gates / threshold work → `opus` foreground subagent.
-   - Mechanical wiring (rayon, feature flags, API surface) → `sonnet`
-     foreground subagent.
-   - Synthetic accuracy validation (`maturin develop` + `python -m
-     orientation_bench sweep`) → `sonnet` background subagent.
-3. Main agent integrates, runs the four mandatory gates one final time,
-   summarises end-to-end speedup and accuracy verdict, asks the user
-   for the next decision.
+- **Specify the report shape.** Tell the subagent exactly what to return
+  (verdict, files touched, the table you need) and that raw build output
+  stays out of the reply.
 
 ## Key Design Constraints (from AGENTS.md)
 
 - **Determinism:** Same inputs → same outputs. Parallel results must be sorted by stable keys.
 - **No per-corner allocations** in hot paths. Reuse scratch buffers.
-- **Refiners are pluggable** via trait. Default settings must reproduce existing behavior.
+- **Refiners are built-in variants** behind the sealed `CornerRefiner` trait. Default settings must reproduce existing behavior.
 - **Zero warnings:** No new warnings, avoid `#[allow(...)]` unless justified.
 - **Commit prefixes:** `feat:`, `fix:`, `refactor:`, `perf:`, `docs:`, `test:`
 - **Dependency policy:** Minimal deps in core; feature-gate optional deps in facade.

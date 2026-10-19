@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.3.0"
+version = "1.3.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/VitalyVorobyev/chess-corners-rs"
@@ -22,9 +22,9 @@ categories = ["science", "multimedia::images", "algorithms"]
 
 [workspace.dependencies]
 anyhow = "1"
-box-image-pyramid = { path = "crates/box-image-pyramid", version = "1.3.0" }
-chess-corners = { path = "crates/chess-corners", version = "1.3.0", default-features = false }
-chess-corners-core = { path = "crates/chess-corners-core", version = "1.3.0" }
+box-image-pyramid = { path = "crates/box-image-pyramid", version = "1.3.1" }
+chess-corners = { path = "crates/chess-corners", version = "1.3.1", default-features = false }
+chess-corners-core = { path = "crates/chess-corners-core", version = "1.3.1" }
 chess-corners-ml = { path = "crates/chess-corners-ml", version = "0.13.0" }
 clap = { version = "4.6", features = ["derive"] }
 criterion = "0.8"
@@ -33,10 +33,10 @@ image = { version = "0.25", default-features = false }
 js-sys = "0.3"
 log = "0.4"
 ndarray = "0.17"
-ndarray-npy = "0.10"
-numpy = "0.29"
-pyo3 = { version = "0.29", features = ["extension-module", "abi3-py310"] }
-pyo3-build-config = "0.29"
+ndarray-npy = { version = "0.10", default-features = false }
+numpy = "0.30"
+pyo3 = { version = "0.30", features = ["extension-module", "abi3-py310"] }
+pyo3-build-config = "0.30"
 rayon = "1"
 resize = "0.8"
 rgb = "0.8"
@@ -50,4 +50,3 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tract-onnx = "0.23"
 wasm-bindgen = "0.2"
 wasm-bindgen-test = "0.3"
-web-sys = { version = "0.3", features = ["console"] }

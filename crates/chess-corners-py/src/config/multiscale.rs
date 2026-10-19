@@ -31,7 +31,7 @@ impl MultiscaleKind {
 /// Coarse-to-fine multiscale configuration. One of
 /// `single_scale()` (no pyramid) or `pyramid(levels=, min_size=, refinement_radius=)`.
 /// Both detectors honour the same enum.
-#[pyclass(module = "chess_corners", skip_from_py_object)]
+#[pyclass(module = "chess_corners")]
 #[derive(Clone, Debug)]
 pub struct MultiscaleConfig {
     kind: MultiscaleKind,

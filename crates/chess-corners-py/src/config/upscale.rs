@@ -30,7 +30,7 @@ impl UpscaleKind {
 
 /// Pre-pipeline integer upscaling. One of `disabled()` (no upscaling,
 /// the default) or `fixed(factor)` (allowed factors: 2, 3, 4).
-#[pyclass(module = "chess_corners", skip_from_py_object)]
+#[pyclass(module = "chess_corners")]
 #[derive(Clone, Debug)]
 pub struct UpscaleConfig {
     kind: UpscaleKind,

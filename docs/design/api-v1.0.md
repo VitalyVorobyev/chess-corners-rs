@@ -98,8 +98,8 @@ lives in `chess-corners-core` (see `DEBT-02`).
 ## Enforcement & release
 
 - `API-08`: `cargo-semver-checks` in CI, advisory against `v0.11.2` until 1.0.0
-  is the baseline; flips to blocking at `API-09`.
-- `API-09`: the release act — tag `1.0.0` and publish (deferred by choice).
+  became the baseline; blocking since `1.1.0`.
+- `API-09`: the release act — `1.0.0` tagged and published.
 
 ---
 
