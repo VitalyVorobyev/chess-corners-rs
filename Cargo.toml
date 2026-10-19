@@ -34,9 +34,9 @@ js-sys = "0.3"
 log = "0.4"
 ndarray = "0.17"
 ndarray-npy = { version = "0.10", default-features = false }
-numpy = "0.29"
-pyo3 = { version = "0.29", features = ["extension-module", "abi3-py310"] }
-pyo3-build-config = "0.29"
+numpy = "0.30"
+pyo3 = { version = "0.30", features = ["extension-module", "abi3-py310"] }
+pyo3-build-config = "0.30"
 rayon = "1"
 resize = "0.8"
 rgb = "0.8"

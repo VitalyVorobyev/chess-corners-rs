@@ -196,16 +196,15 @@ py_enum!(
     /// ChESS detector sampling-ring choice.
     /// `CANONICAL` is the paper-default radius-5 ring; `BROAD` uses
     /// the radius-10 ring for low-resolution or heavily blurred inputs.
-    ChessRing, RsChessRing,
-    [
-        (Canonical, "CANONICAL", Canonical),
-        (Broad, "BROAD", Broad),
-    ]
+    ChessRing,
+    RsChessRing,
+    [(Canonical, "CANONICAL", Canonical), (Broad, "BROAD", Broad)]
 );
 
 py_enum!(
     /// Subpixel peak-fit mode used by the Radon refiner and detector.
-    PeakFitMode, RsPeakFitMode,
+    PeakFitMode,
+    RsPeakFitMode,
     [
         (Parabolic, "PARABOLIC", Parabolic),
         (Gaussian, "GAUSSIAN", Gaussian),
@@ -226,7 +225,8 @@ py_enum!(
     /// non-orthogonal axes. Falls back to `RING_FIT` on clean orthogonal
     /// corners (lazy gate) and near image borders. Use when corners are
     /// imaged under strong projective warp.
-    OrientationMethod, RsOrientationMethod,
+    OrientationMethod,
+    RsOrientationMethod,
     [
         (RingFit, "RING_FIT", RingFit),
         (DiskFit, "DISK_FIT", DiskFit),

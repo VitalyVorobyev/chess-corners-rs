@@ -204,7 +204,7 @@ mod tests {
             let instance = serde_json::to_value(cfg).unwrap();
             let errors: Vec<String> = validator
                 .iter_errors(&instance)
-                .map(|e| format!("{} at {}", e, e.instance_path))
+                .map(|e| format!("{} at {}", e, e.instance_path()))
                 .collect();
             assert!(errors.is_empty(), "{name}: {errors:?}\n{instance}");
             // The schema must describe what serde accepts, too.
