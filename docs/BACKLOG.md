@@ -25,7 +25,7 @@ shipped on every channel at `1.3.0` (`chess-corners-ml` unchanged at
 a real SHA512 but still targets `1.1.0` and has never been install-verified on
 any platform. Everything under *Post-1.0 / future*
 is `P2`/`P3`, off the release-critical path. The pre-release campaign on
-`release/v1.0.0-prep` (see `docs/API_REVISION.md`) is folded into this
+`release/v1.0.0-prep` is folded into this
 state.
 
 ## PERF — profiling & optimization  ·  M2  ·  [design](design/perf-profiling.md)

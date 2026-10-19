@@ -26,7 +26,6 @@ docs/
   README.md          ← you are here (KB index)
   ROADMAP.md         ← milestones + sequencing
   BACKLOG.md         ← task registry (IDs, priority, status, deps)
-  API_REVISION.md    ← working doc: pre-1.0.0 API-contract audit (delete after release)
   design/            ← architecture + per-workstream design docs / RFCs
     architecture.md          crate layering & data flow
     algorithms-index.md      atomic-algorithm map + DAG
