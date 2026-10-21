@@ -97,6 +97,7 @@ impl CornerRefiner for ForstnerRefiner {
                     y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::Rejected,
+                    covariance_per_noise_variance: None,
                 }
             }
         };
@@ -111,6 +112,7 @@ impl CornerRefiner for ForstnerRefiner {
                 y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::OutOfBounds,
+                covariance_per_noise_variance: None,
             };
         }
 
@@ -159,6 +161,7 @@ impl CornerRefiner for ForstnerRefiner {
                 y: seed_xy[1],
                 score: det,
                 status: RefineStatus::IllConditioned,
+                covariance_per_noise_variance: None,
             };
         }
 
@@ -172,6 +175,7 @@ impl CornerRefiner for ForstnerRefiner {
                 y: seed_xy[1],
                 score: det,
                 status: RefineStatus::IllConditioned,
+                covariance_per_noise_variance: None,
             };
         }
 
@@ -182,6 +186,7 @@ impl CornerRefiner for ForstnerRefiner {
                 y: seed_xy[1],
                 score: det,
                 status: RefineStatus::IllConditioned,
+                covariance_per_noise_variance: None,
             };
         }
 
@@ -196,6 +201,7 @@ impl CornerRefiner for ForstnerRefiner {
                 y: seed_xy[1],
                 score: det,
                 status: RefineStatus::Rejected,
+                covariance_per_noise_variance: None,
             };
         }
 

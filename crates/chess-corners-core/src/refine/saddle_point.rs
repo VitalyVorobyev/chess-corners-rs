@@ -156,6 +156,7 @@ impl CornerRefiner for SaddlePointRefiner {
                     y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::Rejected,
+                    covariance_per_noise_variance: None,
                 }
             }
         };
@@ -170,6 +171,7 @@ impl CornerRefiner for SaddlePointRefiner {
                 y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::OutOfBounds,
+                covariance_per_noise_variance: None,
             };
         }
 
@@ -215,6 +217,9 @@ impl CornerRefiner for SaddlePointRefiner {
             }
         }
 
+        // The solve eliminates in place; keep the normal matrix for the
+        // position covariance.
+        let normal = self.m;
         let coeffs = match self.solve_6x6() {
             Some(c) => c,
             None => {
@@ -223,6 +228,7 @@ impl CornerRefiner for SaddlePointRefiner {
                     y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::IllConditioned,
+                    covariance_per_noise_variance: None,
                 }
             }
         };
@@ -240,6 +246,7 @@ impl CornerRefiner for SaddlePointRefiner {
                 y: seed_xy[1],
                 score: det_h,
                 status: RefineStatus::IllConditioned,
+                covariance_per_noise_variance: None,
             };
         }
 
@@ -254,12 +261,80 @@ impl CornerRefiner for SaddlePointRefiner {
                 y: seed_xy[1],
                 score: det_h,
                 status: RefineStatus::Rejected,
+                covariance_per_noise_variance: None,
             };
         }
 
         let score = (-det_h).sqrt();
-        RefineResult::accepted([seed_xy[0] + ux, seed_xy[1] + uy], score)
+        let covariance_per_noise_variance = position_covariance(&normal, &coeffs, [ux, uy]);
+        RefineResult {
+            covariance_per_noise_variance,
+            ..RefineResult::accepted([seed_xy[0] + ux, seed_xy[1] + uy], score)
+        }
     }
+}
+
+/// First-order covariance `[σ²ₓ, σₓᵧ, σ²ᵧ]` of the saddle location per unit
+/// image-noise variance (px² per gray-level²).
+///
+/// With white pixel noise of variance `σₙ²`, the surface coefficients
+/// `θ = (a, b, c, d, e, f)` have covariance `σₙ²·(ΦᵀΦ)⁻¹`. The location
+/// `u = −H⁻¹·(d, e)`, `H = [2a b; b 2c]`, has Jacobian
+/// `J = −H⁻¹·[[2uₓ, u_y, 0, 1, 0, 0], [0, uₓ, 2u_y, 0, 1, 0]]`, so
+/// `Σᵤ = σₙ²·J(ΦᵀΦ)⁻¹Jᵀ`; this returns `J(ΦᵀΦ)⁻¹Jᵀ`. The fit's own residual
+/// is not used for the scale: on a sharp corner it measures how far the
+/// patch is from a quadratic, which biases the location but does not
+/// scatter it. `None` if the normal matrix is singular.
+fn position_covariance(normal: &[f32; 36], coeffs: &[f32; 6], u: [f32; 2]) -> Option<[f32; 3]> {
+    let theta = coeffs.map(f64::from);
+    let (a, b, c) = (theta[0], theta[1], theta[2]);
+    let det = 4.0 * a * c - b * b;
+    // H⁻¹ for H = [2a b; b 2c].
+    let h_inv = [[2.0 * c / det, -b / det], [-b / det, 2.0 * a / det]];
+    let (ux, uy) = (f64::from(u[0]), f64::from(u[1]));
+    let rows = [
+        [2.0 * ux, uy, 0.0, 1.0, 0.0, 0.0],
+        [0.0, ux, 2.0 * uy, 0.0, 1.0, 0.0],
+    ];
+    // J = −H⁻¹·rows.
+    let mut jac = [[0.0f64; 6]; 2];
+    for (i, jrow) in jac.iter_mut().enumerate() {
+        for (k, jk) in jrow.iter_mut().enumerate() {
+            *jk = -(h_inv[i][0] * rows[0][k] + h_inv[i][1] * rows[1][k]);
+        }
+    }
+
+    // X = (ΦᵀΦ)⁻¹·Jᵀ by Gaussian elimination with partial pivoting.
+    let mut m = [[0.0f64; 8]; 6];
+    for (row, mrow) in m.iter_mut().enumerate() {
+        for col in 0..6 {
+            mrow[col] = f64::from(normal[row * 6 + col]);
+        }
+        mrow[6] = jac[0][row];
+        mrow[7] = jac[1][row];
+    }
+    for col in 0..6 {
+        let pivot = (col..6).max_by(|&p, &q| m[p][col].abs().total_cmp(&m[q][col].abs()))?;
+        if m[pivot][col].abs() < 1e-12 {
+            return None;
+        }
+        m.swap(col, pivot);
+        for row in (col + 1)..6 {
+            let factor = m[row][col] / m[col][col];
+            for k in col..8 {
+                m[row][k] -= factor * m[col][k];
+            }
+        }
+    }
+    let mut x = [[0.0f64; 2]; 6];
+    for row in (0..6).rev() {
+        for rhs in 0..2 {
+            let tail: f64 = ((row + 1)..6).map(|k| m[row][k] * x[k][rhs]).sum();
+            x[row][rhs] = (m[row][6 + rhs] - tail) / m[row][row];
+        }
+    }
+    let cov = |i: usize, j: usize| -> f64 { (0..6).map(|k| jac[i][k] * x[k][j]).sum::<f64>() };
+    Some([cov(0, 0) as f32, cov(0, 1) as f32, cov(1, 1) as f32])
 }
 
 #[cfg(test)]
@@ -267,6 +342,67 @@ mod tests {
     use super::super::test_fixtures::synthetic_checkerboard;
     use super::*;
     use crate::imageview::ImageView;
+
+    /// Predicted (`σₙ²·covariance_per_noise_variance`) against empirical
+    /// position scatter over noise realizations, on anti-aliased corners
+    /// with and without blur. A measurement, not a gate: `cargo test -p chess-corners-core --release
+    /// covariance_matches_scatter -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn covariance_matches_scatter() {
+        use chess_corners_testutil::{aa_chessboard, add_gaussian_noise, gaussian_blur};
+        let size = 21;
+        println!("noise  blur  offset       σx_emp  σx_pred  σy_emp  σy_pred  ratio_x  ratio_y");
+        for &noise in &[1.0f32, 2.0, 4.0, 8.0] {
+            for &blur in &[0.0f32, 0.8, 1.5] {
+                for &(ox, oy) in &[(10.0f32, 10.0f32), (10.3, 10.6), (10.45, 9.8)] {
+                    let mut clean = aa_chessboard(size, 10, (ox, oy), 40, 200);
+                    if blur > 0.0 {
+                        gaussian_blur(&mut clean, size, blur);
+                    }
+                    // Gaussian noise plus the 8-bit rounding (variance 1/12).
+                    let noise_var = f64::from(noise * noise) + 1.0 / 12.0;
+                    let mut xs = Vec::new();
+                    let mut preds = Vec::new();
+                    for seed in 0..400u64 {
+                        let mut img = clean.clone();
+                        add_gaussian_noise(&mut img, noise, seed + 1);
+                        let view = ImageView::from_u8_slice(size, size, &img).unwrap();
+                        let mut refiner = SaddlePointRefiner::new(SaddlePointConfig::default());
+                        let res = refiner.refine(
+                            [ox.round(), oy.round()],
+                            RefineContext {
+                                image: Some(view),
+                                response: None,
+                            },
+                        );
+                        if res.status != RefineStatus::Accepted {
+                            continue;
+                        }
+                        xs.push([f64::from(res.x), f64::from(res.y)]);
+                        preds.push(res.covariance_per_noise_variance.unwrap());
+                    }
+                    let n = xs.len() as f64;
+                    let mean = [
+                        xs.iter().map(|p| p[0]).sum::<f64>() / n,
+                        xs.iter().map(|p| p[1]).sum::<f64>() / n,
+                    ];
+                    let var = |k: usize| {
+                        xs.iter().map(|p| (p[k] - mean[k]).powi(2)).sum::<f64>() / (n - 1.0)
+                    };
+                    let pred = |k: usize| {
+                        noise_var * preds.iter().map(|c| f64::from(c[k])).sum::<f64>() / n
+                    };
+                    let (ex, ey) = (var(0).sqrt(), var(1).sqrt());
+                    let (px, py) = (pred(0).sqrt(), pred(2).sqrt());
+                    println!(
+                        "{noise:5.1}  {blur:4.1}  ({ox:5.2},{oy:5.2})  {ex:7.4}  {px:7.4}  {ey:7.4}  {py:7.4}  {:7.2}  {:7.2}   n={}",
+                        ex / px, ey / py, xs.len()
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn saddle_point_recovers_stationary_point_and_rejects_flat() {

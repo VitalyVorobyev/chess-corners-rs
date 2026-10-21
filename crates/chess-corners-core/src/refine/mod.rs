@@ -107,6 +107,11 @@ pub struct RefineResult {
     /// Whether the refiner accepted, rejected, or could not process this
     /// candidate. See [`RefineStatus`].
     pub status: RefineStatus,
+    /// Covariance of the refined position per unit image-noise variance,
+    /// `[σ²ₓ, σₓᵧ, σ²ᵧ]` in px² per gray-level²: multiply by the image's
+    /// pixel-noise variance for the covariance in px². Set by the
+    /// saddle-point refiner on accepted corners; `None` otherwise.
+    pub covariance_per_noise_variance: Option<[f32; 3]>,
 }
 
 impl RefineResult {
@@ -118,6 +123,7 @@ impl RefineResult {
             y: xy[1],
             score,
             status: RefineStatus::Accepted,
+            covariance_per_noise_variance: None,
         }
     }
 }
