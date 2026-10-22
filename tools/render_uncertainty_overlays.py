@@ -7,14 +7,16 @@ active environment (``cd crates/chess-corners-py && maturin develop --release``)
     python tools/render_uncertainty_overlays.py
 
 Every figure is computed from synthetic chessboards whose corner positions
-are known exactly, detected with the ``chess_corners`` Python bindings:
+are known exactly, formed as a camera forms them (Gaussian lens blur, then
+integration over each pixel), and detected with the ``chess_corners`` Python
+bindings:
 
 - ``uncertainty_bias_precision.png`` — refined positions of one corner over
   repeated noise draws, per refiner: the cloud centre's offset from the truth
   is the refiner's bias, the cloud's spread its precision; the saddle-point
   refiner's predicted 1σ / 2σ ellipses are drawn on its cloud.
 - ``uncertainty_board_ellipses.png`` — predicted covariance ellipses
-  (exaggerated) on a board whose blur grows from left to right.
+  (exaggerated) on a board whose lens blur grows from left to right.
 - ``uncertainty_calibration.png`` — predicted vs measured error per imaging
   condition, and the whitened errors against a unit normal.
 
@@ -85,37 +87,64 @@ class Board:
     dark: float = 40.0
     light: float = 200.0
 
-    def render(self, w: int, h: int, rows: int = 128) -> np.ndarray:
-        """Pixel-area average of the board. Along x each pixel row segment
-        is split exactly at the cell edges it crosses; along y the area is
-        integrated with ``rows`` midpoint samples per pixel (edge-position
-        error below ``1 / (2·rows)`` px). Cells must exceed 1 px."""
+    def render(self, w: int, h: int, psf: float, rows: int | None = None) -> np.ndarray:
+        """The board as a camera forms it: the hard pattern blurred by a
+        Gaussian lens PSF of σ ``psf`` px, then integrated over each pixel's
+        unit square (the same formation as ``optical_chessboard`` in the
+        Rust test fixtures).
+
+        Each pixel is the pattern weighted by the PSF-blurred pixel aperture
+        ``h(x)·h(y)``. Across an image row the pattern is piecewise constant,
+        so the ``x`` integral is exact (differences of the antiderivative of
+        ``h``); down the rows, split at horizontal edges, it uses ``rows``
+        midpoint samples per pixel,
+        by default ``max(16, ⌈16/σ⌉)``, within 0.02 gray levels of the exact
+        value."""
+        ap = _Aperture(psf)
+        rows = rows or max(16, int(np.ceil(16.0 / psf)))
         inv = np.linalg.inv(self.a)
-        a = np.arange(w)[None, :] - 0.5  # segment starts, (1, w)
-        b = a + 1.0
-        offs = (np.arange(rows) + 0.5) / rows - 0.5
-        img = np.empty((h, w))
-        for j in range(h):
-            dy = (j + offs)[:, None] - self.origin[1]  # (rows, 1)
-            bps = [np.broadcast_to(a, (rows, w))]
+        ox, oy = self.origin
+        # The row integral is continuous in y except across horizontal
+        # edges, where the whole row changes sign: split the y range there
+        # and place the midpoints within each piece.
+        lo, hi = -ap.reach, h - 1 + ap.reach
+        cuts = [lo, hi]
+        for r in (0, 1):
+            if abs(inv[r, 0]) < 1e-12:  # u_r depends on y only
+                u0, u1 = inv[r, 1] * (lo - oy), inv[r, 1] * (hi - oy)
+                k = np.arange(np.ceil(min(u0, u1)), np.floor(max(u0, u1)) + 1)
+                cuts.extend(oy + k / inv[r, 1])
+        cuts = np.unique(np.clip(cuts, lo, hi))
+        ys, dys = [], []
+        for y0, y1 in zip(cuts[:-1], cuts[1:]):
+            n = max(1, int(np.ceil((y1 - y0) * rows)))
+            dy = (y1 - y0) / n
+            ys.append(y0 + (np.arange(n) + 0.5) * dy)
+            dys.append(np.full(n, dy))
+        ys, dys = np.concatenate(ys), np.concatenate(dys)
+        xlo, xhi = -ap.reach, w - 1 + ap.reach
+        cols = np.arange(w, dtype=float)
+        across = np.empty((len(ys), w))
+        for i, y in enumerate(ys):
+            # Edge crossings of this row: u_r(x) = inv[r, 0]·(x − ox) + c_r.
+            xs = [np.array([xlo, xhi])]
             for r in (0, 1):
-                ua = inv[r, 0] * (a - self.origin[0]) + inv[r, 1] * dy
-                ub = inv[r, 0] * (b - self.origin[0]) + inv[r, 1] * dy
-                k = np.maximum(np.floor(ua), np.floor(ub))
-                crosses = np.floor(ua) != np.floor(ub)
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    xc = a + (k - ua) / (ub - ua)
-                bps.append(np.where(crosses, xc, b))
-            bps.append(np.broadcast_to(b, (rows, w)))
-            bp = np.sort(np.stack(bps, -1), -1)
-            length = np.diff(bp, axis=-1)
-            mid = 0.5 * (bp[..., 1:] + bp[..., :-1]) - self.origin[0]
-            u = inv[0, 0] * mid + inv[0, 1] * dy[..., None]
-            v = inv[1, 0] * mid + inv[1, 1] * dy[..., None]
-            even = (np.floor(u) + np.floor(v)) % 2 == 0
-            cover = (length * even).sum(-1).mean(0)
-            img[j] = self.dark + (self.light - self.dark) * cover
-        return img
+                slope, c = inv[r, 0], inv[r, 1] * (y - oy)
+                if abs(slope) < 1e-12:
+                    continue
+                u0, u1 = slope * (xlo - ox) + c, slope * (xhi - ox) + c
+                k = np.arange(np.ceil(min(u0, u1)), np.floor(max(u0, u1)) + 1)
+                xs.append(ox + (k - c) / slope)
+            bp = np.sort(np.concatenate(xs))
+            mid = 0.5 * (bp[1:] + bp[:-1]) - ox
+            u = inv[0, 0] * mid + inv[0, 1] * (y - oy)
+            v = inv[1, 0] * mid + inv[1, 1] * (y - oy)
+            light = np.where((np.floor(u) + np.floor(v)) % 2 == 0, 1.0, 0.0)
+            cum = ap.cumulative(bp[None, :] - cols[:, None])
+            across[i] = (np.diff(cum, axis=1) * light).sum(1)
+        down = ap.density(ys[None, :] - np.arange(h, dtype=float)[:, None]) * dys[None, :]
+        cover = down @ across
+        return self.dark + (self.light - self.dark) * cover
 
     def corners(self, w: int, h: int, margin: float) -> np.ndarray:
         inv = np.linalg.inv(self.a)
@@ -140,23 +169,42 @@ def lattice(cell: float, axis_angle_deg: float = 90.0, rotation_deg: float = 0.0
     return cell * np.array([[np.cos(r), np.cos(t)], [np.sin(r), np.sin(t)]])
 
 
-def gaussian_blur(img: np.ndarray, sigma: float) -> np.ndarray:
-    if sigma <= 0:
-        return img.copy()
-    r = int(np.ceil(4 * sigma))
-    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
-    k /= k.sum()
-    out = img
-    for axis in (0, 1):
-        p = np.pad(out, [(r, r) if a == axis else (0, 0) for a in (0, 1)], mode="edge")
-        acc = np.zeros_like(out)
-        n = out.shape[axis]
-        for i, wgt in enumerate(k):
-            sl = [slice(None), slice(None)]
-            sl[axis] = slice(i, i + n)
-            acc += wgt * p[tuple(sl)]
-        out = acc
-    return out
+def _erf(x: np.ndarray) -> np.ndarray:
+    """Error function, absolute error below 1.5e-7 (Abramowitz & Stegun
+    7.1.26)."""
+    t = 1.0 / (1.0 + 0.3275911 * np.abs(x))
+    poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))))
+    return np.copysign(1.0 - poly * np.exp(-x * x), x)
+
+
+def _cdf(t: np.ndarray) -> np.ndarray:
+    return 0.5 * (1.0 + _erf(t / np.sqrt(2.0)))
+
+
+def _pdf(t: np.ndarray) -> np.ndarray:
+    return np.exp(-0.5 * t * t) / np.sqrt(2.0 * np.pi)
+
+
+class _Aperture:
+    """One axis of a unit pixel aperture blurred by a Gaussian PSF of σ px:
+    ``h(t) = Φ((t + ½)/σ) − Φ((t − ½)/σ)``, truncated at ``½ + 5σ``."""
+
+    def __init__(self, sigma: float):
+        self.sigma = sigma
+        self.reach = 0.5 + 5.0 * sigma
+
+    def density(self, t: np.ndarray) -> np.ndarray:
+        s = self.sigma
+        return _cdf((t + 0.5) / s) - _cdf((t - 0.5) / s)
+
+    def cumulative(self, t: np.ndarray) -> np.ndarray:
+        """``∫ h`` up to ``t``, from ``∫ Φ = τΦ(τ) + φ(τ)``."""
+        s = self.sigma
+
+        def psi(u):
+            return u * _cdf(u) + _pdf(u)
+
+        return s * (psi((t + 0.5) / s) - psi((t - 0.5) / s))
 
 
 def quantize(img: np.ndarray, noise: float, rng: np.random.Generator) -> np.ndarray:
@@ -223,7 +271,7 @@ def fig_bias_precision(out: Path, draws: int) -> None:
     truth = np.array([24.30, 23.80])
     board = Board(lattice(8.0), truth)
     noise, blur = 2.0, 1.5
-    clean = gaussian_blur(board.render(w, h), blur)
+    clean = board.render(w, h, blur)
     refiners = [
         ("CenterOfMass", cc.ChessRefiner.center_of_mass(), AQUA),
         ("Förstner", cc.ChessRefiner.forstner(), ORANGE),
@@ -280,7 +328,7 @@ def fig_bias_precision(out: Path, draws: int) -> None:
     ax.set_title("SaddlePoint, 5× zoom")
     frame(ax, lim / 5)
     fig.suptitle(
-        f"One corner, {len(images)} noise draws (8 px cells, blur σ {blur} px, noise σ {noise:g} gray levels)",
+        f"One corner, {len(images)} noise draws (8 px cells, lens blur σ {blur} px, noise σ {noise:g} gray levels)",
         fontsize=11,
     )
     fig.tight_layout()
@@ -290,18 +338,17 @@ def fig_bias_precision(out: Path, draws: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Figure 2: covariance ellipses across a blur gradient
+# Figure 2: covariance ellipses across a lens-blur gradient
 # ---------------------------------------------------------------------------
 
 
-def blur_gradient(img: np.ndarray, max_blur: float) -> tuple[np.ndarray, np.ndarray]:
-    """Blur that grows linearly from 0 (left edge) to ``max_blur`` (right):
-    each column blends the two nearest of a stack of uniformly blurred
-    images."""
-    levels = np.linspace(0.0, max_blur, 11)
-    stack = np.stack([gaussian_blur(img, s) for s in levels])
-    w = img.shape[1]
-    target = max_blur * np.arange(w) / (w - 1)
+def blur_gradient(board: Board, w: int, h: int, lo: float, hi: float) -> tuple[np.ndarray, np.ndarray]:
+    """Lens blur that grows linearly from ``lo`` (left edge) to ``hi``
+    (right): each column blends the two nearest of a stack of boards formed
+    with uniform blur."""
+    levels = np.linspace(lo, hi, 9)
+    stack = np.stack([board.render(w, h, s) for s in levels])
+    target = lo + (hi - lo) * np.arange(w) / (w - 1)
     pos = np.interp(target, levels, np.arange(len(levels)))
     i0 = np.clip(np.floor(pos).astype(int), 0, len(levels) - 2)
     t = pos - i0
@@ -313,7 +360,7 @@ def blur_gradient(img: np.ndarray, max_blur: float) -> tuple[np.ndarray, np.ndar
 def fig_board_ellipses(out: Path) -> None:
     w, h = 560, 230
     board = Board(lattice(20.0, axis_angle_deg=55.0, rotation_deg=10.0), np.array([13.3, 11.6]))
-    clean, blur_at = blur_gradient(board.render(w, h), 2.5)
+    clean, blur_at = blur_gradient(board, w, h, 0.5, 2.5)
     rng = np.random.default_rng(7)
     noise = 2.0
     img = quantize(clean, noise, rng)
@@ -336,7 +383,7 @@ def fig_board_ellipses(out: Path) -> None:
     ax.set_xticks(ticks)
     ax.set_xticklabels([f"{blur_at[int(round(t))]:.1f}" for t in ticks])
     ax.set_yticks([])
-    ax.set_xlabel("blur σ at this column (px)")
+    ax.set_xlabel("lens blur σ at this column (px)")
     ax.set_title(
         f"1σ position ellipses, drawn {scale:g}× enlarged; noise σ {noise:g} gray levels, estimated from the image"
     )
@@ -351,27 +398,28 @@ def fig_board_ellipses(out: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class Condition:
-    axis_angle: float  # degrees between the two lattice axes
-    rotation: float  # degrees of the first axis from the image x axis
-    blur: float
-    noise: float
-    cell: float = 8.0
-
-
-def run_condition(c: Condition, boards: int, seed: int):
-    """Errors and covariances of matched corners that carry a covariance,
-    and the fraction of true corners matched within 0.5 px."""
+def clean_boards(cell: float, axis_angle: float, rotation: float, psf: float, boards: int, seed: int):
+    """``boards`` noise-free 200² renders with random subpixel origins."""
     w = h = 200
+    rng = np.random.default_rng(seed)
+    out = []
+    for _ in range(boards):
+        origin = np.array([100.0, 100.0]) + rng.uniform(0, 1, 2)
+        board = Board(lattice(cell, axis_angle, rotation), origin)
+        out.append((board, board.render(w, h, psf)))
+    return out
+
+
+def run_condition(clean, noise: float, seed: int):
+    """Errors and covariances of matched corners that carry a covariance,
+    and the fraction of true corners matched within 0.5 px, on noisy copies
+    of the ``clean`` boards."""
     rng = np.random.default_rng(seed)
     det = detector(cc.ChessRefiner.saddle_point())  # σ estimated per image
     errs, covs, n_truth, n_match = [], [], 0, 0
-    for _ in range(boards):
-        origin = np.array([100.0, 100.0]) + rng.uniform(0, 1, 2)
-        board = Board(lattice(c.cell, c.axis_angle, c.rotation), origin)
-        img = quantize(gaussian_blur(board.render(w, h), c.blur), c.noise, rng)
-        d = det.detect(img)
+    for board, img in clean:
+        h, w = img.shape
+        d = det.detect(quantize(img, noise, rng))
         truth = board.corners(w, h, margin=10)
         idx = match(d.xy, truth)
         n_truth += len(truth)
@@ -390,13 +438,14 @@ def whiten(errs: np.ndarray, covs: np.ndarray) -> np.ndarray:
 
 
 def fig_calibration(out: Path, boards: int) -> None:
-    blurs = [0.0, 0.8, 1.5, 2.5]
+    blurs = [0.5, 0.8, 1.5, 2.5]
     noises = [1.0, 2.0, 4.0, 8.0]
     # (label, axis angle, rotation, colour, marker, grid-aligned)
     groups = [
         ("square, grid-aligned", 90.0, 0.0, BLUE, "o", True),
         ("60° shear, one axis grid-aligned", 60.0, 0.0, AQUA, "s", True),
         ("square, rotated 8°", 90.0, 8.0, ORANGE, "^", False),
+        ("square, rotated 45°", 90.0, 45.0, RED, "D", False),
     ]
     fig, (ax, axh) = plt.subplots(1, 2, figsize=(10.5, 4.6), gridspec_kw={"width_ratios": [1.1, 1]})
     aligned, rotated = [], []
@@ -404,9 +453,11 @@ def fig_calibration(out: Path, boards: int) -> None:
     for label, angle, rot, color, marker, is_aligned in groups:
         pred, emp = [], []
         for b in blurs:
+            seed += 1
+            clean = clean_boards(8.0, angle, rot, b, boards, seed)
             for n in noises:
                 seed += 1
-                errs, covs, rate = run_condition(Condition(angle, rot, b, n), boards, seed)
+                errs, covs, rate = run_condition(clean, n, seed)
                 if len(errs) < 200 or rate < 0.99:
                     print(f"  skip {label} blur {b} noise {n}: {len(errs)} corners, match rate {rate:.2f}")
                     continue
@@ -433,7 +484,7 @@ def fig_calibration(out: Path, boards: int) -> None:
         axis.set_minor_formatter(NullFormatter())
     ax.set_xlabel("measured RMS error per axis (px)")
     ax.set_ylabel("predicted σ per axis (px)")
-    ax.set_title("One point per blur × noise condition (8 px cells)")
+    ax.set_title("One point per lens blur × noise condition (8 px cells)")
     ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
 
     bins = np.linspace(-5, 5, 61)
@@ -441,7 +492,7 @@ def fig_calibration(out: Path, boards: int) -> None:
     axh.hist(za, bins=bins, density=True, color=BLUE, alpha=0.7, edgecolor=SURFACE, lw=0.5,
              label=f"grid-aligned boards (std {np.concatenate(aligned).std():.2f})")
     axh.hist(zr, bins=bins, density=True, histtype="step", color=ORANGE, lw=1.8,
-             label=f"rotated 8° (std {np.concatenate(rotated).std():.2f})")
+             label=f"rotated 8° and 45° (std {np.concatenate(rotated).std():.2f})")
     g = np.linspace(-5, 5, 400)
     axh.plot(g, np.exp(-0.5 * g**2) / np.sqrt(2 * np.pi), color=INK, lw=1.4, label="unit normal")
     axh.set_xlabel("whitened error component")

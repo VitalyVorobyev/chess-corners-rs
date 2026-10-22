@@ -94,14 +94,19 @@ from a measured bias/precision split, not ahead of it.
 | `1.4.0` | Saddle-point position covariance in `RefineResult`; the refiner is also faster | `UQ-00` |
 | next | Bias/precision benchmark per refiner; published noise-row numbers re-measured (the test noise helper produced 1.3× the stated σ before the fix) | `UQ-01..02` |
 | decision | `UQ-01` found SaddlePoint bias (~0.12 px on sharp corners) far above noise scatter, removable by re-centred refitting: reduce bias first, then expose the covariance | — |
-| `1.5.0` | SaddlePoint re-centred refit (default) with a validated covariance; per-image noise estimate (px² output); SaddlePoint covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; CenterOfMass non-refinement fix; a book Part on uncertainty | `UQ-03`, `UQ-05`, `UQ-07`, `UQ-09` |
-| `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); Förstner and CenterOfMass covariance once their bias is addressed | `UQ-04`, `UQ-06` |
+| `1.5.0` | SaddlePoint re-centred refit (default) with a validated covariance; per-image noise estimate (px² output); SaddlePoint covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; CenterOfMass non-refinement fix; a book Part on uncertainty; camera-formed (lens blur before pixel integration) evidence fixtures and the floor tuned on rotated boards | `UQ-03`, `UQ-05`, `UQ-07`, `UQ-09`, `UQ-15` |
+| `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); Förstner and CenterOfMass covariance once their bias is addressed; cubic re-centring for SaddlePoint and a smaller floor | `UQ-04`, `UQ-06`, `UQ-16` |
 | ongoing | Realistic ground truth (calib-synth / etendue renders; end-to-end σ̂₀ check in calibration-rs) | `UQ-08`, `ML-01`, `ML-02` |
 
 **Known gaps this program has to close.**
-- SaddlePoint covariance is calibrated only on boards aligned with the pixel
-  grid: rotated 2–15°, the re-centred fit keeps 0.01–0.02 px of bias and
-  σ̂₀² reaches ~10 at σₙ = 1 (`UQ-15`).
+- SaddlePoint keeps a phase-dependent error the covariance covers only
+  through a 0.006 px floor (`UQ-15`): with a lens blur of ≥ 0.5 px, σ̂₀² is
+  0.61–1.75 at σₙ 1 (overconfident at 30–45° rotations, conservative on
+  grid-aligned boards) and 0.7–1.15 at σₙ ≥ 4. The bilinear re-centring
+  causes the 30–45° part; a cubic resampler would remove it and let the
+  floor shrink (`UQ-16`). With ideally sharp optics, oblique edges alias:
+  0.01–0.02 px on 2–15° / 45° boards, σ̂₀² ≈ 6 at σₙ 1, not removable by
+  refining the same pixels.
 - All accuracy evidence is synthetic; `testimages/` carry no ground truth.
 - Validation so far uses i.i.d. Gaussian noise. Real sensors add
   signal-dependent (shot) noise and spatially correlated noise (demosaicing,

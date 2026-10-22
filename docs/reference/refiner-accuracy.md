@@ -8,6 +8,10 @@ This is the `UQ-01` evidence that sets the 1.5.0 uncertainty API (see
 [Results](#results) and [Findings](#findings) measure the single
 integer-grid SaddlePoint fit; [After re-centring](#after-re-centring)
 measures the re-centred refit that replaced it (`UQ-07`).
+[Rotated boards and image formation](#rotated-boards-and-image-formation)
+(`UQ-15`) moves the fixtures to lens blur before pixel integration and
+sets the floor to 0.006 px; the tables before it used blur after
+sampling and the 0.002 px floor.
 
 ## Reproduce
 
@@ -26,7 +30,10 @@ and results do not depend on the thread split.
 - **Fixture**: `area_chessboard` (testutil), a chessboard rendered by exact
   pixel-area integration, so the corner sits exactly on the lattice. 41×41
   image, corner at `(20, 20) + (kx, ky)/5`, `kx, ky ∈ 0..5` (25 subpixel
-  phases). Then `gaussian_blur`, then noise; `u8` after each step.
+  phases). Then `gaussian_blur`, then noise; `u8` after each step. The
+  harness now renders `optical_chessboard` (lens blur, then pixel
+  integration) instead; see [Rotated boards and image
+  formation](#rotated-boards-and-image-formation).
 - **Grid**: refiners CenterOfMass, Förstner, SaddlePoint (default configs;
   CenterOfMass reads the ChESS response of the same noisy image; ML out of
   scope) × geometry {axis-aligned, sheared to a 60° axis angle} × cell
@@ -339,7 +346,8 @@ Cost (min of 20, M4 Pro): 0.095 / 0.074 / 0.055 ms on small / mid /
 large, against a SaddlePoint multiscale detect of 0.54 / 0.83 / 4.2 ms.
 Nothing is estimated unless a refined corner carries a covariance.
 
-**Floor choice.** Worst |ln σ̂₀²| per candidate `f` over cells 8–12, both
+**Floor choice** (superseded by the `UQ-15` [floor](#rotated-boards-and-image-formation),
+which adds rotated boards and lens blur). Worst |ln σ̂₀²| per candidate `f` over cells 8–12, both
 contrasts and geometries, blur 0–2.5, white σₙ 1–8, converged corners: the
 `UQ-01` harness with the true noise variance, and the facade end to end
 (below) with the estimated one. The worst over every cell is a low-SNR
@@ -391,6 +399,124 @@ changes it by ≤ 0.11).
 covariance there; at sheared blur 0.8, σₙ 1 on all 25). Sheared blur 2.5
 yields too few detections at the default threshold to report.
 
+## Rotated boards and image formation
+
+`UQ-15`. The re-centred fit kept 0.01–0.02 px noise-free RMS error on
+sharp boards rotated 2–15° and at 45° (0.0002 px at 0°, 0.002–0.003 px at
+20–30°), so end-to-end σ̂₀² reached ≈ 10 at σₙ 1 on an 8° board with the
+0.002 px floor. Measurements: SaddlePoint, cell 8 (cell 12 identical),
+f32 renders unless stated, 25–64 subpixel phases, seed at the rounded
+truth.
+
+**Root cause: two effects.**
+
+1. **Sampling aliasing under an ideally sharp lens.** The error is a
+   function of the subpixel phase with zero mean (mean over 64 phases
+   0.0000 px at every angle; at 8° the x error follows the *y* phase,
+   amplitude ≈ 35 mpx). It is not the quadratic model: the same fit and
+   fixed-point iteration fed exact pixel-area values at window + offset,
+   instead of bilinear samples, gives 0.00 mpx at every angle (the window
+   is point-symmetric about the corner). It is not 8-bit rounding (f32 and
+   u8 renders agree within 0.5 mpx) or the neighbouring corners (cells 8
+   and 12 agree). No estimator on the same pixels removes it (noise-free
+   RMS mpx at 0/2/5/8/15/30/45°, sharp):
+
+   | estimator | 0° | 2° | 5° | 8° | 15° | 30° | 45° |
+   |---|---|---|---|---|---|---|---|
+   | re-centred, bilinear (shipped) | 0.1 | 10.5 | 18.3 | 20.8 | 8.8 | 2.7 | 9.8 |
+   | `radius: 1` / `3` | 0.1 | 12.3 / 9.3 | 26.0 / 14.7 | 33.0 / 12.8 | 32.6 / 0.8 | 8.0 / 1.0 | 19.8 / 6.7 |
+   | pre-smoothing [1 2 1] / [1 4 6 4 1] | 0.1 / 2.9 | 11.9 / 11.7 | 20.2 / 18.8 | 21.1 / 18.3 | 7.4 / 5.8 | 3.9 / 3.5 | 5.6 / 4.5 |
+   | Gaussian LS weights σ 1.0 / 1.5 | 20.1 / 9.6 | 21.8 / 13.5 | 25.9 / 19.9 | 28.0 / 22.6 | 21.0 / 13.9 | 4.7 / 4.5 | 8.7 / 7.2 |
+   | Keys cubic resampling | 0.0 | 10.0 | 17.8 | 20.7 | 9.1 | 4.7 | 11.5 |
+   | Lagrange cubic resampling | 0.0 | 7.2 | 17.6 | 20.9 | 9.8 | 8.4 | 4.4 |
+   | moving-window fit on raw pixels, best weight (Hann, reach 3.5) | 7.7 | 12.2 | 19.0 | 21.8 | 14.1 | 2.2 | 3.8 |
+
+   The earlier fixtures (`area_chessboard`, then `gaussian_blur`) blur
+   *after* pixel sampling, which keeps this aliasing at every blur level.
+   A lens blur *before* pixel integration removes it from σ_psf ≈ 0.5 px
+   (shipped refiner, 25 phases):
+
+   | formation | 0° | 2° | 5° | 8° | 15° | 30° | 45° |
+   |---|---|---|---|---|---|---|---|
+   | sharp | 0.1 | 7.5 | 17.8 | 20.5 | 8.6 | 2.6 | 9.9 |
+   | blur after sampling, σ 1.5 | 3.8 | 9.1 | 15.6 | 13.3 | 3.8 | 2.6 | 3.3 |
+   | lens σ 0.25 | 0.2 | 2.3 | 4.8 | 5.6 | 1.8 | 2.3 | 9.7 |
+   | lens σ 0.5 | 0.1 | 0.2 | 0.3 | 0.5 | 1.3 | 5.4 | 8.9 |
+   | lens σ 0.75 | 0.3 | 0.5 | 1.0 | 1.5 | 3.0 | 6.9 | 8.4 |
+   | lens σ 1.0 | 1.2 | 1.3 | 1.8 | 2.4 | 4.2 | 7.1 | 7.8 |
+   | lens σ 1.5 | 1.9 | 2.0 | 2.3 | 2.7 | 3.8 | 5.5 | 5.9 |
+   | lens σ 2.5 | 1.8 | 1.8 | 1.9 | 2.1 | 2.5 | 3.5 | 3.9 |
+
+2. **Under a lens, a 5–9 mpx residual at 30–45° from the bilinear
+   resampler.** The 2-tap kernel at fraction `t` has third moment
+   `t(1−t)(1−2t)` about the sample point; it breaks point symmetry where
+   the oblique corner has mixed third derivatives. Keys cubic has the same
+   third moment (0.094 at `t = ¼`) and does not help; a 4-point Lagrange
+   cubic (reproduces cubics, third moment 0) brings every angle to
+   ≤ 2.5 mpx at lens σ 0.5 and ≤ 1.3 mpx at 0.75–1.5. Prototyped in the
+   refiner: 2.5× the cost, predicted σ +4–6%, worse with sharp optics at
+   30° and on the 60° shear. Deferred to `UQ-16`.
+
+**Fixture.** `optical_chessboard` / `Lattice` (testutil): Gaussian lens
+PSF, then exact integration over each pixel (closed form across rows,
+Gauss–Legendre down them; checked against a separable closed form, a brute
+force and point symmetry). The `UQ-01` harness, the facade covariance
+tests and `tools/render_uncertainty_overlays.py` use it (the Python
+renderer agrees with testutil within 0.02 gray levels beyond rounding).
+Re-running the `UQ-01` harness on it: SaddlePoint noise-free RMS bias,
+axis, cell 8, 40/200 is 0.000 / 0.002 / 0.006 / 0.007 px at lens σ 0 /
+0.8 / 1.5 / 2.5 (was 0.000 / 0.004 / 0.004 / 0.003 with blur after
+sampling); CenterOfMass and Förstner change by ≤ 0.03 px.
+
+**Floor.** `position_covariance_calibration` (facade, estimated σₙ, 200²
+boards, 25 per row): rotation {0, 2, 5, 8, 15, 30, 45}° × cells {8, 12} ×
+lens σ {0.5, 0.8, 1.5, 2.5} × σₙ {1, 2, 4, 8}, plus 60° shear (cells 8,
+12) and axis 90/150; rows with ≥ 1 000 matched corners and ≤ 1 %
+unmatched (the noise estimator declines on 45° and sheared boards at
+σₙ 1–2 with sharp-ish blur). Worst |ln σ̂₀²|, with σ̂₀² [min, max]:
+
+| f (px) | all rows | grid-aligned (rot 0°, shear, 90/150) | rotated |
+|---|---|---|---|
+| 0 | 1.58 (4.86: 45°, c12, lens 0.5, σₙ 1) | 0.35 [0.94, 1.42] | [0.77, 4.86] |
+| 0.002 | 1.40 (4.06, same) | 0.29 [0.92, 1.33] | [0.77, 4.06] |
+| 0.003 | 1.21 (3.36) | 0.21 [0.85, 1.24] | [0.76, 3.36] |
+| 0.004 | 1.00 (2.72) | 0.26 [0.77, 1.12] | [0.75, 2.72] |
+| 0.005 | 0.78 (2.18) | 0.37 [0.69, 1.04] | [0.70, 2.18] |
+| **0.006** | **0.56** (1.75, same) | 0.50 [0.61, 1.04] | [0.61, 1.75] |
+| 0.007 | 0.65 (0.52: 15°, c12, lens 0.5, σₙ 1) | 0.64 [0.53, 1.04] | [0.52, 1.43] |
+| 0.008 | 0.80 (0.45) | 0.78 [0.46, 1.04] | [0.45, 1.17] |
+| 0.01 | 1.10 (0.33) | 1.06 [0.35, 1.04] | [0.33, 1.09] |
+
+`POSITION_FLOOR_PX = 0.006`. σ̂₀² at f = 0.006, cell 12, σₙ 1 / 2 / 4 / 8
+(cell 8 within ±0.1 where the estimator answers, except 30°, lens 0.5,
+σₙ 4: 0.73, the noise estimate reading 19% high):
+
+| board | lens 0.5 | 0.8 | 1.5 | 2.5 |
+|---|---|---|---|---|
+| 0° | 0.62 / 0.86 / 0.97 / 1.00 | 0.63 / 0.87 / 0.97 / 1.00 | 0.84 / 0.96 / 1.00 / 1.02 | 0.96 / 1.00 / 1.02 / 1.04 |
+| 8° | 0.62 / 0.86 / 0.97 / 1.01 | 0.68 / 0.88 / 0.97 / 1.01 | 0.83 / 0.95 / 1.00 / 1.03 | 0.94 / 0.99 / 1.02 / 1.06 |
+| 15° | 0.61 / 0.86 / 0.97 / 1.01 | 0.76 / 0.92 / 0.99 / 1.02 | 0.87 / 0.97 / 1.01 / 1.03 | 0.95 / 1.00 / 1.03 / 1.06 |
+| 30° | 0.90 / 0.95 / 0.93 / 0.98 | 1.20 / 1.09 / 1.03 / 1.01 | 0.95 / 0.99 / 1.01 / 1.02 | 0.95 / 0.99 / 1.02 / 1.08 |
+| 45° | 1.75 / 1.38 / 1.15 / 1.03 | 1.49 / 1.23 / 1.09 / 1.03 | 0.96 / 0.99 / 1.02 / 1.03 | 0.95 / 1.00 / 1.03 / 1.09 |
+| shear 60° | 0.74 / 0.88 / 0.96 / 0.99 | 0.89 / 0.95 / 0.98 / 1.00 | 0.87 / 0.96 / 1.00 / 1.02 | 0.95 / 0.99 / 1.03 / 1.05 |
+
+Costs of the floor: grid-aligned boards at σₙ 1 read 0.61–0.62 (σ
+overstated 1.27×), 0.83–0.87 at σₙ 2. With ideally sharp optics (outside
+the grid) an 8° board still reads 6.1 / 3.0 / 1.6 / 1.2 at σₙ 1 / 2 / 4 /
+8 (was 10.2 / 3.6 / 1.7 / 1.2 at 0.002), 45° 2.1 / 1.6 / 1.2 / 1.0, and
+grid-aligned 0.59 / 0.84 / 0.96 / 1.00.
+
+Small sheared cells (cell 5, 40–60° shear, lens σ 1.5–2.5): no
+detections end to end at the default threshold; at the refiner level
+(36 phases) the re-centred position is still worse than the single fit
+except at 50–60°/1.5 (e.g. 60°, lens 2.5: 0.162 vs 0.132 px RMS; 40°,
+lens 1.5: 0.40 vs 0.23 px, 16 of 36 not converged). Unchanged by this
+work (the refiner is unchanged).
+
+Reproduce: `cargo test -p chess-corners --release --test position_covariance
+-- --ignored position_covariance_calibration --nocapture` (≈ 2 min on 12
+cores).
+
 ## Recommendation for 1.5.0
 
 **Reduce SaddlePoint bias first, then ship its noise covariance with a
@@ -405,11 +531,13 @@ removable (findings 3–4), and a learned or blur-indexed bias term would
 need a blur estimate the detector does not have. `UQ-07` (re-centred
 refit, covariance of the converged estimate) has brought σ̂₀² to ≈ 1
 ([After re-centring](#after-re-centring)); `UQ-05` exposes that
-covariance plus a constant floor of 0.002 px per axis. Förstner and CenterOfMass
+covariance plus a constant floor, 0.006 px per axis since `UQ-15`
+([rotated boards](#rotated-boards-and-image-formation)). Förstner and CenterOfMass
 covariances (`UQ-04`) are of little use while their bias is 1–7× their
 scatter; document SaddlePoint as the refiner for calibration-grade work
 and defer them.
 
-**Limits.** Synthetic, straight-edged corners with a box-plus-Gaussian
-PSF; uncorrelated noise added after blur (no demosaicing or compression);
+**Limits.** Synthetic, straight-edged corners with a Gaussian lens PSF
+before pixel integration (blur after sampling before `UQ-15`); uncorrelated
+noise added after blur (no demosaicing or compression);
 seeds at the rounded truth rather than the detector's NMS peak.
