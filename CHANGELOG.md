@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the first-order covariance of the refined position per unit
   image-noise variance (px² per gray-level²). Multiplied by the image's
   pixel-noise variance it predicts the position scatter within a few
-  percent on synthetic corners (any blur, noise level and subpixel
-  offset). The other refiners report `None`.
+  percent on synthetic corners with white noise (σ 1–8 gray levels, blur
+  up to 1.5 px). The other refiners report `None`.
 
 ### Changed
 

@@ -22,10 +22,8 @@ pub use center_of_mass::{CenterOfMassConfig, CenterOfMassRefiner};
 pub use forstner::{ForstnerConfig, ForstnerRefiner};
 pub use saddle_point::{SaddlePointConfig, SaddlePointRefiner};
 
-/// Symmetric 2×2 covariance of a refined corner position.
-///
-/// The units depend on where the value comes from; see
-/// [`RefineResult::covariance_per_noise_variance`].
+/// Symmetric 2×2 covariance of a refined corner position, in px² (px² per
+/// gray-level² in [`RefineResult::covariance_per_noise_variance`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct PositionCovariance {
@@ -133,9 +131,12 @@ pub struct RefineResult {
     /// First-order covariance of the refined position per unit image-noise
     /// variance, in px² per gray-level²: multiply by the variance of the
     /// image's pixel noise (gray-level²) for the position covariance in
-    /// px². Set by the saddle-point refiner on accepted corners; `None` on
-    /// every other status and for the center-of-mass and Förstner
-    /// refiners.
+    /// px². A first-order approximation that assumes independent,
+    /// identically distributed per-pixel noise; spatially correlated noise
+    /// (upscaling, demosaicing, JPEG, blur applied after the noise) makes it
+    /// underestimate the scatter. Set by the saddle-point refiner on
+    /// accepted corners; `None` on every other status and for the
+    /// center-of-mass and Förstner refiners.
     pub covariance_per_noise_variance: Option<PositionCovariance>,
 }
 
