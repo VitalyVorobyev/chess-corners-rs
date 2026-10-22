@@ -19,6 +19,9 @@ pub enum ChessError {
     },
     /// An upscale configuration or execution error.
     Upscale(UpscaleError),
+    /// [`DetectorConfig::noise_sigma`](crate::DetectorConfig::noise_sigma)
+    /// is negative or not finite.
+    InvalidNoiseSigma(f32),
     /// The configured refiner is not available on the single-scale ROI
     /// detection path ([`Detector::detect_u8_roi`](crate::Detector::detect_u8_roi)
     /// / [`Detector::detect_roi`](crate::Detector::detect_roi)). The ML
@@ -41,6 +44,9 @@ impl fmt::Display for ChessError {
                 "image buffer length mismatch: expected {expected} bytes (width*height), got {actual}"
             ),
             Self::Upscale(e) => write!(f, "upscale error: {e}"),
+            Self::InvalidNoiseSigma(s) => {
+                write!(f, "noise_sigma must be finite and >= 0, got {s}")
+            }
             #[cfg(feature = "ml-refiner")]
             Self::RoiRefinerUnsupported => write!(
                 f,

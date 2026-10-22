@@ -68,12 +68,21 @@ pub struct AxisOut {
 }
 
 #[derive(Serialize)]
+pub struct CovarianceOut {
+    pub xx: f32,
+    pub xy: f32,
+    pub yy: f32,
+}
+
+#[derive(Serialize)]
 pub struct CornerOut {
     pub x: f32,
     pub y: f32,
     pub response: f32,
     /// `null` when the orientation fit was skipped.
     pub axes: Option<[AxisOut; 2]>,
+    /// Position covariance in px²; `null` when the refiner reports none.
+    pub position_covariance: Option<CovarianceOut>,
 }
 
 impl From<&AxisEstimate> for AxisOut {
@@ -162,6 +171,11 @@ impl From<&CornerDescriptor> for CornerOut {
             axes: c
                 .axes
                 .map(|axes| [AxisOut::from(&axes[0]), AxisOut::from(&axes[1])]),
+            position_covariance: c.position_covariance.map(|p| CovarianceOut {
+                xx: p.xx,
+                xy: p.xy,
+                yy: p.yy,
+            }),
         }
     }
 }

@@ -2,8 +2,9 @@ use box_image_pyramid::PyramidParams;
 use chess_corners_core::{ChessParams, OrientationMethod, RadonDetectorParams, RefinerKind};
 use serde::{Deserialize, Serialize};
 
-use crate::multiscale::CoarseToFineParams;
+use crate::multiscale::{CoarseToFineParams, NoiseLevel};
 use crate::upscale::UpscaleConfig;
+use crate::ChessError;
 
 use super::{ChessConfig, ChessRefiner, ChessRing, MultiscaleConfig, RadonConfig};
 
@@ -113,6 +114,8 @@ impl Default for DetectionStrategy {
 ///   thresholds applied by both strategies. See [`DetectionParams`].
 /// - [`merge_radius`](DetectorConfig::merge_radius) — duplicate-suppression
 ///   radius across pyramid levels. See the field docs below.
+/// - [`noise_sigma`](DetectorConfig::noise_sigma) — image noise level used
+///   to express each corner's position covariance in px².
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
@@ -158,6 +161,22 @@ pub struct DetectorConfig {
     #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub merge_radius: f32,
+    /// Standard deviation of the image's pixel noise, in gray levels
+    /// (`>= 0`), used to express each corner's
+    /// [`position_covariance`](crate::CornerDescriptor::position_covariance)
+    /// in px². `None` (the default) estimates it from each image with
+    /// [`chess_corners_core::estimate_noise_sigma_u8`]; set it when the
+    /// sensor noise is known, for example from a flat-field measurement.
+    /// It is the noise as it appears in the 8-bit image, rounding included
+    /// (rounding adds `1/12` gray level², which matters only below about
+    /// 1 gray level).
+    ///
+    /// Only the saddle-point refiner reports a position covariance, so with
+    /// any other refiner this field has no effect and no estimate is made.
+    /// No covariance is reported when [`upscale`](Self::upscale) is active:
+    /// interpolation correlates the noise of neighbouring pixels.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    pub noise_sigma: Option<f32>,
 }
 
 impl Default for DetectorConfig {
@@ -179,6 +198,7 @@ impl DetectorConfig {
             upscale: UpscaleConfig::Disabled,
             orientation_method: Some(OrientationMethod::default()),
             merge_radius: 3.0,
+            noise_sigma: None,
         }
     }
 
@@ -279,6 +299,12 @@ impl DetectorConfig {
         self.merge_radius = radius;
         self
     }
+    /// Use a known image noise level, in gray levels, instead of estimating
+    /// it per image. See [`DetectorConfig::noise_sigma`].
+    pub fn with_noise_sigma(mut self, sigma: f32) -> Self {
+        self.noise_sigma = Some(sigma);
+        self
+    }
 
     /// Apply `f` to the shared [`DetectionParams`] (NMS / clustering
     /// thresholds honoured by both strategies) and return the updated
@@ -347,6 +373,27 @@ impl DetectorConfig {
         // Radon interprets `threshold` as a fraction of the per-frame maximum.
         params.threshold_rel = self.threshold;
         params
+    }
+
+    /// Check the fields [`Detector`](crate::Detector) validates up front:
+    /// the upscale factor and the noise level.
+    pub(crate) fn validate(&self) -> Result<(), ChessError> {
+        self.upscale.validate()?;
+        match self.noise_sigma {
+            Some(sigma) if !(sigma.is_finite() && sigma >= 0.0) => {
+                Err(ChessError::InvalidNoiseSigma(sigma))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// The noise level that turns refined-corner covariances into px², for
+    /// a frame refined on the input image itself.
+    pub(crate) fn noise_level(&self) -> NoiseLevel {
+        match self.noise_sigma {
+            Some(sigma) => NoiseLevel::Known(sigma),
+            None => NoiseLevel::Estimate,
+        }
     }
 
     /// Lower this config into the [`CoarseToFineParams`] that drive the
