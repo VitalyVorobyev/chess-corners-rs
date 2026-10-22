@@ -33,6 +33,7 @@ pub struct DetectorConfig {
     upscale: UpscaleConfig,
     orientation_method: Cell<Option<RsOrientationMethod>>,
     merge_radius: Cell<f32>,
+    noise_sigma: Cell<Option<f32>>,
 }
 
 impl DetectorConfig {
@@ -49,6 +50,7 @@ impl DetectorConfig {
             upscale: UpscaleConfig::from_value(value.upscale),
             orientation_method: cell(value.orientation_method),
             merge_radius: cell(value.merge_radius),
+            noise_sigma: cell(value.noise_sigma),
         }
     }
 
@@ -84,6 +86,7 @@ impl DetectorConfig {
         cfg.upscale = self.upscale.snapshot();
         cfg.orientation_method = *self.orientation_method.borrow();
         cfg.merge_radius = *self.merge_radius.borrow();
+        cfg.noise_sigma = *self.noise_sigma.borrow();
         cfg
     }
 }
@@ -208,6 +211,16 @@ impl DetectorConfig {
     pub fn with_merge_radius(&self, radius: f32) -> Self {
         let mut out = self.deep_clone();
         out.set_merge_radius(radius);
+        out
+    }
+
+    /// Return a copy of this config that uses a known image noise level
+    /// (gray levels) instead of estimating it per image.
+    /// JS: `cfg.withNoiseSigma(2.0)`.
+    #[wasm_bindgen(js_name = withNoiseSigma)]
+    pub fn with_noise_sigma(&self, sigma: f32) -> Self {
+        let mut out = self.deep_clone();
+        out.set_noise_sigma(Some(sigma));
         out
     }
 
@@ -451,6 +464,18 @@ impl DetectorConfig {
     #[wasm_bindgen(setter, js_name = mergeRadius)]
     pub fn set_merge_radius(&mut self, v: f32) {
         *self.merge_radius.borrow_mut() = v;
+    }
+
+    /// Standard deviation of the image's pixel noise in gray levels, used to
+    /// express each corner's position covariance in px²; `undefined`
+    /// estimates it from each image.
+    #[wasm_bindgen(getter, js_name = noiseSigma)]
+    pub fn noise_sigma(&self) -> Option<f32> {
+        *self.noise_sigma.borrow()
+    }
+    #[wasm_bindgen(setter, js_name = noiseSigma)]
+    pub fn set_noise_sigma(&mut self, v: Option<f32>) {
+        *self.noise_sigma.borrow_mut() = v;
     }
 }
 

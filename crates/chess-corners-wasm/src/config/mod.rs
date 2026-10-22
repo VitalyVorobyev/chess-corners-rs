@@ -579,6 +579,19 @@ mod tests {
     }
 
     #[test]
+    fn noise_sigma_builder_and_setter_round_trip() {
+        let cfg = DetectorConfig::chess();
+        assert_eq!(cfg.noise_sigma(), None);
+        let cfg2 = cfg.with_noise_sigma(2.5);
+        assert_eq!(cfg2.snapshot().noise_sigma, Some(2.5));
+        // Original is unchanged.
+        assert_eq!(cfg.snapshot().noise_sigma, None);
+        let mut cfg3 = cfg2.clone();
+        cfg3.set_noise_sigma(None);
+        assert_eq!(cfg3.snapshot().noise_sigma, None);
+    }
+
+    #[test]
     fn with_chess_refiner_builder_sets_forstner() {
         let cfg = DetectorConfig::chess();
         let mut forstner = ForstnerConfig::new();

@@ -96,6 +96,9 @@ pub struct ChessDetector {
     /// heatmap call and the accessor calls. `0` until the first
     /// heatmap is computed.
     last_radon_scale: u32,
+    /// Position covariance of the corners returned by the most recent
+    /// `detect` call, stride [`COVARIANCE_STRIDE`].
+    last_position_covariance: Vec<f32>,
 }
 
 impl Default for ChessDetector {
@@ -115,6 +118,7 @@ impl ChessDetector {
             last_response: None,
             last_radon_response: None,
             last_radon_scale: 0,
+            last_position_covariance: Vec::new(),
         }
     }
 
@@ -126,6 +130,7 @@ impl ChessDetector {
             last_response: None,
             last_radon_response: None,
             last_radon_scale: 0,
+            last_position_covariance: Vec::new(),
         }
     }
 
@@ -141,6 +146,7 @@ impl ChessDetector {
             last_response: None,
             last_radon_response: None,
             last_radon_scale: 0,
+            last_position_covariance: Vec::new(),
         })
     }
 
@@ -184,7 +190,31 @@ impl ChessDetector {
             .inner
             .detect_u8(pixels, width, height)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.last_position_covariance.clear();
+        for c in &corners {
+            match c.position_covariance {
+                Some(p) => self
+                    .last_position_covariance
+                    .extend_from_slice(&[p.xx, p.xy, p.yy]),
+                None => self
+                    .last_position_covariance
+                    .extend_from_slice(&[f32::NAN; COVARIANCE_STRIDE]),
+            }
+        }
         Ok(corners_to_f32_array(&corners))
+    }
+
+    /// Position covariance of the corners returned by the most recent
+    /// `detect` / `detectRgba` call, in the same order: a `Float32Array`
+    /// with stride 3 per corner, `[xx, xy, yy, ...]`, in px². All three are
+    /// `NaN` for a corner without one — only the saddle-point refiner
+    /// reports it, and not on upscaled input. Empty before the first
+    /// detection.
+    #[wasm_bindgen(js_name = positionCovariance)]
+    pub fn position_covariance(&self) -> js_sys::Float32Array {
+        let arr = js_sys::Float32Array::new_with_length(self.last_position_covariance.len() as u32);
+        arr.copy_from(&self.last_position_covariance);
+        arr
     }
 
     /// Detect corners from RGBA pixels (e.g. from canvas `getImageData`).
@@ -449,6 +479,9 @@ impl ChessDetector {
 /// When the orientation fit is skipped (`orientationMethod` is `undefined`),
 /// the four axis values are `NaN` for every corner; the stride is unchanged.
 const CORNER_STRIDE: usize = 7;
+
+/// Stride of [`ChessDetector::position_covariance`]: `[xx, xy, yy]`.
+const COVARIANCE_STRIDE: usize = 3;
 
 fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::Float32Array {
     let mut flat = Vec::with_capacity(corners.len() * CORNER_STRIDE);

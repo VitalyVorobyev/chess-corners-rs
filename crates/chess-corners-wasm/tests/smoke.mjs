@@ -77,4 +77,35 @@ assert.throws(
   (e) => String(e).includes("7"),
 );
 
+// Noise level: JSON and typed accessors agree; `undefined` estimates per image.
+assert.equal(DetectorConfig.chess().noiseSigma, undefined);
+assert.equal(DetectorConfig.fromJson('{"noise_sigma": 2.5}').noiseSigma, 2.5);
+assert.equal(JSON.parse(DetectorConfig.chess().withNoiseSigma(2.5).toJson()).noise_sigma, 2.5);
+
+// Position covariance: stride 3 per corner, aligned with `detect`; finite with
+// the saddle-point refiner, NaN with the default refiner.
+const size = 128;
+const board = new Uint8Array(size * size);
+let seed = 1;
+for (let y = 0; y < size; y++) {
+  for (let x = 0; x < size; x++) {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    const noise = (seed / 2147483648 - 0.5) * 8;
+    const bright = (Math.floor(x / 16) + Math.floor(y / 16)) % 2 === 0;
+    board[y * size + x] = Math.round((bright ? 200 : 40) + noise);
+  }
+}
+const saddle = ChessDetector.withConfig(
+  DetectorConfig.fromJson('{"strategy": {"chess": {"refiner": {"saddle_point": {}}}}}'),
+);
+const found = saddle.detect(board, size, size);
+const cov = saddle.positionCovariance();
+assert.ok(found.length > 0);
+assert.equal(cov.length, (found.length / 7) * 3);
+assert.ok(cov.some((v) => Number.isFinite(v) && v > 0), "saddle point reports covariances");
+const plain = new ChessDetector();
+const plainFound = plain.detect(board, size, size);
+assert.equal(plain.positionCovariance().length, (plainFound.length / 7) * 3);
+assert.ok(plain.positionCovariance().every((v) => Number.isNaN(v)));
+
 console.log("chess-corners-wasm JSON smoke test: ok");
