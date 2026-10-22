@@ -101,7 +101,7 @@ from a measured bias/precision split, not ahead of it.
 **Known gaps this program has to close.**
 - SaddlePoint covariance is calibrated only on boards aligned with the pixel
   grid: rotated 2–15°, the re-centred fit keeps 0.01–0.02 px of bias and
-  σ̂₀² reaches ~10 at σₙ = 1 (`UQ-14`).
+  σ̂₀² reaches ~10 at σₙ = 1 (`UQ-15`).
 - All accuracy evidence is synthetic; `testimages/` carry no ground truth.
 - Validation so far uses i.i.d. Gaussian noise. Real sensors add
   signal-dependent (shot) noise and spatially correlated noise (demosaicing,
