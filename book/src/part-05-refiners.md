@@ -148,8 +148,9 @@ rejects:
 | Weaknesses       | About 4× the cost of a single fit               |
 
 The default choice for calibration-grade work: in Part VIII's synthetic
-sweeps it has the lowest mean error on every clean, blurred and noisy
-row up to `σ_noise = 8`.
+sweeps it has the lowest mean error of the built-in refiners on every
+clean, blurred and noisy row up to `σ_noise = 8`, and is within 0.003 px
+of (or below) `cv2.cornerSubPix` on the blurred rows.
 
 ## 5.5 ML (ONNX model)
 
@@ -277,8 +278,8 @@ The measurement-driven comparison lives in Part VIII. In short:
 
 - Budget matters more than anything else: the structure-tensor
   refiners are orders of magnitude faster than ML per corner.
-- `SaddlePoint` has the lowest mean error on clean and blurred frames
-  and is the default choice for image-patch refinement.
+- `SaddlePoint` has the lowest mean error of the built-in refiners on
+  clean and blurred frames and is the default choice for image-patch refinement.
 - `Förstner` is about 4× cheaper and close on sharp frames, but degrades
   with blur.
 - ML has the lowest mean error on the heaviest synthetic noise row.

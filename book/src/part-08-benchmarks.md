@@ -75,9 +75,9 @@ Reading the CDF:
   so it carries no pull toward the seed pixel; what remains is this
   fixture's 1/8 px supersampling of the edges.
 - **Förstner** and **cv2.cornerSubPix** follow, with mean around
-  0.06 px and `p95` around 0.10 px.
-- **CenterOfMass** and **ML (ONNX)** land around 0.09 px mean /
-  0.15 px `p95`.
+  0.06 px and `p95` around 0.12–0.13 px.
+- **CenterOfMass** and **ML (ONNX)** land around 0.08–0.09 px mean /
+  0.12–0.15 px `p95`.
 
 ## 7.3 Accuracy vs blur
 
@@ -91,8 +91,11 @@ where a refiner is usable without per-scene tuning.
   grows roughly linearly in `σ_blur`.
 - Every other refiner stays inside the plotted 0.05–0.10 px band up to
   `σ_blur = 2.5 px` on this fixture.
-- **SaddlePoint** has the lowest blur-row error, about 0.045 px at every
-  `σ_blur` from 0 to 2.5 px.
+- **SaddlePoint** stays at about 0.045 px at every `σ_blur` from 0 to
+  2.5 px, the lowest of the built-in refiners. `cv2.cornerSubPix` falls
+  from 0.067 px to the same level by `σ_blur = 1` and is within 0.003 px
+  of `SaddlePoint` on the blurred rows (slightly lower at `σ_blur = 1`
+  and 2.5).
 
 The Radon detector is not shown on this plot because it is a detector,
 not a refiner; detector-level recall and precision are measured separately.
@@ -104,8 +107,10 @@ Log-y axis, same shaded band as §7.3.
 ![Accuracy vs additive noise σ](img/bench/accuracy_vs_noise.png)
 
 Mean error grows with noise for every geometric refiner, and the ML
-(ONNX) curve is nearly flat. `SaddlePoint` has the lowest mean error up
-to `σ_noise = 8` gray levels (0.074 px there); at `σ_noise = 12` the ML
+(ONNX) curve is nearly flat. Among all plotted series, including
+`cv2.cornerSubPix`, `SaddlePoint` has the lowest mean error for
+`σ_noise` from 1 to 8 gray levels (0.074 px at 8; `cv2.cornerSubPix`
+0.086 px); the two tie at `σ_noise = 0`. At `σ_noise = 12` the ML
 model is ahead of the hand-coded methods on this synthetic fixture. The model was trained
 with noise augmentation over `σ ∈ [0, 10]`; that is the strongest
 supported explanation for the flat curve. Validate this separately on
@@ -148,7 +153,7 @@ The Pareto frontier, fast-to-slow:
 |---------------------|---------------|-----------------------|-----------------------------------------------------------------------|
 | `CenterOfMass`      | ~20 ns        | 0.08 px               | Unmatched throughput; fails at cell ≤ 5 (see §7.5).                   |
 | `Förstner`          | ~60 ns        | 0.06 px               | Degrades with blur.                                                   |
-| `SaddlePoint`       | ~250 ns       | 0.045 px              | Lowest mean error on every row up to `σ_noise = 8`.                   |
+| `SaddlePoint`       | ~250 ns       | 0.045 px              | Lowest mean error among the built-in refiners on every row up to `σ_noise = 8`. |
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.07 px               | OpenCV's iterative gradient refiner.                                  |
 | `ML (ONNX)`         | ~150 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row (`σ_noise = 12`).             |
 
@@ -353,7 +358,7 @@ loop {
 ### Offline calibration, maximum accuracy
 
 For still calibration frames, `SaddlePoint` has the lowest mean error
-on clean and blurred data alike (§7.2, §7.3).
+among the built-in refiners on clean and blurred data alike (§7.2, §7.3).
 
 ```rust
 use chess_corners::{ChessRefiner, Detector, DetectorConfig};

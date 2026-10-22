@@ -136,7 +136,7 @@ state.
 | DOCS-03 | P3 | todo | — | — | Tracing/profiling cookbook examples (pair with book Part VIII). |
 | DOCS-04 | P3 | todo | — | — | Worked `no_std` examples for `chess-corners-core`. |
 | DOCS-05 | P3 | done | — | — | Regenerated the refiner benchmark plots under `book/src/img/bench/` without the RadonPeak series; fresh data confirms the chapter's refiner claims. |
-| DOCS-06 | P3 | todo | — | — | Book Part VIII §7.4 says CenterOfMass has the lowest mean error up to σ = 8; `cv2.cornerSubPix` is lower at every σ ≤ 8 in `opencv_subpix_sweep.json` (0.046–0.086 px). Qualify the claim as "among the built-in refiners" (Codex review, #81). |
+| DOCS-06 | P3 | done | — | — | Book Part VIII §7.4 says CenterOfMass has the lowest mean error up to σ = 8; `cv2.cornerSubPix` is lower at every σ ≤ 8 in `opencv_subpix_sweep.json` (0.046–0.086 px). Qualify the claim as "among the built-in refiners" (Codex review, #81). | Outcome: §7.3/§7.4/§7.6, Part V §5.4/§5.6 and README now say "among the built-in refiners"; verified against the regenerated sweep incl. `cv2.cornerSubPix`.
 
 ## UQ — accuracy-aware detection  ·  post-1.0  ·  [roadmap](ROADMAP.md#post-10-program-accuracy-aware-detection-uq-)
 
@@ -153,6 +153,7 @@ state.
 | UQ-08 | P2 | todo | ongoing | UQ-05 | Realistic ground truth: calib-synth / etendue renders, and an end-to-end check that calibration-rs reaches σ̂₀ ≈ 1 with detector covariances. Absorbs `ML-01` and `ML-02`. |
 | UQ-09 | P2 | todo | 1.5.0 | — | CenterOfMass returns `Accepted` at the unchanged seed when its window has no positive response (36–100% of corners at cell 5). Report a non-accepted status instead. |
 | UQ-10 | P3 | done | 1.5.0 | UQ-01 | Bias harness (`refiner_bias_precision.rs`): remove each phase mean's sampling variance with that phase's own variance, not the pooled σ. Only matters where acceptance or scatter varies by phase (low SNR); the σₙ 1–3 conclusions are unaffected (Codex review, #82). Outcome: no published number moved (largest `rms_bias` change 8e-5 px, no `bias_dominates` flip). |
+| UQ-11 | P3 | todo | 1.6.0+ | UQ-07 | Re-centred SaddlePoint regresses on small sheared cells with heavy blur (cell 5, 60° shear, blur 2.5: 0.21 → 0.26 px) because the 5×5 window overlaps neighbouring corners; consider a smaller radius or a convergence guard there. |
 
 ## Post-1.0 / future (not blocking 1.0)
 
