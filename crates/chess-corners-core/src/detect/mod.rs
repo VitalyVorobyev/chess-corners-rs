@@ -26,6 +26,19 @@ pub use chess::detect::{
 pub use merge::merge_corners_simple;
 pub(crate) use neighbors::{count_positive_neighbors, is_local_max};
 
+use crate::refine::PositionCovariance;
+
+/// Model-error floor of a refined position, in px per axis: added as `f²`
+/// to each diagonal entry of [`Corner::position_covariance`]. Chosen to
+/// keep the whitened error σ̂₀² closest to 1 on synthetic corners with
+/// cells of 8 px or more; smaller, sheared and strongly blurred cells have
+/// a larger residual systematic error.
+pub(crate) const POSITION_FLOOR_PX: f32 = 0.002;
+
+/// Lower bound on the pixel-noise variance used for a covariance, in gray
+/// level²: the variance of rounding to 8 bits.
+pub(crate) const MIN_NOISE_VAR: f32 = 1.0 / 12.0;
+
 /// A detected corner candidate (subpixel position with raw response strength).
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -36,13 +49,53 @@ pub struct Corner {
     pub y: f32,
     /// Raw detector response at the integer peak (before refinement).
     pub strength: f32,
+    /// The refiner's position covariance per unit image-noise variance (px²
+    /// per gray-level²), copied from
+    /// [`RefineResult::covariance_per_noise_variance`](crate::RefineResult::covariance_per_noise_variance)
+    /// by [`refine_corners_on_image`]; `None` when the refiner reports none.
+    /// [`Corner::position_covariance`] turns it into px².
+    pub covariance_per_noise_variance: Option<PositionCovariance>,
 }
 
 impl Corner {
-    /// Construct a [`Corner`].
+    /// Construct a [`Corner`] without a covariance.
     #[inline]
     pub fn new(x: f32, y: f32, strength: f32) -> Self {
-        Self { x, y, strength }
+        Self {
+            x,
+            y,
+            strength,
+            covariance_per_noise_variance: None,
+        }
+    }
+
+    /// Position covariance in px² for an image whose pixels carry white
+    /// noise of standard deviation `noise_sigma` gray levels (for example
+    /// from [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8)):
+    /// `σₙ²·C + f²·I`, with `C` =
+    /// [`covariance_per_noise_variance`](Self::covariance_per_noise_variance)
+    /// and `f = 0.002` px per axis. `σₙ²` is at least `1/12` gray level²,
+    /// the variance of rounding to 8 bits, so a smoothed or compressed image
+    /// whose measured noise is lower does not get an overconfident
+    /// covariance.
+    ///
+    /// `σₙ²·C` is the first-order noise scatter; `f` is a small model-error
+    /// floor, chosen so that whitened errors on synthetic corners with cells
+    /// of 8 px or more have unit variance — smaller, sheared or strongly
+    /// blurred cells have a larger systematic error. Valid only for the
+    /// image the corner was refined on. With spatially correlated noise
+    /// (demosaiced, compressed or resampled images) `σₙ` from
+    /// [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8) is the
+    /// noise as that estimator's operator sees it, and the absolute scale of
+    /// the covariance is approximate; covariances of corners in the same
+    /// image remain meaningful relative to each other. `None` when the
+    /// corner carries no covariance.
+    #[inline]
+    pub fn position_covariance(&self, noise_sigma: f32) -> Option<PositionCovariance> {
+        let var = (noise_sigma * noise_sigma).max(MIN_NOISE_VAR);
+        let floor2 = POSITION_FLOOR_PX * POSITION_FLOOR_PX;
+        self.covariance_per_noise_variance
+            .map(|c| PositionCovariance::new(var * c.xx + floor2, var * c.xy, var * c.yy + floor2))
     }
 }
 
@@ -104,6 +157,17 @@ impl AxisEstimate {
 /// skipped — the dominant per-corner cost. Consumers that derive board
 /// geometry themselves can disable it (the orientation method is `None` in
 /// the detector configuration); position and response are still produced.
+///
+/// # Position covariance
+///
+/// [`position_covariance`](Self::position_covariance) is the 2×2 covariance
+/// of `(x, y)` in px², for whitening the corner's residuals in a
+/// calibration. Only the saddle-point refiner reports one; the
+/// `chess-corners` `Detector` fills it, and [`describe_corners`] leaves it
+/// `None` because it needs the image noise level (see
+/// [`Corner::position_covariance`]).
+///
+/// [`describe_corners`]: crate::describe_corners
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct CornerDescriptor {
@@ -123,6 +187,17 @@ pub struct CornerDescriptor {
     /// `None` when the orientation fit was skipped (orientation disabled in
     /// the detector configuration).
     pub axes: Option<[AxisEstimate; 2]>,
+
+    /// Covariance of the position `(x, y)` in px² of this frame: the
+    /// first-order scatter due to white pixel noise plus a small model-error
+    /// floor ([`Corner::position_covariance`] gives the model).
+    ///
+    /// `None` unless the corner was refined by the saddle-point refiner, its
+    /// re-centred refinement converged, the image noise level is known
+    /// (estimated or supplied), and the corner was refined on the input
+    /// image itself — not on an upscaled copy, whose interpolated noise is
+    /// spatially correlated.
+    pub position_covariance: Option<PositionCovariance>,
 }
 
 impl CornerDescriptor {
@@ -134,6 +209,7 @@ impl CornerDescriptor {
             y,
             response,
             axes: Some(axes),
+            position_covariance: None,
         }
     }
 
@@ -146,6 +222,7 @@ impl CornerDescriptor {
             y,
             response,
             axes: None,
+            position_covariance: None,
         }
     }
 }

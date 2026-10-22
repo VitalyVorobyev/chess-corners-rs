@@ -156,11 +156,7 @@ pub fn detect_peaks_from_response_with_refine_radius(
                 continue;
             }
 
-            corners.push(Corner {
-                x: x as f32,
-                y: y as f32,
-                strength: v,
-            });
+            corners.push(Corner::new(x as f32, y as f32, v));
         }
     }
 
@@ -175,8 +171,9 @@ pub fn detect_peaks_from_response_with_refine_radius(
 /// view and the optional response map. Peaks the refiner rejects
 /// (status not [`RefineStatus::Accepted`]) are dropped from the
 /// output; accepted peaks are emitted with their refined subpixel
-/// `(x, y)` and the **input** `strength` (the refiner does not
-/// rescore the peak strength).
+/// `(x, y)`, the **input** `strength` (the refiner does not
+/// rescore the peak strength), and the refiner's
+/// [`covariance_per_noise_variance`](Corner::covariance_per_noise_variance).
 ///
 /// Iteration order matches the order of the input vector — necessary
 /// for downstream stages that assume a stable scan order.
@@ -204,6 +201,7 @@ pub fn refine_corners_on_image(
                 x: res.x,
                 y: res.y,
                 strength: c.strength,
+                covariance_per_noise_variance: res.covariance_per_noise_variance,
             });
         }
     }

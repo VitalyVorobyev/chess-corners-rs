@@ -217,7 +217,9 @@ of σ_emp in every row except 90/150, blur 2.5, σₙ = 4 (+7%).
   which `Σ + f²I` brings σ̂₀² about the truth within 0.05 of the
   scatter-only value, over fixtures with σ_emp < 0.3 px: 0.015 px covers
   every cell 8–12 fixture (median 0); cell 5 needs up to 0.03 px
-  (low contrast, blur 2.5). This is the floor `UQ-05` adds.
+  (low contrast, blur 2.5). That worst-case floor over-states the error
+  everywhere else; `UQ-05` picks 0.002 px instead
+  ([below](#noise-estimate-and-end-to-end-covariance)).
 - **Acceptance** is decided by the first (integer-grid) fit exactly as
   before and is identical on every cell of the grid. Re-centring
   converges for ≥ 99.98% of accepted corners on every cell 8–12 fixture
@@ -245,6 +247,142 @@ of σ_emp in every row except 90/150, blur 2.5, σₙ = 4 (+7%).
   40° cells). `radius: 1` helps there (40°, blur
   1.5: 0.104 px) but is worse on blurred cell-8 corners.
 
+## Noise estimate and end-to-end covariance
+
+`UQ-03` / `UQ-05`: the detector reports `CornerDescriptor::position_covariance`
+= `max(σₙ², 1/12)·C + f²I` (`f = 0.002` px), with σₙ from
+`DetectorConfig::noise_sigma` or `estimate_noise_sigma_u8`.
+
+```sh
+cargo test -p chess-corners-core --release --test noise_estimate -- --ignored --nocapture
+cargo test -p chess-corners --release --test position_covariance -- --ignored --nocapture
+```
+
+**Estimator** (`core/src/noise.rs`): a 4×4 window expanded in the
+orthogonal polynomials on four points (`s, l, e, d`, degrees 0–3); the
+operator is `d ⊗ d` (cancels anything at most quadratic along an axis;
+output std 20σ). The gate uses every other component of total degree ≥ 3 —
+`(3,0) (0,3) (3,1) (1,3) (2,1) (1,2) (2,2) (3,2) (2,3)`, each scaled to
+the operator's white-noise variance, so `q/(400σ²)` is χ²₉ — and keeps
+`q < 20·400σ²` (never tighter than the 8-bit rounding variance). An edge
+along the window diagonal projects only onto `(i, i)` components, so
+`(2,2)` is what catches it (the earlier 4-term gate read +2 000–3 700% on
+45° sharp 6 px cells). About 8 k windows are sampled once on a staggered
+grid and kept in memory (gate statistic, squared operator output, by
+64-level intensity band), so the threshold is applied exactly. The noise
+level is a fixed point (the gate it sets yields it) reached from the
+quietest sixteenth of the windows; each band reaches its own fixed point
+from its own quietest windows and is dropped as structure if its variance
+exceeds 8× the image-wide one or 3× the median over bands; the result is
+the admitted-count weighted mean of 4σ-truncated band variances. Windows
+whose mean is within 12 levels of 0 or 255 are skipped (by the mean, the
+`(0,0)` component, which does not bias the operator).
+
+Normalising each gate component per image (its own noise variance from the
+image) was tried and dropped: on the test images the components are
+within 1.0–1.6× of their white-noise ratios, and on boards with no flat
+area every self-normalisation tried absorbed structure as "noise texture"
+(+100–4 000% on 30–45° boards at σₙ ≤ 1). The earlier instability on real
+images came from the binned gate threshold (a factor-2 bin jump between
+G 18 and 20 moved `large.png` from 0.74 to 1.16), from too few windows,
+and from bright bands with legitimately higher noise being dropped.
+
+Worst relative error against the realised σ (std of `noisy − clean`,
+rounding included), 256² boards, 40/200, mean of 3 seeds, cells 5/8/12
+(exact-area axis / 60° shear) or 6/8/12 (supersampled, rotated), blur
+0/0.8/1.5/2.5; `(n)` = cells where the estimator declined:
+
+| geometry | σₙ 0.5 | 1 | 2 | 4 | 8 | sd a=1 | sd a=4 |
+|---|---|---|---|---|---|---|---|
+| axis | +15% (3) | +4.8% (2) | +1.4% (2) | +3.8% | +2.2% | +3.5% (1) | +2.4% (1) |
+| skew60 | +12% (5) | +4.4% (5) | +1.7% (3) | +0.6% (2) | +1.3% (1) | +14% (2) | +8.7% (2) |
+| rot 0° | +22% (3) | +12% (1) | +3.8% | -2.1% | +0.4% | +12% | +5.2% |
+| rot 10° | +10% (4) | +4.0% (2) | +3.0% (1) | +2.5% | +1.8% | +12% (1) | +4.6% (1) |
+| rot 22.5° | +12% (5) | +4.4% (3) | +2.6% (1) | +4.0% | +1.8% | +6.5% (1) | +6.6% (1) |
+| rot 30° | +12% (5) | +4.1% (3) | +2.4% (2) | +3.3% | +24% | +7.8% (2) | +5.1% (2) |
+| rot 45° | +11% (6) | +4.6% (4) | +2.9% (3) | +3.1% (1) | +106% | +9.8% (2) | +4.8% (2) |
+
+Errors above 10% at σₙ ≥ 1 are cells next to a decline (few structure-free
+windows; an image whose first ~8 k-window sample is short is sampled once
+more, 4× as densely) or sharp 6–12 px cells at σₙ 8, where every window
+holds an edge comparable to the noise (45° cell 6: +106%). σₙ 0.5 errors
+are blur ≥ 1.5. Rounding is
+included: σₙ 0.5 / 1 / 2 realise 0.572 / 1.044 / 2.030 (`√(σₙ² + 1/12)`
+0.577 / 1.041 / 2.021).
+
+**Real images: additivity.** No ground truth, so each `testimages/` image
+gets white noise σₐ added (3 seeds); adding σₐ should raise σ̂² by
+`σₐ² + 1/12` whatever the image's own noise. Ratio
+`(σ̂²(img + n) − σ̂²(img)) / (σₐ² + 1/12)`, before → after:
+
+| image | σ̂(img) before → after | σₐ 1 | σₐ 2 | σₐ 4 |
+|---|---|---|---|---|
+| small 720×540 | 1.34 → 1.52 | 1.36 → 0.96 | 1.07 → 0.98 | 0.99 → 0.99 |
+| mid 1024×576 | 0.10 → 0.23 | 1.07 → 1.03 | 1.03 → 1.02 | 1.01 → 1.01 |
+| large 2048×1536 | 1.16 → 1.55 | 0.44 → 0.86 | 1.29 → 0.95 | 1.08 → 0.98 |
+
+Stability of σ̂(img) across gate settings G 16 / 20 / 24: small 1.53 /
+1.52 / 1.52, mid 0.226 / 0.230 / 0.237, large 1.53 / 1.55 / 1.55 (before,
+G 16–20: large 0.74–1.16, small 1.28–1.34); across 4 k / 8 k sampled
+windows within 1%. Real images are signal-dependent: `large.png`'s band
+variances run 0.7 → ~6 gray level² from dark to bright.
+
+Cost (min of 20, M4 Pro): 0.095 / 0.074 / 0.055 ms on small / mid /
+large, against a SaddlePoint multiscale detect of 0.54 / 0.83 / 4.2 ms.
+Nothing is estimated unless a refined corner carries a covariance.
+
+**Floor choice.** Worst |ln σ̂₀²| per candidate `f` over cells 8–12, both
+contrasts and geometries, blur 0–2.5, white σₙ 1–8, converged corners: the
+`UQ-01` harness with the true noise variance, and the facade end to end
+(below) with the estimated one. The worst over every cell is a low-SNR
+cell no floor fixes (harness: sheared 90/150 blur 2.5 σₙ 8, 1.39; end to
+end: axis 90/150 blur 2.5 σₙ 8, 0.53, where 41% of detections miss the
+corner by > 0.5 px), so the comparison uses cells with σ_emp < 0.3 px
+(harness) / ≤ 1% missed detections (end to end):
+
+| f (px) | harness | end to end |
+|---|---|---|
+| 0 | 0.278 (1.32, skew60 40/200 blur 0 σₙ 1) | 0.238 (1.27, skew60 blur 0 σₙ 1) |
+| 0.002 | 0.192 (1.21, same) | **0.152** (1.17, same) |
+| 0.003 | **0.182** (0.83, axis 40/200 blur 0 σₙ 1) | 0.203 (0.82, axis blur 0 σₙ 1) |
+| 0.005 | 0.441 (0.64, axis) | 0.461 (0.63, axis) |
+| 0.0075 | 0.808 (0.45) | 0.826 (0.44) |
+| 0.01 | 1.165 (0.31) | 1.182 (0.31) |
+| 0.015 | 1.784 (0.17) | 1.799 (0.17) |
+
+`f = 0.002` px minimises the larger of the two (0.192); end-to-end σ̂₀² is
+0.90–1.17 on every row whose detections match the truth. The pixel-noise
+variance is clamped at `1/12` (8-bit rounding) so a smoothed or compressed
+image whose measured σ is below 0.29 (`testimages/mid.png`: 0.20) does not
+get an overconfident covariance; the estimate already includes rounding
+on the synthetic boards (σₙ 0.5 / 1 / 2: realised 0.572 / 1.044 / 2.030 vs
+`√(σₙ² + 1/12)` 0.577 / 1.041 / 2.021; estimates 0.546 / 1.032 / 2.005), so
+the clamp changes no synthetic number above.
+
+**End to end at f = 0.002** (facade, SaddlePoint, `area_chessboard` 200²,
+cell 8, 25 boards per row, ~13 k matched corners): σ̂₀² =
+mean(eᵀΣ⁻¹e)/2 about the truth, estimated σₙ (supplying the realised σ
+changes it by ≤ 0.11).
+
+| board | blur | σₙ 1 | σₙ 2 | σₙ 4 | σₙ 8 |
+|---|---|---|---|---|---|
+| axis 40/200 | 0 | 0.90 | 0.95 | 0.97 | 0.99 |
+| axis 40/200 | 0.8 | 1.02 | 0.98 | 0.99 | 1.00 |
+| axis 40/200 | 1.5 | 0.91† | 0.98 | 1.00 | 1.01 |
+| axis 40/200 | 2.5 | 0.94 | 0.98 | 1.00 | 1.02 |
+| axis 90/150 | 0 | 0.97 | 0.98 | 1.00 | 1.02 |
+| axis 90/150 | 0.8 | 1.02 | 1.00 | 1.01 | 1.02 |
+| axis 90/150 | 1.5 | 1.07 | 1.02 | 1.03 | 0.93* |
+| axis 90/150 | 2.5 | 0.95 | 1.00 | 0.92* | 0.53* |
+| skew60 40/200 | 0 | 1.17 | 1.04 | 1.00 | 0.99 |
+| skew60 40/200 | 0.8 | — | — | 0.99 | 1.00 |
+| skew60 40/200 | 1.5 | 0.94‡ | 1.01 | 1.01 | 1.02 |
+
+\* low SNR: 5–41% of detections > 0.5 px off a lattice corner (excluded).
+† σₙ off by more than 5%. ‡ the estimator declined on some boards (no
+covariance there; at sheared blur 0.8, σₙ 1 on all 25). Sheared blur 2.5
+yields too few detections at the default threshold to report.
+
 ## Recommendation for 1.5.0
 
 **Reduce SaddlePoint bias first, then ship its noise covariance with a
@@ -259,7 +397,7 @@ removable (findings 3–4), and a learned or blur-indexed bias term would
 need a blur estimate the detector does not have. `UQ-07` (re-centred
 refit, covariance of the converged estimate) has brought σ̂₀² to ≈ 1
 ([After re-centring](#after-re-centring)); `UQ-05` exposes that
-covariance plus a constant floor of 0.015 px per axis. Förstner and CenterOfMass
+covariance plus a constant floor of 0.002 px per axis. Förstner and CenterOfMass
 covariances (`UQ-04`) are of little use while their bias is 1–7× their
 scatter; document SaddlePoint as the refiner for calibration-grade work
 and defer them.

@@ -109,6 +109,18 @@ pub struct cc_axis {
     pub sigma: f32,
 }
 
+/// Symmetric 2×2 covariance of a corner position, in px².
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct cc_covariance {
+    /// Variance of x.
+    pub xx: f32,
+    /// Covariance of x and y.
+    pub xy: f32,
+    /// Variance of y.
+    pub yy: f32,
+}
+
 /// One detected chessboard corner in full-resolution image pixels.
 ///
 /// The two axes follow the joint polarity convention of the Rust
@@ -127,10 +139,19 @@ pub struct cc_corner {
     /// The two local grid-axis directions. Valid only when
     /// `has_orientation` is `1`; zeroed otherwise.
     pub axes: [cc_axis; 2],
+    /// Covariance of `(x, y)` in px²: first-order scatter due to white
+    /// pixel noise plus a small model-error floor (the Rust
+    /// `Corner::position_covariance` documents the model). Valid only
+    /// when `has_position_covariance` is `1`; zeroed otherwise.
+    pub position_covariance: cc_covariance,
     /// `1` when `axes` holds a fitted orientation, `0` when the
     /// orientation fit was skipped (`CC_ORIENTATION_NONE`) and `axes`
     /// is zeroed.
     pub has_orientation: u8,
+    /// `1` when `position_covariance` is set. Only the saddle-point refiner
+    /// reports one, on accepted corners whose refinement converged, and not
+    /// when the input is upscaled (`upscale_factor` other than `0`).
+    pub has_position_covariance: u8,
 }
 
 /// Owned array of detected corners returned by `cc_detect_u8`.
@@ -206,6 +227,14 @@ pub struct cc_config {
     /// One of the `CC_PEAK_FIT_*` constants. Applies to the Radon strategy
     /// only; ignored for ChESS.
     pub peak_fit: cc_peak_fit_t,
+    /// `0` estimates the image noise level from each image; any non-zero
+    /// value uses `noise_sigma`. The noise level turns each corner's
+    /// position covariance into px².
+    pub has_noise_sigma: u32,
+    /// Standard deviation of the image's pixel noise in gray levels
+    /// (finite, `>= 0`; otherwise `CC_ERR_INVALID_CONFIG`). Read only when
+    /// `has_noise_sigma` is non-zero.
+    pub noise_sigma: f32,
 }
 
 // ─── Status codes (library returns) ─────────────────────────────────────
@@ -427,7 +456,7 @@ pub extern "C" fn cc_status_str(status: cc_status) -> *const c_char {
 /// ABI version of this library. Bumped manually on any breaking ABI change.
 #[no_mangle]
 pub extern "C" fn cc_abi_version() -> u32 {
-    4
+    5
 }
 
 #[cfg(test)]
@@ -502,7 +531,7 @@ mod tests {
 
     #[test]
     fn abi_version_is_stable() {
-        assert_eq!(cc_abi_version(), 4);
+        assert_eq!(cc_abi_version(), 5);
     }
 
     #[test]
@@ -537,6 +566,70 @@ mod tests {
                 "factor {bad} should be rejected"
             );
         }
+    }
+
+    /// Detect on a noisy 8 px-cell board through the C entry point and
+    /// return the corners (freed before returning).
+    fn detect_board(cfg: &cc_config) -> Result<Vec<cc_corner>, cc_status> {
+        let size = 96u32;
+        let mut img = vec![0u8; (size * size) as usize];
+        let mut state = 7u32;
+        for y in 0..size {
+            for x in 0..size {
+                state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                let noise = (state >> 16) % 7;
+                let bright = ((x / 8) + (y / 8)) % 2 == 0;
+                img[(y * size + x) as usize] = if bright { 197 } else { 37 } + noise as u8;
+            }
+        }
+        let mut out = cc_result {
+            corners: ptr::null_mut(),
+            len: 0,
+        };
+        // SAFETY: `img` holds `size * size` bytes; `cfg` and `out` are valid.
+        let status = unsafe { cc_detect_u8(img.as_ptr(), size, size, cfg, &mut out) };
+        if status != cc_status::CC_OK {
+            return Err(status);
+        }
+        // SAFETY: on success `out` describes `len` initialised corners.
+        let corners = unsafe { slice::from_raw_parts(out.corners, out.len) }.to_vec();
+        // SAFETY: `out` came from `cc_detect_u8` and is freed exactly once.
+        unsafe { cc_result_free(&mut out) };
+        Ok(corners)
+    }
+
+    #[test]
+    fn saddle_point_corners_carry_a_covariance() {
+        let mut cfg = cc_config_chess();
+        cfg.refiner = CC_REFINER_SADDLE_POINT;
+        let corners = detect_board(&cfg).expect("detection");
+        assert!(!corners.is_empty());
+        assert!(corners.iter().any(|c| c.has_position_covariance == 1));
+        for c in corners.iter().filter(|c| c.has_position_covariance == 1) {
+            let p = c.position_covariance;
+            assert!(p.xx > 0.0 && p.yy > 0.0 && p.xx * p.yy > p.xy * p.xy);
+        }
+        // The default refiner reports none.
+        let plain = detect_board(&cc_config_chess()).expect("detection");
+        assert!(plain.iter().all(|c| c.has_position_covariance == 0));
+    }
+
+    #[test]
+    fn noise_sigma_round_trips_and_is_validated() {
+        let mut cfg = cc_config_chess();
+        assert_eq!(cfg.has_noise_sigma, 0);
+        cfg.has_noise_sigma = 1;
+        cfg.noise_sigma = 2.5;
+        let rs = convert::to_detector_config(&cfg).expect("valid");
+        assert_eq!(rs.noise_sigma, Some(2.5));
+        let back = convert::flatten(&rs);
+        assert_eq!((back.has_noise_sigma, back.noise_sigma), (1, 2.5));
+
+        cfg.noise_sigma = -1.0;
+        assert_eq!(
+            detect_board(&cfg).map(|c| c.len()),
+            Err(cc_status::CC_ERR_INVALID_CONFIG)
+        );
     }
 
     #[test]

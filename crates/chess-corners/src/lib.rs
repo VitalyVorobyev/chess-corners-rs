@@ -159,9 +159,10 @@
 //!   accepts a 2D `uint8` NumPy array and returns a `Detections`
 //!   structure-of-arrays object with named fields: `.xy` (`(N, 2)`
 //!   float32), `.response` (`(N,)` float32), `.angles` (`(N, 2)`
-//!   float32, or `None` when orientation is disabled), and `.sigmas`
-//!   (`(N, 2)` float32, or `None` when orientation is disabled). See
-//!   its README for usage and configuration details.
+//!   float32, or `None` when orientation is disabled), `.sigmas`
+//!   (`(N, 2)` float32, or `None` when orientation is disabled), and
+//!   `.position_covariance` (`(N, 2, 2)` float32 px², `NaN` rows where
+//!   absent). See its README for usage and configuration details.
 //! - `crates/chess-corners-wasm` (wasm-bindgen / wasm-pack) exposes
 //!   the same surface to JavaScript / TypeScript via the
 //!   `@vitavision/chess-corners` npm package.
@@ -257,7 +258,7 @@ pub use crate::upscale::{
 };
 pub use chess_corners_core::{
     AxisEstimate, CenterOfMassConfig, CornerDescriptor, ForstnerConfig, OrientationMethod,
-    PeakFitMode, Roi, SaddlePointConfig,
+    PeakFitMode, PositionCovariance, Roi, SaddlePointConfig,
 };
 
 // Primary detector entry point.

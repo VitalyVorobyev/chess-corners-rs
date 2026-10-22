@@ -114,6 +114,13 @@ Each detection is a `CornerDescriptor` with:
   (axis0.angle, axis0.angle + π)`, with the CCW arc between them
   spanning a dark sector. It is `None` when the orientation fit is
   disabled.
+- `position_covariance` — `Some` 2×2 covariance of `(x, y)` in px², for
+  weighting the corner in a calibration: the scatter due to white pixel
+  noise plus a small model-error floor (see `Corner::position_covariance`
+  in `chess-corners-core`). Only the saddle-point
+  refiner reports it. The noise level is estimated from each image, or
+  set with `DetectorConfig::with_noise_sigma`; it is `None` on upscaled
+  input.
 
 The orientation fit is the dominant per-corner cost. If a downstream
 stage recovers board geometry from corner positions alone, disable it

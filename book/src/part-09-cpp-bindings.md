@@ -214,7 +214,9 @@ The fields group by applicability:
 
 - **Both strategies:** `strategy`, `threshold`, `nms_radius`,
   `min_cluster_size`, `orientation_method`, `multiscale`, `merge_radius`,
-  and `upscale_factor`.
+  `upscale_factor`, and the image noise level `has_noise_sigma` /
+  `noise_sigma` (`std::optional<float> noise_sigma` in C++; unset
+  estimates it from each image).
 - **ChESS only:** `refiner` (a `CC_REFINER_*` tag) and `chess_ring`
   (`CC_CHESS_RING_CANONICAL` for the paper's radius-5 ring, or
   `CC_CHESS_RING_BROAD` for radius-10).
@@ -251,7 +253,10 @@ radians. The polarity convention is identical on every binding:
 between them crossing a dark sector. The `axes` are valid only when
 `has_orientation` is `1` (the default); selecting `CC_ORIENTATION_NONE`
 skips the per-corner fit, sets `has_orientation` to `0`, and zeroes
-`axes`. See
+`axes`. `position_covariance` (`xx`, `xy`, `yy`, in px²) is valid when
+`has_position_covariance` is `1` (a `std::optional<Covariance>` in
+C++): only the saddle-point refiner (`CC_REFINER_SADDLE_POINT`) reports
+it, and not when `upscale_factor` is set. See
 [Part I §1.4](part-01-orientation.md#14-the-cornerdescriptor-output)
 for the field semantics and
 [Part III §3.4](part-03-chess-detector.md#34-corner-descriptors) for

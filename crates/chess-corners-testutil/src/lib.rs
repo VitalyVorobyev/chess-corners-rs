@@ -38,7 +38,7 @@ mod boards;
 mod noise;
 
 pub use boards::{
-    aa_chessboard, area_chessboard, expected_corner_count, synth_chessboard, synth_chessboard_soft,
-    synth_chessboard_warped, ORIENT_CORNER, ORIENT_DIM,
+    aa_chessboard, area_chessboard, expected_corner_count, rotated_chessboard, synth_chessboard,
+    synth_chessboard_soft, synth_chessboard_warped, ORIENT_CORNER, ORIENT_DIM,
 };
 pub use noise::{add_gaussian_noise, add_signal_dependent_noise, gaussian_blur};

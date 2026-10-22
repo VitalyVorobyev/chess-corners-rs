@@ -30,7 +30,7 @@ use chess_corners_core::{ChessBuffers, RadonBuffers};
 
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
-use crate::multiscale;
+use crate::multiscale::{self, NoiseLevel};
 use crate::upscale::{self, UpscaleBuffers};
 use crate::{ChessError, CornerDescriptor, DetectorConfig, Roi};
 use chess_corners_core::ImageView;
@@ -46,9 +46,15 @@ pub struct Detector {
     radon_buffers: RadonBuffers,
     upscale: UpscaleBuffers,
     #[cfg(feature = "ml-refiner")]
-    ml_state: Option<ml_refiner::MlRefinerState>,
-    #[cfg(feature = "ml-refiner")]
-    ml_params: ml_refiner::MlRefinerParams,
+    ml: MlSlot,
+}
+
+/// ML-refiner parameters and the per-detector model state built from them
+/// on first use.
+#[cfg(feature = "ml-refiner")]
+struct MlSlot {
+    state: Option<ml_refiner::MlRefinerState>,
+    params: ml_refiner::MlRefinerParams,
 }
 
 impl Detector {
@@ -57,9 +63,10 @@ impl Detector {
     /// # Errors
     ///
     /// Returns [`ChessError::Upscale`] when the [`DetectorConfig::upscale`]
-    /// configuration is invalid.
+    /// configuration is invalid, and [`ChessError::InvalidNoiseSigma`] when
+    /// [`DetectorConfig::noise_sigma`] is negative or not finite.
     pub fn new(cfg: DetectorConfig) -> Result<Self, ChessError> {
-        cfg.upscale.validate()?;
+        cfg.validate()?;
         Ok(Self {
             cfg,
             pyramid: PyramidBuffers::default(),
@@ -67,9 +74,10 @@ impl Detector {
             radon_buffers: RadonBuffers::default(),
             upscale: UpscaleBuffers::new(),
             #[cfg(feature = "ml-refiner")]
-            ml_state: None,
-            #[cfg(feature = "ml-refiner")]
-            ml_params: ml_refiner::MlRefinerParams::default(),
+            ml: MlSlot {
+                state: None,
+                params: ml_refiner::MlRefinerParams::default(),
+            },
         })
     }
 
@@ -90,15 +98,16 @@ impl Detector {
     /// # Errors
     ///
     /// Returns [`ChessError::Upscale`] when the new config's upscale
-    /// section is invalid.
+    /// section is invalid, and [`ChessError::InvalidNoiseSigma`] when its
+    /// noise level is negative or not finite.
     pub fn set_config(&mut self, cfg: DetectorConfig) -> Result<(), ChessError> {
-        cfg.upscale.validate()?;
+        cfg.validate()?;
         self.cfg = cfg;
         // Drop ML state on config change so the next `detect` call
         // re-builds it against the (possibly new) fallback refiner.
         #[cfg(feature = "ml-refiner")]
         {
-            self.ml_state = None;
+            self.ml.state = None;
         }
         Ok(())
     }
@@ -134,13 +143,12 @@ impl Detector {
                 ImageView::from_u8_slice(src_w, src_h, img).expect("dimensions were checked above");
             return Ok(Self::detect_view_inner(
                 &self.cfg,
+                self.cfg.noise_level(),
                 &mut self.pyramid,
                 &mut self.chess_buffers,
                 &mut self.radon_buffers,
                 #[cfg(feature = "ml-refiner")]
-                &mut self.ml_state,
-                #[cfg(feature = "ml-refiner")]
-                &self.ml_params,
+                &mut self.ml,
                 view,
             ));
         }
@@ -150,15 +158,17 @@ impl Detector {
         // detect_view_inner call (which borrows other fields) don't
         // conflict.
         let upscaled = upscale::upscale_bilinear_u8(img, src_w, src_h, factor, &mut self.upscale)?;
+        // Interpolation correlates the noise of neighbouring upscaled
+        // pixels, so a white-noise covariance would be wrong: none is
+        // reported.
         let mut corners = Self::detect_view_inner(
             &self.cfg,
+            NoiseLevel::Unavailable,
             &mut self.pyramid,
             &mut self.chess_buffers,
             &mut self.radon_buffers,
             #[cfg(feature = "ml-refiner")]
-            &mut self.ml_state,
-            #[cfg(feature = "ml-refiner")]
-            &self.ml_params,
+            &mut self.ml,
             upscaled,
         );
         upscale::rescale_descriptors_to_input(&mut corners, factor);
@@ -311,34 +321,36 @@ impl Detector {
 
     fn detect_view_inner(
         cfg: &DetectorConfig,
+        noise: NoiseLevel,
         pyramid: &mut PyramidBuffers,
         chess_buffers: &mut ChessBuffers,
         radon_buffers: &mut RadonBuffers,
-        #[cfg(feature = "ml-refiner")] ml_state: &mut Option<ml_refiner::MlRefinerState>,
-        #[cfg(feature = "ml-refiner")] ml_params: &ml_refiner::MlRefinerParams,
+        #[cfg(feature = "ml-refiner")] ml: &mut MlSlot,
         view: ImageView<'_>,
     ) -> Vec<CornerDescriptor> {
         #[cfg(feature = "ml-refiner")]
         if Self::is_ml_refiner(cfg) {
-            if ml_state.is_none() {
+            if ml.state.is_none() {
                 let fallback = chess_corners_core::RefinerKind::CenterOfMass(
                     chess_corners_core::CenterOfMassConfig::default(),
                 );
-                *ml_state = Some(ml_refiner::MlRefinerState::new(ml_params, &fallback));
+                ml.state = Some(ml_refiner::MlRefinerState::new(&ml.params, &fallback));
             }
-            let state = ml_state.as_mut().expect("ml_state initialised above");
+            let state = ml.state.as_mut().expect("ml state initialised above");
+            // The ML refiner reports no covariance, so the noise level is
+            // not needed on this path.
             return multiscale::detect_with_ml(
                 view,
                 cfg,
                 pyramid,
                 chess_buffers,
                 radon_buffers,
-                ml_params,
+                &ml.params,
                 state,
             );
         }
 
-        multiscale::detect_with_buffers(view, cfg, pyramid, chess_buffers, radon_buffers)
+        multiscale::detect_with_buffers(view, cfg, noise, pyramid, chess_buffers, radon_buffers)
     }
 
     /// Whether the active config selects the ML refiner. Only true on

@@ -39,6 +39,11 @@ const FULL_DISK_MAX_FULL_IMAGE_CORNERS: usize = 80;
 /// an internal cap, only the strongest candidates run the full-disk
 /// estimator; the rest fall back to ring-fit transparently.
 ///
+/// Returns one descriptor per input corner, in input order. Every
+/// descriptor's `position_covariance` is `None`: converting a corner's
+/// covariance to px² needs the image noise level (see
+/// [`Corner::position_covariance`]).
+///
 /// When `method` is `None` the orientation fit is skipped entirely — no
 /// ring is sampled and no model is fit — and every descriptor carries
 /// `axes: None`. This is the cheaper fast path: it does strictly less work
@@ -123,6 +128,7 @@ pub fn describe_corners(
                     sigma: fit.sigma_theta2,
                 },
             ]),
+            position_covariance: None,
         }
     };
 

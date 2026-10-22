@@ -78,6 +78,40 @@ int main(void) {
         return 5;
     }
 
+    /* The saddle-point refiner reports a position covariance. This board is
+     * saturated (0/255), so its noise cannot be estimated: supply it. */
+    cc_config saddle = cc_config_chess();
+    saddle.refiner = CC_REFINER_SADDLE_POINT;
+    saddle.has_noise_sigma = 1;
+    saddle.noise_sigma = 1.0f;
+    cc_result cov_out = {NULL, 0};
+    if (cc_detect_u8(img, w, h, &saddle, &cov_out) != CC_OK) {
+        fprintf(stderr, "saddle-point detection failed\n");
+        free(img);
+        return 6;
+    }
+    size_t with_cov = 0;
+    for (size_t i = 0; i < cov_out.len; ++i) {
+        const cc_corner *c = &cov_out.corners[i];
+        if (c->has_position_covariance && c->position_covariance.xx > 0.0f &&
+            c->position_covariance.yy > 0.0f) {
+            ++with_cov;
+        }
+    }
+    cc_result_free(&cov_out);
+    if (with_cov == 0) {
+        fprintf(stderr, "no corner carried a position covariance\n");
+        free(img);
+        return 7;
+    }
+
+    saddle.noise_sigma = -1.0f; /* must be finite and >= 0 */
+    if (cc_detect_u8(img, w, h, &saddle, &ignored) != CC_ERR_INVALID_CONFIG) {
+        fprintf(stderr, "negative noise_sigma was not rejected\n");
+        free(img);
+        return 8;
+    }
+
     free(img);
     printf("smoke OK\n");
     return 0;

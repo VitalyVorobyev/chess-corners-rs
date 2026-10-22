@@ -19,7 +19,7 @@
 use crate::ml_refiner;
 use crate::{DetectionStrategy, DetectorConfig};
 use box_image_pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
-use chess_corners_core::{describe_corners, merge_corners_simple, Corner};
+use chess_corners_core::{describe_corners, estimate_noise_sigma_u8, merge_corners_simple, Corner};
 use chess_corners_core::{ChessBuffers, ChessDetector, CornerDescriptor, DenseDetector};
 #[cfg(feature = "ml-refiner")]
 use chess_corners_core::{ChessParams, ResponseMap};
@@ -85,6 +85,64 @@ fn detect_with_ml_refiner(
 
 fn refiner_radius(refiner_kind: &RefinerKind) -> i32 {
     Refiner::from_kind(refiner_kind.clone()).radius()
+}
+
+// ---------------------------------------------------------------------------
+// Descriptors and position covariance
+// ---------------------------------------------------------------------------
+
+/// The image noise level that turns refined-corner covariances into px².
+/// [`DetectorConfig::noise_level`] lowers [`DetectorConfig::noise_sigma`]
+/// into `Estimate` / `Known`; the detector uses `Unavailable` for upscaled
+/// input.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum NoiseLevel {
+    /// Corners are refined on a resampled copy of the input (upscaling),
+    /// whose noise is spatially correlated: no covariance is reported.
+    Unavailable,
+    /// Estimate σ from the refinement image, once per frame and only when
+    /// a refined corner carries a covariance.
+    Estimate,
+    /// Caller-supplied σ, in gray levels.
+    Known(f32),
+}
+
+/// Lift merged corners into descriptors over the refinement image `view`
+/// (orientation fit per [`describe_corners`]), and attach each corner's
+/// position covariance in px² when the noise level is available.
+fn describe(
+    view: ImageView<'_>,
+    ring_radius: u32,
+    orientation_method: Option<OrientationMethod>,
+    noise: NoiseLevel,
+    corners: Vec<Corner>,
+) -> Vec<CornerDescriptor> {
+    let has_covariance = corners
+        .iter()
+        .any(|c| c.covariance_per_noise_variance.is_some());
+    let sigma = match noise {
+        _ if !has_covariance => None,
+        NoiseLevel::Unavailable => None,
+        NoiseLevel::Known(sigma) => Some(sigma),
+        NoiseLevel::Estimate => estimate_noise_sigma_u8(view.data(), view.width(), view.height()),
+    };
+    // `describe_corners` keeps one descriptor per corner, in order.
+    let covariances: Option<Vec<_>> =
+        sigma.map(|s| corners.iter().map(|c| c.position_covariance(s)).collect());
+    let mut descriptors = describe_corners(
+        view.data(),
+        view.width(),
+        view.height(),
+        ring_radius,
+        corners,
+        orientation_method,
+    );
+    if let Some(covariances) = covariances {
+        for (d, cov) in descriptors.iter_mut().zip(covariances) {
+            d.position_covariance = cov;
+        }
+    }
+    descriptors
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +264,7 @@ struct TraversalShape {
     refine_border: i32,
     descriptor_ring_radius: u32,
     orientation_method: Option<OrientationMethod>,
+    noise: NoiseLevel,
     /// Merge radius for the single-scale (no-pyramid) branch. The
     /// pyramid branches read [`CoarseToFineParams::merge_radius`], which
     /// the config lowering keeps equal to this value.
@@ -232,14 +291,7 @@ fn traverse<S: TraversalStep>(
     let Some(cf) = multiscale else {
         let mut corners = step.detect_full(base_view);
         let merged = merge_corners_simple(&mut corners, shape.single_scale_merge_radius);
-        return describe_corners(
-            base.data(),
-            base.width(),
-            base.height(),
-            shape.descriptor_ring_radius,
-            merged,
-            shape.orientation_method,
-        );
+        return shape.describe(base_view, merged);
     };
 
     let pyramid = build_pyramid(to_pyramid_view(base), &cf.pyramid, pyramid_buffers);
@@ -256,14 +308,7 @@ fn traverse<S: TraversalStep>(
             .expect("pyramid level dimensions must match buffer length");
         let mut corners = step.detect_full(lvl_view);
         let merged = merge_corners_simple(&mut corners, cf.merge_radius);
-        return describe_corners(
-            lvl.img.data,
-            lvl.img.width,
-            lvl.img.height,
-            shape.descriptor_ring_radius,
-            merged,
-            shape.orientation_method,
-        );
+        return shape.describe(lvl_view, merged);
     }
 
     // --- Coarse-to-fine path ---
@@ -334,14 +379,19 @@ fn traverse<S: TraversalStep>(
     #[cfg(feature = "tracing")]
     drop(merge_span);
 
-    describe_corners(
-        base.data(),
-        base.width(),
-        base.height(),
-        shape.descriptor_ring_radius,
-        merged,
-        shape.orientation_method,
-    )
+    shape.describe(base_view, merged)
+}
+
+impl TraversalShape {
+    fn describe(&self, view: ImageView<'_>, corners: Vec<Corner>) -> Vec<CornerDescriptor> {
+        describe(
+            view,
+            self.descriptor_ring_radius,
+            self.orientation_method,
+            self.noise,
+            corners,
+        )
+    }
 }
 
 /// [`TraversalStep`] for the generic detector-driven path. Both
@@ -411,6 +461,7 @@ struct DetectorShape<'r> {
     refiner_kind: &'r RefinerKind,
     descriptor_ring_radius: u32,
     orientation_method: Option<OrientationMethod>,
+    noise: NoiseLevel,
     merge_radius: f32,
 }
 
@@ -462,6 +513,7 @@ fn detect_multiscale<D: DenseDetector>(
         refine_border,
         descriptor_ring_radius: shape.descriptor_ring_radius,
         orientation_method: shape.orientation_method,
+        noise: shape.noise,
         single_scale_merge_radius: shape.merge_radius,
     };
     let mut step = DetectorStep {
@@ -503,6 +555,7 @@ trait StrategyPipeline {
 fn dispatch_strategy(
     base: ImageView<'_>,
     cfg: &DetectorConfig,
+    noise: NoiseLevel,
     chess_buffers: &mut ChessBuffers,
     radon_buffers: &mut RadonBuffers,
     pipeline: impl StrategyPipeline,
@@ -515,6 +568,7 @@ fn dispatch_strategy(
                 refiner_kind: &refiner_kind,
                 descriptor_ring_radius: chess_params.ring_radius(),
                 orientation_method: chess_params.orientation_method,
+                noise,
                 merge_radius: cfg.merge_radius,
             };
             pipeline.run(base, &ChessDetector, &chess_params, chess_buffers, &shape)
@@ -533,6 +587,9 @@ fn dispatch_strategy(
                 // Orientation method is top-level on DetectorConfig.
                 descriptor_ring_radius: chess_corners_core::ChessParams::default().ring_radius(),
                 orientation_method: cfg.orientation_method,
+                // Radon positions come from its peak fit, which reports no
+                // covariance; the corners carry none, so this is inert.
+                noise,
                 merge_radius: cfg.merge_radius,
             };
             pipeline.run(base, &RadonDetector, &radon_params, radon_buffers, &shape)
@@ -587,10 +644,12 @@ impl StrategyPipeline for RoiRun {
 
 /// Detect corners through the generic orchestrator. The `cfg.strategy`
 /// selects between [`ChessDetector`] and [`RadonDetector`]; both
-/// flow through the same control flow.
+/// flow through the same control flow. `noise` turns refined-corner
+/// covariances into px² for this frame.
 pub(crate) fn detect_with_buffers(
     base: ImageView<'_>,
     cfg: &DetectorConfig,
+    noise: NoiseLevel,
     pyramid_buffers: &mut PyramidBuffers,
     chess_buffers: &mut ChessBuffers,
     radon_buffers: &mut RadonBuffers,
@@ -599,6 +658,7 @@ pub(crate) fn detect_with_buffers(
     dispatch_strategy(
         base,
         cfg,
+        noise,
         chess_buffers,
         radon_buffers,
         MultiscaleRun {
@@ -619,7 +679,15 @@ pub(crate) fn detect_roi_with_buffers(
     chess_buffers: &mut ChessBuffers,
     radon_buffers: &mut RadonBuffers,
 ) -> Vec<CornerDescriptor> {
-    dispatch_strategy(base, cfg, chess_buffers, radon_buffers, RoiRun { roi })
+    // ROI detection runs on the input image itself (no upscaling).
+    dispatch_strategy(
+        base,
+        cfg,
+        cfg.noise_level(),
+        chess_buffers,
+        radon_buffers,
+        RoiRun { roi },
+    )
 }
 
 /// Single-scale ROI corner detection.
@@ -712,13 +780,14 @@ fn detect_roi_generic<D: DenseDetector>(
     }
 
     let merged = merge_corners_simple(&mut refined, shape.merge_radius);
-    describe_corners(
-        base.data(),
-        base.width(),
-        base.height(),
+    // The noise level is estimated over the whole image, so covariances
+    // match a full-frame run.
+    describe(
+        base,
         shape.descriptor_ring_radius,
-        merged,
         shape.orientation_method,
+        shape.noise,
+        merged,
     )
 }
 
@@ -747,7 +816,15 @@ pub(crate) fn detect_with_ml(
     // ML pairs only with ChESS-style patches; fall back to the
     // generic Radon path otherwise.
     if matches!(&cfg.strategy, DetectionStrategy::Radon(_)) {
-        return detect_with_buffers(base, cfg, pyramid_buffers, chess_buffers, radon_buffers);
+        // Radon corners carry no covariance, so no noise level is needed.
+        return detect_with_buffers(
+            base,
+            cfg,
+            NoiseLevel::Unavailable,
+            pyramid_buffers,
+            chess_buffers,
+            radon_buffers,
+        );
     }
 
     let _ = (radon_buffers,); // unused on the ChESS branch but kept in the signature for symmetry.
@@ -795,6 +872,8 @@ where
         refine_border,
         descriptor_ring_radius: params.ring_radius(),
         orientation_method: params.orientation_method,
+        // The ML refiner reports no covariance; its corners carry none.
+        noise: NoiseLevel::Unavailable,
         single_scale_merge_radius: cfg.merge_radius,
     };
     let mut step = MlStep {
@@ -892,6 +971,7 @@ mod tests {
         let corners = detect_with_buffers(
             view,
             &cfg,
+            cfg.noise_level(),
             &mut pyramid,
             &mut chess_buffers,
             &mut radon_buffers,

@@ -170,6 +170,18 @@ typedef struct cc_config {
    * only; ignored for ChESS.
    */
   cc_peak_fit_t peak_fit;
+  /**
+   * `0` estimates the image noise level from each image; any non-zero
+   * value uses `noise_sigma`. The noise level turns each corner's
+   * position covariance into px².
+   */
+  uint32_t has_noise_sigma;
+  /**
+   * Standard deviation of the image's pixel noise in gray levels
+   * (finite, `>= 0`; otherwise `CC_ERR_INVALID_CONFIG`). Read only when
+   * `has_noise_sigma` is non-zero.
+   */
+  float noise_sigma;
 } cc_config;
 
 /**
@@ -185,6 +197,24 @@ typedef struct cc_axis {
    */
   float sigma;
 } cc_axis;
+
+/**
+ * Symmetric 2×2 covariance of a corner position, in px².
+ */
+typedef struct cc_covariance {
+  /**
+   * Variance of x.
+   */
+  float xx;
+  /**
+   * Covariance of x and y.
+   */
+  float xy;
+  /**
+   * Variance of y.
+   */
+  float yy;
+} cc_covariance;
 
 /**
  * One detected chessboard corner in full-resolution image pixels.
@@ -213,11 +243,24 @@ typedef struct cc_corner {
    */
   struct cc_axis axes[2];
   /**
+   * Covariance of `(x, y)` in px²: first-order scatter due to white
+   * pixel noise plus a small model-error floor (the Rust
+   * `Corner::position_covariance` documents the model). Valid only
+   * when `has_position_covariance` is `1`; zeroed otherwise.
+   */
+  struct cc_covariance position_covariance;
+  /**
    * `1` when `axes` holds a fitted orientation, `0` when the
    * orientation fit was skipped (`CC_ORIENTATION_NONE`) and `axes`
    * is zeroed.
    */
   uint8_t has_orientation;
+  /**
+   * `1` when `position_covariance` is set. Only the saddle-point refiner
+   * reports one, on accepted corners whose refinement converged, and not
+   * when the input is upscaled (`upscale_factor` other than `0`).
+   */
+  uint8_t has_position_covariance;
 } cc_corner;
 
 /**

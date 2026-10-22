@@ -87,11 +87,7 @@ pub fn detect_peaks_from_radon(
 
             let gx = (x as f32 + fx) * inv_up;
             let gy = (y as f32 + fy) * inv_up;
-            sink.push(Corner {
-                x: gx,
-                y: gy,
-                strength: v,
-            });
+            sink.push(Corner::new(gx, gy, v));
         }
     };
 
