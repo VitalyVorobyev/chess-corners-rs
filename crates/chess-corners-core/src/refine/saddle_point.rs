@@ -109,6 +109,10 @@ impl Default for SaddlePointConfig {
 /// (the fit hardly responds to moving it) the covariance is large but
 /// finite.
 ///
+/// On ~5 px cells with strong shear and blur the window also covers
+/// neighbouring corners, and the converged position can be worse than the
+/// integer-grid fit.
+///
 /// Resampling and the least-squares fit are both linear, so a refit is the
 /// bilinear blend of the fits on the four surrounding integer-centred
 /// patches. Those fits use one operator that depends only on
