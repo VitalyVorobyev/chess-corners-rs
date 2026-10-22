@@ -146,7 +146,7 @@ state.
 | UQ-02 | P1 | todo | 1.4.0 | UQ-01 | Re-measure the noise rows in `reference/refiner-comparison.md`, `book/src/img/bench/bench_sweep.json` and book Part VIII §7.4 with the fixed noise helper (they were measured at ~1.3× the stated σ). |
 | UQ-03 | P2 | todo | 1.5.0 | UQ-01 | Per-image noise estimate (cheap estimator on one pyramid level, or a caller-supplied value) so covariance comes out in px². |
 | UQ-04 | P2 | todo | 1.5.0 | UQ-01 | Position covariance for Förstner (σ² · inverse structure tensor) and CenterOfMass (propagation through the weights). Add a model-error term if UQ-01 shows bias matters. |
-| UQ-05 | P2 | todo | 1.5.0 | UQ-03, UQ-04 | Position covariance (px²) on `CornerDescriptor`; Python / WASM / C APIs (`cc_abi_version` bump) and JSON schema; a book Part on uncertainty. |
+| UQ-05 | P2 | todo | 1.5.0 | UQ-03, UQ-04 | Position covariance (px²) on `CornerDescriptor`, scaled by s² when coordinates are mapped back from upscale or pyramid levels (noise variance is per level); Python / WASM / C APIs (`cc_abi_version` bump) and JSON schema; a book Part on uncertainty. |
 | UQ-06 | P3 | todo | 1.6.0 | UQ-03 | One noise model for orientation σ across RingFit and DiskFit, re-checked with z-scores. |
 | UQ-07 | P3 | todo | 1.6.0+ | UQ-01 | Reduce refiner bias where UQ-01 shows it dominates the error. |
 | UQ-08 | P2 | todo | ongoing | UQ-05 | Realistic ground truth: calib-synth / etendue renders, and an end-to-end check that calibration-rs reaches σ̂₀ ≈ 1 with detector covariances. Absorbs `ML-01` and `ML-02`. |
