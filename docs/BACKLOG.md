@@ -154,6 +154,7 @@ state.
 | UQ-09 | P2 | todo | 1.5.0 | — | CenterOfMass returns `Accepted` at the unchanged seed when its window has no positive response (36–100% of corners at cell 5). Report a non-accepted status instead. |
 | UQ-10 | P3 | done | 1.5.0 | UQ-01 | Bias harness (`refiner_bias_precision.rs`): remove each phase mean's sampling variance with that phase's own variance, not the pooled σ. Only matters where acceptance or scatter varies by phase (low SNR); the σₙ 1–3 conclusions are unaffected (Codex review, #82). Outcome: no published number moved (largest `rms_bias` change 8e-5 px, no `bias_dominates` flip). |
 | UQ-11 | P3 | todo | 1.6.0+ | UQ-07 | Re-centred SaddlePoint regresses on small sheared cells with heavy blur (cell 5, 60° shear, blur 2.5: 0.21 → 0.26 px) because the 5×5 window overlaps neighbouring corners; consider a smaller radius or a convergence guard there. |
+| UQ-12 | P1 | todo | 1.5.0 | UQ-07 | Before cutting 1.5.0, re-time on a quiet machine: `refiners` Criterion bench (SaddlePoint per-corner cost; docs quote ~250 ns from cycle counts) and the timing fields of `book/src/img/bench/bench_sweep.json` and `throughput_vs_accuracy` (regenerated at load ≈ 15, which inflates every refiner by 30–40%). |
 
 ## Post-1.0 / future (not blocking 1.0)
 
