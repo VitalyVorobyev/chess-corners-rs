@@ -137,6 +137,7 @@ state.
 | DOCS-04 | P3 | todo | — | — | Worked `no_std` examples for `chess-corners-core`. |
 | DOCS-05 | P3 | done | — | — | Regenerated the refiner benchmark plots under `book/src/img/bench/` without the RadonPeak series; fresh data confirms the chapter's refiner claims. |
 | DOCS-06 | P3 | done | — | — | Book Part VIII §7.4 says CenterOfMass has the lowest mean error up to σ = 8; `cv2.cornerSubPix` is lower at every σ ≤ 8 in `opencv_subpix_sweep.json` (0.046–0.086 px). Qualify the claim as "among the built-in refiners" (Codex review, #81). | Outcome: §7.3/§7.4/§7.6, Part V §5.4/§5.6 and README now say "among the built-in refiners"; verified against the regenerated sweep incl. `cv2.cornerSubPix`.
+| DOCS-07 | P3 | todo | — | — | AGENTS.md §6 ("default settings must reproduce existing behavior unless the user opts in") conflicts with CLAUDE.md's rule to drop strictly dominated alternatives; #83 made re-centred SaddlePoint the default by decision. Reconcile: a default may change when the old behaviour is dominated, with a CHANGELOG note (Codex review, #83). |
 
 ## UQ — accuracy-aware detection  ·  post-1.0  ·  [roadmap](ROADMAP.md#post-10-program-accuracy-aware-detection-uq-)
 
