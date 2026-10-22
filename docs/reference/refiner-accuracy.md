@@ -51,13 +51,14 @@ and results do not depend on the thread split.
 ## Results
 
 **Noise-free RMS bias (px)**, axis-aligned, 40/200. SaddlePoint's bias is
-the same at 90/150 within 0.015 px (CenterOfMass and Förstner differ by up
-to 0.1 px at cell 5, blur 2.5) and does not change with noise (0.119 at
-every white σₙ, cell 8, blur 0).
+the same at 90/150 within 0.015 px (Förstner differs by up to 0.1 px at
+cell 5, blur 2.5) and does not change with noise (0.119 at every white σₙ,
+cell 8, blur 0). CenterOfMass at cell 5 is over its accepted corners only
+(36% at blur 0, 84% at blur 0.8–2.5; see finding 5).
 
 | refiner | cell | blur 0 | 0.8 | 1.5 | 2.5 |
 |---|---|---|---|---|---|
-| CenterOfMass | 5 | 0.400 | 0.358 | 0.348 | 0.306 |
+| CenterOfMass | 5 | 0.298 | 0.302 | 0.288 | 0.225 |
 | CenterOfMass | 8 | 0.085 | 0.065 | 0.061 | 0.065 |
 | CenterOfMass | 12 | 0.085 | 0.063 | 0.030 | 0.015 |
 | Förstner | 5 | 0.056 | 0.107 | 0.140 | 0.137 |
@@ -157,12 +158,19 @@ CenterOfMass does not fit this model (cell 8: 0.085 → 0.048 at blur 0,
    function of the window offset.
 4. **Re-centring removes SaddlePoint's bias** — implemented and measured
    in [After re-centring](#after-re-centring).
-5. **CenterOfMass reports `Accepted` without refining when its window has
-   no positive response.** At cell 5 (ChESS ring radius = cell) it returns
-   the seed itself for 36–100% of corners, all marked `Accepted`, so its
-   100% acceptance hides a non-refinement. Cell ≥ 8 is unaffected (only
-   the exact phase-0 corner lands on the seed, legitimately). Reported, not
-   fixed here.
+5. **CenterOfMass cannot refine when its window has no positive
+   response**, and now reports `IllConditioned` there (it returned the
+   seed marked `Accepted` before). Seeded at the true corner, this rejects
+   0–75% of corners at cell 5 axis-aligned (ChESS ring radius = cell),
+   44–100% at cell 5 sheared, and 27–66% at cell 8 sheared with blur 2.5
+   (≤ 0.2% at other cell-8 conditions);
+   cell 12 and axis-aligned cell 8 are unaffected. The detector never
+   reaches this case: its seeds are response peaks above a threshold
+   clamped to ≥ 0 (0 of 93 M refinements over the test images and
+   synthetic boards, cells 5–12, single-scale, pyramid, upscale and ML
+   paths). Accepted results can still sit exactly on the seed at cell 5
+   (up to 100% at blur 0) when a single pixel carries the positive
+   response.
 6. **The renderer is not the source of the clean-image floor.** The
    8×-supersampled `aa_chessboard` and the exact-area board give the same
    SaddlePoint noise-free RMS bias within 0.005 px at blur 0 (0.124 vs

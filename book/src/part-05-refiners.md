@@ -34,7 +34,8 @@ A `RefineResult` carries the refined `(x, y)`, a refiner-specific
   below the refiner's rejection thresholds.
 - `OutOfBounds` — the patch would read past the image border.
 - `IllConditioned` — the refiner's local system was singular or too
-  eccentric (edge rather than corner).
+  eccentric (edge rather than corner), or the CenterOfMass window holds
+  no positive response.
 - `Rejected` — the refined offset exceeded the refiner's
   `max_offset`, or a per-refiner score threshold fired.
 
@@ -62,7 +63,9 @@ y_r = \frac{\sum_{p \in W} y_p \cdot R_p}{\sum_p R_p}
 \\]
 
 `R_p = max(R(x, y), 0)` clips negative responses so one strong
-negative pixel can't push the centroid outside the window.
+negative pixel can't push the centroid outside the window. A window with
+no positive response has no centroid and returns `IllConditioned`; the
+detector's seeds are positive response peaks, so it never hits this.
 
 | Property         | Value                                           |
 |------------------|-------------------------------------------------|

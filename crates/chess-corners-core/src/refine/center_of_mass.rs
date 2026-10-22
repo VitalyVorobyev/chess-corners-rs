@@ -38,8 +38,9 @@ impl Default for CenterOfMassConfig {
 ///
 /// Computes a response-weighted centroid in a `(2·radius+1)²` window
 /// around the seed position on the ChESS response map. Only positive
-/// response values contribute to the centroid. The cheapest built-in
-/// refiner and the library default.
+/// response values contribute to the centroid; a window with no positive
+/// response returns [`RefineStatus::IllConditioned`] at the unchanged
+/// seed. The cheapest built-in refiner and the library default.
 #[derive(Debug)]
 pub struct CenterOfMassRefiner {
     cfg: CenterOfMassConfig,
@@ -107,11 +108,13 @@ impl CornerRefiner for CenterOfMassRefiner {
         if sw > 0.0 {
             RefineResult::accepted([sx / sw, sy / sw], sw)
         } else {
+            // No positive response in the window: there is no mass to
+            // take a centroid of, so the seed cannot be refined.
             RefineResult {
                 x: seed_xy[0],
                 y: seed_xy[1],
                 score: 0.0,
-                status: RefineStatus::Accepted,
+                status: RefineStatus::IllConditioned,
                 covariance_per_noise_variance: None,
             }
         }
@@ -159,5 +162,29 @@ mod tests {
         let expected = [sx / sw, sy / sw];
         assert!((res.x - expected[0]).abs() < 1e-4);
         assert!((res.y - expected[1]).abs() < 1e-4);
+    }
+
+    #[test]
+    fn window_without_positive_response_is_ill_conditioned() {
+        // Zero and negative response everywhere in the window; a positive
+        // value just outside it must not count.
+        let mut resp = ResponseMap {
+            w: 7,
+            h: 7,
+            data: vec![-3.0; 49],
+        };
+        resp.data[3 * 7 + 3] = 0.0;
+        resp.data[3 * 7 + 6] = 50.0;
+
+        let mut refiner = CenterOfMassRefiner::new(CenterOfMassConfig { radius: 1 });
+        let ctx = RefineContext {
+            image: None,
+            response: Some(&resp),
+        };
+        let res = refiner.refine([3.2, 2.9], ctx);
+        assert_eq!(res.status, RefineStatus::IllConditioned);
+        assert_eq!([res.x, res.y], [3.2, 2.9]);
+        assert_eq!(res.score, 0.0);
+        assert!(res.covariance_per_noise_variance.is_none());
     }
 }

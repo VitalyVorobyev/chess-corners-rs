@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   covariance. On cells of about 5 px with strong shear and blur the
   re-centred position can be less accurate than the single fit.
 
+### Fixed
+
+- `CenterOfMassRefiner` returns `RefineStatus::IllConditioned` instead of
+  `Accepted` when its window holds no positive response, so a seed it
+  could not refine is no longer reported as refined. Detector output is
+  unchanged: every peak the detector seeds it with has positive response.
+
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.

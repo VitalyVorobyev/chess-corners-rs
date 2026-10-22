@@ -66,8 +66,9 @@ mod private {
 ///   coordinates in `RefineResult` are unchanged from the input.
 /// - [`IllConditioned`](RefineStatus::IllConditioned) — the patch does
 ///   not contain enough structure for the refiner to produce a reliable
-///   estimate (e.g. too-flat gradient for Förstner, or a degenerate
-///   Hessian for saddle-point). The seed coordinates are unchanged.
+///   estimate (e.g. no positive response in the center-of-mass window,
+///   a too-flat gradient for Förstner, or a degenerate Hessian for
+///   saddle-point). The seed coordinates are unchanged.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RefineStatus {
@@ -100,8 +101,9 @@ pub enum RefineStatus {
 ///
 /// - **CenterOfMass**: `score` is the sum of positive response weights
 ///   in the patch (`Σ w` where `w = response.clamp(0, ∞)`). Higher is
-///   stronger; units match the ChESS response scale. A score of `0.0`
-///   means no positive response was found.
+///   stronger; units match the ChESS response scale. A window with no
+///   positive response yields [`RefineStatus::IllConditioned`] and a
+///   score of `0.0`.
 /// - **Förstner**: `score` is `det(T) / (trace(T)² + ε)` where `T` is
 ///   the structure tensor. Ranges roughly in `(0, 0.25]`; higher means
 ///   the patch has balanced gradient energy in both directions (closer to
