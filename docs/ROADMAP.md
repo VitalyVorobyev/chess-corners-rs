@@ -17,8 +17,9 @@ package `@vitavision/chess-corners` never got its `wasm-v1.0.0` tag and was
 stranded at `0.11.2` (closed by `1.1.0`, `DEBT-11`), and the vcpkg port SHA512
 was a placeholder (`CPP-05`). `1.1.0`, `1.2.0` (facade ROI detection) and
 `1.3.0` (detector-config JSON Schema + WASM JSON config path) have since
-shipped on every channel, followed by `1.3.1` (maintenance) and `1.4.0`
-(saddle-point position covariance, `UQ-00`), the current version on crates.io,
+shipped on every channel, followed by `1.3.1` (maintenance), `1.4.0`
+(saddle-point position covariance, `UQ-00`) and `1.5.0` (per-corner position
+covariance on the detector output, `UQ-05`), the current version on crates.io,
 PyPI and npm
 (`chess-corners-ml` stays at `0.13.0`). The only open release residual is
 `CPP-05`: the vcpkg port still targets `1.1.0` and has never been
@@ -54,11 +55,12 @@ checked anything.
 
 **`1.2.0` and `1.3.0` are released on every channel** — `v1.2.0`,
 `wasm-v1.2.0`, `v1.3.0` and `wasm-v1.3.0` are tagged; crates.io, PyPI and npm
-`latest` are at `1.4.0` (`chess-corners-ml` unchanged at `0.13.0`). See
+`latest` are at `1.5.0` (`chess-corners-ml` unchanged at `0.13.0`). See
 [`changelog/1.2.0.md`](changelog/1.2.0.md),
 [`changelog/1.3.0.md`](changelog/1.3.0.md),
-[`changelog/1.3.1.md`](changelog/1.3.1.md) and
-[`changelog/1.4.0.md`](changelog/1.4.0.md).
+[`changelog/1.3.1.md`](changelog/1.3.1.md),
+[`changelog/1.4.0.md`](changelog/1.4.0.md) and
+[`changelog/1.5.0.md`](changelog/1.5.0.md).
 
 One residual stays open: **`CPP-05`**. The vcpkg port targets `1.1.0` with
 the real source-tarball SHA512, so it is installable, but it was not bumped
