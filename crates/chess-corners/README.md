@@ -106,8 +106,10 @@ Each detection is a `CornerDescriptor` with:
 - `response` — raw unnormalized detector response (the ChESS paper's
   score for ChESS, `(max α S_α − min α S_α)²` for Radon).
 - `axes` — `Some([axis0, axis1])` carries the two local grid axes with
-  per-axis 1σ angular uncertainty from the Gauss-Newton covariance
-  (`σθᵢ = √((SSR / 12) · (JᵀJ)⁻¹[i,i])`). Axes are not assumed
+  per-axis 1σ angular uncertainty estimate. For the default `RingFit`
+  method it is the Gauss-Newton covariance
+  (`σθᵢ = √((SSR / 12) · (JᵀJ)⁻¹[i,i])`) scaled by an empirical
+  calibration factor; `DiskFit` reports a residual-based estimate. Axes are not assumed
   orthogonal; `axis0.angle ∈ [0, π)` and `axis1.angle ∈
   (axis0.angle, axis0.angle + π)`, with the CCW arc between them
   spanning a dark sector. It is `None` when the orientation fit is
