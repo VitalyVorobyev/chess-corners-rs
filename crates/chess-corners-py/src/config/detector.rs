@@ -31,6 +31,7 @@ pub struct DetectorConfig {
     pub(crate) upscale: Py<UpscaleConfig>,
     pub(crate) orientation_method: Option<RsOrientationMethod>,
     pub(crate) merge_radius: f32,
+    pub(crate) noise_sigma: Option<f32>,
 }
 
 impl DetectorConfig {
@@ -43,6 +44,7 @@ impl DetectorConfig {
             upscale: Py::new(py, UpscaleConfig::from_rs(src.upscale))?,
             orientation_method: src.orientation_method,
             merge_radius: src.merge_radius,
+            noise_sigma: src.noise_sigma,
         })
     }
 
@@ -65,6 +67,7 @@ impl DetectorConfig {
         cfg.upscale = self.upscale.borrow(py).to_rs();
         cfg.orientation_method = self.orientation_method;
         cfg.merge_radius = self.merge_radius;
+        cfg.noise_sigma = self.noise_sigma;
         cfg
     }
 }
@@ -143,6 +146,14 @@ impl DetectorConfig {
     fn with_merge_radius(&self, py: Python<'_>, radius: f32) -> PyResult<Self> {
         let mut cfg = self.clone_inner(py)?;
         cfg.merge_radius = radius;
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` that uses a known image noise level
+    /// (gray levels) instead of estimating it per image.
+    fn with_noise_sigma(&self, py: Python<'_>, sigma: f32) -> PyResult<Self> {
+        let mut cfg = self.clone_inner(py)?;
+        cfg.noise_sigma = Some(sigma);
         Ok(cfg)
     }
 
@@ -347,6 +358,15 @@ impl DetectorConfig {
         self.merge_radius = v;
     }
 
+    #[getter]
+    fn noise_sigma(&self) -> Option<f32> {
+        self.noise_sigma
+    }
+    #[setter]
+    fn set_noise_sigma(&mut self, v: Option<f32>) {
+        self.noise_sigma = v;
+    }
+
     // ---- serialization ----
 
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
@@ -362,6 +382,8 @@ impl DetectorConfig {
             self.orientation_method.map(orientation_method_str),
         )?;
         d.set_item("merge_radius", self.merge_radius as f64)?;
+        // `None` (estimate per image) serialises to a JSON `null`.
+        d.set_item("noise_sigma", self.noise_sigma.map(f64::from))?;
         Ok(d.unbind())
     }
 
@@ -387,6 +409,7 @@ impl DetectorConfig {
                 "upscale",
                 "orientation_method",
                 "merge_radius",
+                "noise_sigma",
             ],
             "config",
         )?;
@@ -431,6 +454,13 @@ impl DetectorConfig {
         }
         if let Some(v) = extract_float(&dict, "merge_radius", "config")? {
             cfg.merge_radius = v as f32;
+        }
+        // A JSON `null` (or an absent key) estimates the noise per image.
+        match dict.get_item("noise_sigma")? {
+            Some(value) if !value.is_none() => {
+                cfg.noise_sigma = extract_float(&dict, "noise_sigma", "config")?.map(|v| v as f32);
+            }
+            _ => cfg.noise_sigma = None,
         }
         Ok(cfg)
     }

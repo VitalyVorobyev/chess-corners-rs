@@ -34,6 +34,7 @@ arrays:
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.sigmas` — `(N, 2)` float32, 1σ uncertainty per axis in radians, or `None` when orientation is disabled
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (only the saddle-point refiner reports it)
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` (by less than π)
 traverses a **dark** sector of the corner; the two grid axes are **not**

@@ -10,7 +10,7 @@ mod config;
 
 use ::chess_corners as chess_corners_rs;
 use numpy::{
-    ndarray::{Array1, Array2},
+    ndarray::{Array1, Array2, Array3},
     IntoPyArray, PyReadonlyArray2,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -45,6 +45,8 @@ fn extract_image<'py>(
 /// per-corner response via [`Self::response`], and axis orientations via
 /// [`Self::angles`] and [`Self::sigmas`]. Both `angles` and `sigmas` are
 /// `None` when orientation estimation was disabled for the run.
+/// [`Self::position_covariance`] holds each corner's 2×2 position
+/// covariance.
 #[pyclass(module = "chess_corners")]
 pub struct Detections {
     n: usize,
@@ -53,6 +55,7 @@ pub struct Detections {
     response: Py<PyAny>,
     angles: Option<Py<PyAny>>,
     sigmas: Option<Py<PyAny>>,
+    position_covariance: Py<PyAny>,
 }
 
 #[pymethods]
@@ -83,6 +86,14 @@ impl Detections {
         self.sigmas.as_ref().map(|s| s.clone_ref(py))
     }
 
+    /// `(N, 2, 2)` float32 array of per-corner position covariance in px²
+    /// (`[[xx, xy], [xy, yy]]`). Rows are `NaN` for corners without one:
+    /// only the saddle-point refiner reports it, and not on upscaled input.
+    #[getter]
+    fn position_covariance(&self, py: Python<'_>) -> Py<PyAny> {
+        self.position_covariance.clone_ref(py)
+    }
+
     fn __len__(&self) -> usize {
         self.n
     }
@@ -111,6 +122,7 @@ fn build_detections(
 
     let mut xy_data = Vec::with_capacity(n * 2);
     let mut resp_data = Vec::with_capacity(n);
+    let mut cov_data = Vec::with_capacity(n * 4);
     let mut angles_data = if orientation_on {
         Vec::with_capacity(n * 2)
     } else {
@@ -126,6 +138,10 @@ fn build_detections(
         xy_data.push(corner.x);
         xy_data.push(corner.y);
         resp_data.push(corner.response);
+        match corner.position_covariance {
+            Some(c) => cov_data.extend_from_slice(&[c.xx, c.xy, c.xy, c.yy]),
+            None => cov_data.extend_from_slice(&[f32::NAN; 4]),
+        }
         if orientation_on {
             match corner.axes {
                 Some(axes) => {
@@ -171,6 +187,12 @@ fn build_detections(
         (None, None)
     };
 
+    let position_covariance = Array3::from_shape_vec((n, 2, 2), cov_data)
+        .map_err(|e| PyValueError::new_err(format!("position_covariance array: {e}")))?
+        .into_pyarray(py)
+        .into_any()
+        .unbind();
+
     Ok(Detections {
         n,
         orientation_on,
@@ -178,6 +200,7 @@ fn build_detections(
         response,
         angles,
         sigmas,
+        position_covariance,
     })
 }
 
