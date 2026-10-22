@@ -4,78 +4,95 @@
 //! Calibration is checked the way a downstream calibration uses it: whiten
 //! each matched corner's error against the truth with its reported px²
 //! covariance and average, `σ̂₀² = mean(eᵀ Σ⁻¹ e) / 2`, which is 1 when the
-//! covariance is right. The boards are exact pixel-area renders, so the
+//! covariance is right. The boards are formed as a camera forms them
+//! (Gaussian lens blur, then exact integration over each pixel), so the
 //! corner positions are known exactly.
+
+use std::sync::OnceLock;
 
 use chess_corners::{
     ChessRefiner, CornerDescriptor, Detector, DetectorConfig, MultiscaleConfig, Roi, UpscaleConfig,
 };
 use chess_corners_core::estimate_noise_sigma_u8;
-use chess_corners_testutil::{add_gaussian_noise, area_chessboard, gaussian_blur};
-
-const PHASE: (f32, f32) = (0.3, 0.6);
+use chess_corners_testutil::{add_gaussian_noise, optical_chessboard, Lattice};
+use rayon::prelude::*;
 
 const SIZE: usize = 200;
-const CELL: f32 = 8.0;
 /// Model-error floor the detector adds per axis, px.
-const FLOOR: f64 = 0.002;
+const FLOOR: f64 = 0.006;
+const DEG: f32 = core::f32::consts::PI / 180.0;
 
-/// Board geometry and contrast.
+/// Board geometry, contrast, lens blur and pixel noise.
 #[derive(Clone, Copy, Debug)]
 struct Fixture {
-    /// Angle of the second lattice axis (π/2: axis-aligned).
+    cell: f32,
+    /// Angle of the first lattice axis from the image x axis.
+    rotation: f32,
+    /// Angle between the lattice axes (π/2: square board).
     axis_angle: f32,
     dark: u8,
     bright: u8,
-    blur: f32,
+    /// Gaussian lens PSF σ, px.
+    psf: f32,
     sigma: f32,
 }
 
 impl Fixture {
-    fn new(blur: f32, sigma: f32) -> Self {
+    /// Square, grid-aligned 8 px board, 40/200.
+    fn new(psf: f32, sigma: f32) -> Self {
         Self {
-            axis_angle: core::f32::consts::FRAC_PI_2,
+            cell: 8.0,
+            rotation: 0.0,
+            axis_angle: 90.0 * DEG,
             dark: 40,
             bright: 200,
-            blur,
+            psf,
             sigma,
         }
     }
 
-    /// Exact-area board, blurred, with white noise. Returns the image, its
-    /// corner offset and the realised noise σ (`noisy − clean`, rounding
-    /// included).
-    fn render(&self, phase: (f32, f32), seed: u64) -> (Vec<u8>, (f32, f32), f32) {
-        let offset = (3.0 + phase.0, 3.0 + phase.1);
-        let mut clean = area_chessboard(
-            SIZE,
-            CELL as usize,
-            offset,
-            self.axis_angle,
-            self.dark,
-            self.bright,
-        );
-        gaussian_blur(&mut clean, SIZE, self.blur);
-        let mut img = clean.clone();
+    fn rotated(self, degrees: f32) -> Self {
+        Self {
+            rotation: degrees * DEG,
+            ..self
+        }
+    }
+
+    /// Lattice with a corner at `(3, 3) + phase`.
+    fn lattice(&self, phase: (f32, f32)) -> Lattice {
+        Lattice::new(self.cell, (3.0 + phase.0, 3.0 + phase.1))
+            .rotated(self.rotation)
+            .with_axis_angle(self.axis_angle)
+    }
+
+    fn clean(&self, lattice: &Lattice) -> Vec<u8> {
+        optical_chessboard(SIZE, lattice, self.psf, self.dark, self.bright)
+    }
+
+    /// `clean` with white noise. Returns the image and the realised noise σ
+    /// (`noisy − clean`, rounding included).
+    fn noisy(&self, clean: &[u8], seed: u64) -> (Vec<u8>, f32) {
+        let mut img = clean.to_vec();
         add_gaussian_noise(&mut img, self.sigma, seed);
         let n = img.len() as f64;
         let ss: f64 = img
             .iter()
-            .zip(&clean)
+            .zip(clean)
             .map(|(&a, &b)| (f64::from(a) - f64::from(b)).powi(2))
             .sum();
-        (img, offset, (ss / n).sqrt() as f32)
+        (img, (ss / n).sqrt() as f32)
     }
+}
 
-    /// Error of `c` against the nearest lattice corner of `offset`.
-    fn error(&self, c: &CornerDescriptor, offset: (f32, f32)) -> (f32, f32) {
-        let (sin, cos) = self.axis_angle.sin_cos();
-        let m = ((c.y - offset.1) / (CELL * sin)).round();
-        let k = ((c.x - offset.0 - m * CELL * cos) / CELL).round();
-        let tx = offset.0 + CELL * (k + m * cos);
-        let ty = offset.1 + CELL * m * sin;
-        (c.x - tx, c.y - ty)
-    }
+/// The standard image of the non-ignored tests: grid-aligned, lens blur
+/// 0.8 px, σₙ = 2, rendered once.
+fn standard_image() -> &'static [u8] {
+    static IMG: OnceLock<Vec<u8>> = OnceLock::new();
+    IMG.get_or_init(|| {
+        let fx = Fixture::new(0.8, 2.0);
+        let clean = fx.clean(&fx.lattice((0.3, 0.6)));
+        fx.noisy(&clean, 7).0
+    })
 }
 
 fn saddle() -> DetectorConfig {
@@ -84,15 +101,17 @@ fn saddle() -> DetectorConfig {
 
 /// Model-error floors (px per axis) compared by the measurement; the
 /// reported covariance carries [`FLOOR`].
-const CANDIDATE_FLOORS: [f64; 7] = [0.0, 0.002, 0.003, 0.005, 0.0075, 0.01, 0.015];
+const CANDIDATE_FLOORS: [f64; 10] = [
+    0.0, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.01, 0.015,
+];
 
 /// Whitening statistics over a set of boards.
 #[derive(Default)]
 struct Whitened {
-    /// Σ eᵀΣ⁻¹e with the reported covariance.
-    sum: f64,
     /// Σ eᵀΣ⁻¹e with the floor replaced by each [`CANDIDATE_FLOORS`] entry.
     sum_candidates: [f64; CANDIDATE_FLOORS.len()],
+    /// Σ eᵀΣ⁻¹e with the reported covariance.
+    sum: f64,
     /// Corners with a covariance, matched to the truth.
     n: usize,
     /// Detections farther than 0.5 px from any lattice corner.
@@ -100,17 +119,17 @@ struct Whitened {
 }
 
 impl Whitened {
-    fn add(&mut self, fixture: &Fixture, corners: &[CornerDescriptor], offset: (f32, f32)) {
+    fn add(&mut self, lattice: &Lattice, corners: &[CornerDescriptor]) {
         for c in corners {
             let Some(cov) = c.position_covariance else {
                 continue;
             };
-            let (ex, ey) = fixture.error(c, offset);
+            let (tx, ty) = lattice.nearest_corner(c.x, c.y);
+            let (ex, ey) = (f64::from(c.x - tx), f64::from(c.y - ty));
             if ex.abs() >= 0.5 || ey.abs() >= 0.5 {
                 self.unmatched += 1;
                 continue;
             }
-            let (ex, ey) = (f64::from(ex), f64::from(ey));
             // Whitened squared error with `df2` added to the diagonal.
             let quad = |df2: f64| {
                 let (a, b, d) = (
@@ -139,16 +158,33 @@ impl Whitened {
     }
 }
 
-/// Detect on `boards` renders of `fixture`; `known` supplies the realised
+/// Subpixel phase of board `k`: a 5×5 grid, so grid-aligned boards see
+/// every phase (rotated boards vary it across the board anyway).
+fn phase(k: usize) -> (f32, f32) {
+    ((k % 5) as f32 / 5.0, (k / 5 % 5) as f32 / 5.0)
+}
+
+/// Clean renders of `boards` phases of `fixture`, with their lattices.
+fn clean_boards(fixture: Fixture, boards: usize) -> Vec<(Lattice, Vec<u8>)> {
+    (0..boards)
+        .into_par_iter()
+        .map(|k| {
+            let lattice = fixture.lattice(phase(k));
+            let clean = fixture.clean(&lattice);
+            (lattice, clean)
+        })
+        .collect()
+}
+
+/// Detect on noisy copies of `clean` boards; `known` supplies the realised
 /// noise level instead of estimating it. Also returns the mean estimated σ
 /// relative to the realised one, over the boards with an estimate, and the
 /// number of boards without one.
-fn run(fixture: Fixture, boards: usize, known: bool) -> (Whitened, f64, usize) {
+fn run(fixture: Fixture, clean: &[(Lattice, Vec<u8>)], known: bool) -> (Whitened, f64, usize) {
     let mut w = Whitened::default();
     let (mut ratio, mut declined) = (0f64, 0usize);
-    for k in 0..boards {
-        let phase = ((k % 5) as f32 / 5.0, (k / 5 % 5) as f32 / 5.0);
-        let (img, offset, realised) = fixture.render(phase, 1000 + k as u64);
+    for (k, (lattice, clean)) in clean.iter().enumerate() {
+        let (img, realised) = fixture.noisy(clean, 1000 + k as u64);
         match estimate_noise_sigma_u8(&img, SIZE, SIZE) {
             Some(est) => ratio += f64::from(est / realised),
             None => declined += 1,
@@ -162,9 +198,9 @@ fn run(fixture: Fixture, boards: usize, known: bool) -> (Whitened, f64, usize) {
             .unwrap()
             .detect_u8(&img, SIZE as u32, SIZE as u32)
             .unwrap();
-        w.add(&fixture, &corners, offset);
+        w.add(lattice, &corners);
     }
-    let estimated = boards - declined;
+    let estimated = clean.len() - declined;
     (w, ratio / estimated.max(1) as f64, declined)
 }
 
@@ -173,7 +209,8 @@ fn run(fixture: Fixture, boards: usize, known: bool) -> (Whitened, f64, usize) {
 /// the model-error floor only makes it more conservative.
 #[test]
 fn saddle_point_covariance_is_calibrated() {
-    let (w, _, declined) = run(Fixture::new(0.8, 2.0), 1, false);
+    let fx = Fixture::new(0.8, 2.0);
+    let (w, _, declined) = run(fx, &clean_boards(fx, 1), false);
     assert_eq!(declined, 0);
     let (with_floor, noise_only) = (w.sigma0_sq(), w.sigma0_sq_with(0));
     assert!(w.n > 300, "too few corners with a covariance: {}", w.n);
@@ -186,13 +223,30 @@ fn saddle_point_covariance_is_calibrated() {
     assert!(with_floor < noise_only);
 }
 
+/// On a board rotated off the pixel grid, where the re-centred fit keeps a
+/// small phase-dependent error, the floor keeps the covariance calibrated.
+#[test]
+fn covariance_is_calibrated_on_a_rotated_board() {
+    let fx = Fixture::new(0.8, 2.0).rotated(30.0);
+    let (w, _, declined) = run(fx, &clean_boards(fx, 1), false);
+    assert_eq!(declined, 0);
+    assert!(w.n > 300, "too few corners with a covariance: {}", w.n);
+    assert_eq!(w.unmatched, 0);
+    let s0 = w.sigma0_sq();
+    assert!(
+        (0.75..1.25).contains(&s0),
+        "σ̂₀² = {s0:.3} over {} corners",
+        w.n
+    );
+}
+
 #[test]
 fn covariance_scales_with_the_supplied_noise() {
-    let (img, _, _) = Fixture::new(0.8, 2.0).render(PHASE, 7);
+    let img = standard_image();
     let detect = |cfg: DetectorConfig| {
         Detector::new(cfg)
             .unwrap()
-            .detect_u8(&img, SIZE as u32, SIZE as u32)
+            .detect_u8(img, SIZE as u32, SIZE as u32)
             .unwrap()
     };
     let lo = detect(saddle().with_noise_sigma(1.0));
@@ -229,11 +283,11 @@ fn covariance_scales_with_the_supplied_noise() {
 
 #[test]
 fn covariance_is_reported_only_where_valid() {
-    let (img, _, _) = Fixture::new(0.8, 2.0).render(PHASE, 7);
+    let img = standard_image();
     let count = |cfg: DetectorConfig| {
         let corners = Detector::new(cfg)
             .unwrap()
-            .detect_u8(&img, SIZE as u32, SIZE as u32)
+            .detect_u8(img, SIZE as u32, SIZE as u32)
             .unwrap();
         assert!(!corners.is_empty());
         let with = corners
@@ -263,12 +317,12 @@ fn covariance_is_reported_only_where_valid() {
 
 #[test]
 fn roi_covariance_matches_full_frame() {
-    let (img, _, _) = Fixture::new(0.8, 2.0).render(PHASE, 7);
+    let img = standard_image();
     let mut det = Detector::new(saddle()).unwrap();
-    let full = det.detect_u8(&img, SIZE as u32, SIZE as u32).unwrap();
+    let full = det.detect_u8(img, SIZE as u32, SIZE as u32).unwrap();
     let roi = Roi::new(60, 60, 140, 140).unwrap();
     let sub = det
-        .detect_u8_roi(&img, SIZE as u32, SIZE as u32, roi)
+        .detect_u8_roi(img, SIZE as u32, SIZE as u32, roi)
         .unwrap();
     let mut checked = 0;
     for s in &sub {
@@ -293,57 +347,128 @@ fn invalid_noise_sigma_is_rejected() {
     assert!(Detector::new(saddle().with_noise_sigma(0.0)).is_ok());
 }
 
+/// One measured row: its label and the whitening statistics with the
+/// estimated and the supplied noise level.
+struct Measured {
+    label: String,
+    est: Whitened,
+    known: Whitened,
+    ratio: f64,
+    declined: usize,
+}
+
 #[test]
-#[ignore = "measurement: prints σ̂₀² of the reported covariance"]
+#[ignore = "measurement: σ̂₀² of the reported covariance and the floor minimax"]
 fn position_covariance_calibration() {
-    println!("cell {CELL}, 25 boards of {SIZE}² per row; σ̂₀² with the {FLOOR} px floor");
-    println!("board | blur | σ | σ̂/σ | estimated σ | supplied σ | corners | unmatched | no σ̂");
-    let boards: [(&str, f32, u8, u8); 3] = [
-        ("axis 40/200", core::f32::consts::FRAC_PI_2, 40, 200),
-        ("axis 90/150", core::f32::consts::FRAC_PI_2, 90, 150),
-        ("skew60 40/200", core::f32::consts::FRAC_PI_3, 40, 200),
-    ];
-    // Per candidate floor: worst |ln σ̂₀²| (estimated σ), its σ̂₀² and the
-    // row, over rows with at least 1 000 matched corners, and over those
-    // whose detections also match the truth (≤ 1% unmatched).
-    let mut worst: [[(f64, f64, String); 2]; CANDIDATE_FLOORS.len()] =
-        std::array::from_fn(|_| std::array::from_fn(|_| (0.0, 1.0, String::new())));
-    for (label, axis_angle, dark, bright) in boards {
-        for &blur in &[0.0f32, 0.8, 1.5, 2.5] {
-            for &sigma in &[1.0f32, 2.0, 4.0, 8.0] {
-                let fixture = Fixture {
-                    axis_angle,
-                    dark,
-                    bright,
-                    ..Fixture::new(blur, sigma)
-                };
-                let (est, ratio, declined) = run(fixture, 25, false);
-                let (known, _, _) = run(fixture, 25, true);
-                println!(
-                    "{label} | {blur} | {sigma} | {ratio:.3} | {:.3} | {:.3} | {} | {} | {declined}",
-                    est.sigma0_sq(),
-                    known.sigma0_sq(),
-                    est.n,
-                    est.unmatched
-                );
-                if est.n < 1000 {
-                    continue;
-                }
-                let clean = est.unmatched * 100 <= est.n;
-                for (k, ws) in worst.iter_mut().enumerate() {
-                    let v = est.sigma0_sq_with(k);
-                    for (w, include) in ws.iter_mut().zip([true, clean]) {
-                        if include && v.ln().abs() > w.0 {
-                            *w = (v.ln().abs(), v, format!("{label} blur {blur} σ {sigma}"));
-                        }
+    // (label, cell, rotation°, axis angle°, dark, bright)
+    let mut boards: Vec<(String, f32, f32, f32, u8, u8)> = Vec::new();
+    for cell in [8.0f32, 12.0] {
+        for rot in [0.0f32, 2.0, 5.0, 8.0, 15.0, 30.0, 45.0] {
+            boards.push((format!("rot{rot} c{cell}"), cell, rot, 90.0, 40, 200));
+        }
+        boards.push((format!("skew60 c{cell}"), cell, 0.0, 60.0, 40, 200));
+    }
+    boards.push(("axis 90/150 c8".into(), 8.0, 0.0, 90.0, 90, 150));
+    let psfs = [0.5f32, 0.8, 1.5, 2.5];
+    let sigmas = [1.0f32, 2.0, 4.0, 8.0];
+
+    let mut rows: Vec<Measured> = Vec::new();
+    println!("{SIZE}² boards, 25 per row (5×5 phases); σ̂₀² with the {FLOOR} px floor");
+    println!("board | psf | σ | σ̂/σ | σ̂₀² est | σ̂₀² known | corners | unmatched | no σ̂ | noise-free RMS px/axis");
+    for (label, cell, rot, axis, dark, bright) in &boards {
+        for &psf in &psfs {
+            let base = Fixture {
+                cell: *cell,
+                rotation: rot * DEG,
+                axis_angle: axis * DEG,
+                dark: *dark,
+                bright: *bright,
+                psf,
+                sigma: 0.0,
+            };
+            let clean = clean_boards(base, 25);
+            // Noise-free error of the converged corners (any σ supplied
+            // gives them a covariance, which marks convergence).
+            let mut sq = (0.0f64, 0usize);
+            for (lattice, img) in &clean {
+                let corners = Detector::new(saddle().with_noise_sigma(1.0))
+                    .unwrap()
+                    .detect_u8(img, SIZE as u32, SIZE as u32)
+                    .unwrap();
+                for c in corners.iter().filter(|c| c.position_covariance.is_some()) {
+                    let (tx, ty) = lattice.nearest_corner(c.x, c.y);
+                    let (ex, ey) = (f64::from(c.x - tx), f64::from(c.y - ty));
+                    if ex.abs() < 0.5 && ey.abs() < 0.5 {
+                        sq = (sq.0 + ex * ex + ey * ey, sq.1 + 1);
                     }
                 }
             }
+            let rms = (sq.0 / (2.0 * sq.1.max(1) as f64)).sqrt();
+            let measured: Vec<Measured> = sigmas
+                .par_iter()
+                .map(|&sigma| {
+                    let fx = Fixture { sigma, ..base };
+                    let (est, ratio, declined) = run(fx, &clean, false);
+                    let (known, _, _) = run(fx, &clean, true);
+                    Measured {
+                        label: format!("{label} psf {psf} σ {sigma}"),
+                        est,
+                        known,
+                        ratio,
+                        declined,
+                    }
+                })
+                .collect();
+            for (m, sigma) in measured.into_iter().zip(sigmas) {
+                println!(
+                    "{label} | {psf} | {sigma} | {:.3} | {:.3} | {:.3} | {} | {} | {} | {rms:.4}",
+                    m.ratio,
+                    m.est.sigma0_sq(),
+                    m.known.sigma0_sq(),
+                    m.est.n,
+                    m.est.unmatched,
+                    m.declined
+                );
+                rows.push(m);
+            }
         }
     }
-    println!("\nf (px) | worst |ln σ̂₀²| (σ̂₀²), all | row | ≤ 1% unmatched | row");
-    for (f, [(l, v, row), (lc, vc, rowc)]) in CANDIDATE_FLOORS.iter().zip(&worst) {
-        println!("{f} | {l:.3} ({v:.3}) | {row} | {lc:.3} ({vc:.3}) | {rowc}");
+
+    // Per candidate floor: worst |ln σ̂₀²| (estimated σ) over the rows whose
+    // detections match the truth (≥ 1 000 matched, ≤ 1% unmatched), over
+    // all of them and over the grid-aligned and rotated ones separately.
+    let clean = |m: &Measured| m.est.n >= 1000 && m.est.unmatched * 100 <= m.est.n;
+    // Rotated boards are labelled `rot<deg>`; everything else (`rot0`,
+    // `skew60`, `axis 90/150`) has an axis on the pixel grid.
+    let rotated = |l: &str| l.starts_with("rot") && !l.starts_with("rot0 ");
+    let groups = [
+        ("all", None),
+        ("grid-aligned", Some(false)),
+        ("rotated", Some(true)),
+    ];
+    println!("\nf (px) | worst |ln σ̂₀²| (σ̂₀², row) per group; [min, max] σ̂₀²");
+    for (k, f) in CANDIDATE_FLOORS.iter().enumerate() {
+        let mut line = format!("{f}");
+        for (name, want) in groups {
+            let vals: Vec<(f64, &str)> = rows
+                .iter()
+                .filter(|m| clean(m) && want.is_none_or(|w| rotated(&m.label) == w))
+                .map(|m| (m.est.sigma0_sq_with(k), m.label.as_str()))
+                .collect();
+            let worst = vals
+                .iter()
+                .max_by(|a, b| a.0.ln().abs().total_cmp(&b.0.ln().abs()))
+                .unwrap();
+            let lo = vals.iter().map(|v| v.0).fold(f64::INFINITY, f64::min);
+            let hi = vals.iter().map(|v| v.0).fold(0.0, f64::max);
+            line += &format!(
+                " | {name}: {:.3} ({:.3}, {}) [{lo:.2}, {hi:.2}]",
+                worst.0.ln().abs(),
+                worst.0,
+                worst.1
+            );
+        }
+        println!("{line}");
     }
 }
 

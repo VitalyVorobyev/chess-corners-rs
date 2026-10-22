@@ -29,12 +29,15 @@ pub(crate) use neighbors::{count_positive_neighbors, is_local_max};
 use crate::refine::PositionCovariance;
 
 /// Model-error floor of a refined position, in px per axis: added as `f²`
-/// to each diagonal entry of [`Corner::position_covariance`]. Chosen to
-/// keep the whitened error σ̂₀² closest to 1 on synthetic grid-aligned
-/// corners with cells of 8 px or more; boards rotated a few degrees from the
-/// pixel grid, and smaller, sheared and strongly blurred cells, have a larger
-/// residual systematic error.
-pub(crate) const POSITION_FLOOR_PX: f32 = 0.002;
+/// to each diagonal entry of [`Corner::position_covariance`]. It covers the
+/// phase-dependent error the re-centred saddle-point fit keeps, largest on
+/// boards rotated 30–45° from the pixel grid. Chosen to minimise the worst
+/// |ln σ̂₀²| of the whitened error on synthetic camera-formed boards (lens
+/// blur σ 0.5–2.5 px before pixel integration; 8–12 px cells, rotated 0–45°
+/// or sheared; noise σ 1–8 gray levels): 0.56, against 1.40 at 0.002 px.
+/// Grid-aligned boards at the lowest noise are then conservative
+/// (σ̂₀² ≈ 0.6).
+pub(crate) const POSITION_FLOOR_PX: f32 = 0.006;
 
 /// Lower bound on the pixel-noise variance used for a covariance, in gray
 /// level²: the variance of rounding to 8 bits.
@@ -75,18 +78,21 @@ impl Corner {
     /// from [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8)):
     /// `σₙ²·C + f²·I`, with `C` =
     /// [`covariance_per_noise_variance`](Self::covariance_per_noise_variance)
-    /// and `f = 0.002` px per axis. `σₙ²` is at least `1/12` gray level²,
+    /// and `f = 0.006` px per axis. `σₙ²` is at least `1/12` gray level²,
     /// the variance of rounding to 8 bits, so a smoothed or compressed image
     /// whose measured noise is lower does not get an overconfident
     /// covariance.
     ///
-    /// `σₙ²·C` is the first-order noise scatter; `f` is a small model-error
-    /// floor, chosen so that whitened errors on synthetic corners with cells
-    /// of 8 px or more, on boards aligned with the pixel grid, have unit
-    /// variance. Sharp boards rotated a few degrees from the grid keep up to
-    /// about 0.02 px of systematic error, and smaller, sheared or strongly
-    /// blurred cells more, which this floor does not cover. Valid only for the
-    /// image the corner was refined on. With spatially correlated noise
+    /// `σₙ²·C` is the first-order noise scatter; `f` is a model-error floor
+    /// for the small error the refiner keeps where the corner sits between
+    /// pixels. On synthetic boards formed with a lens blur of σ ≥ 0.5 px,
+    /// 8–12 px cells and any rotation, whitened errors have variance
+    /// 0.6–1.75 at noise σ 1 and 0.7–1.15 at σ ≥ 4 (conservative on
+    /// grid-aligned boards, overconfident at 30–45° rotations when the noise
+    /// is lowest). Ideally sharp optics (blur σ below about 0.5 px) leave up
+    /// to 0.02 px of phase-dependent error on boards rotated 2–15° or 45°,
+    /// and smaller, sheared or strongly blurred cells more, which this floor
+    /// does not cover. Valid only for the image the corner was refined on. With spatially correlated noise
     /// (demosaiced, compressed or resampled images) `σₙ` from
     /// [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8) is the
     /// noise as that estimator's operator sees it, and the absolute scale of

@@ -12,7 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CornerDescriptor::position_covariance`: the 2×2 covariance of each
   corner's position in px², for weighting corners in a calibration. It is
   the scatter due to white pixel noise (variance at least 1/12 gray level²,
-  the 8-bit rounding) plus a small model-error floor. Reported for the `SaddlePoint` refiner; `None` for the
+  the 8-bit rounding) plus a model-error floor of 0.006 px per axis. On
+  synthetic boards formed with lens blur and 8–12 px cells at any rotation,
+  whitened errors have variance 0.6–1.75 at noise σ 1 and 0.7–1.15 at
+  σ ≥ 4. Reported for the `SaddlePoint` refiner; `None` for the
   other refiners, the Radon detector, and upscaled input. Python
   `Detections.position_covariance` (`(N, 2, 2)`, `NaN` rows where absent),
   WASM `ChessDetector.positionCovariance()` (stride 3), C `cc_corner`
@@ -38,14 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   estimate until the fitted saddle sits at the window centre. A single
   fit on the pixel grid is pulled toward the seed pixel; refined
   positions now move toward the true corner (noise-free RMS error on
-  synthetic grid-aligned corners 0.12 px → under 0.005 px when sharp,
-  0.044 → 0.004 px at blur σ 1.5). Which corners are accepted is unchanged. A
-  corner costs about 0.2 µs. `covariance_per_noise_variance` describes
-  the converged position, and on synthetic corners its predicted scatter
-  matches the measured error about the true corner on boards aligned
-  with the pixel grid. On sharp boards rotated a few degrees from the
-  grid, 0.01–0.02 px of systematic error remains, which the covariance
-  does not include. When re-centring
+  synthetic grid-aligned corners 0.12 px → under 0.01 px). Which corners
+  are accepted is unchanged. A corner costs about 0.2 µs.
+  `covariance_per_noise_variance` describes the noise scatter of the
+  converged position. The position keeps a small error that depends on
+  where the corner sits between pixels: up to about 0.009 px RMS on boards
+  rotated 30–45° from the pixel grid under a lens blur of σ ≥ 0.5 px, and
+  up to 0.02 px on boards rotated 2–15° or 45° with ideally sharp optics.
+  When re-centring
   does not converge, the refiner returns the single fit with no
   covariance. On cells of about 5 px with strong shear and blur the
   re-centred position can be less accurate than the single fit.
