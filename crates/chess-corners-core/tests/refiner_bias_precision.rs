@@ -392,10 +392,18 @@ fn summarize(phases: &[&PhaseStats]) -> CellSummary {
     }
     out.sigma_2d = out.sigma[0].hypot(out.sigma[1]);
     // A phase mean over n draws carries σ²/n of noise; remove it from the
-    // mean squared bias.
+    // mean squared bias, with each phase's own σ² (acceptance and scatter
+    // differ by phase at low SNR). A single-draw phase gives no estimate.
     let noise_in_bias = seen
         .iter()
-        .map(|p| out.sigma_2d.powi(2) / p.n_acc as f64)
+        .map(|p| {
+            let n = p.n_acc as f64;
+            if p.n_acc < 2 {
+                0.0
+            } else {
+                (p.ss[0] + p.ss[1]) / (n - 1.0) / n
+            }
+        })
         .sum::<f64>()
         / seen.len() as f64;
     out.rms_bias = (mean_b2 - noise_in_bias).max(0.0).sqrt();

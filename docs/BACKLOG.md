@@ -152,7 +152,7 @@ state.
 | UQ-07 | P1 | todo | 1.5.0 | UQ-01 | SaddlePoint refits on a patch re-centred at its previous estimate until it converges (default behaviour). Removes the pull toward the window centre (0.12 → ~0.004 px noise-free). The covariance is derived for the converged estimator (fixed-point sensitivity, correlated resampled pixels) and validated with the UQ-01 harness until σ̂₀² ≈ 1. |
 | UQ-08 | P2 | todo | ongoing | UQ-05 | Realistic ground truth: calib-synth / etendue renders, and an end-to-end check that calibration-rs reaches σ̂₀ ≈ 1 with detector covariances. Absorbs `ML-01` and `ML-02`. |
 | UQ-09 | P2 | todo | 1.5.0 | — | CenterOfMass returns `Accepted` at the unchanged seed when its window has no positive response (36–100% of corners at cell 5). Report a non-accepted status instead. |
-| UQ-10 | P3 | todo | 1.5.0 | UQ-01 | Bias harness (`refiner_bias_precision.rs`): remove each phase mean's sampling variance with that phase's own variance, not the pooled σ. Only matters where acceptance or scatter varies by phase (low SNR); the σₙ 1–3 conclusions are unaffected (Codex review, #82). |
+| UQ-10 | P3 | done | 1.5.0 | UQ-01 | Bias harness (`refiner_bias_precision.rs`): remove each phase mean's sampling variance with that phase's own variance, not the pooled σ. Only matters where acceptance or scatter varies by phase (low SNR); the σₙ 1–3 conclusions are unaffected (Codex review, #82). Outcome: no published number moved (largest `rms_bias` change 8e-5 px, no `bias_dominates` flip). |
 
 ## Post-1.0 / future (not blocking 1.0)
 
