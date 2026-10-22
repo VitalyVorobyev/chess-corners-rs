@@ -154,21 +154,9 @@ mod tests {
     #[test]
     fn merge_corners_prefers_stronger_entries() {
         let mut corners = vec![
-            Corner {
-                x: 10.0,
-                y: 10.0,
-                strength: 1.0,
-            },
-            Corner {
-                x: 11.0,
-                y: 11.0,
-                strength: 5.0,
-            },
-            Corner {
-                x: 20.0,
-                y: 20.0,
-                strength: 3.0,
-            },
+            Corner::new(10.0, 10.0, 1.0),
+            Corner::new(11.0, 11.0, 5.0),
+            Corner::new(20.0, 20.0, 3.0),
         ];
         let merged = merge_corners_simple(&mut corners, 2.5);
         assert_eq!(merged.len(), 2);
@@ -194,11 +182,7 @@ mod tests {
             let rx = lcg(&mut state) as f32 / u32::MAX as f32;
             let ry = lcg(&mut state) as f32 / u32::MAX as f32;
             let rs = lcg(&mut state) as f32 / u32::MAX as f32;
-            out.push(Corner {
-                x: rx * span,
-                y: ry * span,
-                strength: rs * 100.0,
-            });
+            out.push(Corner::new(rx * span, ry * span, rs * 100.0));
         }
         out
     }
@@ -259,18 +243,7 @@ mod tests {
         let merged = merge_corners_simple(&mut empty, 1.0);
         assert!(merged.is_empty());
 
-        let mut few = vec![
-            Corner {
-                x: 1.0,
-                y: 1.0,
-                strength: 1.0,
-            },
-            Corner {
-                x: 1.5,
-                y: 1.5,
-                strength: 2.0,
-            },
-        ];
+        let mut few = vec![Corner::new(1.0, 1.0, 1.0), Corner::new(1.5, 1.5, 2.0)];
         // Zero radius is a no-op merge — every input survives.
         let merged = merge_corners_simple(&mut few, 0.0);
         assert_eq!(merged.len(), 2);
