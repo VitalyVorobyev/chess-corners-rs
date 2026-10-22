@@ -146,7 +146,7 @@
 //! predicts `[dx, dy, conf_logit]`, but the confidence output is
 //! currently ignored; the offsets are applied directly. Current
 //! accuracy benchmarks are synthetic; real-world accuracy still needs
-//! validation. Per-refiner cost is measured in Part VIII §7.6 of the
+//! validation. Per-refiner cost is measured in Part IX §9.6 of the
 //! book. The ML path is slower than the hand-coded refiners and should
 //! be chosen only after measuring that its behavior helps your data.
 //!
