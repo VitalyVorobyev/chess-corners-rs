@@ -60,6 +60,6 @@ docs/
 ## Program status
 
 Milestones M1–M6 are done and `1.0.0` shipped (`API-09`); the latest release
-is `1.4.0` (saddle-point position covariance). The only open release residual is the vcpkg port (`CPP-05`). See
+is `1.5.0` (per-corner position covariance on the detector output). The only open release residual is the vcpkg port (`CPP-05`). See
 [`ROADMAP.md`](ROADMAP.md) for the milestone table and
 [`BACKLOG.md`](BACKLOG.md) for the task registry.
