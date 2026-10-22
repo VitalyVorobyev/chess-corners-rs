@@ -32,6 +32,24 @@ int main() {
         const std::vector<chess_corners::Corner> corners =
             chess_corners::detect(image, width, height, chess_corners::Config::chess());
         std::printf("chess-corners: detected %zu corners\n", corners.size());
+
+        // The saddle-point refiner reports each corner's position covariance
+        // (px^2). This synthetic board has no noise to estimate, so supply
+        // the sensor noise level.
+        chess_corners::Config saddle = chess_corners::Config::chess();
+        saddle.refiner = CC_REFINER_SADDLE_POINT;
+        saddle.noise_sigma = 1.0f;
+        std::size_t with_cov = 0;
+        for (const chess_corners::Corner& c :
+             chess_corners::detect(image, width, height, saddle)) {
+            if (c.position_covariance) {
+                ++with_cov;
+            }
+        }
+        std::printf("chess-corners: %zu corners with a position covariance\n", with_cov);
+        if (with_cov == 0) {
+            return 1;
+        }
     } catch (const std::exception& error) {
         std::fprintf(stderr, "detection failed: %s\n", error.what());
         return 1;

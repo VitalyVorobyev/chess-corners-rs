@@ -26,9 +26,9 @@ use chess_corners::{
 };
 
 use crate::{
-    cc_axis, cc_chess_ring_t, cc_config, cc_corner, cc_peak_fit_t, cc_refiner_t, cc_status,
-    CC_CHESS_RING_BROAD, CC_CHESS_RING_CANONICAL, CC_ORIENTATION_DISK_FIT, CC_ORIENTATION_NONE,
-    CC_ORIENTATION_RING_FIT, CC_PEAK_FIT_GAUSSIAN, CC_PEAK_FIT_PARABOLIC,
+    cc_axis, cc_chess_ring_t, cc_config, cc_corner, cc_covariance, cc_peak_fit_t, cc_refiner_t,
+    cc_status, CC_CHESS_RING_BROAD, CC_CHESS_RING_CANONICAL, CC_ORIENTATION_DISK_FIT,
+    CC_ORIENTATION_NONE, CC_ORIENTATION_RING_FIT, CC_PEAK_FIT_GAUSSIAN, CC_PEAK_FIT_PARABOLIC,
     CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS,
     CC_STRATEGY_RADON,
 };
@@ -105,7 +105,7 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
     };
 
-    let base = base
+    let mut base = base
         .with_threshold(cfg.threshold)
         .with_multiscale(multiscale)
         .with_upscale(upscale)
@@ -114,6 +114,11 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
             d.nms_radius = cfg.nms_radius;
             d.min_cluster_size = cfg.min_cluster_size;
         });
+    // A negative or non-finite σ is rejected by `Detector::new`
+    // (`CC_ERR_INVALID_CONFIG`).
+    if cfg.has_noise_sigma != 0 {
+        base = base.with_noise_sigma(cfg.noise_sigma);
+    }
     Ok(match orientation_method {
         Some(method) => base.with_orientation_method(method),
         None => base.without_orientation(),
@@ -185,6 +190,8 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
         image_upsample: radon.image_upsample,
         response_blur_radius: radon.response_blur_radius,
         peak_fit: peak_fit_tag(radon.peak_fit),
+        has_noise_sigma: u32::from(config.noise_sigma.is_some()),
+        noise_sigma: config.noise_sigma.unwrap_or(0.0),
     }
 }
 
@@ -223,12 +230,13 @@ fn peak_fit_tag(mode: PeakFitMode) -> cc_peak_fit_t {
 /// `has_orientation` is `0` and `axes` is zeroed; otherwise `has_orientation`
 /// is `1` and `axes` carries the fitted directions.
 pub(crate) fn corner_to_ffi(corner: &CornerDescriptor) -> cc_corner {
-    match corner.axes {
-        Some(axes) => cc_corner {
-            x: corner.x,
-            y: corner.y,
-            response: corner.response,
-            axes: [
+    let zero_axis = cc_axis {
+        angle: 0.0,
+        sigma: 0.0,
+    };
+    let (axes, has_orientation) = match corner.axes {
+        Some(axes) => (
+            [
                 cc_axis {
                     angle: axes[0].angle,
                     sigma: axes[0].sigma,
@@ -238,18 +246,36 @@ pub(crate) fn corner_to_ffi(corner: &CornerDescriptor) -> cc_corner {
                     sigma: axes[1].sigma,
                 },
             ],
-            has_orientation: 1,
-        },
-        None => cc_corner {
-            x: corner.x,
-            y: corner.y,
-            response: corner.response,
-            axes: [cc_axis {
-                angle: 0.0,
-                sigma: 0.0,
-            }; 2],
-            has_orientation: 0,
-        },
+            1,
+        ),
+        None => ([zero_axis; 2], 0),
+    };
+    let (position_covariance, has_position_covariance) = match corner.position_covariance {
+        Some(c) => (
+            cc_covariance {
+                xx: c.xx,
+                xy: c.xy,
+                yy: c.yy,
+            },
+            1,
+        ),
+        None => (
+            cc_covariance {
+                xx: 0.0,
+                xy: 0.0,
+                yy: 0.0,
+            },
+            0,
+        ),
+    };
+    cc_corner {
+        x: corner.x,
+        y: corner.y,
+        response: corner.response,
+        axes,
+        position_covariance,
+        has_orientation,
+        has_position_covariance,
     }
 }
 
@@ -284,5 +310,7 @@ pub(crate) fn zeroed_config() -> cc_config {
         image_upsample: radon.image_upsample,
         response_blur_radius: radon.response_blur_radius,
         peak_fit: peak_fit_tag(radon.peak_fit),
+        has_noise_sigma: 0,
+        noise_sigma: 0.0,
     }
 }

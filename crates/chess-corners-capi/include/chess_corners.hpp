@@ -13,6 +13,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -24,7 +25,7 @@ namespace chess_corners {
 /// Checked against `cc_abi_version()` before each detection (see
 /// `check_abi()`); a mismatch means the header and the linked library are
 /// incompatible and detection throws rather than reading a stale layout.
-inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 4;
+inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 5;
 
 /// One local grid-axis direction with its 1-sigma angular uncertainty.
 ///
@@ -34,6 +35,14 @@ struct Axis {
     float sigma = 0.0f;
 };
 
+/// Symmetric 2x2 covariance of a corner position, in px^2, matching
+/// `cc_covariance`.
+struct Covariance {
+    float xx = 0.0f;
+    float xy = 0.0f;
+    float yy = 0.0f;
+};
+
 /// One detected corner in full-resolution image pixels.
 ///
 /// `axes` follow the joint polarity convention of the C ABI: `axes[0].angle`
@@ -41,12 +50,18 @@ struct Axis {
 /// pi)`. They are only meaningful when `has_orientation` is `true`; when the
 /// orientation fit was skipped (`CC_ORIENTATION_NONE`) `has_orientation` is
 /// `false` and `axes` is zeroed.
+///
+/// `position_covariance` is the covariance of `(x, y)` in px^2 (white-noise
+/// scatter plus a 0.015 px per-axis model-error floor). It is set only with
+/// the saddle-point refiner, on corners whose refinement converged, and not
+/// on upscaled input.
 struct Corner {
     float x = 0.0f;
     float y = 0.0f;
     float response = 0.0f;
     std::array<Axis, 2> axes{};
     bool has_orientation = true;
+    std::optional<Covariance> position_covariance;
 };
 
 /// Exception thrown when a C entry point returns a non-`CC_OK` status.
@@ -83,6 +98,10 @@ private:
 /// `image_upsample`, `response_blur_radius`, and `peak_fit` apply to the
 /// Radon strategy only. Fields that do not apply to the active `strategy`
 /// are ignored.
+///
+/// `noise_sigma` is the image's pixel-noise standard deviation in gray
+/// levels, used to express position covariances in px^2; empty estimates it
+/// from each image.
 struct Config {
     cc_strategy_t strategy;
     float threshold;
@@ -98,6 +117,7 @@ struct Config {
     std::uint32_t image_upsample;
     std::uint32_t response_blur_radius;
     cc_peak_fit_t peak_fit;
+    std::optional<float> noise_sigma;
 
     /// Defaults to the single-scale ChESS preset.
     Config() noexcept : Config(from_c(cc_config_chess())) {}
@@ -119,6 +139,9 @@ struct Config {
         out.image_upsample = c.image_upsample;
         out.response_blur_radius = c.response_blur_radius;
         out.peak_fit = c.peak_fit;
+        if (c.has_noise_sigma != 0) {
+            out.noise_sigma = c.noise_sigma;
+        }
         return out;
     }
 
@@ -139,6 +162,8 @@ struct Config {
         c.image_upsample = image_upsample;
         c.response_blur_radius = response_blur_radius;
         c.peak_fit = peak_fit;
+        c.has_noise_sigma = noise_sigma.has_value() ? 1u : 0u;
+        c.noise_sigma = noise_sigma.value_or(0.0f);
         return c;
     }
 
@@ -227,6 +252,11 @@ inline std::vector<Corner> detect(const std::uint8_t* pixels,
         dst.axes[0] = Axis{src.axes[0].angle, src.axes[0].sigma};
         dst.axes[1] = Axis{src.axes[1].angle, src.axes[1].sigma};
         dst.has_orientation = src.has_orientation != 0;
+        if (src.has_position_covariance != 0) {
+            dst.position_covariance = Covariance{src.position_covariance.xx,
+                                                 src.position_covariance.xy,
+                                                 src.position_covariance.yy};
+        }
         corners.push_back(dst);
     }
     return corners;
