@@ -120,55 +120,96 @@ impl CornerRefiner for SaddlePointRefiner {
         if !img.supports_patch(cx, cy, r) {
             return unmoved(0.0, RefineStatus::OutOfBounds);
         }
-        let Some(p) = &self.normal_inv else {
+        let Some(normal_inv) = &self.normal_inv else {
             return unmoved(0.0, RefineStatus::IllConditioned);
         };
 
+        let fit = match self.fit_patch(normal_inv, |dx, dy| img.sample(cx + dx, cy + dy)) {
+            Ok(fit) => fit,
+            Err(det_h) => return unmoved(det_h, RefineStatus::IllConditioned),
+        };
+        let x = cx as f32 + fit.u[0];
+        let y = cy as f32 + fit.u[1];
+
+        let max_off = self.cfg.max_offset.min(r as f32 + 0.5);
+        if (x - seed_xy[0]).abs() > max_off || (y - seed_xy[1]).abs() > max_off {
+            return unmoved(fit.det_h, RefineStatus::Rejected);
+        }
+
+        RefineResult {
+            covariance_per_noise_variance: Some(fit.covariance(normal_inv)),
+            ..RefineResult::accepted([x, y], (-fit.det_h).sqrt())
+        }
+    }
+}
+
+/// Saddle of the quadratic fitted to one patch.
+#[derive(Clone, Copy, Debug)]
+struct PatchSaddle {
+    /// Stationary point relative to the patch centre pixel.
+    u: [f32; 2],
+    /// Quadratic coefficients `(a, b, c)`; the Hessian is `[2a b; b 2c]`.
+    quad: [f32; 3],
+    /// `det(H) = 4ac − b²`, negative for a saddle.
+    det_h: f32,
+}
+
+impl PatchSaddle {
+    #[inline]
+    fn covariance(&self, normal_inv: &[[f32; 6]; 6]) -> PositionCovariance {
+        position_covariance(normal_inv, self.quad, self.det_h, self.u)
+    }
+}
+
+impl SaddlePointRefiner {
+    /// Fit the quadratic surface to the `(2·radius+1)²` patch given by
+    /// `sample(dx, dy)` (offsets from the patch centre) and locate its
+    /// saddle. `Err(det_h)` when the surface is not a clear saddle.
+    #[inline]
+    fn fit_patch(
+        &self,
+        normal_inv: &[[f32; 6]; 6],
+        sample: impl Fn(i32, i32) -> f32,
+    ) -> Result<PatchSaddle, f32> {
+        let r = self.cfg.radius;
         let mut sum = 0.0f32;
         for dy in -r..=r {
             for dx in -r..=r {
-                sum += img.sample(cx + dx, cy + dy);
+                sum += sample(dx, dy);
             }
         }
         let side = (2 * r + 1) as f32;
         let mean = sum / (side * side);
 
-        // g = Φᵀz with z the mean-subtracted patch; the fit is θ = (ΦᵀΦ)⁻¹·g
-        // in coordinates relative to (cx, cy).
+        // g = Φᵀz with z the mean-subtracted patch; the fit is θ = (ΦᵀΦ)⁻¹·g.
         let mut g = [0.0f32; 6];
         for dy in -r..=r {
             for dx in -r..=r {
-                let z = img.sample(cx + dx, cy + dy) - mean;
+                let z = sample(dx, dy) - mean;
                 let phi = quadratic_basis(dx as f32, dy as f32);
                 for (gk, phik) in g.iter_mut().zip(phi) {
                     *gk += phik * z;
                 }
             }
         }
-        let coef = |row: usize| -> f32 { p[row].iter().zip(&g).map(|(pk, gk)| pk * gk).sum() };
+        let coef =
+            |row: usize| -> f32 { normal_inv[row].iter().zip(&g).map(|(pk, gk)| pk * gk).sum() };
         let (a, b, c, d, e) = (coef(0), coef(1), coef(2), coef(3), coef(4));
 
         let det_h = 4.0 * a * c - b * b;
         if det_h > -self.cfg.det_margin || det_h.abs() < self.cfg.min_abs_det {
-            return unmoved(det_h, RefineStatus::IllConditioned);
+            return Err(det_h);
         }
 
-        // Stationary point u = −H⁻¹·(d, e), H = [2a b; b 2c], relative to (cx, cy).
+        // Stationary point u = −H⁻¹·(d, e), H = [2a b; b 2c].
         let inv_det = 1.0 / det_h;
         let ux = -(2.0 * c * d - b * e) * inv_det;
         let uy = (b * d - 2.0 * a * e) * inv_det;
-        let x = cx as f32 + ux;
-        let y = cy as f32 + uy;
-
-        let max_off = self.cfg.max_offset.min(r as f32 + 0.5);
-        if (x - seed_xy[0]).abs() > max_off || (y - seed_xy[1]).abs() > max_off {
-            return unmoved(det_h, RefineStatus::Rejected);
-        }
-
-        RefineResult {
-            covariance_per_noise_variance: Some(position_covariance(p, [a, b, c], det_h, [ux, uy])),
-            ..RefineResult::accepted([x, y], (-det_h).sqrt())
-        }
+        Ok(PatchSaddle {
+            u: [ux, uy],
+            quad: [a, b, c],
+            det_h,
+        })
     }
 }
 
@@ -394,6 +435,76 @@ mod tests {
                 res.x,
                 res.y
             );
+        }
+    }
+
+    /// `covariance_per_noise_variance` equals `Σₖ (∂u/∂Iₖ)(∂u/∂Iₖ)ᵀ` over
+    /// the patch pixels, the noise-propagation sum it linearizes. Central
+    /// differences on f32 patches of smooth, skewed (perspective-like)
+    /// saddles off the pixel centre, so `xy ≠ 0` and the `u`-dependent
+    /// Jacobian terms matter.
+    #[test]
+    fn covariance_matches_finite_differences() {
+        let refiner = SaddlePointRefiner::new(SaddlePointConfig::default());
+        let normal_inv = refiner.normal_inv.unwrap();
+        let r = refiner.cfg.radius;
+        let side = (2 * r + 1) as usize;
+        let eps = 0.25f32;
+        // (edge-normal angles rad, saddle centre relative to the patch centre, edge width px)
+        for (angles, centre, width) in [
+            ([0.3f32, 1.4f32], [0.3f32, -0.2f32], 1.0f32),
+            ([-0.2, 1.05], [-0.35, 0.15], 1.4),
+        ] {
+            let normals = angles.map(|a| [a.cos(), a.sin()]);
+            let mut patch = vec![0.0f32; side * side];
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    let (x, y) = (dx as f32 - centre[0], dy as f32 - centre[1]);
+                    let edge = |n: [f32; 2]| ((n[0] * x + n[1] * y) / width).tanh();
+                    patch[((dy + r) as usize) * side + (dx + r) as usize] =
+                        120.0 + 80.0 * edge(normals[0]) * edge(normals[1]);
+                }
+            }
+            let fit_u = |patch: &[f32]| {
+                refiner
+                    .fit_patch(&normal_inv, |dx, dy| {
+                        patch[((dy + r) as usize) * side + (dx + r) as usize]
+                    })
+                    .unwrap()
+            };
+            let fit = fit_u(&patch);
+            let cov = fit.covariance(&normal_inv);
+
+            let mut fd = [0.0f64; 3];
+            for k in 0..patch.len() {
+                let mut plus = patch.clone();
+                plus[k] += eps;
+                let mut minus = patch.clone();
+                minus[k] -= eps;
+                let (up, um) = (fit_u(&plus).u, fit_u(&minus).u);
+                let gx = f64::from(up[0] - um[0]) / f64::from(2.0 * eps);
+                let gy = f64::from(up[1] - um[1]) / f64::from(2.0 * eps);
+                fd[0] += gx * gx;
+                fd[1] += gx * gy;
+                fd[2] += gy * gy;
+            }
+
+            let scale = (fd[0] * fd[2]).sqrt();
+            let got = [cov.xx, cov.xy, cov.yy].map(f64::from);
+            assert!(
+                fd[1].abs() > 0.03 * scale,
+                "fixture must have xy ≠ 0: {fd:?}"
+            );
+            for (name, g, f) in [
+                ("xx", got[0], fd[0]),
+                ("xy", got[1], fd[1]),
+                ("yy", got[2], fd[2]),
+            ] {
+                assert!(
+                    (g - f).abs() <= 1e-3 * scale,
+                    "{angles:?} {name}: analytic {g:e} vs finite-difference {f:e}"
+                );
+            }
         }
     }
 
