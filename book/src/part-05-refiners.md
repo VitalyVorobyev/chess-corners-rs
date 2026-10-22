@@ -138,7 +138,7 @@ rejects:
 |------------------|-------------------------------------------------|
 | Input            | Image                                           |
 | Default `radius` | 2 (5×5 patch)                                   |
-| Typical cost     | ~120 ns per corner                              |
+| Typical cost     | ~65 ns per corner                               |
 | Strengths        | No gradient required; low error in the blur sweep |
 | Weaknesses       | Parabolic model is approximate on sharp edges   |
 

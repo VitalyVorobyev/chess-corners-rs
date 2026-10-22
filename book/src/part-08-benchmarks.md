@@ -147,7 +147,7 @@ The Pareto frontier, fast-to-slow:
 |---------------------|---------------|-----------------------|-----------------------------------------------------------------------|
 | `CenterOfMass`      | ~20 ns        | 0.08 px               | Unmatched throughput; fails at cell ≤ 5 (see §7.5).                   |
 | `Förstner`          | ~60 ns        | 0.06 px               | Lowest clean-data mean error; degrades with blur.                     |
-| `SaddlePoint`       | ~120 ns       | 0.11 px               | Stable across conditions; best geometric result on the blur row.      |
+| `SaddlePoint`       | ~65 ns        | 0.11 px               | Stable across conditions; best geometric result on the blur row.      |
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.05 px               | OpenCV's iterative gradient refiner.                                  |
 | `ML (ONNX)`         | ~250 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row in this fixture.               |
 

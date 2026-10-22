@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   percent on synthetic corners (any blur, noise level and subpixel
   offset). The other refiners report `None`.
 
+### Changed
+
+- The saddle-point refiner is about 1.8× faster per corner. Refined
+  positions are unchanged to within 2·10⁻⁵ px; on patches with no
+  curvature across one axis it now reports `IllConditioned` instead of
+  occasionally accepting a point fitted to rounding noise.
+
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.
