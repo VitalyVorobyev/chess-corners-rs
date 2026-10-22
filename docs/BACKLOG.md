@@ -20,7 +20,8 @@ and `@vitavision/chess-corners` `1.1.0` on npm — which also cleared the
 advisory exposed that its `package:` filter had always been malformed, so the
 job had never actually checked anything. `1.2.0` (facade ROI detection) and
 `1.3.0` (detector-config JSON Schema + WASM JSON config path) have since
-shipped on every channel at `1.3.0` (`chess-corners-ml` unchanged at
+shipped on every channel; `1.3.1` is a maintenance release (dependency
+refresh, no API change) and the current version (`chess-corners-ml` unchanged at
 `0.13.0`). One residual remains open — `CPP-05`, the vcpkg port, which carries
 a real SHA512 but still targets `1.1.0` and has never been install-verified on
 any platform. Everything under *Post-1.0 / future*

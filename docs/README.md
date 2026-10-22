@@ -59,6 +59,6 @@ docs/
 ## Program status
 
 Milestones M1–M6 are done and `1.0.0` shipped (`API-09`); the latest release
-is `1.3.0`. The only open release residual is the vcpkg port (`CPP-05`). See
+is `1.3.1` (a maintenance release; no API change). The only open release residual is the vcpkg port (`CPP-05`). See
 [`ROADMAP.md`](ROADMAP.md) for the milestone table and
 [`BACKLOG.md`](BACKLOG.md) for the task registry.
