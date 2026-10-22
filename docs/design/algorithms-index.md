@@ -22,7 +22,7 @@ by" lists the downstream stages. Paths are relative to the repo root.
 | **T1** | `DenseDetector` trait (drives both detectors) | Detection abstraction | `crates/chess-corners-core/src/detect/dense.rs` | III–IV | — | image → response + peaks | S3 |
 | **F1** | CenterOfMass refiner | Refinement | `crates/chess-corners-core/src/refine/center_of_mass.rs` | V | — | response patch → subpixel `(x,y)` | X1 |
 | **F2** | Förstner refiner (structure tensor) | Refinement | `crates/chess-corners-core/src/refine/forstner.rs` | V | — | image patch → subpixel `(x,y)` | X1 |
-| **F3** | SaddlePoint refiner (quadratic Hessian) | Refinement | `crates/chess-corners-core/src/refine/saddle_point.rs` | V | — | image patch → subpixel `(x,y)` + position covariance | X1 |
+| **F3** | SaddlePoint refiner (quadratic Hessian, re-centred refit) | Refinement | `crates/chess-corners-core/src/refine/saddle_point.rs` | V | — | image patch → subpixel `(x,y)` + position covariance | X1 |
 | **T2** | `CornerRefiner` trait + `Refiner` dispatch enum | Refinement abstraction | `crates/chess-corners-core/src/refine/mod.rs` | V | — | corner → refined corner | D1, D2 |
 | **O1** | RingFit two-axis orientation (Gauss-Newton + σ-LUT) | Orientation | `crates/chess-corners-core/src/orientation/ring_fit/` | VI | `rayon` | ring samples → 2 axes + σ | X1 |
 | **O2** | DiskFit two-axis orientation (full-disk, lazy RingFit fallback) | Orientation | `crates/chess-corners-core/src/orientation/disk_sector/` | VI | — | disk samples → 2 axes + σ | X1 |

@@ -5,6 +5,9 @@ noise-free estimate) and **precision** (the scatter noise adds around it),
 and checks the saddle-point `covariance_per_noise_variance` against both.
 This is the `UQ-01` evidence that sets the 1.5.0 uncertainty API (see
 [`ROADMAP.md`](../ROADMAP.md#post-10-program-accuracy-aware-detection-uq-)).
+[Results](#results) and [Findings](#findings) measure the single
+integer-grid SaddlePoint fit; [After re-centring](#after-re-centring)
+measures the re-centred refit that replaced it (`UQ-07`).
 
 ## Reproduce
 
@@ -36,8 +39,8 @@ and results do not depend on the thread split.
 - **Draws**: 200 per (condition, phase), 1 at noise 0. Seed = truth rounded
   to the nearest pixel.
 - **Metrics** (per refiner × condition, pooled over phases): RMS bias =
-  RMS over phases of the per-phase mean error, with the draw noise σ²/n
-  subtracted; σ = pooled within-phase std (radial `sqrt(σx² + σy²)` in the
+  RMS over phases of the per-phase mean error, with each phase's own draw
+  noise σ²/n subtracted; σ = pooled within-phase std (radial `sqrt(σx² + σy²)` in the
   tables); acceptance rate. SaddlePoint only, with `Σ = v · cov` and `v` the
   true noise variance (for signal-dependent noise, the mean of `a + b·I` over
   the 5×5 fit patch): `z_prec = (e − phase bias)/σ_pred`,
@@ -152,14 +155,8 @@ CenterOfMass does not fit this model (cell 8: 0.085 → 0.048 at blur 0,
    mismatch between its straight-edge-line model and the hyperbolic
    gradient field near a blurred X-junction. CenterOfMass bias is not a
    function of the window offset.
-4. **Re-centring removes SaddlePoint's bias (probe, not in the harness).**
-   Refitting on a bilinearly resampled 5×5 patch centred at the previous
-   estimate, axis-aligned cell 8 40/200: noise-free RMS bias after 1 / 2 /
-   4 fits = 0.119 / 0.039 / 0.004 px (blur 0), 0.044 / 0.004 / 0.004
-   (blur 1.5); sheared blur 0: 0.150 / 0.072 / 0.019. At σₙ = 2 the RMSE
-   converges to 0.019 (blur 0) and 0.030 (blur 1.5), the noise floor. The
-   covariance of the re-centred fit (interpolated, correlated pixels) was
-   not derived or validated.
+4. **Re-centring removes SaddlePoint's bias** — implemented and measured
+   in [After re-centring](#after-re-centring).
 5. **CenterOfMass reports `Accepted` without refining when its window has
    no positive response.** At cell 5 (ChESS ring radius = cell) it returns
    the seed itself for 36–100% of corners, all marked `Accepted`, so its
@@ -172,6 +169,55 @@ CenterOfMass does not fit this model (cell 8: 0.085 → 0.048 at blur 0,
    0.119; 0.059 vs 0.044 at blur 1.5); the ~0.11 px figure in
    [`refiner-comparison.md`](refiner-comparison.md) is refiner bias.
 
+## After re-centring
+
+The SaddlePoint refiner now refits on the patch resampled bilinearly
+around its previous estimate until a step is shorter than 0.001 px (at
+most 16 steps). Its covariance is that of the converged estimate: the
+fixed point `F(o, I) = 0` of the fitted offset `F` at window offset `o`
+gives `∂ô/∂I = −M⁻¹ ∂F/∂I`, `M = ∂F/∂o`, with `∂F/∂I` carried through
+the bilinear weights (correlated resampled pixels). A unit test checks
+it against finite differences of the full iterated estimate.
+
+Cell 8, axis-aligned, white noise; before → after. σ_pred is within 2%
+of σ_emp in every row except 90/150, blur 2.5, σₙ = 4 (+7%).
+
+| contrast | blur | noise-free RMS bias | σ_emp at σₙ = 2 | z_prec std (σₙ 1–4) | σ̂₀² σₙ = 1 / 2 / 4 |
+|---|---|---|---|---|---|
+| 40/200 | 0 | 0.119 → 0.000 | 0.015 → 0.019 | 1.00–1.01 | 222 / 59 / 16 → 1.00 / 1.01 / 1.02 |
+| 40/200 | 0.8 | 0.090 → 0.004 | 0.019 → 0.021 | 1.00–1.02 | 81 / 22 / 6.5 → 1.11 / 1.04 / 1.00 |
+| 40/200 | 1.5 | 0.044 → 0.004 | 0.033 → 0.030 | 1.01–1.02 | 7.9 / 3.0 / 1.6 → 1.06 / 1.04 / 1.02 |
+| 40/200 | 2.5 | 0.024 → 0.003 | 0.072 → 0.061 | 1.00–1.01 | 1.5 / 1.2 / 1.0 → 1.03 / 1.04 / 1.02 |
+| 90/150 | 0 | 0.119 → 0.001 | 0.040 → 0.049 | 1.00–1.01 | 32 / 9.4 / 3.2 → 1.01 / 1.01 / 1.00 |
+| 90/150 | 0.8 | 0.088 → 0.007 | 0.051 → 0.055 | 1.00–1.02 | 12 / 4.0 / 1.8 → 1.04 / 1.01 / 1.05 |
+| 90/150 | 1.5 | 0.036 → 0.014 | 0.087 → 0.079 | 1.00–1.01 | 1.7 / 1.2 / 1.1 → 1.13 / 1.04 / 1.04 |
+| 90/150 | 2.5 | 0.031 → 0.013 | 0.195 → 0.161 | 0.99–1.01 | 1.1 / 1.0 / 0.9 → 1.04 / 1.03 / 1.14 |
+
+- **Bias.** Noise-free RMS bias at 40/200, cells 8–12: ≤ 0.004 px
+  axis-aligned and ≤ 0.010 px sheared at blur ≤ 1.5 (was 0.044–0.150).
+  The 0.013–0.016 px left at 90/150 with blur is 8-bit rounding of the
+  low-contrast edge profile. Cell 5 keeps 0.03 px at blur 2.5 (axis)
+  and gets worse when sheared (0.21 → 0.26 px): the window then
+  overlaps the neighbouring corners.
+- **Scatter.** σ grows by up to ~1/g (25% sharp, 0.019 vs 0.015 px)
+  where the single fit shrank the offset by `g`, and falls up to 25% at
+  blur ≥ 1.5, where the resampled window averages pixels.
+- **Calibration.** Wherever σ_emp < 0.3 px, z_prec std is 0.97–1.06
+  except the known axis split on the sheared board under
+  signal-dependent noise (0.85–1.10). At low SNR (σ_emp ≥ 0.3 px)
+  σ_pred now under-predicts slightly (σ̂₀² prec up to 1.5) instead of
+  over-predicting up to 2.5× in σ, and a near-singular `M` gives an
+  occasional very large σ_pred.
+- **Model-error floor.** The smallest constant `f` (px per axis) for
+  which `Σ + f²I` brings σ̂₀² about the truth within 0.05 of the
+  scatter-only value, over fixtures with σ_emp < 0.3 px: 0.015 px covers
+  every cell 8–12 fixture (median 0); cell 5 needs up to 0.03 px
+  (low contrast, blur 2.5). This is the floor `UQ-05` adds.
+- **Acceptance** is decided by the first (integer-grid) fit exactly as
+  before; a refit that fails or leaves the `max_offset` box ends the
+  iteration at the previous estimate. Acceptance is identical on every
+  cell of the grid.
+
 ## Recommendation for 1.5.0
 
 **Reduce SaddlePoint bias first, then ship its noise covariance with a
@@ -183,11 +229,10 @@ blur 1.5) — worse than uniform weighting,
 because the weights would track noise level while the error tracks blur.
 A per-corner model-error term is not needed: the bias is deterministic and
 removable (findings 3–4), and a learned or blur-indexed bias term would
-need a blur estimate the detector does not have. Proposed order: pull
-`UQ-07` (re-centred SaddlePoint refit) ahead of `UQ-05`; derive the
-covariance for the resampled patch and re-run this harness until σ̂₀² ≈ 1;
-then expose covariance plus a constant floor of ~0.01–0.02 px per axis
-(the residual left by the linear model). Förstner and CenterOfMass
+need a blur estimate the detector does not have. `UQ-07` (re-centred
+refit, covariance of the converged estimate) has brought σ̂₀² to ≈ 1
+([After re-centring](#after-re-centring)); `UQ-05` exposes that
+covariance plus a constant floor of 0.015 px per axis. Förstner and CenterOfMass
 covariances (`UQ-04`) are of little use while their bias is 1–7× their
 scatter; document SaddlePoint as the refiner for calibration-grade work
 and defer them.

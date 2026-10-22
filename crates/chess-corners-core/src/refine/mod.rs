@@ -135,10 +135,10 @@ pub struct RefineResult {
     /// identically distributed per-pixel noise; spatially correlated noise
     /// (upscaling, demosaicing, JPEG, blur applied after the noise) makes it
     /// underestimate the scatter. It describes noise scatter only, not the
-    /// refiner's systematic error, which on sharp corners can be several
-    /// times larger. Set by the saddle-point refiner on
-    /// accepted corners; `None` on every other status and for the
-    /// center-of-mass and Förstner refiners.
+    /// refiner's residual systematic error (about 0.01 px or less on
+    /// synthetic corners). Set by the saddle-point refiner on accepted
+    /// corners, unless the position is locally undetermined; `None` on
+    /// every other status and for the center-of-mass and Förstner refiners.
     pub covariance_per_noise_variance: Option<PositionCovariance>,
 }
 

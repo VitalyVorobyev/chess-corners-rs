@@ -94,12 +94,12 @@ fn clean_subpixel_sweep_mean_accuracy() {
         s_saddle.mean(), s_saddle.worst, s_saddle.accepts, s_saddle.total,
         s_forstner.mean(), s_forstner.worst, s_forstner.accepts, s_forstner.total,
     );
-    // Floor: SaddlePoint's quadratic fit typically lands around 0.12 px
-    // on small 35-px fixtures and should accept every candidate on the
-    // full sweep.
+    // Floor: the re-centred SaddlePoint fit lands within a few 10⁻⁴ px on
+    // these clean fixtures and should accept every candidate on the full
+    // sweep.
     assert!(
-        s_saddle.mean() < 0.2,
-        "SaddlePoint clean mean {} >= 0.2",
+        s_saddle.mean() < 0.01,
+        "SaddlePoint clean mean {} >= 0.01",
         s_saddle.mean()
     );
     assert_eq!(

@@ -143,9 +143,9 @@ validate on your own images when the decision matters.
 
 Refiner choice is also workload-dependent. The benchmark chapter reports
 the fixture, timing loop, and error metric used for each claim. In that
-fixture, `Förstner` has the lowest mean error on clean frames, `SaddlePoint`
-is most robust to blur, and the optional ML refiner has the lowest mean error
-in the heaviest noise condition; the geometric refiners are much cheaper per
+fixture, `SaddlePoint` has the lowest mean error on clean and blurred frames,
+and the optional ML refiner has the lowest mean error in the heaviest noise
+condition; the geometric refiners are much cheaper per
 corner than ML.
 
 ## Performance Snapshot

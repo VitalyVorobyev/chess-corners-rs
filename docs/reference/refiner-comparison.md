@@ -34,18 +34,19 @@ mean per condition is **bolded**.
 
 | condition        | CenterOfMass       | Forstner             | SaddlePoint          | ML (ONNX v4)        |
 |------------------|--------------------|----------------------|----------------------|---------------------|
-| clean (cell=8)   | 0.080 / 0.123      | **0.061** / 0.165    | 0.114 / 0.177        | 0.094 / 0.181       |
-| clean (cell=5)   | 0.390 / 0.707      | **0.061** / 0.165    | 0.114 / 0.177        | 0.091 / 0.150       |
-| blur σ=1.5       | 0.056 / 0.124      | 0.266 / 0.471        | **0.047** / 0.079    | 0.092 / 0.173       |
-| noise σ=5        | **0.078** / 0.164  | 0.113 / 0.238        | 0.094 / 0.163        | 0.091 / 0.175       |
-| noise σ=10       | **0.091** / 0.178  | 0.159 / 0.344        | 0.101 / 0.200        | 0.094 / 0.167       |
+| clean (cell=8)   | 0.080 / 0.123      | 0.061 / 0.165        | **0.045** / 0.059    | 0.094 / 0.181       |
+| clean (cell=5)   | 0.390 / 0.707      | 0.061 / 0.165        | **0.045** / 0.059    | 0.091 / 0.150       |
+| blur σ=1.5       | 0.056 / 0.124      | 0.266 / 0.471        | **0.044** / 0.065    | 0.092 / 0.173       |
+| noise σ=5        | 0.078 / 0.164      | 0.113 / 0.238        | **0.058** / 0.126    | 0.091 / 0.175       |
+| noise σ=10       | **0.091** / 0.178  | 0.159 / 0.344        | **0.091** / 0.179    | 0.094 / 0.167       |
 
 Cells are `mean / worst` px; accept rate is 36/36 for every refiner in
-every condition. In this fixture, `Förstner` has the lowest mean error
-on the clean rows, `SaddlePoint` is the most accurate geometric refiner
-on the blur row, and `CenterOfMass` has the lowest mean error on both
-noise rows. All four refiners come in under the
-~0.13 px mean-error bar on clean cell=8.
+every condition. In this fixture, `SaddlePoint` has the lowest mean
+error on every row, tied with `CenterOfMass` at noise σ=10. Its
+remaining ~0.045 px on the clean rows is the fixture's own floor:
+8× supersampling quantizes the rendered edge positions to 1/8 px, and
+on an exact pixel-area rendering the same refiner is within 0.001 px (see
+[`refiner-accuracy.md`](refiner-accuracy.md)).
 
 The ML refiner remains useful as a
 single deployable ONNX artifact for callers who prefer a learned
@@ -68,14 +69,15 @@ precedes the timed loop.
 |----------------|-----------|-----------------|-------------------------------------------------------------------------------|
 | CenterOfMass   | 0.02 µs   | ≈50 M corners/s | 5×5 weighted moment over the ChESS response map                               |
 | Forstner       | 0.06 µs   | ≈17 M corners/s | 5×5 gradient structure tensor solve                                           |
-| SaddlePoint    | 0.06 µs   | ≈17 M corners/s | 6-param quadratic LS with a precomputed normal-matrix inverse                 |
+| SaddlePoint    | 0.25 µs   | ≈4 M corners/s  | 5×5 quadratic LS on 4–6 integer-centred patches, re-centred by bilinear blend |
 | ML (ONNX)      | 151 µs    | ≈7 K corners/s  | 21×21 patch extract + ONNX inference, batch=1                                 |
 
 ## Per-refiner takeaways
 
-- **SaddlePoint** — 0.06 µs in this harness, under 0.12 px mean on the
-  clean row, and the lowest geometric mean on the blur row (0.047 px at
-  σ=1.5). A good default for calibration pipelines where blur is possible.
+- **SaddlePoint** — 0.25 µs in this harness and the lowest mean on
+  every row (0.045 px clean, 0.044 px at blur σ=1.5). It refits on a
+  patch re-centred at its own estimate, so it carries no pull toward the
+  seed pixel. The default choice for calibration pipelines.
 - **CenterOfMass** — the fastest, but **only when the ChESS ring
   matches the cell size**. At cell=5 with the default radius-5 ring,
   the ring crosses into neighbouring cells and the response centroid
@@ -95,7 +97,7 @@ precedes the timed loop.
   (`tools/ml_refiner/configs/synth_v6.yaml`), replacing the v2
   tanh-saddle training that produced the ~0.5 px
   distribution-mismatch failure. Use it when a deployable learned component is a better
-  integration fit than a CPU-only geometric refiner; note it is ~2500×
+  integration fit than a CPU-only geometric refiner; note it is ~600×
   slower than SaddlePoint per corner at batch=1.
 
 ## Notes on the measurement

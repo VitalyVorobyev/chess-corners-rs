@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The `SaddlePoint` refiner refits on a patch re-centred at its previous
+  estimate until a step is shorter than 0.001 px. A single fit on the
+  pixel grid is pulled toward the seed pixel; refined positions now move
+  toward the true corner (noise-free RMS error on synthetic corners
+  0.12 px → under 0.005 px when sharp, 0.044 → 0.004 px at blur σ 1.5).
+  Which corners are accepted is unchanged. A corner costs about four
+  times a single fit (~0.25 µs). `covariance_per_noise_variance` now
+  describes the converged position; on synthetic corners its predicted
+  scatter now matches the measured error about the true corner.
+
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.
