@@ -21,9 +21,14 @@
 //! - [`aa_chessboard`] — anti-aliased board with caller-chosen cell size,
 //!   subpixel `offset`, and `dark`/`bright` levels; the refiner-accuracy
 //!   and Radon-vs-ChESS fixtures.
-//! - [`area_chessboard`] — exact pixel-area (box-filtered) board, axis-aligned
-//!   or sheared, whose corners sit exactly on the lattice; the
-//!   bias/precision fixture.
+//! - [`optical_chessboard`] — a board on any [`Lattice`] (rotated, sheared)
+//!   formed as a camera forms it: Gaussian lens blur, then exact
+//!   integration over each pixel. Corners sit exactly on the lattice; the
+//!   fixture for refiner accuracy and covariance calibration.
+//! - [`lattice_area_chessboard`] / [`area_chessboard`] — the same lattice
+//!   with an ideally sharp lens (exact pixel area of the hard pattern).
+//!   Blurring its output with [`gaussian_blur`] is *not* a camera: it keeps
+//!   the aliasing of the sharp edges.
 //!
 //! ## Degradations
 //!
@@ -35,10 +40,12 @@
 #![forbid(unsafe_code)]
 
 mod boards;
+mod lattice;
 mod noise;
 
 pub use boards::{
-    aa_chessboard, area_chessboard, expected_corner_count, rotated_chessboard, synth_chessboard,
+    aa_chessboard, expected_corner_count, rotated_chessboard, synth_chessboard,
     synth_chessboard_soft, synth_chessboard_warped, ORIENT_CORNER, ORIENT_DIM,
 };
+pub use lattice::{area_chessboard, lattice_area_chessboard, optical_chessboard, Lattice};
 pub use noise::{add_gaussian_noise, add_signal_dependent_noise, gaussian_blur};

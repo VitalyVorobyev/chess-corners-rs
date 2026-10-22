@@ -11,10 +11,11 @@
 //! per-phase mean (`z_prec`) and against the truth (`z_total`), and the
 //! constant model-error floor that brings the latter to the former.
 //!
-//! Fixtures are [`area_chessboard`] boards (exact pixel-area rendering, so
-//! the corner sits exactly on the lattice), axis-aligned or sheared to a
-//! 60° axis angle, optionally blurred, then corrupted with white or
-//! signal-dependent Gaussian noise. Seeds are the truth rounded to the
+//! Fixtures are [`optical_chessboard`] boards (Gaussian lens blur, then
+//! exact integration over each pixel, so the corner sits exactly on the
+//! lattice; blur 0 is an ideally sharp lens), axis-aligned or sheared to a
+//! 60° axis angle, then corrupted with white or signal-dependent Gaussian
+//! noise. Seeds are the truth rounded to the
 //! nearest pixel. The CenterOfMass refiner reads the ChESS response of the
 //! same noisy image.
 //!
@@ -36,6 +37,7 @@ use chess_corners_core::{
 };
 use chess_corners_testutil::{
     aa_chessboard, add_gaussian_noise, add_signal_dependent_noise, area_chessboard, gaussian_blur,
+    optical_chessboard, Lattice,
 };
 use serde_json::{json, Value};
 
@@ -51,6 +53,7 @@ const PHASES: usize = 5;
 /// on `PHASES² · (DRAWS − 1)` degrees of freedom; one phase's σ on
 /// `DRAWS − 1` (relative standard error `1/sqrt(2·199) = 5%`).
 const DRAWS: usize = 200;
+/// Lens PSF σ in px (blur before pixel integration).
 const BLURS: [f32; 4] = [0.0, 0.8, 1.5, 2.5];
 const CELLS: [usize; 3] = [5, 8, 12];
 const CONTRASTS: [(u8, u8); 2] = [(40, 200), (90, 150)];
@@ -309,8 +312,8 @@ fn render(fx: Fixture, phase: (usize, usize)) -> (Vec<u8>, (f32, f32)) {
     let truth = truth_of(phase);
     let (dark, bright) = CONTRASTS[fx.contrast];
     let angle = GEOMETRIES[fx.geometry].1.to_radians();
-    let mut img = area_chessboard(SIZE, CELLS[fx.cell], truth, angle, dark, bright);
-    gaussian_blur(&mut img, SIZE, BLURS[fx.blur]);
+    let lattice = Lattice::new(CELLS[fx.cell] as f32, truth).with_axis_angle(angle);
+    let img = optical_chessboard(SIZE, &lattice, BLURS[fx.blur], dark, bright);
     (img, truth)
 }
 
@@ -1046,7 +1049,7 @@ fn to_json(r: &Results, renderer: Vec<Value>) -> Value {
             "phase_order": "index = ky·PHASES + kx",
             "draws": DRAWS,
             "seed": "truth rounded to the nearest pixel",
-            "renderer": "area_chessboard (exact pixel area), then gaussian_blur, then noise; u8 after each",
+            "renderer": "optical_chessboard (Gaussian lens PSF, then exact pixel integration), then noise; u8 after each",
             "noise_variance": "white: σ² + 1/12; signal: a + b·I (+1/12), σ_pred uses the mean over the 5×5 fit patch",
             "bias": "rms_bias = sqrt(mean_phase |phase mean error|² − σ_2d²/n), i.e. with the draw noise removed",
         },

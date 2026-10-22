@@ -25,27 +25,27 @@ new draw of white noise, relative to the true corner (`+`). The cloud
 centre (`×`) is where the refiner lands without noise; its distance
 from `+` is the bias. The spread of the cloud is the precision.
 
-- **Förstner** scatters by 0.06 px per axis but lands 0.25 px from the
+- **Förstner** scatters by 0.06 px per axis but lands 0.26 px from the
   truth on this blurred corner. A covariance built from its scatter (the
-  dotted ellipse) would claim 0.06 px for a corner that is four times
-  further off.
+  dotted ellipse) would claim 0.06 px for a corner that is more than four
+  times further off.
 - **CenterOfMass** has a smaller bias here, but it is still about
   twice its scatter.
 - **SaddlePoint** lands on the truth. Its predicted 1σ and 2σ ellipses
   (zoomed in the last panel) are centred on the true corner and contain
-  close to the expected fractions of the cloud (35% and 82%, against 39%
+  close to the expected fractions of the cloud (38% and 88%, against 39%
   and 86% for a normal distribution).
 
 Bias does not average out over frames or corners: it depends on blur,
 contrast and where the corner sits relative to the pixel grid. Noise-free
-RMS error of each refiner on synthetic 8 px cells aligned with the pixel
-grid:
+RMS error (px) of each refiner on synthetic 8 px cells aligned with the
+pixel grid, by the σ of the lens blur:
 
 | Refiner      | blur σ 0 | 0.8   | 1.5   | 2.5   |
 |--------------|----------|-------|-------|-------|
-| CenterOfMass | 0.085    | 0.065 | 0.061 | 0.065 |
-| Förstner     | 0.056    | 0.111 | 0.276 | 0.442 |
-| SaddlePoint  | 0.000    | 0.004 | 0.004 | 0.003 |
+| CenterOfMass | 0.085    | 0.057 | 0.061 | 0.063 |
+| Förstner     | 0.056    | 0.142 | 0.289 | 0.433 |
+| SaddlePoint  | 0.000    | 0.002 | 0.006 | 0.007 |
 
 At noise σ of 1–2 gray levels the scatter of every refiner is
 0.01–0.08 px, so the bias of CenterOfMass and Förstner is one to eight
@@ -64,9 +64,9 @@ how far the reported `(x, y)` is likely to be from the true corner.
 ![Covariance ellipses across a blur gradient](img/uncertainty_board_ellipses.png)
 
 The ellipses are the predicted 1σ regions, enlarged 150×. The board is
-synthetic, with blur growing from left to right and one noise level.
-For sharp corners they predict about 0.02 px. At blur σ 2.5 px the same
-noise moves the corners about three times further. The ellipses tilt with the
+synthetic, with the lens blur growing from left to right and one noise
+level. Where the blur σ is 0.5 px they predict about 0.02 px. At 2.5 px
+the same noise moves the corners two to three times further. The ellipses tilt with the
 board's axes, because a sheared corner is localised better along some
 directions than others.
 
@@ -187,20 +187,22 @@ sharp cells at low noise.
 
 \\[
 \Sigma = \max\bigl(\sigma_n^2, \tfrac{1}{12}\bigr)\, C + f^2\, I_2,
-\qquad f = 0.002 \text{ px} .
+\qquad f = 0.006 \text{ px} .
 \\]
 
 - **The variance floor of 1/12 gray level²** is the variance of
   rounding to 8 bits. A smoothed or compressed image can measure lower:
   one of the repository's test images reads σ ≈ 0.2. The floor keeps
   such an image from getting an overconfident covariance.
-- **The position floor \\(f\\)** covers the small systematic error
-  the re-centred fit keeps: interpolation, 8-bit rounding of the edge
-  profile. It was chosen to keep the whitened error closest to unit
-  variance on synthetic grid-aligned corners with 8–12 px cells. With
-  no floor, the sharpest corners at the lowest noise read up to 1.27×
-  their predicted variance. At 0.005 px they read 0.63×, which is too
-  conservative. 0.002 px keeps them within about 0.85–1.2.
+- **The position floor \\(f\\)** covers the small error the
+  re-centred fit keeps, which depends on where the corner sits between
+  pixels and on the board's rotation (§8.4.1). It was chosen to keep the
+  whitened error closest to unit variance over synthetic boards with
+  8–12 px cells, lens blur σ 0.5–2.5 px, rotated 0–45° or sheared, at
+  noise σ 1–8. At 0.006 px the extremes are 1.75× the predicted variance
+  (rotated 45°, blur 0.5, noise 1) and 0.61× (grid-aligned, noise 1). At
+  0.002 px the 45° boards read up to 4×; at 0.008 px grid-aligned boards
+  read 0.45×.
 
 ## 8.4 How well it holds
 
@@ -219,36 +221,51 @@ its own residuals.
 
 ![Predicted vs measured error, and whitened errors](img/uncertainty_calibration.png)
 
-Synthetic 200×200 boards with 8 px cells, 40/200 contrast, blur σ 0–2.5 px
-and white noise σ 1–8 gray levels. The noise σ is estimated from each
-image, end to end through the detector. Sheared boards at low noise have
-no edge-free area, so the estimate declines there and those conditions
-carry no covariance.
+Synthetic 200×200 boards with 8 px cells and 40/200 contrast, formed as
+a camera forms them: a Gaussian lens blur of σ 0.5–2.5 px, then
+integration over each pixel, then white noise σ 1–8 gray levels. The
+noise σ is estimated from each image, end to end through the detector.
+Sheared and 45° boards at low noise have no edge-free area, so the
+estimate declines there and those conditions carry no covariance.
 
 - **Boards aligned with the pixel grid** (blue, and the green sheared
-  boards whose first axis is horizontal) sit on the diagonal.
-  \\(\hat\sigma_0^2\\) is between 0.95 and 1.24 on every condition where
-  the detections match the true corners. The whitened errors follow a
-  unit normal (std 1.01).
-- **A board rotated by 8°** (orange) does not. At low noise its corners
-  are up to three times further from the truth than predicted.
+  boards whose first axis is horizontal) sit on the diagonal or slightly
+  above it. \\(\hat\sigma_0^2\\) is between 0.57 and 1.01 on every condition
+  where the detections match the true corners; the low values are at
+  noise σ 1, where the position floor dominates (§8.4.1).
+- **Boards rotated by 8° and 45°** (orange, red) also follow the
+  diagonal: \\(\hat\sigma_0^2\\) between 0.55 and 1.29. Both groups' whitened
+  errors follow a unit normal (std 0.96 and 0.98).
 
 ### 8.4.1 Where it does not hold
 
-- **Boards rotated a few degrees from the pixel grid.** On a sharp
-  board rotated 2–15° (or 45°), the noise-free error of the re-centred
-  fit is 0.01–0.02 px. On a grid-aligned board it is at most 0.004 px,
-  and 0.002–0.004 px at 20–30°. The pattern is the same for 8 and 12 px
-  cells. This bias is larger than the floor, so it shows up when the
-  noise scatter is small. At 8° on a sharp board, \\(\hat\sigma_0^2\\) is
-  about 10, 3.6, 1.6 and 1.1 at noise σ 1, 2, 4 and 8. At blur σ 1.5 it
-  is 2.6, 1.4, 1.1 and 1.05, and at blur 2.5 about 1. In practice: at
-  low noise on sharp images of an arbitrarily rotated board, the
-  covariance can understate the error up to about 3× in σ.
+- **Rotated boards at low noise.** The re-centred fit keeps an error
+  that depends on where the corner sits between pixels. It averages out
+  over many corners but not on any one of them. With a lens blur of σ
+  0.5–1 px it is largest on boards rotated 30–45° from the pixel grid:
+  up to 0.009 px RMS, against about 0.002 px on grid-aligned boards (at
+  blur 2.5 px every rotation keeps 0.005–0.007 px, mostly 8-bit rounding
+  of the shallow edges). Over the boards above with 8–12 px cells,
+  \\(\hat\sigma_0^2\\) reaches 1.75 at noise σ 1, 1.4 at σ 2 and at most
+  1.15 at σ ≥ 4 (45°, blur 0.5).
+- **Ideally sharp optics.** When the lens blurs by less than about
+  0.5 px, the pixels of a sharp oblique edge alias: they no longer fix
+  where the edge lies to better than a few hundredths of a pixel. On
+  boards rotated 2–15° or near 45° the noise-free error is then
+  0.01–0.02 px RMS, and refitting the same pixels differently does not
+  remove it. On a
+  sharp board rotated 8°, \\(\hat\sigma_0^2\\) is about 6, 3, 1.6 and 1.2 at
+  noise σ 1, 2, 4 and 8: the covariance understates the error up to
+  about 2.5× in σ. Blurring an already-captured sharp image does not
+  help, because the aliasing happened when the pixels were formed.
+- **Grid-aligned boards at low noise are conservative.** The position
+  floor that covers rotated boards overstates the error of grid-aligned
+  ones when the noise is lowest: \\(\hat\sigma_0^2\\) is about 0.6 at noise
+  σ 1 and 0.85 at σ 2, so σ is overstated by up to 1.3×.
 - **Small, sheared, blurred cells.** With 5 px cells, a 40–60° shear and
   blur σ ≥ 1.5 px, the window also covers the neighbouring corners. The
   re-centred position can then be worse than the single integer-grid
-  fit (60° shear, blur 2.5: 0.29 vs 0.19 px RMS). The covariance does
+  fit (60° shear, blur 2.5: 0.16 vs 0.13 px RMS). The covariance does
   not see this.
 - **Low signal-to-noise.** When the scatter itself reaches about
   0.3 px, the first-order propagation is no longer accurate: the
@@ -274,8 +291,8 @@ carry no covariance.
   same image remain meaningful relative to each other. This case has
   not been measured.
 
-All figures here come from synthetic boards: straight edges, Gaussian
-blur, additive noise. `tools/render_uncertainty_overlays.py`
+All figures here come from synthetic boards: straight edges, a Gaussian
+lens blur applied before pixel integration, additive noise. `tools/render_uncertainty_overlays.py`
 regenerates them and prints \\(\hat\sigma_0^2\\) per condition.
 
 ## 8.5 Using the covariance
