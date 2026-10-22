@@ -385,3 +385,36 @@ fn noise_estimate_on_test_images() {
         );
     }
 }
+
+#[test]
+#[ignore = "measurement: additivity of the noise estimate on the test images"]
+fn noise_estimate_additivity() {
+    // Adding white noise σₐ to an image adds σₐ² + 1/12 (rounding) to the
+    // noise variance the estimator sees: σ̂²(img + n) − σ̂²(img) should
+    // match it whatever the image's own noise is.
+    println!("image | σ̂(img) | σₐ | σ̂(img + n) | (σ̂² − σ̂₀²) / (σₐ² + 1/12)");
+    for name in ["small", "mid", "large"] {
+        let path = format!("{}/../../testimages/{name}.png", env!("CARGO_MANIFEST_DIR"));
+        let img = image::open(&path).expect("test image").to_luma8();
+        let (w, h) = (img.width() as usize, img.height() as usize);
+        let base = estimate_noise_sigma_u8(img.as_raw(), w, h).map_or(f64::NAN, f64::from);
+        for sigma_a in [1.0f32, 2.0, 4.0] {
+            let mut ratios = Vec::new();
+            let mut sigmas = Vec::new();
+            for seed in 0..3 {
+                let mut noisy = img.as_raw().clone();
+                add_gaussian_noise(&mut noisy, sigma_a, 500 + seed);
+                let s = estimate_noise_sigma_u8(&noisy, w, h).map_or(f64::NAN, f64::from);
+                let added = f64::from(sigma_a * sigma_a) + 1.0 / 12.0;
+                sigmas.push(s);
+                ratios.push((s * s - base * base) / added);
+            }
+            let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+            println!(
+                "{name} | {base:.3} | {sigma_a} | {:.3} | {:.3}",
+                mean(&sigmas),
+                mean(&ratios)
+            );
+        }
+    }
+}

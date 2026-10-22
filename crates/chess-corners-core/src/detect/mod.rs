@@ -83,10 +83,13 @@ impl Corner {
     /// floor, chosen so that whitened errors on synthetic corners with cells
     /// of 8 px or more have unit variance — smaller, sheared or strongly
     /// blurred cells have a larger systematic error. Valid only for the
-    /// image the corner was refined on, and only for
-    /// spatially uncorrelated noise: upscaled, demosaiced or compressed
-    /// images make it underestimate the error. `None` when the corner
-    /// carries no covariance.
+    /// image the corner was refined on. With spatially correlated noise
+    /// (demosaiced, compressed or resampled images) `σₙ` from
+    /// [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8) is the
+    /// noise as that estimator's operator sees it, and the absolute scale of
+    /// the covariance is approximate; covariances of corners in the same
+    /// image remain meaningful relative to each other. `None` when the
+    /// corner carries no covariance.
     #[inline]
     pub fn position_covariance(&self, noise_sigma: f32) -> Option<PositionCovariance> {
         let var = (noise_sigma * noise_sigma).max(MIN_NOISE_VAR);
