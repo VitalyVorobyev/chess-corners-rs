@@ -90,7 +90,8 @@ from a measured bias/precision split, not ahead of it.
 
 | Release | Scope | Tasks |
 |---------|-------|-------|
-| `1.4.0` | Saddle-point position covariance in `RefineResult` at no hot-path cost; bias/precision benchmark per refiner; published noise-row numbers re-measured (the test noise helper produced 1.3× the stated σ before the fix) | `UQ-00..02` |
+| `1.4.0` | Saddle-point position covariance in `RefineResult`; the refiner is also faster | `UQ-00` |
+| next | Bias/precision benchmark per refiner; published noise-row numbers re-measured (the test noise helper produced 1.3× the stated σ before the fix) | `UQ-01..02` |
 | decision gate | Pick the descriptor API shape from the `UQ-01` report: noise-only covariance, or covariance plus a model-error term | — |
 | `1.5.0` | Per-image noise estimate (px² output); covariance for Förstner and CenterOfMass; covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; a book Part on uncertainty | `UQ-03..05` |
 | `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); bias reduction where `UQ-01` shows it dominates | `UQ-06..07` |
