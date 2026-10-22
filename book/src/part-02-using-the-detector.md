@@ -469,8 +469,9 @@ The ML path:
 
 The algorithm and its limits are covered in
 [Part V §5.5](part-05-refiners.md#55-ml-onnx-model). Compared to the
-geometric refiners: `SaddlePoint` has lower error on blurred data while
-ML leads on the heaviest noise row (see the comparison in Part VIII).
+geometric refiners: `SaddlePoint` has lower error on clean and blurred
+data while ML leads on the heaviest noise row (see the comparison in
+Part VIII).
 
 The ML refiner is available on the ChESS strategy only. The Radon
 detector does not use a pluggable refiner.

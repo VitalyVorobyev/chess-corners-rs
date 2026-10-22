@@ -86,10 +86,11 @@ built-in 3-point Gaussian peak fit configured via
 Option<PositionCovariance>` — the first-order position covariance per
 unit image-noise variance (px² per gray-level²), set only by the
 saddle-point refiner on accepted corners. Runtime refiners own their
-scratch buffers and reuse them across seeds; the saddle-point refiner
-fits on the integer grid around the rounded seed, so it inverts its
-normal matrix once at construction and per corner only accumulates
-patch moments.
+scratch buffers and reuse them across seeds. The saddle-point refiner
+refits on a patch re-centred at its previous estimate; since resampling
+and the fit are linear, each refit is a bilinear blend of fits on
+integer-centred patches, so it builds its fit operator once at
+construction and per corner fits four to six integer patches.
 
 ## Feature Flags
 

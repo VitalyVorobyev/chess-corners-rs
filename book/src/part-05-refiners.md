@@ -122,9 +122,16 @@ circular features."*
 Fits a 2D quadratic `f(x, y) = a·x² + b·x·y + c·y² + d·x + e·y + g`
 to a `(2r + 1)²` image patch and returns the saddle point (the
 critical point where `∇f = 0`). The six coefficients come from a
-linear least-squares fit. On accepted corners it also reports the
-first-order position covariance per unit image-noise variance
-(`RefineResult::covariance_per_noise_variance`, px² per gray-level²).
+linear least-squares fit. A quadratic fitted off-centre puts the
+saddle partway back toward the window centre, so the refiner moves the
+window — Newton steps, refitting on the patch resampled bilinearly at
+each position — until the fitted saddle is within 0.001 px of the window
+centre; re-centred, the window is point-symmetric about the corner and
+that pull vanishes. On accepted corners where this
+converges it also reports the first-order covariance of the converged
+position per unit image-noise variance
+(`RefineResult::covariance_per_noise_variance`, px² per gray-level²);
+otherwise it returns the single fit without one.
 
 The determinant of the Hessian is `4·a·c − b²`. A true X‑junction is a
 saddle, so the Hessian should be indefinite (`det < 0`). The refiner
@@ -138,14 +145,14 @@ rejects:
 |------------------|-------------------------------------------------|
 | Input            | Image                                           |
 | Default `radius` | 2 (5×5 patch)                                   |
-| Typical cost     | ~65 ns per corner                               |
-| Strengths        | No gradient required; low error in the blur sweep |
-| Weaknesses       | Parabolic model is approximate on sharp edges   |
+| Typical cost     | ~250 ns per corner                              |
+| Strengths        | Lowest error of the geometric refiners, sharp or blurred |
+| Weaknesses       | On ~5 px cells with strong shear and blur, the window holds neighbouring corners and the re-centred position can be worse than a single fit |
 
-A reasonable default when you do not know in advance whether frames
-will be sharp or blurred. In Part VIII's synthetic blur sweep it stays
-inside the same error band as the other non-Förstner geometric
-refiners.
+The default choice for calibration-grade work: in Part VIII's synthetic
+sweeps it has the lowest mean error of the built-in refiners on every
+clean, blurred and noisy row up to `σ_noise = 8`, and is within 0.003 px
+of (or below) `cv2.cornerSubPix` on the blurred rows.
 
 ## 5.5 ML (ONNX model)
 
@@ -248,8 +255,8 @@ Part VIII benchmark. Noise augmentation is what lets the model take the
 heaviest-noise row (`σ = 12` gray levels), where it posts the lowest
 mean error; and capacity is not the bottleneck — neither a wider CNN
 nor a spatial-softargmax head lowered held-out error. On clean and
-mildly blurred data the geometric refiners still win (`Förstner` for
-clean frames, `SaddlePoint` for any blur), so ML earns its cost only
+mildly blurred data the geometric refiners still win (`SaddlePoint`
+on both), so ML earns its cost only
 when noise dominates.
 
 ### 5.5.4 ONNX export and inference
@@ -273,11 +280,11 @@ The measurement-driven comparison lives in Part VIII. In short:
 
 - Budget matters more than anything else: the structure-tensor
   refiners are orders of magnitude faster than ML per corner.
-- `Förstner` has the lowest mean error on clean frames; `SaddlePoint`
-  is more robust to blur and is a conservative all-round default.
+- `SaddlePoint` has the lowest mean error of the built-in refiners on
+  clean and blurred frames and is the default choice for image-patch refinement.
+- `Förstner` is about 4× cheaper and close on sharp frames, but degrades
+  with blur.
 - ML has the lowest mean error on the heaviest synthetic noise row.
-- SaddlePoint is a good default for image-patch refinement when frames
-  may vary in sharpness.
 
 The ChESS refiner is selected through `ChessConfig.refiner`:
 `DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner())`.

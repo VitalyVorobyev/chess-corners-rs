@@ -8,7 +8,8 @@
 //! saddle-point refiner's `covariance_per_noise_variance`) describes the
 //! second part only. This sweep measures both, per refiner and condition,
 //! and checks the predicted saddle-point σ against the scatter about the
-//! per-phase mean (`z_prec`) and against the truth (`z_total`).
+//! per-phase mean (`z_prec`) and against the truth (`z_total`), and the
+//! constant model-error floor that brings the latter to the former.
 //!
 //! Fixtures are [`area_chessboard`] boards (exact pixel-area rendering, so
 //! the corner sits exactly on the lattice), axis-aligned or sheared to a
@@ -55,6 +56,9 @@ const CELLS: [usize; 3] = [5, 8, 12];
 const CONTRASTS: [(u8, u8); 2] = [(40, 200), (90, 150)];
 /// `(name, angle between the lattice axes in degrees)`.
 const GEOMETRIES: [(&str, f32); 2] = [("axis", 90.0), ("skew60", 60.0)];
+/// Candidate model-error floors `f` (px per axis): σ̂₀² is also evaluated
+/// with `Σ + f²·I` to find the floor that absorbs the residual bias.
+const FLOORS: [f64; 8] = [0.0025, 0.005, 0.0075, 0.01, 0.015, 0.02, 0.03, 0.05];
 /// Variance of the 8-bit rounding applied after every degradation.
 const QUANT_VAR: f64 = 1.0 / 12.0;
 
@@ -172,8 +176,12 @@ struct ZStats {
     chi_prec: f64,
     /// Σ eᵀ Σ⁻¹ e.
     chi_total: f64,
+    /// Σ eᵀ (Σ + f²·I)⁻¹ e per [`FLOORS`] entry.
+    chi_floor: [f64; FLOORS.len()],
     /// Mean predicted radial σ, `sqrt(trace Σ)`.
     sigma_pred: f64,
+    /// Samples with a covariance (refinement converged).
+    n: usize,
 }
 
 struct Sample {
@@ -205,10 +213,16 @@ fn phase_stats(total: usize, samples: &[Sample]) -> PhaseStats {
             st.ss[k] += (s.err[k] - st.bias[k]).powi(2);
         }
     }
-    if samples.iter().all(|s| s.cov.is_some()) {
-        let mut z = ZStats::default();
+    let n_cov = samples.iter().filter(|s| s.cov.is_some()).count();
+    if n_cov > 1 {
+        let mut z = ZStats {
+            n: n_cov,
+            ..Default::default()
+        };
         for s in samples {
-            let [xx, xy, yy] = s.cov.unwrap();
+            let Some([xx, xy, yy]) = s.cov else {
+                continue;
+            };
             let d = [s.err[0] - st.bias[0], s.err[1] - st.bias[1]];
             let det = xx * yy - xy * xy;
             let maha =
@@ -219,7 +233,13 @@ fn phase_stats(total: usize, samples: &[Sample]) -> PhaseStats {
             z.zt2[1] += s.err[1].powi(2) / yy;
             z.chi_prec += maha(d);
             z.chi_total += maha(s.err);
-            z.sigma_pred += (xx + yy).sqrt() / n as f64;
+            for (chi, f) in z.chi_floor.iter_mut().zip(FLOORS) {
+                let (fx, fy) = (xx + f * f, yy + f * f);
+                let e = s.err;
+                *chi += (fy * e[0] * e[0] - 2.0 * xy * e[0] * e[1] + fx * e[1] * e[1])
+                    / (fx * fy - xy * xy);
+            }
+            z.sigma_pred += (xx + yy).sqrt() / n_cov as f64;
         }
         st.z = Some(z);
     }
@@ -358,8 +378,30 @@ struct ZSummary {
     z_total_rms: [f64; 2],
     s0sq_prec: f64,
     s0sq_total: f64,
+    /// σ̂₀² about the truth with `Σ + f²·I`, per [`FLOORS`] entry.
+    s0sq_floor: [f64; FLOORS.len()],
     median_bias_over_pred: f64,
     sigma_pred: f64,
+    /// Fraction of accepted corners with a covariance (converged).
+    converged: f64,
+}
+
+impl ZSummary {
+    /// Smallest [`FLOORS`] entry (0 if none is needed) that brings σ̂₀²
+    /// about the truth within 0.05 of the precision-only σ̂₀² (or of 1, if
+    /// larger): the floor that absorbs the residual bias. `None` beyond the
+    /// grid.
+    fn floor_needed(&self) -> Option<f64> {
+        let target = self.s0sq_prec.max(1.0) + 0.05;
+        if self.s0sq_total <= target {
+            return Some(0.0);
+        }
+        FLOORS
+            .iter()
+            .zip(self.s0sq_floor)
+            .find(|(_, v)| *v <= target)
+            .map(|(f, _)| *f)
+    }
 }
 
 fn summarize(phases: &[&PhaseStats]) -> CellSummary {
@@ -392,10 +434,18 @@ fn summarize(phases: &[&PhaseStats]) -> CellSummary {
     }
     out.sigma_2d = out.sigma[0].hypot(out.sigma[1]);
     // A phase mean over n draws carries σ²/n of noise; remove it from the
-    // mean squared bias.
+    // mean squared bias, with each phase's own σ² (acceptance and scatter
+    // differ by phase at low SNR). A single-draw phase gives no estimate.
     let noise_in_bias = seen
         .iter()
-        .map(|p| out.sigma_2d.powi(2) / p.n_acc as f64)
+        .map(|p| {
+            let n = p.n_acc as f64;
+            if p.n_acc < 2 {
+                0.0
+            } else {
+                (p.ss[0] + p.ss[1]) / (n - 1.0) / n
+            }
+        })
         .sum::<f64>()
         / seen.len() as f64;
     out.rms_bias = (mean_b2 - noise_in_bias).max(0.0).sqrt();
@@ -405,8 +455,8 @@ fn summarize(phases: &[&PhaseStats]) -> CellSummary {
         .filter_map(|p| p.z.as_ref().map(|z| (**p, z)))
         .collect();
     if !zs.is_empty() {
-        let zdof: f64 = zs.iter().map(|(p, _)| (p.n_acc - 1) as f64).sum();
-        let zn: f64 = zs.iter().map(|(p, _)| p.n_acc as f64).sum();
+        let zdof: f64 = zs.iter().map(|(_, z)| (z.n - 1) as f64).sum();
+        let zn: f64 = zs.iter().map(|(_, z)| z.n as f64).sum();
         let mut ratios: Vec<f64> = zs
             .iter()
             .map(|(p, z)| b2(p).sqrt() / z.sigma_pred)
@@ -424,12 +474,14 @@ fn summarize(phases: &[&PhaseStats]) -> CellSummary {
             ],
             s0sq_prec: sum(&|z| z.chi_prec) / (2.0 * zdof),
             s0sq_total: sum(&|z| z.chi_total) / (2.0 * zn),
+            s0sq_floor: std::array::from_fn(|i| sum(&|z| z.chi_floor[i]) / (2.0 * zn)),
             median_bias_over_pred: ratios[ratios.len() / 2],
             sigma_pred: zs
                 .iter()
-                .map(|(p, z)| z.sigma_pred * p.n_acc as f64)
+                .map(|(_, z)| z.sigma_pred * z.n as f64)
                 .sum::<f64>()
                 / zn,
+            converged: zn / seen.iter().map(|p| p.n_acc as f64).sum::<f64>(),
         });
     }
     out
@@ -698,17 +750,19 @@ fn print_tables(r: &Results, renderer: &[Value]) {
     );
     let _ = writeln!(
         s,
-        "| noise | z_prec std min | median | max | σ̂₀² prec min | max | σ_pred/σ_emp min | max | accept min |"
+        "| noise | z_prec std min | median | max | σ̂₀² prec min | max | σ_pred/σ_emp min | max | accept min | converged min |"
     );
-    let _ = writeln!(s, "|---|---|---|---|---|---|---|---|---|");
+    let _ = writeln!(s, "|---|---|---|---|---|---|---|---|---|---|");
     for (n, noise) in NOISES.iter().enumerate().skip(1) {
         let mut zs = Vec::new();
         let mut s0 = Vec::new();
         let mut ratio = Vec::new();
         let mut acc = 1.0f64;
+        let mut conv = 1.0f64;
         for fx in 0..r.fixtures.len() {
             let c = r.cell(fx, n, SADDLE);
             let z = c.z.as_ref().unwrap();
+            conv = conv.min(z.converged);
             zs.extend(z.z_prec_std);
             s0.push(z.s0sq_prec);
             ratio.push(z.sigma_pred / c.sigma_2d);
@@ -719,7 +773,7 @@ fn print_tables(r: &Results, renderer: &[Value]) {
         }
         let _ = writeln!(
             s,
-            "| {} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {acc:.3} |",
+            "| {} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {acc:.3} | {conv:.3} |",
             noise.label(),
             zs[0],
             zs[zs.len() / 2],
@@ -728,6 +782,51 @@ fn print_tables(r: &Results, renderer: &[Value]) {
             s0[s0.len() - 1],
             ratio[0],
             ratio[ratio.len() - 1],
+        );
+    }
+
+    // 3c. SaddlePoint model-error floor.
+    let _ = writeln!(
+        s,
+        "\n### SaddlePoint model-error floor f (px per axis) for σ̂₀²(Σ + f²I) ≤ max(1, σ̂₀² prec) + 0.05\n"
+    );
+    let _ = writeln!(
+        s,
+        "| noise | max, σ_emp < 0.3 px | median, σ_emp < 0.3 px | max, all | worst fixture (σ_emp < 0.3 px) |"
+    );
+    let _ = writeln!(s, "|---|---|---|---|---|");
+    let floor = |f: Option<f64>| f.map_or(">0.05".to_string(), |f| format!("{f}"));
+    for (n, noise) in NOISES.iter().enumerate().skip(1) {
+        let mut good = Vec::new();
+        let mut all = Vec::new();
+        for (fx, f) in r.fixtures.iter().enumerate() {
+            let c = r.cell(fx, n, SADDLE);
+            let need =
+                c.z.as_ref()
+                    .unwrap()
+                    .floor_needed()
+                    .unwrap_or(f64::INFINITY);
+            all.push(need);
+            if c.sigma_2d < 0.3 {
+                good.push((need, *f));
+            }
+        }
+        good.sort_by(|a, b| a.0.total_cmp(&b.0));
+        all.sort_by(f64::total_cmp);
+        let fin = |v: f64| floor(v.is_finite().then_some(v));
+        let (worst, wf) = good[good.len() - 1];
+        let _ = writeln!(
+            s,
+            "| {} | {} | {} | {} | {} cell {} {}/{} blur {} |",
+            noise.label(),
+            fin(worst),
+            fin(good[good.len() / 2].0),
+            fin(all[all.len() - 1]),
+            GEOMETRIES[wf.geometry].0,
+            CELLS[wf.cell],
+            CONTRASTS[wf.contrast].0,
+            CONTRASTS[wf.contrast].1,
+            BLURS[wf.blur],
         );
     }
 
@@ -865,6 +964,12 @@ fn to_json(r: &Results, renderer: Vec<Value>) -> Value {
                         "s0sq_prec": z.s0sq_prec,
                         "s0sq_total": z.s0sq_total,
                         "median_bias_over_pred": z.median_bias_over_pred,
+                        "s0sq_total_with_floor": FLOORS.iter().zip(z.s0sq_floor).map(|(f, v)| json!({
+                            "floor": f,
+                            "s0sq": v,
+                        })).collect::<Vec<_>>(),
+                        "floor_needed": z.floor_needed(),
+                        "converged": z.converged,
                     })),
                     "phase_bias": phase_bias,
                     "at_seed_rate": c.at_seed,
