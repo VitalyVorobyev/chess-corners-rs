@@ -6,6 +6,8 @@
 //! workspace `chess-corners-testutil` crate; only the real-image loader —
 //! which needs the `image` dev-dependency — lives here.
 
+// Each bench binary compiles this module separately and uses only a subset
+// of the helpers, so unused-item warnings are expected per binary.
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};

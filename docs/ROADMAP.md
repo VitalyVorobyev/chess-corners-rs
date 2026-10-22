@@ -1,7 +1,8 @@
 # Roadmap
 
-Milestones toward `v1.0.0`. Task IDs link to [`BACKLOG.md`](BACKLOG.md);
-design detail lives in the linked `design/` docs.
+The completed path to `v1.0.0` (M1–M6) and the post-1.0 program. Task IDs
+link to [`BACKLOG.md`](BACKLOG.md); design detail lives in the linked
+`design/` docs.
 
 **Sequencing:** `M1 → M2 → M3 (API surface) → M4 site → M5 C++/vcpkg → M6 hardening → tag 1.0.0`.
 M3 froze the API surface; M6 re-opened it for a final coherence/tech-debt pass
@@ -16,7 +17,9 @@ package `@vitavision/chess-corners` never got its `wasm-v1.0.0` tag and was
 stranded at `0.11.2` (closed by `1.1.0`, `DEBT-11`), and the vcpkg port SHA512
 was a placeholder (`CPP-05`). `1.1.0`, `1.2.0` (facade ROI detection) and
 `1.3.0` (detector-config JSON Schema + WASM JSON config path) have since
-shipped on every channel — crates.io, PyPI and npm are at `1.3.0`
+shipped on every channel, followed by `1.3.1` (maintenance) and `1.4.0`
+(saddle-point position covariance, `UQ-00`), the current version on crates.io,
+PyPI and npm
 (`chess-corners-ml` stays at `0.13.0`). The only open release residual is
 `CPP-05`: the vcpkg port still targets `1.1.0` and has never been
 install-verified.
@@ -51,9 +54,11 @@ checked anything.
 
 **`1.2.0` and `1.3.0` are released on every channel** — `v1.2.0`,
 `wasm-v1.2.0`, `v1.3.0` and `wasm-v1.3.0` are tagged; crates.io, PyPI and npm
-`latest` are at `1.3.0` (`chess-corners-ml` unchanged at `0.13.0`). See
-[`changelog/1.2.0.md`](changelog/1.2.0.md) and
-[`changelog/1.3.0.md`](changelog/1.3.0.md).
+`latest` are at `1.4.0` (`chess-corners-ml` unchanged at `0.13.0`). See
+[`changelog/1.2.0.md`](changelog/1.2.0.md),
+[`changelog/1.3.0.md`](changelog/1.3.0.md),
+[`changelog/1.3.1.md`](changelog/1.3.1.md) and
+[`changelog/1.4.0.md`](changelog/1.4.0.md).
 
 One residual stays open: **`CPP-05`**. The vcpkg port targets `1.1.0` with
 the real source-tarball SHA512, so it is installable, but it was not bumped
@@ -61,6 +66,49 @@ for `1.2.0`/`1.3.0` and has never been exercised by a real `vcpkg install` on
 any platform. Cross-platform
 verification and the registry PR are tracked in
 [`ports/README.md`](../ports/README.md).
+
+## Post-1.0 program: accuracy-aware detection (`UQ-*`)
+
+**Goal.** Every corner reports how far it can be trusted, and that report is
+proven against truth. Downstream calibration (calibration-rs `UQ-FEATURE-COV`)
+whitens its reprojection residuals with a per-corner 2×2 covariance and
+expects the a-posteriori variance factor σ̂₀ ≈ 1 when the detector's model
+holds.
+
+**Error has two parts, and the program treats them separately.**
+- *Precision* — scatter caused by image noise. A first-order covariance
+  describes it; the saddle-point refiner reports one (per unit noise
+  variance).
+- *Bias* — systematic model error: a quadratic fitted to a blurred step
+  corner, a centroid on an asymmetric patch. A noise covariance says nothing
+  about it. SaddlePoint's clean-image mean error is ~0.11 px with **zero
+  noise** (`reference/refiner-comparison.md`), so at typical noise levels bias
+  may dominate. If it does, a noise-only covariance would make calibration
+  overconfident, which is worse than uniform weighting.
+
+**Evidence before API.** The public per-corner uncertainty API is designed
+from a measured bias/precision split, not ahead of it.
+
+| Release | Scope | Tasks |
+|---------|-------|-------|
+| `1.4.0` | Saddle-point position covariance in `RefineResult`; the refiner is also faster | `UQ-00` |
+| next | Bias/precision benchmark per refiner; published noise-row numbers re-measured (the test noise helper produced 1.3× the stated σ before the fix) | `UQ-01..02` |
+| decision gate | Pick the descriptor API shape from the `UQ-01` report: noise-only covariance, or covariance plus a model-error term | — |
+| `1.5.0` | Per-image noise estimate (px² output); covariance for Förstner and CenterOfMass; covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; a book Part on uncertainty | `UQ-03..05` |
+| `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); bias reduction where `UQ-01` shows it dominates | `UQ-06..07` |
+| ongoing | Realistic ground truth (calib-synth / etendue renders; end-to-end σ̂₀ check in calibration-rs) | `UQ-08`, `ML-01`, `ML-02` |
+
+**Known gaps this program has to close.**
+- All accuracy evidence is synthetic; `testimages/` carry no ground truth.
+- Validation so far uses i.i.d. Gaussian noise. Real sensors add
+  signal-dependent (shot) noise and spatially correlated noise (demosaicing,
+  compression).
+- The default refiner (CenterOfMass) reports no covariance.
+- Orientation σ mixes methods: RingFit scales a Gauss-Newton covariance by
+  the fit residual plus a calibration factor; DiskFit is a heuristic that is
+  overcautious on clean corners.
+- The detector drops refine score, status and covariance before
+  `CornerDescriptor` (`detect/chess/detect.rs`, `refine_corners_on_image`).
 
 ## Continuous
 
@@ -73,6 +121,9 @@ verification and the registry PR are tracked in
 ## Out of scope (for now)
 
 Anything requiring a post-1.0 breaking change; new detector algorithms.
+Additive accuracy work (`UQ-*`: new optional fields on `#[non_exhaustive]`
+types, new refiner outputs) is in scope. The C ABI is not semver-checked, so a
+`cc_corner` layout change bumps `cc_abi_version` instead.
 Stable-Rust SIMD was evaluated (`PERF-11`) and rejected: no stable backend
 matches the nightly `std::simd` path without regressing aarch64 below scalar or
 breaking the bit-exact pyramid, so `simd` stays nightly-only as an optional

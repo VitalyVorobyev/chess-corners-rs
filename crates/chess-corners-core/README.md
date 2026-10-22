@@ -21,8 +21,9 @@ The crate exposes three orthogonal components via its crate root:
   `OrientationMethod`).
 
 Rich corner descriptors carry both local grid axes with per-axis 1σ
-angular uncertainty (from the Gauss–Newton covariance
-`σ̂² · (JᵀJ)⁻¹` with `σ̂² = SSR / 12`), the fitted bright/dark
+angular uncertainty (for the default `RingFit` method, the
+Gauss–Newton covariance `σ̂² · (JᵀJ)⁻¹` with `σ̂² = SSR / 12`, scaled by an
+empirical calibration factor), the fitted bright/dark
 amplitude, and the RMS fit residual.
 
 Feature flags:

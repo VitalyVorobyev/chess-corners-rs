@@ -168,6 +168,8 @@ macro_rules! py_enum {
         }
 
         impl From<$rs> for $name {
+            // The wildcard arm is unreachable while the source enum is
+            // exhaustive; it keeps the macro valid for `#[non_exhaustive]` ones.
             #[allow(unreachable_patterns)]
             fn from(v: $rs) -> Self {
                 match v {
@@ -183,6 +185,8 @@ macro_rules! py_enum {
                 Self::__first()
             }
             fn __first() -> Self {
+                // Returns the first listed variant; the trailing `return`s
+                // after the first are intentionally unreachable.
                 #[allow(unreachable_code, clippy::needless_return)]
                 {
                     $( return $name::$variant; )+

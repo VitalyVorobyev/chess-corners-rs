@@ -54,7 +54,12 @@ pub struct AxisEstimate {
     ///
     /// See [`CornerDescriptor`] for the joint polarity convention.
     pub angle: f32,
-    /// 1σ angular uncertainty (radians), from the fit's covariance.
+    /// 1σ angular uncertainty estimate (radians).
+    ///
+    /// How it is derived depends on the orientation method. `RingFit`
+    /// scales the Gauss-Newton covariance of the fit by the residual
+    /// variance and an empirical calibration factor; `DiskFit` reports a
+    /// residual-based estimate, never below a method-specific floor.
     pub sigma: f32,
 }
 

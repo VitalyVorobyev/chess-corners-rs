@@ -59,7 +59,7 @@ dependencies.
 
 ```toml
 [dependencies]
-chess-corners = "1.3"
+chess-corners = "1.4"
 image = "0.25"
 ```
 

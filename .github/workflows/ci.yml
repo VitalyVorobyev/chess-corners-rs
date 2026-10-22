@@ -62,6 +62,12 @@ jobs:
       - name: test (default features)
         run: cargo test --workspace
 
+      - name: test (all features)
+        # Covers feature-gated code the other steps skip (e.g. `radon-sat-u32`);
+        # `--all-features` enables nightly-only `simd`.
+        if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'nightly'
+        run: cargo test --workspace --all-features
+
       - name: test (tracing feature)
         if: matrix.toolchain == 'stable'
         run: cargo test --workspace --features tracing
@@ -93,6 +99,40 @@ jobs:
         run: |
           cargo test -p chess-corners --lib --no-default-features --features simd
           cargo test -p chess-corners --lib --no-default-features --features "simd,rayon"
+
+  docs:
+    name: Docs build (rustdoc + mdBook)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+
+      - name: Select nightly Rust toolchain
+        run: rustup override set nightly
+
+      - name: Install mdBook
+        uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: false
+          cache-on-failure: true
+
+      - name: cargo doc (warnings are errors)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --workspace --no-deps --all-features
+
+      - name: mdbook build
+        run: mdbook build book
 
   msrv:
     name: MSRV check (Rust 1.91)
@@ -171,7 +211,9 @@ jobs:
           cache-on-failure: true
 
       - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
 
       - name: Build WASM package
         run: wasm-pack build crates/chess-corners-wasm --target web --release
