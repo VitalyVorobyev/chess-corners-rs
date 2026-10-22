@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CornerDescriptor::position_covariance`: the 2×2 covariance of each
   corner's position in px², for weighting corners in a calibration. It is
   the scatter due to white pixel noise (variance at least 1/12 gray level²,
-  the 8-bit rounding) plus a 0.002 px per-axis model-error floor. Reported for the `SaddlePoint` refiner; `None` for the
+  the 8-bit rounding) plus a small model-error floor. Reported for the `SaddlePoint` refiner; `None` for the
   other refiners, the Radon detector, and upscaled input. Python
   `Detections.position_covariance` (`(N, 2, 2)`, `NaN` rows where absent),
   WASM `ChessDetector.positionCovariance()` (stride 3), C `cc_corner`

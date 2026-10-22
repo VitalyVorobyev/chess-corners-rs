@@ -186,8 +186,8 @@ pub struct CornerDescriptor {
     pub axes: Option<[AxisEstimate; 2]>,
 
     /// Covariance of the position `(x, y)` in px² of this frame: the
-    /// first-order scatter due to white pixel noise plus a model-error floor
-    /// of 0.002 px per axis (see [`Corner::position_covariance`]).
+    /// first-order scatter due to white pixel noise plus a small model-error
+    /// floor ([`Corner::position_covariance`] gives the model).
     ///
     /// `None` unless the corner was refined by the saddle-point refiner, its
     /// re-centred refinement converged, the image noise level is known

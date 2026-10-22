@@ -414,7 +414,8 @@
       "type": [
         "number",
         "null"
-      ]
+      ],
+      "x-unit": "gray level"
     },
     "orientation_method": {
       "anyOf": [

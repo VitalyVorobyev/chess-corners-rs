@@ -177,6 +177,7 @@ pub struct DetectorConfig {
     /// No covariance is reported when [`upscale`](Self::upscale) is active:
     /// interpolation correlates the noise of neighbouring pixels.
     #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "gray level")))]
     pub noise_sigma: Option<f32>,
 }
 
