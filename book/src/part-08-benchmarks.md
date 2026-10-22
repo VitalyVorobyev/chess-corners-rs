@@ -103,11 +103,12 @@ Log-y axis, same shaded band as §7.3.
 
 ![Accuracy vs additive noise σ](img/bench/accuracy_vs_noise.png)
 
-This is the regime where the ML refiner has the lowest mean error in
-the plot. At `σ_noise ≥ 8` gray levels, the ML (ONNX) model is ahead of
+Mean error grows with noise for every geometric refiner, and the ML
+(ONNX) curve is nearly flat. `CenterOfMass` has the lowest mean error up
+to `σ_noise = 8` gray levels; at `σ_noise = 12` the ML model is ahead of
 the hand-coded methods on this synthetic fixture. The model was trained
 with noise augmentation over `σ ∈ [0, 10]`; that is the strongest
-supported explanation for the result here. Validate this separately on
+supported explanation for the flat curve. Validate this separately on
 real low-light frames before relying on it as a general rule.
 
 ## 7.5 Accuracy vs cell size
@@ -136,7 +137,7 @@ those three.
 ## 7.6 Throughput vs accuracy
 
 Log-log axes. Two orders of magnitude separate the fastest refiner
-(CenterOfMass at ~20 ns/corner) from ML inference (~250 µs/corner at
+(CenterOfMass at ~20 ns/corner) from ML inference (~150 µs/corner at
 batch = 1).
 
 ![Throughput vs accuracy](img/bench/throughput_vs_accuracy.png)
@@ -148,8 +149,8 @@ The Pareto frontier, fast-to-slow:
 | `CenterOfMass`      | ~20 ns        | 0.08 px               | Unmatched throughput; fails at cell ≤ 5 (see §7.5).                   |
 | `Förstner`          | ~60 ns        | 0.06 px               | Lowest clean-data mean error; degrades with blur.                     |
 | `SaddlePoint`       | ~65 ns        | 0.11 px               | Stable across conditions; best geometric result on the blur row.      |
-| `cv2.cornerSubPix`  | ~2.7 µs       | 0.05 px               | OpenCV's iterative gradient refiner.                                  |
-| `ML (ONNX)`         | ~250 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row in this fixture.               |
+| `cv2.cornerSubPix`  | ~2.7 µs       | 0.07 px               | OpenCV's iterative gradient refiner.                                  |
+| `ML (ONNX)`         | ~150 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row (`σ_noise = 12`).             |
 
 A measurement loop that includes fixture construction in the timed
 region reports ~300 µs for `cv2.cornerSubPix`; the refinement-only
@@ -178,7 +179,7 @@ Observations:
 
 - Refinement dominates: the coarse detect stage takes 0.08–0.75 ms
   across these sizes; merge is a negligible fraction.
-- Picking ML at batch = 1 adds ~30 ms per 100 corners; the geometric
+- Picking ML at batch = 1 adds ~15 ms per 100 corners; the geometric
   refiners (SaddlePoint, Förstner) add under 1 µs per corner.
 
 **Feature flag guidance:**
