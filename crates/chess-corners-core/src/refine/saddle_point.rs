@@ -164,7 +164,8 @@ impl PatchSaddle {
 impl SaddlePointRefiner {
     /// Fit the quadratic surface to the `(2·radius+1)²` patch given by
     /// `sample(dx, dy)` (offsets from the patch centre) and locate its
-    /// saddle. `Err(det_h)` when the surface is not a clear saddle.
+    /// saddle. `Err(det_h)` when the surface is not a clear saddle or its
+    /// stationary point is not finite.
     #[inline]
     fn fit_patch(
         &self,
@@ -205,6 +206,11 @@ impl SaddlePointRefiner {
         let inv_det = 1.0 / det_h;
         let ux = -(2.0 * c * d - b * e) * inv_det;
         let uy = (b * d - 2.0 * a * e) * inv_det;
+        // det_h can be exactly 0 when both thresholds are 0; a non-finite u
+        // would pass the offset check, since NaN comparisons are false.
+        if !(ux.is_finite() && uy.is_finite()) {
+            return Err(det_h);
+        }
         Ok(PatchSaddle {
             u: [ux, uy],
             quad: [a, b, c],
@@ -506,6 +512,28 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// With both determinant thresholds at zero a flat patch has
+    /// `det(H) = 0` exactly; the refiner must not accept a non-finite point.
+    #[test]
+    fn zero_thresholds_never_accept_non_finite_points() {
+        let flat = vec![128u8; SIZE * SIZE];
+        let view = ImageView::from_u8_slice(SIZE, SIZE, &flat).unwrap();
+        let cfg = SaddlePointConfig {
+            det_margin: 0.0,
+            min_abs_det: 0.0,
+            ..SaddlePointConfig::default()
+        };
+        let res = SaddlePointRefiner::new(cfg).refine(
+            [10.0, 10.0],
+            RefineContext {
+                image: Some(view),
+                response: None,
+            },
+        );
+        assert_eq!(res.status, RefineStatus::IllConditioned);
+        assert_eq!([res.x, res.y], [10.0, 10.0]);
     }
 
     #[test]
