@@ -64,7 +64,7 @@ A complete, buildable version of this example (self-contained, no
 image-decode dependency) lives at
 [`examples/cpp/detect.cpp`](examples/cpp/detect.cpp).
 
-See [book Part IX: C++ bindings](../../book/src/part-09-cpp-bindings.md)
+See [book Part X: C++ bindings](../../book/src/part-10-cpp-bindings.md)
 for the full guide — ownership rules, presets, error handling, and the
 ABI-version safety check.
 

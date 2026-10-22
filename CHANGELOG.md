@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Corner::covariance_per_noise_variance` and `Corner::position_covariance`
   (`chess-corners-core`): the refiner's covariance carried through
   detection, and its px² form for a given noise level.
+- Book Part VIII, "Uncertainty": what the position covariance describes,
+  how it is computed, where it matches the measured error and where it
+  does not, and how to weight a least-squares fit with it.
 
 ### Changed
 
@@ -35,11 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   estimate until the fitted saddle sits at the window centre. A single
   fit on the pixel grid is pulled toward the seed pixel; refined
   positions now move toward the true corner (noise-free RMS error on
-  synthetic corners 0.12 px → under 0.005 px when sharp, 0.044 →
-  0.004 px at blur σ 1.5). Which corners are accepted is unchanged. A
+  synthetic grid-aligned corners 0.12 px → under 0.005 px when sharp,
+  0.044 → 0.004 px at blur σ 1.5). Which corners are accepted is unchanged. A
   corner costs about 0.2 µs. `covariance_per_noise_variance` describes
   the converged position, and on synthetic corners its predicted scatter
-  matches the measured error about the true corner; when re-centring
+  matches the measured error about the true corner on boards aligned
+  with the pixel grid. On sharp boards rotated a few degrees from the
+  grid, 0.01–0.02 px of systematic error remains, which the covariance
+  does not include. When re-centring
   does not converge, the refiner returns the single fit with no
   covariance. On cells of about 5 px with strong shear and blur the
   re-centred position can be less accurate than the single fit.

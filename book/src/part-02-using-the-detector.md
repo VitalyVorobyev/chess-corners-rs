@@ -21,7 +21,7 @@ active strategy variant.
 | `upscale`             | `UpscaleConfig::Disabled` or `UpscaleConfig::Fixed(factor)` (`factor ∈ {2, 3, 4}`). Pre-pipeline bilinear upscaling for low-resolution inputs.    |
 | `orientation_method`  | `OrientationMethod::RingFit` (default) or `DiskFit`. Drives the two-axis descriptor fit on both detectors; `without_orientation()` skips the fit and leaves each descriptor's `axes` as `None`. |
 | `merge_radius`        | Duplicate-suppression distance (base-image pixels) for the final cross-scale merge step.                                                          |
-| `noise_sigma`         | `None` (estimate per image, default) or the image's pixel-noise σ in gray levels; turns the saddle-point refiner's covariance into each descriptor's `position_covariance` in px². |
+| `noise_sigma`         | `None` (estimate per image, default) or the image's pixel-noise σ in gray levels; turns the saddle-point refiner's covariance into each descriptor's `position_covariance` in px² ([Part VIII](part-08-uncertainty.md)). |
 
 Inside `DetectionParams` (set via `DetectorConfig.detection`):
 
@@ -475,7 +475,7 @@ The algorithm and its limits are covered in
 [Part V §5.5](part-05-refiners.md#55-ml-onnx-model). Compared to the
 geometric refiners: `SaddlePoint` has lower error on clean and blurred
 data while ML leads on the heaviest noise row (see the comparison in
-Part VIII).
+Part IX).
 
 The ML refiner is available on the ChESS strategy only. The Radon
 detector does not use a pluggable refiner.

@@ -49,7 +49,7 @@ subpixel refiners brings the coordinates under a pixel:
 ONNX-backed `ML` refiner. Each is selected through the active
 strategy's `refiner` field. The refiners are described in
 [Part V](part-05-refiners.md) and benchmarked in
-[Part VIII](part-08-benchmarks.md).
+[Part IX](part-09-benchmarks.md).
 
 The same `DetectorConfig` drives a Rust API, a Python package, a
 browser WebAssembly package, and a CLI. They call the same Rust
@@ -128,6 +128,7 @@ facade. Fields:
 | `x`, `y`        | `f32`                       | Subpixel position in input image pixels.                                |
 | `response`      | `f32`                       | Raw detector response at the peak. Scale is detector-specific.          |
 | `axes`          | `Option<[AxisEstimate; 2]>` | The two local grid axis directions, each with a 1σ angular uncertainty — or `None` when the orientation fit is disabled. |
+| `position_covariance` | `Option<PositionCovariance>` | 2×2 covariance of `(x, y)` in px² — or `None`; only the `SaddlePoint` refiner reports one ([Part VIII](part-08-uncertainty.md)). |
 
 The two axes are **not** assumed orthogonal — projective warp or
 lens distortion tilts the sectors independently, and the fit
@@ -151,10 +152,12 @@ positions you use.
 - To understand the ChESS response: [Part III](part-03-chess-detector.md).
 - To understand the Radon response: [Part IV](part-04-radon-detector.md).
 - To pick a refiner: [Part V](part-05-refiners.md) for algorithms,
-  [Part VIII](part-08-benchmarks.md) for measurements.
+  [Part IX](part-09-benchmarks.md) for measurements.
 - Orientation methods (`RingFit` / `DiskFit`): [Part VI](part-06-orientation-methods.md).
 - Multiscale pipeline and pyramid tuning: [Part VII](part-07-multiscale-and-pyramids.md).
-- To contribute: [Part X](part-10-contributing.md).
+- Per-corner position uncertainty: [Part VIII](part-08-uncertainty.md).
+- From C or C++: [Part X](part-10-cpp-bindings.md).
+- To contribute: [Part XI](part-11-contributing.md).
 
 Rust API documentation builds alongside this book and is published
 at the same site:

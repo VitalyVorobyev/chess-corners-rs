@@ -72,7 +72,7 @@ least 60% of the expected interior grid intersections. On a clean
 high-contrast fixture, both paths must recover most corners.
 
 For measured wall time and broader synthetic sweeps, see
-[Part VIII of the book](../../book/src/part-08-benchmarks.md).
+[Part IX of the book](../../book/src/part-09-benchmarks.md).
 
 ## Configuration
 

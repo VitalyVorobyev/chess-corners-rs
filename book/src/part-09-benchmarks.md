@@ -1,4 +1,4 @@
-# Part VIII: Benchmarks and performance
+# Part IX: Benchmarks and performance
 
 This chapter measures what the library does on controlled synthetic
 fixtures and on real calibration frames. It covers the four refiners
@@ -12,7 +12,7 @@ build of the current tree. Hardware changes absolute timings. Treat
 the relative ordering as a property of these fixtures and this
 implementation, not as a promise for every camera dataset.
 
-## 7.1 The benchmark fixture
+## 9.1 The benchmark fixture
 
 Every accuracy plot in this chapter uses one synthetic fixture, kept
 identical between `crates/chess-corners/examples/bench_sweep.rs` (Rust
@@ -42,7 +42,7 @@ offsets cover one full cell period, so each refiner sees the same
 range of phase offsets within a cell. That is the only source of
 within-condition variability on clean data — `σ_noise = 0` means the
 36 error values for a refiner at a given `(cell, blur)` setting are
-fully deterministic. This matters for the CDF plot in §7.2.
+fully deterministic. This matters for the CDF plot in §9.2.
 
 This rendering mode is what we call "hard cells" elsewhere in this
 book: sharp ink/paper step edges, softened by a Gaussian PSF, sampled
@@ -54,10 +54,10 @@ resemble sensor output.
 
 ![Hard cells vs tanh saddle](img/bench/synth_modes.png)
 
-We use hard cells as the primary fixture. Part V §5.6.3 discusses
+We use hard cells as the primary fixture. [Part V §5.5.3](part-05-refiners.md#553-designing-the-training-distribution) discusses
 what happens when an ML refiner is trained on `tanh` data only.
 
-## 7.2 Accuracy on clean cells
+## 9.2 Accuracy on clean cells
 
 The figure below is the empirical CDF of Euclidean refinement errors
 on the clean fixture (cell = 8 px, no blur, no noise). Each curve has
@@ -79,7 +79,7 @@ Reading the CDF:
 - **CenterOfMass** and **ML (ONNX)** land around 0.08–0.09 px mean /
   0.12–0.15 px `p95`.
 
-## 7.3 Accuracy vs blur
+## 9.3 Accuracy vs blur
 
 Log-y axis. The shaded band at 0.05–0.10 px marks the error range
 where a refiner is usable without per-scene tuning.
@@ -100,9 +100,9 @@ where a refiner is usable without per-scene tuning.
 The Radon detector is not shown on this plot because it is a detector,
 not a refiner; detector-level recall and precision are measured separately.
 
-## 7.4 Accuracy vs additive noise
+## 9.4 Accuracy vs additive noise
 
-Log-y axis, same shaded band as §7.3.
+Log-y axis, same shaded band as §9.3.
 
 ![Accuracy vs additive noise σ](img/bench/accuracy_vs_noise.png)
 
@@ -116,7 +116,7 @@ with noise augmentation over `σ ∈ [0, 10]`; that is the strongest
 supported explanation for the flat curve. Validate this separately on
 real low-light frames before relying on it as a general rule.
 
-## 7.5 Accuracy vs cell size
+## 9.5 Accuracy vs cell size
 
 Largest operational plot. Two refiners break on small cells:
 
@@ -139,7 +139,7 @@ neighborhood and are cell-size-agnostic down to 4 px.
 For dense targets (ChArUco, compact calibration boards) pick from
 those three.
 
-## 7.6 Throughput vs accuracy
+## 9.6 Throughput vs accuracy
 
 Log-log axes. Two orders of magnitude separate the fastest refiner
 (CenterOfMass at ~16 ns/corner) from ML inference (~150 µs/corner at
@@ -151,7 +151,7 @@ The Pareto frontier, fast-to-slow:
 
 | Refiner             | Time / corner | Clean-data mean error | Notes                                                                 |
 |---------------------|---------------|-----------------------|-----------------------------------------------------------------------|
-| `CenterOfMass`      | ~16 ns        | 0.08 px               | Unmatched throughput; fails at cell ≤ 5 (see §7.5).                   |
+| `CenterOfMass`      | ~16 ns        | 0.08 px               | Unmatched throughput; fails at cell ≤ 5 (see §9.5).                   |
 | `Förstner`          | ~60 ns        | 0.06 px               | Degrades with blur.                                                   |
 | `SaddlePoint`       | ~180 ns       | 0.045 px              | Lowest mean error among the built-in refiners on every row up to `σ_noise = 8`. |
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.07 px               | OpenCV's iterative gradient refiner.                                  |
@@ -163,7 +163,7 @@ value (~2.7 µs) is what the table above quotes. See
 `tools/book/opencv_subpix_sweep.py` for the exact measurement
 boundaries.
 
-## 7.7 Whole-pipeline throughput
+## 9.7 Whole-pipeline throughput
 
 The per-refiner timings above are the refinement step alone. End-to-end
 detector-plus-refiner wall times on three test images, release build,
@@ -197,7 +197,7 @@ Observations:
   you specifically want to compare against the full-resolution detector
   path.
 
-### 7.7.1 Whole-image Radon detector
+### 9.7.1 Whole-image Radon detector
 
 The Duda-Frese Radon path (`DetectorConfig::radon()`) is an alternative
 detector for frames where ChESS's 16-sample ring does not produce enough
@@ -272,12 +272,12 @@ recall, precision, and p95 subpixel error per detector mode so
 optimization patches that change correctness fail at `cargo test`
 rather than silently drifting in production.
 
-## 7.8 Comparison with OpenCV
+## 9.8 Comparison with OpenCV
 
 OpenCV ships two reference paths standard in calibration pipelines:
 
 - `cv2.cornerSubPix` — iterative gradient-based refiner, covered in
-  §7.2–7.6 above as one of the refiner candidates.
+  §9.2–9.6 above as one of the refiner candidates.
 - `cv2.findChessboardCornersSB` — a complete chessboard detector.
   Not a direct refiner comparison, but a useful reference for
   whole-pipeline accuracy on real calibration frames.
@@ -294,12 +294,12 @@ dataset (2 × 20 frames, 77 corners each):
 Neither reference is ground truth; both pipelines have their own
 sub-pixel biases on real imagery. The useful takeaway is that on
 real calibration frames the three methods agree to within about
-0.25 px, consistent with the distributions in §7.2–7.5.
+0.25 px, consistent with the distributions in §9.2–9.5.
 
 Wall-time, same dataset: `findChessboardCornersSB` takes ~115 ms
 per frame; our detector takes ~4 ms per frame — a ~30× speedup.
 
-## 7.9 Tracing and diagnostics
+## 9.9 Tracing and diagnostics
 
 Build with the `tracing` feature to emit JSON spans for each pipeline
 step. Named spans:
@@ -315,7 +315,7 @@ step. Named spans:
 Capture traces via the CLI's `--json-trace` flag or the
 `tools/perf_bench.py` script. `tools/trace/parser.py` extracts spans
 into CSV or JSON for aggregation, and `tools/perf_bench.py` produces
-the table in §7.7.
+the table in §9.7.
 
 When a frame returns fewer corners than expected:
 
@@ -331,9 +331,9 @@ When a frame returns fewer corners than expected:
 3. If accuracy is fine but wall time is large, inspect the `refine`
    span. On the measured refiner benchmark, replacing ML
    with a structure-tensor refiner (SaddlePoint or Förstner) is much
-   cheaper per corner, with the accuracy tradeoff shown in §7.2–§7.6.
+   cheaper per corner, with the accuracy tradeoff shown in §9.2–§9.6.
 
-## 7.10 Integration recipes
+## 9.10 Integration recipes
 
 ### Real-time loop, 30+ fps
 
@@ -358,7 +358,7 @@ loop {
 ### Offline calibration, maximum accuracy
 
 For still calibration frames, `SaddlePoint` has the lowest mean error
-among the built-in refiners on clean and blurred data alike (§7.2, §7.3).
+among the built-in refiners on clean and blurred data alike (§9.2, §9.3).
 
 ```rust
 use chess_corners::{ChessRefiner, Detector, DetectorConfig};
@@ -417,10 +417,10 @@ Combines the Radon response kernel with the coarse-to-fine pyramid.
 Prefer this over single-scale `radon` when the frame is ≥ 1280×960
 and latency matters.
 
-## 7.11 Reproducing every plot
+## 9.11 Reproducing every plot
 
 ```sh
-# Cross-refiner accuracy sweep (Rust), feeds all Part VII plots
+# Cross-refiner accuracy sweep (Rust), feeds all Part IX plots
 cargo run --release -p chess-corners --example bench_sweep \
     --features ml-refiner > book/src/img/bench/bench_sweep.json
 
@@ -469,5 +469,5 @@ tools/profile.sh samply chess testimages/large.png
 
 ---
 
-Next: [Part IX](part-09-cpp-bindings.md) — using the detector from
+Next: [Part X](part-10-cpp-bindings.md) — using the detector from
 C and C++ through the stable C ABI.

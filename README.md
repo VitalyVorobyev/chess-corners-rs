@@ -32,7 +32,7 @@ use the same `DetectorConfig` schema.
 | Detector | `ChESS` ring response, `Radon` ray-sum response | [ChESS](book/src/part-03-chess-detector.md) · [atlas](https://vitavision.dev/atlas/chess-corners), [Radon](book/src/part-04-radon-detector.md) · [atlas](https://vitavision.dev/atlas/duda-radon-corners) |
 | Refiner | `CenterOfMass`, `Förstner`, `SaddlePoint`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
 | Scale handling | Single-scale or coarse-to-fine 2× pyramid | [Multiscale](book/src/part-07-multiscale-and-pyramids.md) |
-| Benchmarks | Synthetic sweeps and pipeline timings | [Benchmarks](book/src/part-08-benchmarks.md) |
+| Benchmarks | Synthetic sweeps and pipeline timings | [Benchmarks](book/src/part-09-benchmarks.md) |
 
 Workspace crates:
 
@@ -173,7 +173,7 @@ python tools/render_readme_perf.py
 
 The broader benchmark chapter includes blur, noise, cell-size, feature
 flag, and pipeline measurements:
-[Part VIII](book/src/part-08-benchmarks.md).
+[Part IX](book/src/part-09-benchmarks.md).
 
 ## Python
 

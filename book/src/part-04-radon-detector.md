@@ -170,7 +170,7 @@ values. The practical differences:
 ChESS is faster on the measured clean test images. The Radon detector
 is useful when the ChESS ring response does not seed enough corners,
 especially in the synthetic small-cell, blur, and low-contrast cases
-covered by the tests and Part VIII. Treat those measurements as
+covered by the tests and Part IX. Treat those measurements as
 guidance and validate on your own image distribution when the tradeoff
 matters.
 

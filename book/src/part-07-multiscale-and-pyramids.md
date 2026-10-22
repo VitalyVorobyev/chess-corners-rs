@@ -493,6 +493,5 @@ JSON for batch experiments.
 
 ---
 
-Next: [Part VIII](part-08-benchmarks.md) — measured accuracy and
-throughput for both detectors, every refiner, and the full multiscale
-pipeline.
+Next: [Part VIII](part-08-uncertainty.md) — what the per-corner
+position covariance describes, where it holds, and how to use it.
