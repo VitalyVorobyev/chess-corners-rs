@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   positions now move toward the true corner (noise-free RMS error on
   synthetic corners 0.12 px → under 0.005 px when sharp, 0.044 →
   0.004 px at blur σ 1.5). Which corners are accepted is unchanged. A
-  corner costs about 0.25 µs. `covariance_per_noise_variance` describes
+  corner costs about 0.2 µs. `covariance_per_noise_variance` describes
   the converged position, and on synthetic corners its predicted scatter
   matches the measured error about the true corner; when re-centring
   does not converge, the refiner returns the single fit with no

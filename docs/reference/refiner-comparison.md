@@ -67,14 +67,14 @@ precedes the timed loop.
 
 | refiner        | time/call | throughput      | what it costs                                                                 |
 |----------------|-----------|-----------------|-------------------------------------------------------------------------------|
-| CenterOfMass   | 0.02 µs   | ≈50 M corners/s | 5×5 weighted moment over the ChESS response map                               |
+| CenterOfMass   | 0.016 µs  | ≈60 M corners/s | 5×5 weighted moment over the ChESS response map                               |
 | Forstner       | 0.06 µs   | ≈17 M corners/s | 5×5 gradient structure tensor solve                                           |
-| SaddlePoint    | 0.25 µs   | ≈4 M corners/s  | 5×5 quadratic LS on 4–6 integer-centred patches, re-centred by bilinear blend |
+| SaddlePoint    | 0.18 µs   | ≈5 M corners/s  | 5×5 quadratic LS on 4–6 integer-centred patches, re-centred by bilinear blend |
 | ML (ONNX)      | 151 µs    | ≈7 K corners/s  | 21×21 patch extract + ONNX inference, batch=1                                 |
 
 ## Per-refiner takeaways
 
-- **SaddlePoint** — 0.25 µs in this harness and the lowest mean on
+- **SaddlePoint** — 0.18 µs in this harness and the lowest mean on
   every row (0.045 px clean, 0.044 px at blur σ=1.5). It refits on a
   patch re-centred at its own estimate, so it carries no pull toward the
   seed pixel. The default choice for calibration pipelines.
@@ -97,7 +97,7 @@ precedes the timed loop.
   (`tools/ml_refiner/configs/synth_v6.yaml`), replacing the v2
   tanh-saddle training that produced the ~0.5 px
   distribution-mismatch failure. Use it when a deployable learned component is a better
-  integration fit than a CPU-only geometric refiner; note it is ~600×
+  integration fit than a CPU-only geometric refiner; note it is ~800×
   slower than SaddlePoint per corner at batch=1.
 
 ## Notes on the measurement
