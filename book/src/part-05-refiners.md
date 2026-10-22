@@ -145,7 +145,7 @@ rejects:
 |------------------|-------------------------------------------------|
 | Input            | Image                                           |
 | Default `radius` | 2 (5×5 patch)                                   |
-| Typical cost     | ~250 ns per corner                              |
+| Typical cost     | ~0.2 µs per corner                              |
 | Strengths        | Lowest error of the geometric refiners, sharp or blurred |
 | Weaknesses       | On ~5 px cells with strong shear and blur, the window holds neighbouring corners and the re-centred position can be worse than a single fit |
 
