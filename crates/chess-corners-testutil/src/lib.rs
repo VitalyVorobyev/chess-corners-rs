@@ -8,7 +8,7 @@
 //! tree.
 //!
 //! Every generator is fully deterministic — the only randomness is the
-//! explicitly seeded [`add_gaussian_noise`] — so detector outputs and the
+//! explicitly seeded noise helpers — so detector outputs and the
 //! committed perf baseline stay reproducible across machines and feature
 //! builds.
 //!
@@ -21,11 +21,16 @@
 //! - [`aa_chessboard`] — anti-aliased board with caller-chosen cell size,
 //!   subpixel `offset`, and `dark`/`bright` levels; the refiner-accuracy
 //!   and Radon-vs-ChESS fixtures.
+//! - [`area_chessboard`] — exact pixel-area (box-filtered) board, axis-aligned
+//!   or sheared, whose corners sit exactly on the lattice; the
+//!   bias/precision fixture.
 //!
 //! ## Degradations
 //!
 //! - [`gaussian_blur`] — separable Gaussian, 3σ radius, edge-clamped.
 //! - [`add_gaussian_noise`] — seeded additive Gaussian noise.
+//! - [`add_signal_dependent_noise`] — seeded Gaussian noise of variance
+//!   `a + b·I` (read plus shot noise).
 
 #![forbid(unsafe_code)]
 
@@ -33,7 +38,7 @@ mod boards;
 mod noise;
 
 pub use boards::{
-    aa_chessboard, expected_corner_count, synth_chessboard, synth_chessboard_soft,
+    aa_chessboard, area_chessboard, expected_corner_count, synth_chessboard, synth_chessboard_soft,
     synth_chessboard_warped, ORIENT_CORNER, ORIENT_DIM,
 };
-pub use noise::{add_gaussian_noise, gaussian_blur};
+pub use noise::{add_gaussian_noise, add_signal_dependent_noise, gaussian_blur};
