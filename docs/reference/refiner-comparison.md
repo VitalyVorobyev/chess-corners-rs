@@ -97,7 +97,7 @@ precedes the timed loop.
   (`tools/ml_refiner/configs/synth_v6.yaml`), replacing the v2
   tanh-saddle training that produced the ~0.5 px
   distribution-mismatch failure. Use it when a deployable learned component is a better
-  integration fit than a CPU-only geometric refiner; note it is ~600×
+  integration fit than a CPU-only geometric refiner; note it is ~800×
   slower than SaddlePoint per corner at batch=1.
 
 ## Notes on the measurement
