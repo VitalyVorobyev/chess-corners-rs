@@ -119,7 +119,7 @@ jobs:
 
       - name: Upload comparison report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-gate-report
           path: ${{ runner.temp }}/bench-gate-report.txt
