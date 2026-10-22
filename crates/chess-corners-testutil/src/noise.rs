@@ -58,7 +58,9 @@ pub fn add_gaussian_noise(img: &mut [u8], sigma: f32, seed: u64) {
         state = state
             .wrapping_mul(6_364_136_223_846_793_005)
             .wrapping_add(1_442_695_040_888_963_407);
-        (state >> 33) as u32
+        // The high 32 bits: the uniform below divides by `u32::MAX`, so
+        // fewer bits would confine it to a fraction of (0, 1).
+        (state >> 32) as u32
     };
     let mut uniform = || -> f32 { (next_u32() as f32 + 1.0) / (u32::MAX as f32 + 2.0) };
     for px in img.iter_mut() {

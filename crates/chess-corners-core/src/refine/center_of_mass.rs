@@ -67,6 +67,7 @@ impl CornerRefiner for CenterOfMassRefiner {
                     y: seed_xy[1],
                     score: 0.0,
                     status: RefineStatus::Rejected,
+                    covariance_per_noise_variance: None,
                 }
             }
         };
@@ -88,6 +89,7 @@ impl CornerRefiner for CenterOfMassRefiner {
                 y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::OutOfBounds,
+                covariance_per_noise_variance: None,
             };
         }
 
@@ -110,6 +112,7 @@ impl CornerRefiner for CenterOfMassRefiner {
                 y: seed_xy[1],
                 score: 0.0,
                 status: RefineStatus::Accepted,
+                covariance_per_noise_variance: None,
             }
         }
     }

@@ -68,12 +68,12 @@ precedes the timed loop.
 |----------------|-----------|-----------------|-------------------------------------------------------------------------------|
 | CenterOfMass   | 0.02 µs   | ≈50 M corners/s | 5×5 weighted moment over the ChESS response map                               |
 | Forstner       | 0.06 µs   | ≈17 M corners/s | 5×5 gradient structure tensor solve                                           |
-| SaddlePoint    | 0.12 µs   | ≈8 M corners/s  | 6-param quadratic LS via Gauss-Jordan                                         |
+| SaddlePoint    | 0.07 µs   | ≈15 M corners/s | 6-param quadratic LS with a precomputed normal-matrix inverse                 |
 | ML (ONNX)      | 252 µs    | ≈4 K corners/s  | 21×21 patch extract + ONNX inference, batch=1                                 |
 
 ## Per-refiner takeaways
 
-- **SaddlePoint** — 0.12 µs in this harness, under 0.12 px mean on the
+- **SaddlePoint** — 0.07 µs in this harness, under 0.12 px mean on the
   clean row, and the lowest geometric mean on the blur row (0.047 px at
   σ=1.5). A good default for calibration pipelines where blur is possible.
 - **CenterOfMass** — the fastest, but **only when the ChESS ring

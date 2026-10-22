@@ -86,8 +86,8 @@ pub use crate::orientation::{
 };
 pub use crate::refine::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
-    RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind, SaddlePointConfig,
-    SaddlePointRefiner,
+    PositionCovariance, RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind,
+    SaddlePointConfig, SaddlePointRefiner,
 };
 pub use imageview::ImageView;
 

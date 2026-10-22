@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `RefineResult::covariance_per_noise_variance` (a new
+  `PositionCovariance { xx, xy, yy }`): the saddle-point refiner reports
+  the first-order covariance of the refined position per unit
+  image-noise variance (px² per gray-level²). Multiplied by the image's
+  pixel-noise variance it predicts the position scatter within a few
+  percent on synthetic corners with white noise (σ 1–8 gray levels, blur
+  up to 1.5 px). The other refiners report `None`.
+
+### Changed
+
+- The saddle-point refiner is about 1.8× faster per corner. Refined
+  positions are unchanged to within 2·10⁻⁵ px; on patches with no
+  curvature across one axis it now reports `IllConditioned` instead of
+  occasionally accepting a point fitted to rounding noise.
+
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.
