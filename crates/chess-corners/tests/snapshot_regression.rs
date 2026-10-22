@@ -260,10 +260,3 @@ fn check_or_update_manifest() {
 fn snapshot_regression() {
     check_or_update_manifest();
 }
-
-#[allow(dead_code)]
-fn _coverage_anchor() {
-    // Touches the public IMAGES list so removing an image without a
-    // corresponding test removal would be a compile-time tell.
-    let _ = IMAGES;
-}
