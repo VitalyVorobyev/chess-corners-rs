@@ -58,7 +58,7 @@ const CONTRASTS: [(u8, u8); 2] = [(40, 200), (90, 150)];
 const GEOMETRIES: [(&str, f32); 2] = [("axis", 90.0), ("skew60", 60.0)];
 /// Candidate model-error floors `f` (px per axis): σ̂₀² is also evaluated
 /// with `Σ + f²·I` to find the floor that absorbs the residual bias.
-const FLOORS: [f64; 8] = [0.0025, 0.005, 0.0075, 0.01, 0.015, 0.02, 0.03, 0.05];
+const FLOORS: [f64; 9] = [0.002, 0.003, 0.005, 0.0075, 0.01, 0.015, 0.02, 0.03, 0.05];
 /// Variance of the 8-bit rounding applied after every degradation.
 const QUANT_VAR: f64 = 1.0 / 12.0;
 
@@ -827,6 +827,62 @@ fn print_tables(r: &Results, renderer: &[Value]) {
             CONTRASTS[wf.contrast].0,
             CONTRASTS[wf.contrast].1,
             BLURS[wf.blur],
+        );
+    }
+
+    // 3d. Floor choice: worst |ln σ̂₀²| about the truth over cells 8–12,
+    // both contrasts and geometries, every blur, white σₙ 1–8.
+    let _ = writeln!(
+        s,
+        "\n### SaddlePoint worst |ln σ̂₀²(Σ + f²I)| over cells 8–12, both contrasts and geometries, blur 0–2.5, white σₙ 1–8\n"
+    );
+    let _ = writeln!(
+        s,
+        "| f (px) | worst \\|ln σ̂₀²\\| (σ̂₀²), all | fixture | worst, σ_emp < 0.3 px | fixture |"
+    );
+    let _ = writeln!(s, "|---|---|---|---|---|");
+    let white: Vec<usize> = NOISES
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| matches!(n, Noise::White(s) if *s >= 1.0))
+        .map(|(i, _)| i)
+        .collect();
+    for k in 0..=FLOORS.len() {
+        // (|ln σ̂₀²|, σ̂₀², fixture) over all cells and over σ_emp < 0.3 px.
+        let mut worst = [(0.0f64, 1.0f64, String::new()), (0.0, 1.0, String::new())];
+        for (fx, f) in r.fixtures.iter().enumerate() {
+            if CELLS[f.cell] < 8 {
+                continue;
+            }
+            for &n in &white {
+                let c = r.cell(fx, n, SADDLE);
+                let z = c.z.as_ref().unwrap();
+                let v = if k == 0 {
+                    z.s0sq_total
+                } else {
+                    z.s0sq_floor[k - 1]
+                };
+                let label = format!(
+                    "{} cell {} {}/{} blur {} {}",
+                    GEOMETRIES[f.geometry].0,
+                    CELLS[f.cell],
+                    CONTRASTS[f.contrast].0,
+                    CONTRASTS[f.contrast].1,
+                    BLURS[f.blur],
+                    NOISES[n].label()
+                );
+                for (w, include) in worst.iter_mut().zip([true, c.sigma_2d < 0.3]) {
+                    if include && v.ln().abs() > w.0 {
+                        *w = (v.ln().abs(), v, label.clone());
+                    }
+                }
+            }
+        }
+        let f = if k == 0 { 0.0 } else { FLOORS[k - 1] };
+        let _ = writeln!(
+            s,
+            "| {f} | {:.3} ({:.3}) | {} | {:.3} ({:.3}) | {} |",
+            worst[0].0, worst[0].1, worst[0].2, worst[1].0, worst[1].1, worst[1].2
         );
     }
 

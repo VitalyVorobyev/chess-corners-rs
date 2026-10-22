@@ -141,4 +141,14 @@ fn noise_estimate_grid() {
     }
     let w: Vec<String> = worst.iter().map(|e| format!("{e:+.3}")).collect();
     println!("worst | | | {}", w.join(" | "));
+
+    // The realised σ includes the 8-bit rounding: compare with √(σ² + 1/12).
+    for sigma in [0.5f32, 1.0, 2.0] {
+        let (img, truth) = board(size, 12, AXIS, 0.0, Noise::White(sigma), 100);
+        let est = estimate_noise_sigma_u8(&img, size, size).unwrap();
+        let quantized = (sigma * sigma + 1.0 / 12.0).sqrt();
+        println!(
+            "white {sigma}: realised {truth:.3}, √(σ² + 1/12) {quantized:.3}, estimate {est:.3}"
+        );
+    }
 }

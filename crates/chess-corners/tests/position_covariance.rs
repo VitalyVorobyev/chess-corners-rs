@@ -18,7 +18,7 @@ const PHASE: (f32, f32) = (0.3, 0.6);
 const SIZE: usize = 200;
 const CELL: f32 = 8.0;
 /// Model-error floor the detector adds per axis, px.
-const FLOOR: f64 = 0.015;
+const FLOOR: f64 = 0.002;
 
 /// Board geometry and contrast.
 #[derive(Clone, Copy, Debug)]
@@ -82,13 +82,17 @@ fn saddle() -> DetectorConfig {
     DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::saddle_point())
 }
 
+/// Model-error floors (px per axis) compared by the measurement; the
+/// reported covariance carries [`FLOOR`].
+const CANDIDATE_FLOORS: [f64; 7] = [0.0, 0.002, 0.003, 0.005, 0.0075, 0.01, 0.015];
+
 /// Whitening statistics over a set of boards.
 #[derive(Default)]
 struct Whitened {
     /// Σ eᵀΣ⁻¹e with the reported covariance.
     sum: f64,
-    /// Σ eᵀΣ⁻¹e with the floor removed (noise scatter only).
-    sum_no_floor: f64,
+    /// Σ eᵀΣ⁻¹e with the floor replaced by each [`CANDIDATE_FLOORS`] entry.
+    sum_candidates: [f64; CANDIDATE_FLOORS.len()],
     /// Corners with a covariance, matched to the truth.
     n: usize,
     /// Detections farther than 0.5 px from any lattice corner.
@@ -107,24 +111,31 @@ impl Whitened {
                 continue;
             }
             let (ex, ey) = (f64::from(ex), f64::from(ey));
-            let quad = |f2: f64| {
+            // Whitened squared error with `df2` added to the diagonal.
+            let quad = |df2: f64| {
                 let (a, b, d) = (
-                    f64::from(cov.xx) - f2,
+                    f64::from(cov.xx) + df2,
                     f64::from(cov.xy),
-                    f64::from(cov.yy) - f2,
+                    f64::from(cov.yy) + df2,
                 );
                 (d * ex * ex - 2.0 * b * ex * ey + a * ey * ey) / (a * d - b * b)
             };
             self.sum += quad(0.0);
-            self.sum_no_floor += quad(FLOOR * FLOOR);
+            for (acc, f) in self.sum_candidates.iter_mut().zip(CANDIDATE_FLOORS) {
+                *acc += quad(f * f - FLOOR * FLOOR);
+            }
             self.n += 1;
         }
     }
 
-    /// σ̂₀² with the reported covariance and without its floor.
-    fn sigma0_sq(&self) -> (f64, f64) {
-        let d = 2.0 * self.n as f64;
-        (self.sum / d, self.sum_no_floor / d)
+    /// σ̂₀² with the reported covariance.
+    fn sigma0_sq(&self) -> f64 {
+        self.sum / (2.0 * self.n as f64)
+    }
+
+    /// σ̂₀² with the floor replaced by `CANDIDATE_FLOORS[k]`.
+    fn sigma0_sq_with(&self, k: usize) -> f64 {
+        self.sum_candidates[k] / (2.0 * self.n as f64)
     }
 }
 
@@ -164,7 +175,7 @@ fn run(fixture: Fixture, boards: usize, known: bool) -> (Whitened, f64, usize) {
 fn saddle_point_covariance_is_calibrated() {
     let (w, _, declined) = run(Fixture::new(0.8, 2.0), 1, false);
     assert_eq!(declined, 0);
-    let (with_floor, noise_only) = w.sigma0_sq();
+    let (with_floor, noise_only) = (w.sigma0_sq(), w.sigma0_sq_with(0));
     assert!(w.n > 300, "too few corners with a covariance: {}", w.n);
     assert_eq!(w.unmatched, 0);
     assert!(
@@ -187,7 +198,7 @@ fn covariance_scales_with_the_supplied_noise() {
     let lo = detect(saddle().with_noise_sigma(1.0));
     let hi = detect(saddle().with_noise_sigma(4.0));
     assert_eq!(lo.len(), hi.len());
-    let floor2 = 0.015f32 * 0.015;
+    let floor2 = (FLOOR * FLOOR) as f32;
     let mut checked = 0;
     for (a, b) in lo.iter().zip(&hi) {
         let (Some(ca), Some(cb)) = (a.position_covariance, b.position_covariance) else {
@@ -204,6 +215,16 @@ fn covariance_scales_with_the_supplied_noise() {
         checked += 1;
     }
     assert!(checked > 100);
+
+    // The noise variance is at least the 8-bit rounding variance 1/12, so a
+    // lower (or zero) σ gives the same covariance as √(1/12).
+    let at_rounding = detect(saddle().with_noise_sigma((1.0f32 / 12.0).sqrt()));
+    for sigma in [0.0f32, 0.1] {
+        let low = detect(saddle().with_noise_sigma(sigma));
+        for (a, b) in low.iter().zip(&at_rounding) {
+            assert_eq!(a.position_covariance, b.position_covariance);
+        }
+    }
 }
 
 #[test]
@@ -275,13 +296,18 @@ fn invalid_noise_sigma_is_rejected() {
 #[test]
 #[ignore = "measurement: prints σ̂₀² of the reported covariance"]
 fn position_covariance_calibration() {
-    println!("cell {CELL}, 25 boards of {SIZE}² per row; σ̂₀² (noise-only, floor removed)");
+    println!("cell {CELL}, 25 boards of {SIZE}² per row; σ̂₀² with the {FLOOR} px floor");
     println!("board | blur | σ | σ̂/σ | estimated σ | supplied σ | corners | unmatched | no σ̂");
     let boards: [(&str, f32, u8, u8); 3] = [
         ("axis 40/200", core::f32::consts::FRAC_PI_2, 40, 200),
         ("axis 90/150", core::f32::consts::FRAC_PI_2, 90, 150),
         ("skew60 40/200", core::f32::consts::FRAC_PI_3, 40, 200),
     ];
+    // Per candidate floor: worst |ln σ̂₀²| (estimated σ), its σ̂₀² and the
+    // row, over rows with at least 1 000 matched corners, and over those
+    // whose detections also match the truth (≤ 1% unmatched).
+    let mut worst: [[(f64, f64, String); 2]; CANDIDATE_FLOORS.len()] =
+        std::array::from_fn(|_| std::array::from_fn(|_| (0.0, 1.0, String::new())));
     for (label, axis_angle, dark, bright) in boards {
         for &blur in &[0.0f32, 0.8, 1.5, 2.5] {
             for &sigma in &[1.0f32, 2.0, 4.0, 8.0] {
@@ -293,14 +319,31 @@ fn position_covariance_calibration() {
                 };
                 let (est, ratio, declined) = run(fixture, 25, false);
                 let (known, _, _) = run(fixture, 25, true);
-                let (e, e_nf) = est.sigma0_sq();
-                let (k, k_nf) = known.sigma0_sq();
                 println!(
-                    "{label} | {blur} | {sigma} | {ratio:.3} | {e:.3} ({e_nf:.3}) | {k:.3} ({k_nf:.3}) | {} | {} | {declined}",
-                    est.n, est.unmatched
+                    "{label} | {blur} | {sigma} | {ratio:.3} | {:.3} | {:.3} | {} | {} | {declined}",
+                    est.sigma0_sq(),
+                    known.sigma0_sq(),
+                    est.n,
+                    est.unmatched
                 );
+                if est.n < 1000 {
+                    continue;
+                }
+                let clean = est.unmatched * 100 <= est.n;
+                for (k, ws) in worst.iter_mut().enumerate() {
+                    let v = est.sigma0_sq_with(k);
+                    for (w, include) in ws.iter_mut().zip([true, clean]) {
+                        if include && v.ln().abs() > w.0 {
+                            *w = (v.ln().abs(), v, format!("{label} blur {blur} σ {sigma}"));
+                        }
+                    }
+                }
             }
         }
+    }
+    println!("\nf (px) | worst |ln σ̂₀²| (σ̂₀²), all | row | ≤ 1% unmatched | row");
+    for (f, [(l, v, row), (lc, vc, rowc)]) in CANDIDATE_FLOORS.iter().zip(&worst) {
+        println!("{f} | {l:.3} ({v:.3}) | {row} | {lc:.3} ({vc:.3}) | {rowc}");
     }
 }
 
