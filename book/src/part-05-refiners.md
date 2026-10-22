@@ -123,13 +123,15 @@ Fits a 2D quadratic `f(x, y) = a·x² + b·x·y + c·y² + d·x + e·y + g`
 to a `(2r + 1)²` image patch and returns the saddle point (the
 critical point where `∇f = 0`). The six coefficients come from a
 linear least-squares fit. A quadratic fitted off-centre puts the
-saddle partway back toward the window centre, so the refiner refits on
-the patch resampled bilinearly around its previous estimate until a step
-is shorter than 0.001 px; re-centred, the window is point-symmetric
-about the corner and that pull vanishes. On accepted corners it also
-reports the first-order covariance of that converged position per unit
-image-noise variance (`RefineResult::covariance_per_noise_variance`, px²
-per gray-level²).
+saddle partway back toward the window centre, so the refiner moves the
+window — Newton steps, refitting on the patch resampled bilinearly at
+each position — until the fitted saddle is within 0.001 px of the window
+centre; re-centred, the window is point-symmetric about the corner and
+that pull vanishes. On accepted corners where this
+converges it also reports the first-order covariance of the converged
+position per unit image-noise variance
+(`RefineResult::covariance_per_noise_variance`, px² per gray-level²);
+otherwise it returns the single fit without one.
 
 The determinant of the Hessian is `4·a·c − b²`. A true X‑junction is a
 saddle, so the Hessian should be indefinite (`det < 0`). The refiner
@@ -145,7 +147,7 @@ rejects:
 | Default `radius` | 2 (5×5 patch)                                   |
 | Typical cost     | ~250 ns per corner                              |
 | Strengths        | Lowest error of the geometric refiners, sharp or blurred |
-| Weaknesses       | About 4× the cost of a single fit               |
+| Weaknesses       | On ~5 px cells with strong shear and blur, the window holds neighbouring corners and the re-centred position can be worse than a single fit |
 
 The default choice for calibration-grade work: in Part VIII's synthetic
 sweeps it has the lowest mean error of the built-in refiners on every

@@ -171,9 +171,14 @@ CenterOfMass does not fit this model (cell 8: 0.085 → 0.048 at blur 0,
 
 ## After re-centring
 
-The SaddlePoint refiner now refits on the patch resampled bilinearly
-around its previous estimate until a step is shorter than 0.001 px (at
-most 16 steps). Its covariance is that of the converged estimate: the
+The SaddlePoint refiner now moves its fit window, refitting on the patch
+resampled bilinearly around each new position, until the fitted saddle
+is within 0.001 px of the window centre. Each move is a Newton step on
+the window offset (the sensitivity `M` below comes free from the cached
+integer-patch fits), halved until it brings the saddle closer to the
+window centre, so the iteration cannot cycle; at most 16 steps. When it
+does not converge, the refiner returns the integer-grid fit with no
+covariance. Its covariance is that of the converged estimate: the
 fixed point `F(o, I) = 0` of the fitted offset `F` at window offset `o`
 gives `∂ô/∂I = −M⁻¹ ∂F/∂I`, `M = ∂F/∂o`, with `∂F/∂I` carried through
 the bilinear weights (correlated resampled pixels). A unit test checks
@@ -197,8 +202,8 @@ of σ_emp in every row except 90/150, blur 2.5, σₙ = 4 (+7%).
   axis-aligned and ≤ 0.010 px sheared at blur ≤ 1.5 (was 0.044–0.150).
   The 0.013–0.016 px left at 90/150 with blur is 8-bit rounding of the
   low-contrast edge profile. Cell 5 keeps 0.03 px at blur 2.5 (axis)
-  and gets worse when sheared (0.21 → 0.26 px): the window then
-  overlaps the neighbouring corners.
+  and gets worse when sheared (0.21 → 0.26 px at 40/200, 0.27 → 0.50 at
+  90/150; see below).
 - **Scatter.** σ grows by up to ~1/g (25% sharp, 0.019 vs 0.015 px)
   where the single fit shrank the offset by `g`, and falls up to 25% at
   blur ≥ 1.5, where the resampled window averages pixels.
@@ -214,9 +219,31 @@ of σ_emp in every row except 90/150, blur 2.5, σₙ = 4 (+7%).
   every cell 8–12 fixture (median 0); cell 5 needs up to 0.03 px
   (low contrast, blur 2.5). This is the floor `UQ-05` adds.
 - **Acceptance** is decided by the first (integer-grid) fit exactly as
-  before; a refit that fails or leaves the `max_offset` box ends the
-  iteration at the previous estimate. Acceptance is identical on every
-  cell of the grid.
+  before and is identical on every cell of the grid. Re-centring
+  converges for ≥ 99.98% of accepted corners on every cell 8–12 fixture
+  with σ_emp < 0.3 px; at low SNR down to 42% (those corners get the
+  integer-grid fit and no covariance).
+- **Convergence**, area-rendered boards, 400 phases each (corners that
+  did not reach the tolerance / of those, hit the step cap; before →
+  after): 90°, cell 8, blur 2.5, σₙ 16: 36 / 29 → 6 / 0; 60°, cell 8,
+  blur 2.5, σₙ 8: 15 / 14 → 1 / 0; 40°, cell 5, clean: 104 / 104 → 0 /
+  0. The plain step `o += u` contracts only by `1 − g`, and oscillated
+  (factor ≈ −0.85) or crept (≈ 0.8) where the gain `g` was small.
+- **Small sheared cells.** With 5 px cells, a 40–60° shear and blur
+  ≥ 1.5, the converged position can be worse than the single fit
+  (60°, blur 2.5: RMS 0.289 vs 0.192 px; 40°, blur 1.5: 0.415 vs
+  0.379, of which 285/400 do not converge and fall back). Little of the
+  5-px pattern survives the blur, the window holds parts of the
+  neighbouring corners, and the true corner is no longer a fixed point:
+  the saddle fitted on a window centred on it is 0.1–0.25 px off, with a
+  cubic resampler as much as with the bilinear one. No per-patch
+  criterion tested separates these corners from cell ≥ 8 ones without
+  hurting the latter (drift from the single fit, drift relative to the
+  single-fit offset, gain eigenvalues, curvature change, estimated
+  interpolation error): each either misses the 60° case or makes cell
+  ≥ 8 rows worse (5–20% RMS at low SNR, or 0.010 → 0.026 px on sharp
+  40° cells). `radius: 1` helps there (40°, blur
+  1.5: 0.104 px) but is worse on blurred cell-8 corners.
 
 ## Recommendation for 1.5.0
 

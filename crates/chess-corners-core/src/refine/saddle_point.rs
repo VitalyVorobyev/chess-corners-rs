@@ -18,11 +18,17 @@ use serde::{Deserialize, Serialize};
 
 /// Most re-centring steps per corner after the integer-grid fit.
 const MAX_STEPS: usize = 16;
-/// Re-centring stops once a step moves the estimate by less than this, in
-/// pixels.
+/// Re-centring has converged once the saddle fitted on the window lies
+/// within this distance of the window centre, in pixels.
 const STEP_TOL: f32 = 1e-3;
 /// Integer-centred fits kept per corner; a converging corner needs 4–6.
 const FIT_CACHE: usize = 9;
+/// Step lengths tried (each half the previous) before re-centring stops.
+const MAX_HALVINGS: usize = 4;
+/// Smallest `det(−M)` of the window sensitivity `M` for which the Newton
+/// step is taken; below it the plain step `o += u` is used. An isolated
+/// corner has `−M ≈ g·I` with `g` in 0.4–1.
+const MIN_GAIN_DET: f32 = 0.05;
 
 /// Configuration for the [`SaddlePointRefiner`].
 ///
@@ -87,15 +93,21 @@ impl Default for SaddlePointConfig {
 /// The first fit samples the integer pixel grid around the rounded seed
 /// and decides acceptance: its Hessian must pass the determinant
 /// thresholds and its saddle must lie within
-/// [`SaddlePointConfig::max_offset`] of the seed. The refiner then refits
-/// on the patch resampled bilinearly around the previous estimate, which
-/// removes the pull toward the window centre that a single off-centre fit
-/// has, until a step moves the estimate by less than 0.001 px (at most 16
-/// steps). It stops early, keeping the previous estimate, when a refit is
-/// not a clear saddle, its window would leave the image, or its estimate
-/// would leave the `max_offset` box; the covariance then still describes
-/// the converged estimate, which over-states the scatter of the
-/// unconverged one.
+/// [`SaddlePointConfig::max_offset`] of the seed. The refiner then moves
+/// the window, refitting on the patch resampled bilinearly around each new
+/// position, until the fitted saddle lies within 0.001 px of the window
+/// centre; this removes the pull toward the window centre that a single
+/// off-centre fit has. Each move is a Newton step on the window position
+/// (a plain step when the fit barely responds to moving the window),
+/// halved until it brings the saddle closer to the window centre.
+///
+/// If re-centring does not converge — no shorter step helps, a refit is
+/// not a clear saddle or leaves the image or the `max_offset` box, or 16
+/// steps pass — the refiner returns the integer-grid fit, without a
+/// covariance. A converged corner reports the covariance of the converged
+/// position; where that position is only weakly determined by the window
+/// (the fit hardly responds to moving it) the covariance is large but
+/// finite.
 ///
 /// Resampling and the least-squares fit are both linear, so a refit is the
 /// bilinear blend of the fits on the four surrounding integer-centred
@@ -256,6 +268,9 @@ struct IntegerFits<'a, P: Pixels> {
     centres: [[i32; 2]; FIT_CACHE],
     coefs: [Coefs; FIT_CACHE],
     len: usize,
+    /// The four fits around `corners_base`, as `[j][i]`.
+    corners: [[Coefs; 2]; 2],
+    corners_base: Option<[i32; 2]>,
 }
 
 impl<'a, P: Pixels> IntegerFits<'a, P> {
@@ -268,6 +283,8 @@ impl<'a, P: Pixels> IntegerFits<'a, P> {
             centres: [[0; 2]; FIT_CACHE],
             coefs: [[0.0; 5]; FIT_CACHE],
             len: 0,
+            corners: [[[0.0; 5]; 2]; 2],
+            corners_base: None,
         }
     }
 
@@ -309,6 +326,30 @@ impl<'a, P: Pixels> IntegerFits<'a, P> {
             }
         }
         Some(out)
+    }
+
+    /// Saddle of the quadratic fitted on the patch resampled on `window`,
+    /// or `None` when a fit leaves the image or is not a clear saddle.
+    fn refit(&mut self, cfg: &SaddlePointConfig, window: &Window) -> Option<PatchSaddle> {
+        if self.corners_base != Some(window.base) {
+            self.corners = self.corners(window.base)?;
+            self.corners_base = Some(window.base);
+        }
+        solve(cfg, blend(&self.corners, window)).ok()
+    }
+
+    /// [`slope`](Self::slope) from the four fits of the last
+    /// [`refit`](Self::refit), or `None` when they are not around `window`.
+    fn cached_slope(&self, window: &Window) -> Option<[Coefs; 2]> {
+        if self.corners_base != Some(window.base) {
+            return None;
+        }
+        let [[c00, c10], [c01, c11]] = self.corners;
+        let [tx, ty] = window.t;
+        Some([
+            std::array::from_fn(|k| (1.0 - ty) * (c10[k] - c00[k]) + ty * (c11[k] - c01[k])),
+            std::array::from_fn(|k| (1.0 - tx) * (c01[k] - c00[k]) + tx * (c11[k] - c10[k])),
+        ])
     }
 
     /// `∂θ/∂t` of [`blend`] on `window`, one column per axis: the
@@ -368,10 +409,11 @@ struct Estimate {
 impl SaddlePointRefiner {
     /// Re-centred saddle estimate for the seed `seed` (rounded to
     /// `centre`, whose patch must be inside the image): the integer-grid
-    /// fit, then up to `max_steps` refits on windows centred on the
-    /// previous estimate, stopping once a step is shorter than `tol` px or
-    /// a refit fails (see [`SaddlePointRefiner`]). `Err((score, status))`
-    /// when the first fit fails or leaves the `max_offset` box.
+    /// fit, then up to `max_steps` damped Newton steps on the window
+    /// offset until the fitted saddle is within `tol` px of the window
+    /// centre; the integer-grid fit, without covariance, when that fails
+    /// (see [`SaddlePointRefiner`]). `Err((score, status))` when the first
+    /// fit fails or leaves the `max_offset` box.
     fn estimate(
         &mut self,
         px: &impl Pixels,
@@ -396,44 +438,95 @@ impl SaddlePointRefiner {
         };
 
         let mut fits = IntegerFits::new(px, fit_op, r, &mut scratch.patch);
-        let mut window = Window::new(centre, [0.0; 2]);
         let coefs = fits.at(centre).ok_or((0.0, RefineStatus::OutOfBounds))?;
         let mut fit = solve(cfg, coefs).map_err(|det_h| (det_h, RefineStatus::IllConditioned))?;
-        let mut est = fit.u;
-        if !near_seed(est) {
+        if !near_seed(fit.u) {
             return Err((fit.det_h, RefineStatus::Rejected));
         }
-        // The four integer-centred fits around `corners_base`.
-        let mut corners = [[[0.0f32; 5]; 2]; 2];
-        let mut corners_base = None;
+        let single = Estimate {
+            xy: [centre[0] as f32 + fit.u[0], centre[1] as f32 + fit.u[1]],
+            score: (-fit.det_h).sqrt(),
+            covariance: None,
+        };
+
+        // Damped Newton on F(o) = u(o) = 0, with `o` the window offset from
+        // `centre` and `u` the saddle offset fitted on that window. A step
+        // is taken only if it shrinks |u|, so the iteration cannot cycle.
+        let norm2 = |u: [f32; 2]| u[0] * u[0] + u[1] * u[1];
+        let mut o = [0.0f32; 2];
+        let mut window = Window::new(centre, o);
         for _ in 0..max_steps {
-            if fit.u[0] * fit.u[0] + fit.u[1] * fit.u[1] < tol * tol {
+            if norm2(fit.u) < tol * tol {
                 break;
             }
-            let next = Window::new(centre, est);
-            if corners_base != Some(next.base) {
-                let Some(c) = fits.corners(next.base) else {
-                    break;
-                };
-                (corners, corners_base) = (c, Some(next.base));
+            // The first window is the integer grid: its slope would need two
+            // extra fits, so it takes the plain step.
+            let step = fits
+                .cached_slope(&window)
+                .and_then(|slope| newton_step(sensitivity(&fit, &slope).1, fit.u))
+                .unwrap_or(fit.u);
+            let mut scale = 1.0f32;
+            let mut next = None;
+            for _ in 0..MAX_HALVINGS {
+                let o2 = [o[0] + scale * step[0], o[1] + scale * step[1]];
+                let w2 = Window::new(centre, o2);
+                if let Some(f2) = fits.refit(cfg, &w2) {
+                    if norm2(f2.u) < norm2(fit.u) && near_seed([o2[0] + f2.u[0], o2[1] + f2.u[1]]) {
+                        next = Some((o2, w2, f2));
+                        break;
+                    }
+                }
+                scale *= 0.5;
             }
-            let Ok(next_fit) = solve(cfg, blend(&corners, &next)) else {
+            let Some(accepted) = next else {
                 break;
             };
-            let next_est = [est[0] + next_fit.u[0], est[1] + next_fit.u[1]];
-            if !near_seed(next_est) {
-                break;
-            }
-            (window, fit, est) = (next, next_fit, next_est);
+            (o, window, fit) = accepted;
+        }
+        if norm2(fit.u) >= tol * tol {
+            return Ok(single);
         }
 
-        let slope = fits.slope(&window);
+        let slope = match fits.cached_slope(&window) {
+            Some(slope) => Some(slope),
+            None => fits.slope(&window),
+        };
+        let covariance = slope.and_then(|slope| {
+            let (jac, m) = sensitivity(&fit, &slope);
+            covariance(fit_op, &window, &jac, m)
+        });
         Ok(Estimate {
-            xy: [centre[0] as f32 + est[0], centre[1] as f32 + est[1]],
+            xy: [
+                centre[0] as f32 + o[0] + fit.u[0],
+                centre[1] as f32 + o[1] + fit.u[1],
+            ],
             score: (-fit.det_h).sqrt(),
-            covariance: slope.and_then(|slope| covariance(fit_op, &window, &fit, &slope)),
+            covariance,
         })
     }
+}
+
+/// `J = ∂u/∂θ` at `fit` and the window sensitivity `M = ∂u/∂o = J·slope`.
+fn sensitivity(fit: &PatchSaddle, slope: &[Coefs; 2]) -> ([Coefs; 2], [[f32; 2]; 2]) {
+    let jac = saddle_jacobian(fit);
+    let dot = |a: &Coefs, b: &Coefs| -> f32 { a.iter().zip(b).map(|(x, y)| x * y).sum() };
+    let m = jac.map(|row| [dot(&row, &slope[0]), dot(&row, &slope[1])]);
+    (jac, m)
+}
+
+/// Newton step `−M⁻¹u` toward `u(o) = 0`, or `None` when the gain `−M` is
+/// not clearly positive (the plain step `u` is used instead).
+fn newton_step(m: [[f32; 2]; 2], u: [f32; 2]) -> Option<[f32; 2]> {
+    let (g00, g01, g10, g11) = (-m[0][0], -m[0][1], -m[1][0], -m[1][1]);
+    let det = g00 * g11 - g01 * g10;
+    if !(det > MIN_GAIN_DET && g00 + g11 > 0.0) {
+        return None;
+    }
+    // G⁻¹u.
+    Some([
+        (g11 * u[0] - g01 * u[1]) / det,
+        (g00 * u[1] - g10 * u[0]) / det,
+    ])
 }
 
 /// Coefficients fitted on the patch resampled on `window`: the bilinear
@@ -483,8 +576,9 @@ fn solve(cfg: &SaddlePointConfig, [a, b, c, d, e]: Coefs) -> Result<PatchSaddle,
 /// `M = ∂F/∂o = J·∂θ/∂t` and `J = ∂u/∂θ`. The coefficients are
 /// `θ = R·W·I`, with `W` the bilinear resampling of the pixels `I`, so with
 /// white pixel noise of variance `σₙ²` the position covariance is
-/// `σₙ²·A·(R W Wᵀ Rᵀ)·Aᵀ` with `A = M⁻¹J`; this returns it per unit `σₙ²`,
-/// or `None` when `M` is singular. `R W Wᵀ Rᵀ = Σ c_δ K(δ)`, where `c_δ`
+/// `σₙ²·A·(R W Wᵀ Rᵀ)·Aᵀ` with `A = M⁻¹J`; this returns it per unit `σₙ²`.
+/// A near-singular `M` gives a large, finite covariance; `None` only when
+/// it overflows. `R W Wᵀ Rᵀ = Σ c_δ K(δ)`, where `c_δ`
 /// sums the products of the bilinear weights of two pixels `δ` apart.
 ///
 /// The fit's residual is not used for the scale: on a sharp corner it
@@ -495,12 +589,10 @@ fn solve(cfg: &SaddlePointConfig, [a, b, c, d, e]: Coefs) -> Result<PatchSaddle,
 fn covariance(
     fit_op: &FitOperator,
     window: &Window,
-    fit: &PatchSaddle,
-    slope: &[Coefs; 2],
+    jac: &[Coefs; 2],
+    m: [[f32; 2]; 2],
 ) -> Option<PositionCovariance> {
     let dot = |a: &Coefs, b: &Coefs| -> f32 { a.iter().zip(b).map(|(x, y)| x * y).sum() };
-    let jac = saddle_jacobian(fit);
-    let m = jac.map(|row| [dot(&row, &slope[0]), dot(&row, &slope[1])]);
     let inv_det = 1.0 / (m[0][0] * m[1][1] - m[0][1] * m[1][0]);
     let m_inv = [
         [m[1][1] * inv_det, -m[0][1] * inv_det],
@@ -687,7 +779,8 @@ mod tests {
 
     /// Empirical and predicted 1σ position scatter `([σx, σy], [σx, σy])`
     /// over `draws` noise realizations of one corner, seeded at the
-    /// rounded true position.
+    /// rounded true position. Counts only converged corners (those with a
+    /// covariance); at least 90% of the draws must be.
     fn scatter(noise: f32, blur: f32, offset: (f32, f32), draws: u64) -> ([f64; 2], [f64; 2]) {
         let clean = board(offset, blur);
         // Gaussian noise plus the 8-bit rounding (variance 1/12).
@@ -698,16 +791,18 @@ mod tests {
             let mut img = clean.clone();
             add_gaussian_noise(&mut img, noise, seed + 1);
             let res = refine_default(&img, [offset.0.round(), offset.1.round()]);
-            if res.status != RefineStatus::Accepted {
+            let Some(cov) = res.covariance_per_noise_variance else {
                 continue;
-            }
-            let cov = res.covariance_per_noise_variance.unwrap();
+            };
             pred[0] += f64::from(cov.xx);
             pred[1] += f64::from(cov.yy);
             xs.push([f64::from(res.x), f64::from(res.y)]);
         }
         let n = xs.len() as f64;
-        assert!(n > 0.9 * draws as f64, "only {n} of {draws} draws accepted");
+        assert!(
+            n > 0.9 * draws as f64,
+            "only {n} of {draws} draws converged"
+        );
         let sigma = |k: usize| {
             let mean = xs.iter().map(|p| p[k]).sum::<f64>() / n;
             (xs.iter().map(|p| (p[k] - mean).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
@@ -722,13 +817,17 @@ mod tests {
     /// errors wide.
     #[test]
     fn covariance_predicts_noise_scatter() {
-        for offset in [(10.3f32, 10.6f32), (10.45, 9.8)] {
-            let (emp, pred) = scatter(4.0, 0.8, offset, 300);
+        for (offset, blur) in [
+            ((10.3f32, 10.6f32), 0.8f32),
+            ((10.45, 9.8), 0.8),
+            ((10.3, 10.6), 2.5),
+        ] {
+            let (emp, pred) = scatter(4.0, blur, offset, 300);
             for k in 0..2 {
                 let ratio = pred[k] / emp[k];
                 assert!(
                     (0.85..=1.15).contains(&ratio),
-                    "offset {offset:?} axis {k}: predicted σ {} vs empirical σ {} (ratio {ratio})",
+                    "offset {offset:?} blur {blur} axis {k}: predicted σ {} vs empirical σ {} (ratio {ratio})",
                     pred[k],
                     emp[k]
                 );
@@ -887,22 +986,47 @@ mod tests {
     }
 
     /// A seed at the minimum border margin whose re-centred window would
-    /// need a pixel outside the image keeps the last supported estimate.
+    /// need a pixel outside the image cannot converge: the refiner returns
+    /// the integer-grid fit, without a covariance.
     #[test]
-    fn border_seed_keeps_last_supported_estimate() {
-        // Corner 0.3 px left of the seed column x = 2: the first refit
-        // window needs column −1.
+    fn early_exit_returns_single_fit_without_covariance() {
+        // Corner 0.3 px left of the seed column x = 2: every refit window
+        // toward it needs column −1.
         let img = board((1.7, 10.4), 0.8);
         let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
         let res = refine_default(&img, [2.0, 10.0]);
         assert_eq!(res.status, RefineStatus::Accepted);
-        assert!(res.covariance_per_noise_variance.is_some());
+        assert!(res.covariance_per_noise_variance.is_none());
         let single = SaddlePointRefiner::new(SaddlePointConfig::default())
             .estimate(&view, [2, 10], [2.0, 10.0], 0, STEP_TOL)
             .unwrap();
         assert_eq!([res.x, res.y], single.xy);
         // A refit would have moved it: the single fit is visibly biased.
         assert!((res.x - 1.7).hypot(res.y - 10.4) > 0.05);
+    }
+
+    /// Running out of steps before the saddle reaches the window centre is
+    /// non-convergence too: integer-grid fit, no covariance. The same
+    /// corner converges within the default step budget.
+    #[test]
+    fn step_cap_returns_single_fit_without_covariance() {
+        let img = board((10.4, 9.65), 0.0);
+        let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
+        let mut refiner = SaddlePointRefiner::new(SaddlePointConfig::default());
+        let (centre, seed) = ([10, 10], [10.0, 10.0]);
+        let single = refiner.estimate(&view, centre, seed, 0, STEP_TOL).unwrap();
+        let capped = refiner.estimate(&view, centre, seed, 1, STEP_TOL).unwrap();
+        assert!(capped.covariance.is_none());
+        assert_eq!(capped.xy, single.xy);
+        let full = refiner
+            .estimate(&view, centre, seed, MAX_STEPS, STEP_TOL)
+            .unwrap();
+        assert!(full.covariance.is_some());
+        let err = |xy: [f32; 2]| (xy[0] - 10.4).hypot(xy[1] - 9.65);
+        assert!(
+            err(full.xy) < 0.5 * err(single.xy),
+            "{full:?} vs {single:?}"
+        );
     }
 
     /// With both determinant thresholds at zero a flat patch has

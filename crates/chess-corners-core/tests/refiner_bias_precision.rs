@@ -180,6 +180,8 @@ struct ZStats {
     chi_floor: [f64; FLOORS.len()],
     /// Mean predicted radial σ, `sqrt(trace Σ)`.
     sigma_pred: f64,
+    /// Samples with a covariance (refinement converged).
+    n: usize,
 }
 
 struct Sample {
@@ -211,10 +213,16 @@ fn phase_stats(total: usize, samples: &[Sample]) -> PhaseStats {
             st.ss[k] += (s.err[k] - st.bias[k]).powi(2);
         }
     }
-    if samples.iter().all(|s| s.cov.is_some()) {
-        let mut z = ZStats::default();
+    let n_cov = samples.iter().filter(|s| s.cov.is_some()).count();
+    if n_cov > 1 {
+        let mut z = ZStats {
+            n: n_cov,
+            ..Default::default()
+        };
         for s in samples {
-            let [xx, xy, yy] = s.cov.unwrap();
+            let Some([xx, xy, yy]) = s.cov else {
+                continue;
+            };
             let d = [s.err[0] - st.bias[0], s.err[1] - st.bias[1]];
             let det = xx * yy - xy * xy;
             let maha =
@@ -231,7 +239,7 @@ fn phase_stats(total: usize, samples: &[Sample]) -> PhaseStats {
                 *chi += (fy * e[0] * e[0] - 2.0 * xy * e[0] * e[1] + fx * e[1] * e[1])
                     / (fx * fy - xy * xy);
             }
-            z.sigma_pred += (xx + yy).sqrt() / n as f64;
+            z.sigma_pred += (xx + yy).sqrt() / n_cov as f64;
         }
         st.z = Some(z);
     }
@@ -374,6 +382,8 @@ struct ZSummary {
     s0sq_floor: [f64; FLOORS.len()],
     median_bias_over_pred: f64,
     sigma_pred: f64,
+    /// Fraction of accepted corners with a covariance (converged).
+    converged: f64,
 }
 
 impl ZSummary {
@@ -445,8 +455,8 @@ fn summarize(phases: &[&PhaseStats]) -> CellSummary {
         .filter_map(|p| p.z.as_ref().map(|z| (**p, z)))
         .collect();
     if !zs.is_empty() {
-        let zdof: f64 = zs.iter().map(|(p, _)| (p.n_acc - 1) as f64).sum();
-        let zn: f64 = zs.iter().map(|(p, _)| p.n_acc as f64).sum();
+        let zdof: f64 = zs.iter().map(|(_, z)| (z.n - 1) as f64).sum();
+        let zn: f64 = zs.iter().map(|(_, z)| z.n as f64).sum();
         let mut ratios: Vec<f64> = zs
             .iter()
             .map(|(p, z)| b2(p).sqrt() / z.sigma_pred)
@@ -468,9 +478,10 @@ fn summarize(phases: &[&PhaseStats]) -> CellSummary {
             median_bias_over_pred: ratios[ratios.len() / 2],
             sigma_pred: zs
                 .iter()
-                .map(|(p, z)| z.sigma_pred * p.n_acc as f64)
+                .map(|(_, z)| z.sigma_pred * z.n as f64)
                 .sum::<f64>()
                 / zn,
+            converged: zn / seen.iter().map(|p| p.n_acc as f64).sum::<f64>(),
         });
     }
     out
@@ -739,17 +750,19 @@ fn print_tables(r: &Results, renderer: &[Value]) {
     );
     let _ = writeln!(
         s,
-        "| noise | z_prec std min | median | max | σ̂₀² prec min | max | σ_pred/σ_emp min | max | accept min |"
+        "| noise | z_prec std min | median | max | σ̂₀² prec min | max | σ_pred/σ_emp min | max | accept min | converged min |"
     );
-    let _ = writeln!(s, "|---|---|---|---|---|---|---|---|---|");
+    let _ = writeln!(s, "|---|---|---|---|---|---|---|---|---|---|");
     for (n, noise) in NOISES.iter().enumerate().skip(1) {
         let mut zs = Vec::new();
         let mut s0 = Vec::new();
         let mut ratio = Vec::new();
         let mut acc = 1.0f64;
+        let mut conv = 1.0f64;
         for fx in 0..r.fixtures.len() {
             let c = r.cell(fx, n, SADDLE);
             let z = c.z.as_ref().unwrap();
+            conv = conv.min(z.converged);
             zs.extend(z.z_prec_std);
             s0.push(z.s0sq_prec);
             ratio.push(z.sigma_pred / c.sigma_2d);
@@ -760,7 +773,7 @@ fn print_tables(r: &Results, renderer: &[Value]) {
         }
         let _ = writeln!(
             s,
-            "| {} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {acc:.3} |",
+            "| {} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {:.2} | {acc:.3} | {conv:.3} |",
             noise.label(),
             zs[0],
             zs[zs.len() / 2],
@@ -956,6 +969,7 @@ fn to_json(r: &Results, renderer: Vec<Value>) -> Value {
                             "s0sq": v,
                         })).collect::<Vec<_>>(),
                         "floor_needed": z.floor_needed(),
+                        "converged": z.converged,
                     })),
                     "phase_bias": phase_bias,
                     "at_seed_rate": c.at_seed,
