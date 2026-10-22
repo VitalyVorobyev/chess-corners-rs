@@ -1,31 +1,43 @@
 //! Per-image estimate of the white pixel-noise level.
 //!
-//! The estimator applies the 4×4 operator `d ⊗ d`, `d = (1, −3, 3, −1)`
-//! (the product of third differences along x and y). It cancels every
-//! intensity that is at most quadratic along either axis — planar shading,
-//! straight edges parallel to an image axis, most of a smoothly blurred
-//! pattern — and for white noise of standard deviation `σ` its output has
-//! standard deviation `20σ`. What it does not cancel — sharp or oblique
-//! edges, corners — is removed by a gate: a window is used only when its
-//! other third-order content is small against the current noise estimate.
-//! The gate measures the window with `d ⊗ s`, `s ⊗ d`, `d ⊗ l` and `l ⊗ d`
-//! (`s = (1, 1, 1, 1)`, `l = (−3, −1, 1, 3)`): a sharp edge or a corner
-//! drives at least one of them, while a smooth gradient drives none. The
+//! A 4×4 window is expanded in the orthogonal polynomials on four points,
+//! `s = (1, 1, 1, 1)`, `l = (−3, −1, 1, 3)`, `e = (1, −1, −1, 1)`,
+//! `d = (1, −3, 3, −1)` (degrees 0–3), giving 16 components `(i, j)`
+//! (degree `i` along x, `j` along y). The estimator uses `d ⊗ d`, the
+//! product of third differences: it cancels every intensity that is at most
+//! quadratic along either axis — planar shading, straight edges parallel to
+//! an image axis, most of a smoothly blurred pattern — and for white noise
+//! of standard deviation `σ` its output has standard deviation `20σ`.
+//!
+//! What it does not cancel — sharp edges at any angle, corners — also
+//! drives other non-smooth components, so a window is used only when those
+//! are small against the current noise estimate. The gate takes every
+//! component of total degree 3 or more except the operator itself:
+//! `(1,2)`, `(2,1)`, `(2,2)`, `(1,3)`, `(3,1)`, `(2,3)`, `(3,2)`, `(3,0)`,
+//! `(0,3)`. A straight edge along the window diagonal projects only onto
+//! `(i, i)` components, so `(2,2)` is what catches it. Smooth shading,
+//! which lives in the low-degree components, drives none of them. The
 //! scale is a truncated second moment around a median-based start, so rare
 //! structure that survives the gate does not inflate it.
 //!
-//! `d`, `l`, `s` are mutually orthogonal, so under Gaussian noise the four
-//! gate outputs are independent of the operator output: the gate removes
-//! structure without biasing the noise statistic. The gate threshold and
-//! the noise scale are iterated to a fixed point over the whole image.
+//! The components are mutually orthogonal, so under Gaussian noise the gate
+//! is independent of the operator output and does not bias it; the gate
+//! threshold and the noise scale are iterated to a fixed point over the
+//! whole image.
 //!
-//! Sensor noise grows with brightness, and a single gate admits the
-//! noisier windows less often. The variance is therefore measured per
-//! intensity band on the windows the gate admits (still unbiased within a
-//! band), and the bands are averaged with weights `admitted / P(admit)`,
-//! where `P(admit)` is the χ²₄ probability that a noise-only window of the
-//! band's level passes the gate. A band whose level is far above the gate
-//! (`P(admit)` below ¼) holds structure, not noise, and is dropped.
+//! Sensor noise grows with brightness, and a single gate would admit the
+//! noisier windows less often. Windows are therefore split into intensity
+//! bands; each band starts from the image-wide gate and moves it to its
+//! own fixed point, up to four times the image-wide noise variance (a band
+//! that runs further holds structure, not noise, and is dropped). The
+//! bands' variances are averaged with weights `admitted / P(admit)`, where
+//! `P(admit)` is the χ²₉ probability that a noise-only window of the
+//! band's level passes its gate (bands below ¼ are dropped).
+//!
+//! Windows whose mean lies within [`RAIL_MARGIN`] gray levels of 0 or 255
+//! are skipped: clipping there removes noise. The window mean is the
+//! `(0, 0)` component, orthogonal to the operator, so this selection does
+//! not bias the statistic (rejecting by pixel value would).
 //!
 //! The windows are sampled on a regular grid, sparse first and denser only
 //! when too few pass the gate. Each sampling fills a histogram of (band,
@@ -39,9 +51,12 @@ const R_WIDTH: u32 = 4;
 /// Bins of `|operator output|` (the last collects everything beyond).
 const R_BINS: usize = 256;
 /// Bins of the gate statistic `q`: bin 0 holds `q = 0`, bin `b ≥ 1` holds
-/// `q ∈ [2^(b−1), 2^b)`, and the last collects `q ≥ 2^22` (beyond the gate
-/// for any σ below 36 gray levels).
-const Q_BINS: usize = 24;
+/// `q ∈ [2^(b−1), 2^b)`, and the last collects `q ≥ 2^24` (beyond the gate
+/// for any σ below about 50 gray levels).
+const Q_BINS: usize = 26;
+/// Windows whose mean is within this many gray levels of 0 or 255 are
+/// skipped (clipped noise).
+const RAIL_MARGIN: i32 = 12;
 /// 4×4 windows sampled at first; images whose gate admits fewer than
 /// [`ENOUGH_SAMPLES`] of them are resampled four times as densely, up to
 /// [`MAX_WINDOWS`].
@@ -52,20 +67,37 @@ const MAX_WINDOWS: usize = 1 << 16;
 const ENOUGH_SAMPLES: u64 = 1024;
 /// A band needs this many gated windows to contribute.
 const MIN_BAND_SAMPLES: u64 = 128;
+/// A band's gate may be at most this many bins (each a factor 2 in noise
+/// variance) looser than the image-wide gate.
+const MAX_BAND_LOOSEN: usize = 2;
 /// A band contributes only when a noise-only window at its level passes
-/// the gate with at least this probability.
+/// its gate with at least this probability.
 const MIN_ADMIT: f64 = 0.25;
 /// Below this many gated windows over all bands the estimate is not
 /// reported (the relative standard error of σ̂ is about `1/sqrt(2n)`, 3%
 /// here).
 const MIN_SAMPLES: u64 = 512;
-/// Gate statistic `q = 5·(a² + b²) + c₁² + c₂²` with `a = d ⊗ s`,
-/// `b = s ⊗ d` (variance `80σ²` each) and `c₁ = d ⊗ l`, `c₂ = l ⊗ d`
-/// (variance `400σ²` each): `q / (400σ²)` is χ²₄ under white noise.
+/// Squared norms of the orthogonal polynomials `s`, `l`, `e`, `d`
+/// ([`poly4`]).
+const POLY_NORM2: [i32; 4] = [4, 20, 4, 20];
+/// Gate components `(degree along x, degree along y)`.
+const GATE_TERMS: [(usize, usize); 9] = [
+    (1, 2),
+    (2, 1),
+    (2, 2),
+    (1, 3),
+    (3, 1),
+    (2, 3),
+    (3, 2),
+    (3, 0),
+    (0, 3),
+];
+/// Gate statistic `q = Σ wᵢⱼ·cᵢⱼ²` over [`GATE_TERMS`], with
+/// `wᵢⱼ = 400 / (‖Pᵢ‖²‖Pⱼ‖²)`: each component is scaled to variance
+/// `400σ²`, so `q / (400σ²)` is χ²₉ under white noise.
 const GATE_GAIN2: f64 = 400.0;
-/// Keep windows with `q < GATE · 400σ²`; with the power-of-two bins this
-/// keeps 59–91% of noise-only windows.
-const GATE: f64 = 8.0;
+/// Keep windows with `q < GATE · 400σ²`.
+const GATE: f64 = 20.0;
 /// Truncation of the second moment, in units of the median-based scale.
 const TRUNC: f64 = 4.0;
 /// `E[z² | |z| < TRUNC]` for a standard normal `z`: the truncated second
@@ -88,21 +120,27 @@ type BandHistogram = [[u32; R_BINS]; Q_BINS];
 /// includes the rounding to integers (`1/12` gray level² when the noise
 /// spans several levels). It is designed for images dominated by strong
 /// edges, such as calibration boards: edges, corners and smooth shading are
-/// excluded from the statistic, and so are saturated pixels. Under
+/// excluded from the statistic, and so are areas within 12 gray levels of
+/// black or white, where clipping removes noise. Under
 /// signal-dependent noise the estimate is the root of the mean noise
 /// variance over the image's structure-free areas. Spatially correlated
-/// noise (demosaicing, compression, resampling) is partly cancelled by the
-/// estimator and is under-reported.
+/// noise (demosaicing, compression, resampling) is outside the model: the
+/// operator partly cancels it, so it is under-reported, and the edge test
+/// rejects more of its windows, so such images cost more samples.
 ///
-/// An image with no structure-free area — small, sharp, oblique cells
-/// filling the whole frame — gives no estimate at low noise and an
-/// over-estimate at high noise, where the gate can no longer tell such
-/// edges from noise.
+/// Accuracy on synthetic boards (cells 5–12, any rotation or shear, blur
+/// up to 2.5 px): within about 5% for σ ≥ 2 gray levels and 12% for σ ≥ 1.
+/// Below 1 gray level, residual pattern in strongly blurred images is
+/// comparable to the noise and reads up to about 20% high. Images with
+/// almost no structure-free area — small, sharp or slightly blurred cells
+/// filling the whole frame — give no estimate at low noise; under
+/// signal-dependent noise, such images can lose their brighter areas'
+/// contribution and read low.
 ///
 /// Deterministic and cheap: it samples about 4 000 4×4 windows on a
 /// regular grid, so the cost does not grow with the image size, and
 /// samples more densely (up to about 65 000 windows) only when too few of
-/// them are free of edges. It allocates one fixed 96 KiB histogram per
+/// them are free of edges. It allocates one fixed 104 KiB histogram per
 /// call.
 ///
 /// Returns `None` when the image is smaller than 4×4 or too few windows
@@ -145,19 +183,22 @@ pub fn estimate_noise_sigma_u8(img: &[u8], w: usize, h: usize) -> Option<f32> {
 /// windows behind it.
 fn noise_from_histogram(hist: &[BandHistogram]) -> Option<(f32, u64)> {
     let qmax = gate_fixed_point(hist)?;
-    // Gate upper bound: windows with q < 2^qmax pass (q = 0 for qmax = 0).
-    let gate_q = if qmax == 0 {
-        0.5
-    } else {
-        (1u64 << qmax) as f64
-    };
     let (mut weight, mut wvar, mut admitted) = (0f64, 0f64, 0u64);
     for band in hist {
-        let Some((n, var_r)) = scale(&pooled(band, qmax)) else {
+        let Some(qband) = band_gate(band, qmax) else {
             continue;
         };
-        // `q / (400σ²)` is χ²₄ for a noise-only window, and `var_r = 400σ²`.
-        let admit = chi2_4_cdf(gate_q / var_r);
+        let Some((n, var_r)) = scale(&pooled(band, qband)) else {
+            continue;
+        };
+        // Gate upper bound: windows with q < 2^qband pass (q = 0 for bin 0).
+        let gate_q = if qband == 0 {
+            0.5
+        } else {
+            (1u64 << qband) as f64
+        };
+        // `q / (400σ²)` is χ²₉ for a noise-only window, and `var_r = 400σ²`.
+        let admit = chi2_9_cdf(gate_q / var_r);
         if admit < MIN_ADMIT {
             continue;
         }
@@ -169,41 +210,71 @@ fn noise_from_histogram(hist: &[BandHistogram]) -> Option<(f32, u64)> {
     (admitted >= MIN_SAMPLES).then(|| (((wvar / weight).sqrt() / OPERATOR_GAIN) as f32, admitted))
 }
 
+/// The band's own gate: from the image-wide gate `qmax`, moved to the bin
+/// the band's noise level implies until it settles. A band may be noisier
+/// than the image as a whole (signal-dependent noise), but by at most
+/// [`MAX_BAND_LOOSEN`] bins; a band whose gate runs further holds
+/// structure, not noise, and gets `None`.
+fn band_gate(band: &BandHistogram, qmax: usize) -> Option<usize> {
+    let mut q = qmax;
+    for _ in 0..16 {
+        let sigma_r = median_scale(&pooled(band, q), MIN_BAND_SAMPLES)?;
+        let next = gate_bin(sigma_r / OPERATOR_GAIN);
+        if next > qmax + MAX_BAND_LOOSEN {
+            return None;
+        }
+        if next == q {
+            break;
+        }
+        q = next;
+    }
+    Some(q)
+}
+
+/// The four orthogonal polynomials applied to four values: `[s, l, e, d]`.
+#[inline]
+fn poly4([v0, v1, v2, v3]: [i32; 4]) -> [i32; 4] {
+    [
+        v0 + v1 + v2 + v3,
+        3 * (v3 - v0) + v2 - v1,
+        v0 - v1 - v2 + v3,
+        v0 - 3 * v1 + 3 * v2 - v3,
+    ]
+}
+
 /// Add the 4×4 window with top-left pixel `(x, y)` to the histogram.
 #[inline]
 fn record(hist: &mut [BandHistogram], img: &[u8], w: usize, x: usize, y: usize) {
-    let px: [[u8; 4]; 4] = core::array::from_fn(|k| {
+    let rows: [[i32; 4]; 4] = core::array::from_fn(|k| {
         let start = (y + k) * w + x;
-        img[start..start + 4]
+        let row: [u8; 4] = img[start..start + 4]
             .try_into()
-            .expect("window lies inside the image")
+            .expect("window lies inside the image");
+        row.map(i32::from)
     });
-    // Saturated pixels carry no noise.
-    if px.iter().flatten().any(|&p| p == 0 || p == u8::MAX) {
+    // Polynomials down each column, then across: `comp[j][i]` is component
+    // `(i, j)` (degree `i` along x, `j` along y).
+    let down: [[i32; 4]; 4] = core::array::from_fn(|c| poly4(rows.map(|row| row[c])));
+    let comp: [[i32; 4]; 4] = core::array::from_fn(|j| poly4(down.map(|col| col[j])));
+    // Window mean, via the sum `(0, 0)`: skip windows near the rails, where
+    // clipping removes noise.
+    let sum = comp[0][0];
+    if !(16 * RAIL_MARGIN..=16 * (255 - RAIL_MARGIN)).contains(&sum) {
         return;
     }
-    // Down each column: `d`, `s` and `l` over the four rows.
-    let col = |c: usize| {
-        let [p0, p1, p2, p3] = px.map(|row| i32::from(row[c]));
-        (
-            p0 - 3 * p1 + 3 * p2 - p3,
-            p0 + p1 + p2 + p3,
-            3 * (p3 - p0) + p2 - p1,
-        )
-    };
-    let [(d0, s0, l0), (d1, s1, l1), (d2, s2, l2), (d3, s3, l3)] = [col(0), col(1), col(2), col(3)];
-    // Across the columns, `x ⊗ y` kernels: the operator `d ⊗ d`, and the
-    // gate's `d ⊗ s`, `s ⊗ d`, `d ⊗ l`, `l ⊗ d`.
-    let r = d0 - 3 * d1 + 3 * d2 - d3;
-    let ds = s0 - 3 * s1 + 3 * s2 - s3;
-    let sd = d0 + d1 + d2 + d3;
-    let dl = l0 - 3 * l1 + 3 * l2 - l3;
-    let ld = 3 * (d3 - d0) + d2 - d1;
-    let q = 5 * ((ds * ds) as u32 + (sd * sd) as u32) + (dl * dl) as u32 + (ld * ld) as u32;
-    let qbin = ((u32::BITS - q.leading_zeros()) as usize).min(Q_BINS - 1);
+    let r = comp[3][3];
+    let q: u64 = GATE_TERMS
+        .iter()
+        .map(|&(i, j)| {
+            let c = i64::from(comp[j][i]);
+            let weight = i64::from(400 / (POLY_NORM2[i] * POLY_NORM2[j]));
+            (weight * c * c) as u64
+        })
+        .sum();
+    let qbin = ((u64::BITS - q.leading_zeros()) as usize).min(Q_BINS - 1);
     let rbin = ((r.unsigned_abs() / R_WIDTH) as usize).min(R_BINS - 1);
     // Window mean / 64 = window sum / 1024.
-    let band = ((s0 + s1 + s2 + s3) >> 10) as usize;
+    let band = (sum >> 10) as usize;
     hist[band][qbin][rbin] += 1;
 }
 
@@ -305,10 +376,25 @@ fn scale(counts: &[u64; R_BINS]) -> Option<(u64, f64)> {
     (n >= MIN_BAND_SAMPLES).then(|| (n, s2 / n as f64 / TRUNC_SECOND_MOMENT))
 }
 
-/// CDF of the χ² distribution with 4 degrees of freedom.
-fn chi2_4_cdf(x: f64) -> f64 {
-    let h = 0.5 * x;
-    1.0 - (-h).exp() * (1.0 + h)
+/// CDF of the χ² distribution with 9 degrees of freedom:
+/// `erf(√(x/2)) − √(2x/π) e^(−x/2) (1 + x/3 + x²/15 + x³/105)`.
+fn chi2_9_cdf(x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    let series = 1.0 + x / 3.0 + x * x / 15.0 + x * x * x / 105.0;
+    erf((0.5 * x).sqrt()) - (2.0 * x / core::f64::consts::PI).sqrt() * (-0.5 * x).exp() * series
+}
+
+/// Error function for `x ≥ 0` (Abramowitz–Stegun 7.1.26, absolute error
+/// below 1.5·10⁻⁷).
+fn erf(x: f64) -> f64 {
+    let t = 1.0 / (1.0 + 0.327_591_1 * x);
+    let poly = t
+        * (0.254_829_592
+            + t * (-0.284_496_736
+                + t * (1.421_413_741 + t * (-1.453_152_027 + t * 1.061_405_429))));
+    1.0 - poly * (-x * x).exp()
 }
 
 /// Largest gate bin whose upper bound lies below the gate for pixel noise
@@ -373,6 +459,14 @@ mod tests {
     #[should_panic(expected = "estimate_noise_sigma_u8: img.len()")]
     fn panics_on_dimension_mismatch() {
         let _ = estimate_noise_sigma_u8(&[0; 10], 4, 4);
+    }
+
+    #[test]
+    fn chi2_9_cdf_matches_known_values() {
+        // Median of χ²₉ is 8.343; P(χ²₉ < 16.919) = 0.95.
+        assert!((chi2_9_cdf(8.343) - 0.5).abs() < 1e-3);
+        assert!((chi2_9_cdf(16.919) - 0.95).abs() < 1e-3);
+        assert_eq!(chi2_9_cdf(0.0), 0.0);
     }
 
     #[test]

@@ -219,6 +219,45 @@ pub fn aa_chessboard(
     img
 }
 
+/// Supersampled `size × size` chessboard rotated by `angle` radians about
+/// `center`, with `cell`-pixel cells and `dark`/`bright` levels.
+///
+/// Each pixel averages an `8 × 8` grid of hard-pattern sub-samples (pixel
+/// centres on integer coordinates), so edges at any angle carry a graded
+/// profile. A corner sits at `center`; the lattice axes are
+/// `(cos angle, sin angle)` and `(−sin angle, cos angle)`. Cell parity
+/// matches [`aa_chessboard`] at `angle = 0`.
+pub fn rotated_chessboard(
+    size: usize,
+    cell: usize,
+    center: (f32, f32),
+    angle: f32,
+    dark: u8,
+    bright: u8,
+) -> Vec<u8> {
+    let (sin, cos) = angle.sin_cos();
+    let c = cell as f32;
+    let inv_super2 = 1.0 / (SUPER * SUPER) as f32;
+    let mut img = vec![0u8; size * size];
+    for y in 0..size {
+        for x in 0..size {
+            let mut acc = 0.0f32;
+            for sy in 0..SUPER {
+                let dy = y as f32 + (sy as f32 + 0.5) / SUPER as f32 - 0.5 - center.1;
+                for sx in 0..SUPER {
+                    let dx = x as f32 + (sx as f32 + 0.5) / SUPER as f32 - 0.5 - center.0;
+                    let u = ((dx * cos + dy * sin) / c).floor() as i32;
+                    let v = ((-dx * sin + dy * cos) / c).floor() as i32;
+                    let dark_cell = (u + v).rem_euclid(2) == 0;
+                    acc += f32::from(if dark_cell { dark } else { bright });
+                }
+            }
+            img[y * size + x] = (acc * inv_super2).round().clamp(0.0, 255.0) as u8;
+        }
+    }
+    img
+}
+
 /// Exact pixel-area chessboard, axis-aligned or sheared, with exact corner
 /// positions.
 ///
