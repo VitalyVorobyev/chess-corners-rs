@@ -3,7 +3,7 @@
 Task registry for the program in [`ROADMAP.md`](ROADMAP.md). Design detail
 lives in the linked `design/` docs; this file is the task list.
 
-**Legend.** ID `<WS>-NN`, `WS ∈ {PERF, API, SITE, CPP, DEBT, DOCS, SWEEP, SOLID}`
+**Legend.** ID `<WS>-NN`, `WS ∈ {PERF, API, SITE, CPP, DEBT, DOCS, SWEEP, SOLID, UQ}`
 (+ carried-over `ML/ALGO/PY`). Priority `P0`(blocker)–`P3`(nice-to-have).
 Status `todo | in-progress | blocked | done | wontfix`. **Milestone** links to
 the ROADMAP; **Deps** lists prerequisite IDs.
@@ -136,6 +136,20 @@ state.
 | DOCS-03 | P3 | todo | — | — | Tracing/profiling cookbook examples (pair with book Part VIII). |
 | DOCS-04 | P3 | todo | — | — | Worked `no_std` examples for `chess-corners-core`. |
 | DOCS-05 | P3 | done | — | — | Regenerated the refiner benchmark plots under `book/src/img/bench/` without the RadonPeak series; fresh data confirms the chapter's refiner claims. |
+
+## UQ — accuracy-aware detection  ·  post-1.0  ·  [roadmap](ROADMAP.md#post-10-program-accuracy-aware-detection-uq-)
+
+| ID | Pri | Status | Release | Deps | Task |
+|----|-----|--------|---------|------|------|
+| UQ-00 | P1 | in-progress | 1.4.0 | — | Saddle-point refiner reports its position covariance per unit noise variance (`RefineResult`, typed). Normal-matrix inverse precomputed per radius, so the covariance adds no per-corner solve. Asserting scatter test (PR #74). |
+| UQ-01 | P1 | todo | 1.4.0 | UQ-00 | Bias/precision benchmark per refiner. Grid: subpixel phase, blur, Gaussian and signal-dependent noise, cell size, contrast, skew. Metrics: signed bias, precision σ, RMSE, and z-score calibration of the predicted σ about the mean and about the truth. Output `reference/refiner-accuracy.md`. **Gates the 1.5.0 API shape.** |
+| UQ-02 | P1 | todo | 1.4.0 | UQ-01 | Re-measure the noise rows in `reference/refiner-comparison.md`, `book/src/img/bench/bench_sweep.json` and book Part VIII §7.4 with the fixed noise helper (they were measured at ~1.3× the stated σ). |
+| UQ-03 | P2 | todo | 1.5.0 | UQ-01 | Per-image noise estimate (cheap estimator on one pyramid level, or a caller-supplied value) so covariance comes out in px². |
+| UQ-04 | P2 | todo | 1.5.0 | UQ-01 | Position covariance for Förstner (σ² · inverse structure tensor) and CenterOfMass (propagation through the weights). Add a model-error term if UQ-01 shows bias matters. |
+| UQ-05 | P2 | todo | 1.5.0 | UQ-03, UQ-04 | Position covariance (px²) on `CornerDescriptor`; Python / WASM / C APIs (`cc_abi_version` bump) and JSON schema; a book Part on uncertainty. |
+| UQ-06 | P3 | todo | 1.6.0 | UQ-03 | One noise model for orientation σ across RingFit and DiskFit, re-checked with z-scores. |
+| UQ-07 | P3 | todo | 1.6.0+ | UQ-01 | Reduce refiner bias where UQ-01 shows it dominates the error. |
+| UQ-08 | P2 | todo | ongoing | UQ-05 | Realistic ground truth: calib-synth / etendue renders, and an end-to-end check that calibration-rs reaches σ̂₀ ≈ 1 with detector covariances. Absorbs `ML-01` and `ML-02`. |
 
 ## Post-1.0 / future (not blocking 1.0)
 
