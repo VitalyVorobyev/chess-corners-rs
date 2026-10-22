@@ -69,9 +69,9 @@ def add_noise_boxmuller(img: np.ndarray, sigma: float, seed: int) -> np.ndarray:
     idx = 0
     while idx < n:
         state = (state * 6_364_136_223_846_793_005 + 1_442_695_040_888_963_407) & 0xFFFFFFFFFFFFFFFF
-        u1 = ((state >> 33) + 1) / (0xFFFFFFFF + 2)
+        u1 = ((state >> 32) + 1) / (0xFFFFFFFF + 2)
         state = (state * 6_364_136_223_846_793_005 + 1_442_695_040_888_963_407) & 0xFFFFFFFFFFFFFFFF
-        u2 = ((state >> 33) + 1) / (0xFFFFFFFF + 2)
+        u2 = ((state >> 32) + 1) / (0xFFFFFFFF + 2)
         z = math.sqrt(max(-2.0 * math.log(u1), 0.0)) * math.cos(2.0 * math.pi * u2)
         out[idx] = z
         idx += 1

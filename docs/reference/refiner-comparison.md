@@ -37,17 +37,17 @@ mean per condition is **bolded**.
 | clean (cell=8)   | 0.080 / 0.123      | **0.061** / 0.165    | 0.114 / 0.177        | 0.094 / 0.181       |
 | clean (cell=5)   | 0.390 / 0.707      | **0.061** / 0.165    | 0.114 / 0.177        | 0.091 / 0.150       |
 | blur σ=1.5       | 0.056 / 0.124      | 0.266 / 0.471        | **0.047** / 0.079    | 0.092 / 0.173       |
-| noise σ=5        | **0.088** / 0.156  | 0.135 / 0.301        | 0.095 / 0.220        | 0.093 / 0.168       |
-| noise σ=10       | 0.123 / 0.272      | 0.201 / 0.474        | 0.126 / 0.257        | **0.101** / 0.200   |
+| noise σ=5        | **0.078** / 0.164  | 0.113 / 0.238        | 0.094 / 0.163        | 0.091 / 0.175       |
+| noise σ=10       | **0.091** / 0.178  | 0.159 / 0.344        | 0.101 / 0.200        | 0.094 / 0.167       |
 
 Cells are `mean / worst` px; accept rate is 36/36 for every refiner in
 every condition. In this fixture, `Förstner` has the lowest mean error
 on the clean rows, `SaddlePoint` is the most accurate geometric refiner
-on the blur row, and the ML refiner has the lowest mean error on the
-heaviest noise row (`σ=10`). All four refiners come in under the
+on the blur row, and `CenterOfMass` has the lowest mean error on both
+noise rows. All four refiners come in under the
 ~0.13 px mean-error bar on clean cell=8.
 
-The ML refiner remains useful in the measured heavy-noise row and as a
+The ML refiner remains useful as a
 single deployable ONNX artifact for callers who prefer a learned
 component over a hand-tuned pipeline. See Part V of the book for the
 ML refiner architecture.
@@ -68,12 +68,12 @@ precedes the timed loop.
 |----------------|-----------|-----------------|-------------------------------------------------------------------------------|
 | CenterOfMass   | 0.02 µs   | ≈50 M corners/s | 5×5 weighted moment over the ChESS response map                               |
 | Forstner       | 0.06 µs   | ≈17 M corners/s | 5×5 gradient structure tensor solve                                           |
-| SaddlePoint    | 0.07 µs   | ≈15 M corners/s | 6-param quadratic LS with a precomputed normal-matrix inverse                 |
-| ML (ONNX)      | 252 µs    | ≈4 K corners/s  | 21×21 patch extract + ONNX inference, batch=1                                 |
+| SaddlePoint    | 0.06 µs   | ≈17 M corners/s | 6-param quadratic LS with a precomputed normal-matrix inverse                 |
+| ML (ONNX)      | 151 µs    | ≈7 K corners/s  | 21×21 patch extract + ONNX inference, batch=1                                 |
 
 ## Per-refiner takeaways
 
-- **SaddlePoint** — 0.07 µs in this harness, under 0.12 px mean on the
+- **SaddlePoint** — 0.06 µs in this harness, under 0.12 px mean on the
   clean row, and the lowest geometric mean on the blur row (0.047 px at
   σ=1.5). A good default for calibration pipelines where blur is possible.
 - **CenterOfMass** — the fastest, but **only when the ChESS ring
@@ -89,14 +89,13 @@ precedes the timed loop.
   depends on. Consider it when the input edges are sharp and high
   contrast.
 - **ML (ONNX) v4** — the shipped mixed-fixture model. Reaches
-  0.09–0.12 px mean across the rows above and has the lowest mean error
-  under heavy noise (`σ=10`) in this benchmark.
+  0.09–0.12 px mean across the rows above, with the flattest response to
+  noise.
   Retrained on AA-hard-cell synthetic data matching this fixture
   (`tools/ml_refiner/configs/synth_v6.yaml`), replacing the v2
   tanh-saddle training that produced the ~0.5 px
-  distribution-mismatch failure. Use it when the measured noise
-  behavior matters or when a deployable learned component is a better
-  integration fit than a CPU-only geometric refiner; note it is ~2000×
+  distribution-mismatch failure. Use it when a deployable learned component is a better
+  integration fit than a CPU-only geometric refiner; note it is ~2500×
   slower than SaddlePoint per corner at batch=1.
 
 ## Notes on the measurement

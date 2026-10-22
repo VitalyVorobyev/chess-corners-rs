@@ -245,7 +245,7 @@ directions:
 The shipped dataset avoids both by mixing the two modes 50/50 (§5.5.2)
 and augmenting with sensor noise. Two lessons carry over into the
 Part VIII benchmark. Noise augmentation is what lets the model take the
-heaviest-noise row (`σ = 10` gray levels), where it posts the lowest
+heaviest-noise row (`σ = 12` gray levels), where it posts the lowest
 mean error; and capacity is not the bottleneck — neither a wider CNN
 nor a spatial-softargmax head lowered held-out error. On clean and
 mildly blurred data the geometric refiners still win (`Förstner` for
