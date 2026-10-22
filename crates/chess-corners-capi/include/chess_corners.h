@@ -244,7 +244,7 @@ typedef struct cc_corner {
   struct cc_axis axes[2];
   /**
    * Covariance of `(x, y)` in px²: first-order scatter due to white
-   * pixel noise plus a model-error floor of 0.015 px per axis. Valid only
+   * pixel noise plus a model-error floor of 0.002 px per axis. Valid only
    * when `has_position_covariance` is `1`; zeroed otherwise.
    */
   struct cc_covariance position_covariance;

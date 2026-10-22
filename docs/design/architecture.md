@@ -89,7 +89,7 @@ Option<PositionCovariance>` — the first-order position covariance per
 unit image-noise variance (px² per gray-level²), set only by the
 saddle-point refiner on accepted corners. `Corner` carries it through
 merging; the facade turns it into `CornerDescriptor::position_covariance`
-in px² (`σₙ²·C + f²I`, `f = 0.015` px) after `describe_corners`, with σₙ
+in px² (`σₙ²·C + f²I`, `f = 0.002` px, σₙ² ≥ 1/12) after `describe_corners`, with σₙ
 from `noise_sigma` or `estimate_noise_sigma_u8` on the refinement image.
 Final refinement always runs on the detector's input image (pyramid seeds
 are refined into the base level), so no rescaling is needed; on upscaled

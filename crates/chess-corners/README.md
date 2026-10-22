@@ -116,7 +116,7 @@ Each detection is a `CornerDescriptor` with:
   disabled.
 - `position_covariance` — `Some` 2×2 covariance of `(x, y)` in px², for
   weighting the corner in a calibration: the scatter due to white pixel
-  noise plus a 0.015 px per-axis model-error floor. Only the saddle-point
+  noise plus a 0.002 px per-axis model-error floor. Only the saddle-point
   refiner reports it. The noise level is estimated from each image, or
   set with `DetectorConfig::with_noise_sigma`; it is `None` on upscaled
   input.

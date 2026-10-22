@@ -136,7 +136,7 @@ pub struct RefineResult {
     /// (upscaling, demosaicing, JPEG, blur applied after the noise) makes it
     /// underestimate the scatter. It describes noise scatter only, not the
     /// refiner's residual systematic error (on synthetic corners about
-    /// 0.015 px per axis for cells of 8 px or more, larger on smaller,
+    /// up to 0.015 px per axis for cells of 8 px or more, larger on smaller,
     /// blurred cells). Set by the saddle-point refiner on accepted corners
     /// whose re-centred refinement converged; `None` otherwise and for the
     /// center-of-mass and Förstner refiners.

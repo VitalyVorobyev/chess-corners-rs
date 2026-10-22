@@ -217,7 +217,9 @@ of σ_emp in every row except 90/150, blur 2.5, σₙ = 4 (+7%).
   which `Σ + f²I` brings σ̂₀² about the truth within 0.05 of the
   scatter-only value, over fixtures with σ_emp < 0.3 px: 0.015 px covers
   every cell 8–12 fixture (median 0); cell 5 needs up to 0.03 px
-  (low contrast, blur 2.5). This is the floor `UQ-05` adds.
+  (low contrast, blur 2.5). That worst-case floor over-states the error
+  everywhere else; `UQ-05` picks 0.002 px instead
+  ([below](#noise-estimate-and-end-to-end-covariance)).
 - **Acceptance** is decided by the first (integer-grid) fit exactly as
   before and is identical on every cell of the grid. Re-centring
   converges for ≥ 99.98% of accepted corners on every cell 8–12 fixture
@@ -248,8 +250,8 @@ of σ_emp in every row except 90/150, blur 2.5, σₙ = 4 (+7%).
 ## Noise estimate and end-to-end covariance
 
 `UQ-03` / `UQ-05`: the detector reports `CornerDescriptor::position_covariance`
-= `σₙ²·C + f²I` (`f = 0.015` px), with σₙ from `DetectorConfig::noise_sigma`
-or `estimate_noise_sigma_u8`.
+= `max(σₙ², 1/12)·C + f²I` (`f = 0.002` px), with σₙ from
+`DetectorConfig::noise_sigma` or `estimate_noise_sigma_u8`.
 
 ```sh
 cargo test -p chess-corners-core --release --test noise_estimate -- --ignored --nocapture
@@ -285,38 +287,56 @@ that needs a second, denser pass; the SaddlePoint multiscale detect is
 0.5 / 1.0 / 4.2 ms on those images. Nothing is estimated unless a refined
 corner carries a covariance (the default refiner reports none).
 
-**End to end** (facade, SaddlePoint, `area_chessboard` 200², cell 8, 25
-boards per row, ~13 k matched corners per cell): σ̂₀² = mean(eᵀΣ⁻¹e)/2 about
-the truth with the reported covariance, and in parentheses with the floor
-removed (noise-only). Estimated σₙ; supplying the realised σ changes it by
-≤ 0.08.
+**Floor choice.** Worst |ln σ̂₀²| per candidate `f` over cells 8–12, both
+contrasts and geometries, blur 0–2.5, white σₙ 1–8, converged corners: the
+`UQ-01` harness with the true noise variance, and the facade end to end
+(below) with the estimated one. The worst over every cell is a low-SNR
+cell no floor fixes (harness: sheared 90/150 blur 2.5 σₙ 8, 1.39; end to
+end: axis 90/150 blur 2.5 σₙ 8, 0.53, where 41% of detections miss the
+corner by > 0.5 px), so the comparison uses cells with σ_emp < 0.3 px
+(harness) / ≤ 1% missed detections (end to end):
+
+| f (px) | harness | end to end |
+|---|---|---|
+| 0 | 0.278 (1.32, skew60 40/200 blur 0 σₙ 1) | 0.230 (1.26, skew60 blur 0 σₙ 1) |
+| 0.002 | 0.192 (1.21, same) | **0.145** (1.16, same) |
+| 0.003 | **0.182** (0.83, axis 40/200 blur 0 σₙ 1) | 0.202 (0.82, axis blur 0 σₙ 1) |
+| 0.005 | 0.441 (0.64, axis) | 0.459 (0.63, axis) |
+| 0.0075 | 0.808 (0.45) | 0.825 (0.44) |
+| 0.01 | 1.165 (0.31) | 1.181 (0.31) |
+| 0.015 | 1.784 (0.17) | 1.799 (0.17) |
+
+`f = 0.002` px minimises the larger of the two (0.192). The pixel-noise
+variance is clamped at `1/12` (8-bit rounding) so a smoothed or compressed
+image whose measured σ is below 0.29 (`testimages/mid.png`: 0.20) does not
+get an overconfident covariance; the estimate already includes rounding
+on the synthetic boards (σₙ 0.5 / 1 / 2: realised 0.572 / 1.044 / 2.030 vs
+`√(σₙ² + 1/12)` 0.577 / 1.041 / 2.021; estimates 0.546 / 1.032 / 2.005), so
+the clamp changes no synthetic number above.
+
+**End to end at f = 0.002** (facade, SaddlePoint, `area_chessboard` 200²,
+cell 8, 25 boards per row, ~13 k matched corners): σ̂₀² =
+mean(eᵀΣ⁻¹e)/2 about the truth, estimated σₙ (supplying the realised σ
+changes it by ≤ 0.11).
 
 | board | blur | σₙ 1 | σₙ 2 | σₙ 4 | σₙ 8 |
 |---|---|---|---|---|---|
-| axis 40/200 | 0 | 0.17 (0.98) | 0.42 (0.98) | 0.74 (0.99) | 0.91 (0.99) |
-| axis 40/200 | 0.8 | 0.23 (1.09) | 0.50 (1.01) | 0.79 (1.00) | 0.93 (1.00) |
-| axis 40/200 | 1.5 | 0.35 (0.98) | 0.66 (1.00) | 0.88 (1.00) | 0.97 (1.00) |
-| axis 40/200 | 2.5 | 0.65 (0.93) | 0.87 (0.98) | 0.97 (1.00) | 1.00 (1.01) |
-| axis 90/150 | 0 | 0.58 (0.98) | 0.83 (0.99) | 0.95 (1.00) | 1.00 (1.02) |
-| axis 90/150 | 0.8 | 0.67 (1.03) | 0.87 (1.00) | 0.97 (1.01) | 1.01 (1.02) |
-| axis 90/150 | 1.5 | 0.84 (1.05) | 0.95 (1.02) | 1.00 (1.02) | 0.92* |
-| skew60 40/200 | 0 | 0.23 (1.26) | 0.46 (1.05) | 0.74 (0.99) | 0.82 (0.89)† |
-| skew60 40/200 | 0.8 | 0.23 (1.04)‡ | 0.53 (1.02) | 0.80 (1.00) | 0.93 (0.99) |
-| skew60 40/200 | 1.5 | 0.45 (1.08) | 0.72 (1.02) | 0.90 (0.99) | 0.98 (1.01) |
+| axis 40/200 | 0 | 0.90 | 0.95 | 0.99 | 0.99 |
+| axis 40/200 | 0.8 | 1.02 | 0.99 | 1.00 | 0.99 |
+| axis 40/200 | 1.5 | 0.95 | 0.99 | 1.00 | 1.00 |
+| axis 40/200 | 2.5 | 0.93 | 0.97 | 1.00 | 1.01 |
+| axis 90/150 | 0 | 0.97 | 0.98 | 1.00 | 1.02 |
+| axis 90/150 | 0.8 | 1.02 | 1.00 | 1.01 | 1.02 |
+| axis 90/150 | 1.5 | 1.05 | 1.02 | 1.02 | 0.93* |
+| axis 90/150 | 2.5 | 0.93 | 1.00 | 0.92* | 0.53* |
+| skew60 40/200 | 0 | 1.16 | 1.02 | 0.99 | 0.89† |
+| skew60 40/200 | 0.8 | 0.97‡ | 1.00 | 0.99 | 0.99 |
+| skew60 40/200 | 1.5 | 1.06 | 1.01 | 0.99 | 1.01 |
 
-\* low SNR: 5% of detections > 0.5 px off a lattice corner (excluded).
-† σₙ over-estimated by 6% (supplied σ: 0.998). ‡ the estimator declined on
-24 of 25 boards (no covariance reported there).
-
-The noise part is calibrated end to end (0.93–1.13 without the floor,
-1.26 only for sharp sheared corners at σₙ = 1, whose ~0.01 px bias equals
-the scatter). The 0.015 px floor dominates wherever the scatter is below
-~0.02 px — sharp or high-contrast corners at σₙ ≤ 2 — and drives σ̂₀² to
-0.17–0.5 there: the reported σ is 1.4–2.4× the actual error. Open
-decision (`UQ-05`): keep the floor (conservative), shrink it, or drop it.
-Scaling each row by `s²/(s² + f²)` (scatter `s` from the 0.015 px row):
-`f = 0.003` px gives ≈ 0.82 on the sharp axis-aligned σₙ = 1 row and ≈ 1.07
-on the sharp sheared one; `f = 0.005` gives ≈ 0.63 / 0.84.
+\* low SNR: 5–41% of detections > 0.5 px off a lattice corner (excluded).
+† σₙ over-estimated by 6% (supplied σ: 1.00). ‡ the estimator declined on
+24 of 25 boards (no covariance reported there). Sheared blur 2.5 yields
+too few detections at the default threshold to report.
 
 ## Recommendation for 1.5.0
 
@@ -332,7 +352,7 @@ removable (findings 3–4), and a learned or blur-indexed bias term would
 need a blur estimate the detector does not have. `UQ-07` (re-centred
 refit, covariance of the converged estimate) has brought σ̂₀² to ≈ 1
 ([After re-centring](#after-re-centring)); `UQ-05` exposes that
-covariance plus a constant floor of 0.015 px per axis. Förstner and CenterOfMass
+covariance plus a constant floor of 0.002 px per axis. Förstner and CenterOfMass
 covariances (`UQ-04`) are of little use while their bias is 1–7× their
 scatter; document SaddlePoint as the refiner for calibration-grade work
 and defer them.

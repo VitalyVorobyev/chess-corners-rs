@@ -29,10 +29,15 @@ pub(crate) use neighbors::{count_positive_neighbors, is_local_max};
 use crate::refine::PositionCovariance;
 
 /// Model-error floor of a refined position, in px per axis: added as `f²`
-/// to each diagonal entry of [`Corner::position_covariance`]. It covers the
-/// saddle-point refiner's residual systematic error on corners with cells
-/// of 8 px or more; smaller, sheared and strongly blurred cells exceed it.
-pub(crate) const POSITION_FLOOR_PX: f32 = 0.015;
+/// to each diagonal entry of [`Corner::position_covariance`]. Chosen to
+/// keep the whitened error σ̂₀² closest to 1 on synthetic corners with
+/// cells of 8 px or more; smaller, sheared and strongly blurred cells have
+/// a larger residual systematic error.
+pub(crate) const POSITION_FLOOR_PX: f32 = 0.002;
+
+/// Lower bound on the pixel-noise variance used for a covariance, in gray
+/// level²: the variance of rounding to 8 bits.
+pub(crate) const MIN_NOISE_VAR: f32 = 1.0 / 12.0;
 
 /// A detected corner candidate (subpixel position with raw response strength).
 #[derive(Clone, Debug)]
@@ -69,18 +74,22 @@ impl Corner {
     /// from [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8)):
     /// `σₙ²·C + f²·I`, with `C` =
     /// [`covariance_per_noise_variance`](Self::covariance_per_noise_variance)
-    /// and `f = 0.015` px per axis.
+    /// and `f = 0.002` px per axis. `σₙ²` is at least `1/12` gray level²,
+    /// the variance of rounding to 8 bits, so a smoothed or compressed image
+    /// whose measured noise is lower does not get an overconfident
+    /// covariance.
     ///
-    /// `σₙ²·C` is the first-order noise scatter; `f` covers the refiner's
-    /// residual systematic error, measured on synthetic corners with cells
-    /// of 8 px or more — smaller, sheared or strongly blurred cells exceed
-    /// it. Valid only for the image the corner was refined on, and only for
+    /// `σₙ²·C` is the first-order noise scatter; `f` is a small model-error
+    /// floor, chosen so that whitened errors on synthetic corners with cells
+    /// of 8 px or more have unit variance — smaller, sheared or strongly
+    /// blurred cells have a larger systematic error. Valid only for the
+    /// image the corner was refined on, and only for
     /// spatially uncorrelated noise: upscaled, demosaiced or compressed
     /// images make it underestimate the error. `None` when the corner
     /// carries no covariance.
     #[inline]
     pub fn position_covariance(&self, noise_sigma: f32) -> Option<PositionCovariance> {
-        let var = noise_sigma * noise_sigma;
+        let var = (noise_sigma * noise_sigma).max(MIN_NOISE_VAR);
         let floor2 = POSITION_FLOOR_PX * POSITION_FLOOR_PX;
         self.covariance_per_noise_variance
             .map(|c| PositionCovariance::new(var * c.xx + floor2, var * c.xy, var * c.yy + floor2))
@@ -178,7 +187,7 @@ pub struct CornerDescriptor {
 
     /// Covariance of the position `(x, y)` in px² of this frame: the
     /// first-order scatter due to white pixel noise plus a model-error floor
-    /// of 0.015 px per axis (see [`Corner::position_covariance`]).
+    /// of 0.002 px per axis (see [`Corner::position_covariance`]).
     ///
     /// `None` unless the corner was refined by the saddle-point refiner, its
     /// re-centred refinement converged, the image noise level is known

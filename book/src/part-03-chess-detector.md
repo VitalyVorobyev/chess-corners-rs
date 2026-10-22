@@ -303,7 +303,7 @@ Fields:
   orientation fit was disabled (§3.4.6).
 - `position_covariance` – the 2×2 covariance `{ xx, xy, yy }` of
   `(x, y)` in px²: the scatter due to white pixel noise plus a
-  0.015 px per-axis model-error floor. Only the saddle-point refiner
+  0.002 px per-axis model-error floor. Only the saddle-point refiner
   reports it (Part V); the detector scales it by the image noise level,
   estimated per image or set with `DetectorConfig::noise_sigma`, and
   leaves it `None` on upscaled input.

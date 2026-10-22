@@ -169,7 +169,8 @@ pub struct DetectorConfig {
     /// sensor noise is known, for example from a flat-field measurement.
     /// It is the noise as it appears in the 8-bit image, rounding included
     /// (rounding adds `1/12` gray level², which matters only below about
-    /// 1 gray level).
+    /// 1 gray level). The covariance never uses a variance below that
+    /// `1/12`.
     ///
     /// Only the saddle-point refiner reports a position covariance, so with
     /// any other refiner this field has no effect and no estimate is made.

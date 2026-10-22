@@ -52,7 +52,7 @@ struct Covariance {
 /// `false` and `axes` is zeroed.
 ///
 /// `position_covariance` is the covariance of `(x, y)` in px^2 (white-noise
-/// scatter plus a 0.015 px per-axis model-error floor). It is set only with
+/// scatter plus a 0.002 px per-axis model-error floor). It is set only with
 /// the saddle-point refiner, on corners whose refinement converged, and not
 /// on upscaled input.
 struct Corner {
