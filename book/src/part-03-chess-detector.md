@@ -256,7 +256,7 @@ pub struct Corner {
 
 The refinement step preserves the detector's noise robustness and
 adds subpixel precision. Measured accuracy and throughput for each
-refiner are in [Part VIII](part-08-benchmarks.md).
+refiner are in [Part IX](part-09-benchmarks.md).
 
 ---
 
@@ -307,7 +307,8 @@ Fields:
   the model and its value). Only the saddle-point refiner
   reports it (Part V); the detector scales it by the image noise level,
   estimated per image or set with `DetectorConfig::noise_sigma`, and
-  leaves it `None` on upscaled input.
+  leaves it `None` on upscaled input. [Part VIII](part-08-uncertainty.md)
+  covers what it describes and how to use it.
 
 The axis convention:
 

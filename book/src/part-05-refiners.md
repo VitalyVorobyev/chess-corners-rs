@@ -86,7 +86,7 @@ closest (in a Mahalanobis sense) to all image-gradient lines in a
 local window. The structure tensor
 
 \\[
-M = \sum_p w_p \begin{bmatrix} g_x^2 & g_x g_y \\ g_x g_y & g_y^2 \end{bmatrix}
+M = \sum_p w_p \begin{bmatrix} g_x^2 & g_x g_y \\\\ g_x g_y & g_y^2 \end{bmatrix}
 \\]
 
 is assembled with `3×3` central-difference gradients and radial
@@ -113,7 +113,7 @@ Rejections:
 | Weaknesses       | Relies on sharp gradients — blur flattens `M`   |
 
 Good pick for clean calibration frames where image edges are sharp.
-In the synthetic blur sweep in Part VIII, Gaussian blur flattens the
+In the synthetic blur sweep in Part IX, Gaussian blur flattens the
 gradient magnitudes and this refiner's error increases with σ.
 
 Reference: Förstner & Gülch, 1987, *"A fast operator for detection
@@ -134,7 +134,8 @@ that pull vanishes. On accepted corners where this
 converges it also reports the first-order covariance of the converged
 position per unit image-noise variance
 (`RefineResult::covariance_per_noise_variance`, px² per gray-level²);
-otherwise it returns the single fit without one.
+otherwise it returns the single fit without one. [Part VIII](part-08-uncertainty.md)
+derives that covariance and shows where it matches the measured error.
 
 The determinant of the Hessian is `4·a·c − b²`. A true X‑junction is a
 saddle, so the Hessian should be indefinite (`det < 0`). The refiner
@@ -152,7 +153,7 @@ rejects:
 | Strengths        | Lowest error of the geometric refiners, sharp or blurred |
 | Weaknesses       | On ~5 px cells with strong shear and blur, the window holds neighbouring corners and the re-centred position can be worse than a single fit |
 
-The default choice for calibration-grade work: in Part VIII's synthetic
+The default choice for calibration-grade work: in Part IX's synthetic
 sweeps it has the lowest mean error of the built-in refiners on every
 clean, blurred and noisy row up to `σ_noise = 8`, and is within 0.003 px
 of (or below) `cv2.cornerSubPix` on the blurred rows.
@@ -218,7 +219,7 @@ with a 50/50 mix of two rendering modes:
   a random cell size in `[4, 12]` px, then blurred by a Gaussian
   PSF in `σ ∈ [0.3, 2.0]` px. This matches real camera output: ink/paper
   step edges, softened by the optical system's PSF, sampled by the
-  sensor. The benchmark fixture in Part VIII uses the same renderer.
+  sensor. The benchmark fixture in Part IX uses the same renderer.
 - **Smooth saddle.** A `tanh(x)·tanh(y)` corner model, included at
   50 % weight so the model stays accurate on the smooth synthetic
   patches some callers still feed it.
@@ -254,7 +255,7 @@ directions:
 
 The shipped dataset avoids both by mixing the two modes 50/50 (§5.5.2)
 and augmenting with sensor noise. Two lessons carry over into the
-Part VIII benchmark. Noise augmentation is what lets the model take the
+Part IX benchmark. Noise augmentation is what lets the model take the
 heaviest-noise row (`σ = 12` gray levels), where it posts the lowest
 mean error; and capacity is not the bottleneck — neither a wider CNN
 nor a spatial-softargmax head lowered held-out error. On clean and
@@ -279,7 +280,7 @@ calls without re-optimization.
 
 ## 5.6 Picking a refiner
 
-The measurement-driven comparison lives in Part VIII. In short:
+The measurement-driven comparison lives in Part IX. In short:
 
 - Budget matters more than anything else: the structure-tensor
   refiners are orders of magnitude faster than ML per corner.
@@ -294,11 +295,11 @@ The ChESS refiner is selected through `ChessConfig.refiner`:
 The Radon detector's subpixel step is the built-in 3-point peak fit;
 configure it via `RadonConfig.peak_fit` (e.g. `PeakFitMode::Gaussian`).
 Switching is a single-line change, and the comparison numbers
-in Part VIII come from running all four ChESS refiners on the same
+in Part IX come from running all four ChESS refiners on the same
 fixture at a single build.
 
 ---
 
 Next, [Part VI](part-06-orientation-methods.md) covers the orientation
-methods that produce the `axes` and `sigma_theta*` descriptor fields,
+methods that produce the `axes` descriptor field,
 shared by both the ChESS and Radon pipelines.

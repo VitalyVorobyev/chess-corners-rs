@@ -1,11 +1,11 @@
-# Part IX: C++ bindings
+# Part X: C++ bindings
 
 The detector core is written in Rust, but most calibration and
 robotics codebases that consume chessboard corners are C or C++. This
 chapter shows how to call the detector from both languages, what to
 install, and the ownership rules that keep the language boundary safe.
 
-## 9.1 Why a C ABI with a thin C++ header
+## 10.1 Why a C ABI with a thin C++ header
 
 C++ has no stable ABI across compilers, standard-library versions, or
 even build flags, so a Rust library cannot hand C++ types across the
@@ -33,7 +33,7 @@ In short:
 - **Pure Rust build** — no C++ toolchain is required to build the
   library itself.
 
-## 9.2 Installing
+## 10.2 Installing
 
 The library builds to a normal native library (shared or static) with
 a CMake package config and a pkg-config file, so you integrate it the
@@ -65,7 +65,7 @@ cc detect.c $(pkg-config --cflags --libs chess-corners) -o detect
 vcpkg-based projects. It is not in the vcpkg registry yet, so consume
 it as an overlay (`--overlay-ports`) from a vcpkg manifest.
 
-## 9.3 Using the library from C++
+## 10.3 Using the library from C++
 
 Include `chess_corners.hpp`, pick a `Config` preset, and call
 `detect`. The image is 8-bit, row-major grayscale — exactly
@@ -131,13 +131,13 @@ A few things the wrapper does for you:
   library's own description and whose `status()` returns the
   underlying `cc_status`. Catch `chess_corners::Error` for detection
   failures, or the broader `std::runtime_error` to also catch an ABI
-  mismatch (see §9.5).
+  mismatch (see §10.5).
 - **Two `detect` overloads.** The `std::vector<std::uint8_t>` overload
   shown here validates the buffer length for you; a
   `const std::uint8_t*` overload takes a raw pointer plus dimensions
   when you already own the buffer.
 
-## 9.4 Using the library from plain C
+## 10.4 Using the library from plain C
 
 The C path is the same pipeline without the conveniences: you build a
 `cc_config`, call `cc_detect_u8`, read the result, and free it.
@@ -188,7 +188,7 @@ The ownership contract is the part to get right:
 - `cc_status_str` returns a static, NUL-terminated description that
   you must **not** free.
 
-## 9.5 Notes
+## 10.5 Notes
 
 **Reentrancy and threading.** `cc_detect_u8` is stateless and
 reentrant: it keeps no global state and no hidden caches between calls,
@@ -256,7 +256,8 @@ skips the per-corner fit, sets `has_orientation` to `0`, and zeroes
 `axes`. `position_covariance` (`xx`, `xy`, `yy`, in px²) is valid when
 `has_position_covariance` is `1` (a `std::optional<Covariance>` in
 C++): only the saddle-point refiner (`CC_REFINER_SADDLE_POINT`) reports
-it, and not when `upscale_factor` is set. See
+it, and not when `upscale_factor` is set ([Part VIII](part-08-uncertainty.md)
+covers its meaning and use). See
 [Part I §1.4](part-01-orientation.md#14-the-cornerdescriptor-output)
 for the field semantics and
 [Part III §3.4](part-03-chess-detector.md#34-corner-descriptors) for
@@ -264,5 +265,5 @@ the fit math.
 
 ---
 
-Next: [Part X: Contributing](part-10-contributing.md) — how to file
+Next: [Part XI: Contributing](part-11-contributing.md) — how to file
 issues, add tests and datasets, and propose new algorithms.

@@ -91,5 +91,5 @@ post-1.0 follow-up.)
 
 ---
 
-Book coverage: Part IX "C++ bindings" (`CPP-07`). Task list:
+Book coverage: Part X "C++ bindings" (`CPP-07`). Task list:
 [`../BACKLOG.md`](../BACKLOG.md) `CPP-*`.

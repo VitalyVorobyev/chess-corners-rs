@@ -112,5 +112,5 @@ unchanged; determinism) and a p95 latency guard: regressions beyond 2% p95 fail.
 
 ---
 
-Task list: [`../BACKLOG.md`](../BACKLOG.md) `PERF-*`. Book chapter: Part VIII
+Task list: [`../BACKLOG.md`](../BACKLOG.md) `PERF-*`. Book chapter: Part IX
 (Benchmarks and performance).

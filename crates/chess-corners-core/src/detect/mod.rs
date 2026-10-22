@@ -30,9 +30,10 @@ use crate::refine::PositionCovariance;
 
 /// Model-error floor of a refined position, in px per axis: added as `f²`
 /// to each diagonal entry of [`Corner::position_covariance`]. Chosen to
-/// keep the whitened error σ̂₀² closest to 1 on synthetic corners with
-/// cells of 8 px or more; smaller, sheared and strongly blurred cells have
-/// a larger residual systematic error.
+/// keep the whitened error σ̂₀² closest to 1 on synthetic grid-aligned
+/// corners with cells of 8 px or more; boards rotated a few degrees from the
+/// pixel grid, and smaller, sheared and strongly blurred cells, have a larger
+/// residual systematic error.
 pub(crate) const POSITION_FLOOR_PX: f32 = 0.002;
 
 /// Lower bound on the pixel-noise variance used for a covariance, in gray
@@ -81,8 +82,10 @@ impl Corner {
     ///
     /// `σₙ²·C` is the first-order noise scatter; `f` is a small model-error
     /// floor, chosen so that whitened errors on synthetic corners with cells
-    /// of 8 px or more have unit variance — smaller, sheared or strongly
-    /// blurred cells have a larger systematic error. Valid only for the
+    /// of 8 px or more, on boards aligned with the pixel grid, have unit
+    /// variance. Sharp boards rotated a few degrees from the grid keep up to
+    /// about 0.02 px of systematic error, and smaller, sheared or strongly
+    /// blurred cells more, which this floor does not cover. Valid only for the
     /// image the corner was refined on. With spatially correlated noise
     /// (demosaiced, compressed or resampled images) `σₙ` from
     /// [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8) is the
