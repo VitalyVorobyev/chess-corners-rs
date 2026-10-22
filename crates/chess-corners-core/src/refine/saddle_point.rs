@@ -6,7 +6,7 @@
 //! `[2a b; b 2c]` must have negative determinant (a saddle) for the
 //! corner to be accepted.
 
-use super::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
+use super::{CornerRefiner, PositionCovariance, RefineContext, RefineResult, RefineStatus};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the [`SaddlePointRefiner`].
@@ -274,7 +274,7 @@ impl CornerRefiner for SaddlePointRefiner {
     }
 }
 
-/// First-order covariance `[σ²ₓ, σₓᵧ, σ²ᵧ]` of the saddle location per unit
+/// First-order covariance of the saddle location per unit
 /// image-noise variance (px² per gray-level²).
 ///
 /// With white pixel noise of variance `σₙ²`, the surface coefficients
@@ -285,7 +285,11 @@ impl CornerRefiner for SaddlePointRefiner {
 /// is not used for the scale: on a sharp corner it measures how far the
 /// patch is from a quadratic, which biases the location but does not
 /// scatter it. `None` if the normal matrix is singular.
-fn position_covariance(normal: &[f32; 36], coeffs: &[f32; 6], u: [f32; 2]) -> Option<[f32; 3]> {
+fn position_covariance(
+    normal: &[f32; 36],
+    coeffs: &[f32; 6],
+    u: [f32; 2],
+) -> Option<PositionCovariance> {
     let theta = coeffs.map(f64::from);
     let (a, b, c) = (theta[0], theta[1], theta[2]);
     let det = 4.0 * a * c - b * b;
@@ -334,7 +338,11 @@ fn position_covariance(normal: &[f32; 36], coeffs: &[f32; 6], u: [f32; 2]) -> Op
         }
     }
     let cov = |i: usize, j: usize| -> f64 { (0..6).map(|k| jac[i][k] * x[k][j]).sum::<f64>() };
-    Some([cov(0, 0) as f32, cov(0, 1) as f32, cov(1, 1) as f32])
+    Some(PositionCovariance::new(
+        cov(0, 0) as f32,
+        cov(0, 1) as f32,
+        cov(1, 1) as f32,
+    ))
 }
 
 #[cfg(test)]
@@ -380,7 +388,8 @@ mod tests {
                             continue;
                         }
                         xs.push([f64::from(res.x), f64::from(res.y)]);
-                        preds.push(res.covariance_per_noise_variance.unwrap());
+                        let cov = res.covariance_per_noise_variance.unwrap();
+                        preds.push([cov.xx, cov.yy]);
                     }
                     let n = xs.len() as f64;
                     let mean = [
@@ -394,7 +403,7 @@ mod tests {
                         noise_var * preds.iter().map(|c| f64::from(c[k])).sum::<f64>() / n
                     };
                     let (ex, ey) = (var(0).sqrt(), var(1).sqrt());
-                    let (px, py) = (pred(0).sqrt(), pred(2).sqrt());
+                    let (px, py) = (pred(0).sqrt(), pred(1).sqrt());
                     println!(
                         "{noise:5.1}  {blur:4.1}  ({ox:5.2},{oy:5.2})  {ex:7.4}  {px:7.4}  {ey:7.4}  {py:7.4}  {:7.2}  {:7.2}   n={}",
                         ex / px, ey / py, xs.len()

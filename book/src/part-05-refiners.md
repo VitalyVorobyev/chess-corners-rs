@@ -122,7 +122,9 @@ circular features."*
 Fits a 2D quadratic `f(x, y) = a·x² + b·x·y + c·y² + d·x + e·y + g`
 to a `(2r + 1)²` image patch and returns the saddle point (the
 critical point where `∇f = 0`). The six coefficients come from a
-6×6 normal-equation solve with partial pivoting.
+linear least-squares fit. On accepted corners it also reports the
+first-order position covariance per unit image-noise variance
+(`RefineResult::covariance_per_noise_variance`, px² per gray-level²).
 
 The determinant of the Hessian is `4·a·c − b²`. A true X‑junction is a
 saddle, so the Hessian should be indefinite (`det < 0`). The refiner

@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `RefineResult::covariance_per_noise_variance`: the saddle-point refiner
-  reports the first-order covariance of the refined position per unit
+- `RefineResult::covariance_per_noise_variance` (a new
+  `PositionCovariance { xx, xy, yy }`): the saddle-point refiner reports
+  the first-order covariance of the refined position per unit
   image-noise variance (px² per gray-level²). Multiplied by the image's
   pixel-noise variance it predicts the position scatter within a few
   percent on synthetic corners (any blur, noise level and subpixel

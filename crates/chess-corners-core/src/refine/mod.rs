@@ -22,6 +22,29 @@ pub use center_of_mass::{CenterOfMassConfig, CenterOfMassRefiner};
 pub use forstner::{ForstnerConfig, ForstnerRefiner};
 pub use saddle_point::{SaddlePointConfig, SaddlePointRefiner};
 
+/// Symmetric 2×2 covariance of a refined corner position.
+///
+/// The units depend on where the value comes from; see
+/// [`RefineResult::covariance_per_noise_variance`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct PositionCovariance {
+    /// Variance of the x coordinate.
+    pub xx: f32,
+    /// Covariance of the x and y coordinates.
+    pub xy: f32,
+    /// Variance of the y coordinate.
+    pub yy: f32,
+}
+
+impl PositionCovariance {
+    /// Construct a [`PositionCovariance`].
+    #[inline]
+    pub fn new(xx: f32, xy: f32, yy: f32) -> Self {
+        Self { xx, xy, yy }
+    }
+}
+
 /// Sealing supertrait for [`CornerRefiner`]. Implemented only for the
 /// in-crate refiners, so downstream crates cannot add their own
 /// [`CornerRefiner`] implementations.
@@ -107,11 +130,13 @@ pub struct RefineResult {
     /// Whether the refiner accepted, rejected, or could not process this
     /// candidate. See [`RefineStatus`].
     pub status: RefineStatus,
-    /// Covariance of the refined position per unit image-noise variance,
-    /// `[σ²ₓ, σₓᵧ, σ²ᵧ]` in px² per gray-level²: multiply by the image's
-    /// pixel-noise variance for the covariance in px². Set by the
-    /// saddle-point refiner on accepted corners; `None` otherwise.
-    pub covariance_per_noise_variance: Option<[f32; 3]>,
+    /// First-order covariance of the refined position per unit image-noise
+    /// variance, in px² per gray-level²: multiply by the variance of the
+    /// image's pixel noise (gray-level²) for the position covariance in
+    /// px². Set by the saddle-point refiner on accepted corners; `None` on
+    /// every other status and for the center-of-mass and Förstner
+    /// refiners.
+    pub covariance_per_noise_variance: Option<PositionCovariance>,
 }
 
 impl RefineResult {
