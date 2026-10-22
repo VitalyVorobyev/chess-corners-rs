@@ -22,7 +22,7 @@ const MAX_STEPS: usize = 16;
 /// within this distance of the window centre, in pixels.
 const STEP_TOL: f32 = 1e-3;
 /// Integer-centred fits kept per corner; a converging corner needs 4–6.
-const FIT_CACHE: usize = 9;
+const FIT_CACHE: usize = 25;
 /// Step lengths tried (each half the previous) before re-centring stops.
 const MAX_HALVINGS: usize = 4;
 /// Smallest `det(−M)` of the window sensitivity `M` for which the Newton
@@ -139,10 +139,13 @@ type Coefs = [f32; 5];
 /// (`columns[k] = Rₖ`), and its shifted self-overlaps.
 #[derive(Debug)]
 struct FitOperator {
+    /// Half-size of the pixel patch the columns cover.
+    patch_radius: i32,
+    resampler: Resampler,
     columns: Vec<Coefs>,
     /// `K(δ) = Σₖ Rₖ Rₖ₊δᵀ` over the samples `k` with `k + δ` on the grid,
-    /// for `δ ∈ {−1, 0, 1}²` at index `3·(δy + 1) + δx + 1`.
-    overlap: Box<[[Coefs; 5]; 9]>,
+    /// for `δ ∈ {−3..3}²` at index `7·(δy + 3) + δx + 3`.
+    overlap: Box<[[Coefs; 5]; 49]>,
 }
 
 /// Per-corner working memory, sized at construction.
@@ -155,13 +158,89 @@ struct Scratch {
 impl SaddlePointRefiner {
     /// Construct a refiner with the given configuration.
     pub fn new(cfg: SaddlePointConfig) -> Self {
-        let side = (2 * cfg.radius.max(0) + 1) as usize;
+        Self::with_design(cfg, &FitDesign::default())
+    }
+
+    pub(crate) fn with_design(cfg: SaddlePointConfig, design: &FitDesign) -> Self {
+        let fit_op = fit_operator(cfg.radius, design);
+        let pr = fit_op.as_ref().map_or(cfg.radius.max(0), |f| f.patch_radius);
+        let side = (2 * pr + 1) as usize;
         Self {
             cfg,
-            fit_op: fit_operator(cfg.radius),
+            fit_op,
             scratch: Scratch {
                 patch: vec![0.0; side * side],
             },
+        }
+    }
+
+    /// Half-size of the pixel patch one integer-centred fit reads.
+    fn patch_radius(&self) -> i32 {
+        self.fit_op
+            .as_ref()
+            .map_or(self.cfg.radius, |f| f.patch_radius)
+    }
+}
+
+/// Experimental fit design: Gaussian LS weights and a separable
+/// pre-smoothing kernel.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FitDesign {
+    /// σ of Gaussian LS weights in px; 0 = uniform.
+    pub weight_sigma: f64,
+    /// Separable 1-D smoothing kernel (odd length, sums to 1); empty = none.
+    pub smooth: Vec<f64>,
+    /// Window resampling kernel.
+    pub resampler: Resampler,
+}
+
+/// Separable interpolation kernel used to resample the window.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Resampler {
+    /// Linear, taps at `base + {0, 1}`.
+    #[default]
+    Bilinear,
+    /// 4-point Lagrange cubic, taps at `base + {-1, 0, 1, 2}`.
+    Cubic,
+}
+
+impl Resampler {
+    #[inline]
+    fn first(self) -> i32 {
+        match self {
+            Resampler::Bilinear => 0,
+            Resampler::Cubic => -1,
+        }
+    }
+    #[inline]
+    fn taps(self) -> usize {
+        match self {
+            Resampler::Bilinear => 2,
+            Resampler::Cubic => 4,
+        }
+    }
+    #[inline]
+    fn weights(self, t: f32) -> [f32; 4] {
+        match self {
+            Resampler::Bilinear => [1.0 - t, t, 0.0, 0.0],
+            Resampler::Cubic => [
+                -t * (t - 1.0) * (t - 2.0) / 6.0,
+                (t + 1.0) * (t - 1.0) * (t - 2.0) / 2.0,
+                -(t + 1.0) * t * (t - 2.0) / 2.0,
+                (t + 1.0) * t * (t - 1.0) / 6.0,
+            ],
+        }
+    }
+    #[inline]
+    fn dweights(self, t: f32) -> [f32; 4] {
+        match self {
+            Resampler::Bilinear => [-1.0, 1.0, 0.0, 0.0],
+            Resampler::Cubic => [
+                -(3.0 * t * t - 6.0 * t + 2.0) / 6.0,
+                (3.0 * t * t - 4.0 * t - 1.0) / 2.0,
+                -(3.0 * t * t - 2.0 * t - 2.0) / 2.0,
+                (3.0 * t * t - 1.0) / 6.0,
+            ],
         }
     }
 }
@@ -169,7 +248,7 @@ impl SaddlePointRefiner {
 impl CornerRefiner for SaddlePointRefiner {
     #[inline]
     fn radius(&self) -> i32 {
-        self.cfg.radius
+        self.patch_radius()
     }
 
     fn refine(&mut self, seed_xy: [f32; 2], ctx: RefineContext<'_>) -> RefineResult {
@@ -186,7 +265,7 @@ impl CornerRefiner for SaddlePointRefiner {
         };
 
         let centre = [seed_xy[0].round() as i32, seed_xy[1].round() as i32];
-        if !img.supports_patch(centre[0], centre[1], self.cfg.radius) {
+        if !img.supports_patch(centre[0], centre[1], self.patch_radius()) {
             return unmoved(0.0, RefineStatus::OutOfBounds);
         }
 
@@ -272,8 +351,8 @@ struct IntegerFits<'a, P: Pixels> {
     centres: [[i32; 2]; FIT_CACHE],
     coefs: [Coefs; FIT_CACHE],
     len: usize,
-    /// The four fits around `corners_base`, as `[j][i]`.
-    corners: [[Coefs; 2]; 2],
+    /// The tap fits around `corners_base`, as `[j][i]`.
+    corners: [[Coefs; 4]; 4],
     corners_base: Option<[i32; 2]>,
 }
 
@@ -287,7 +366,7 @@ impl<'a, P: Pixels> IntegerFits<'a, P> {
             centres: [[0; 2]; FIT_CACHE],
             coefs: [[0.0; 5]; FIT_CACHE],
             len: 0,
-            corners: [[[0.0; 5]; 2]; 2],
+            corners: [[[0.0; 5]; 4]; 4],
             corners_base: None,
         }
     }
@@ -320,13 +399,15 @@ impl<'a, P: Pixels> IntegerFits<'a, P> {
         Some(coefs)
     }
 
-    /// The integer-centred fits at `base + {0, 1}²`, as `c[j][i]`, or
-    /// `None` when one leaves the image.
-    fn corners(&mut self, base: [i32; 2]) -> Option<[[Coefs; 2]; 2]> {
-        let mut out = [[[0.0; 5]; 2]; 2];
-        for (j, row) in out.iter_mut().enumerate() {
-            for (i, c) in row.iter_mut().enumerate() {
-                *c = self.at([base[0] + i as i32, base[1] + j as i32])?;
+    /// The integer-centred fits at the resampler taps around `base`, as
+    /// `c[j][i]`, or `None` when one leaves the image.
+    fn corners(&mut self, base: [i32; 2]) -> Option<[[Coefs; 4]; 4]> {
+        let rs = self.fit_op.resampler;
+        let (n, f) = (rs.taps(), rs.first());
+        let mut out = [[[0.0; 5]; 4]; 4];
+        for (j, row) in out.iter_mut().enumerate().take(n) {
+            for (i, c) in row.iter_mut().enumerate().take(n) {
+                *c = self.at([base[0] + f + i as i32, base[1] + f + j as i32])?;
             }
         }
         Some(out)
@@ -339,7 +420,7 @@ impl<'a, P: Pixels> IntegerFits<'a, P> {
             self.corners = self.corners(window.base)?;
             self.corners_base = Some(window.base);
         }
-        solve(cfg, blend(&self.corners, window)).ok()
+        solve(cfg, blend(self.fit_op.resampler, &self.corners, window)).ok()
     }
 
     /// [`slope`](Self::slope) from the four fits of the last
@@ -348,12 +429,30 @@ impl<'a, P: Pixels> IntegerFits<'a, P> {
         if self.corners_base != Some(window.base) {
             return None;
         }
-        let [[c00, c10], [c01, c11]] = self.corners;
-        let [tx, ty] = window.t;
-        Some([
-            std::array::from_fn(|k| (1.0 - ty) * (c10[k] - c00[k]) + ty * (c11[k] - c01[k])),
-            std::array::from_fn(|k| (1.0 - tx) * (c01[k] - c00[k]) + tx * (c11[k] - c10[k])),
-        ])
+        let rs = self.fit_op.resampler;
+        if rs == Resampler::Bilinear {
+            let [[c00, c10, ..], [c01, c11, ..], ..] = self.corners;
+            let [tx, ty] = window.t;
+            return Some([
+                std::array::from_fn(|k| (1.0 - ty) * (c10[k] - c00[k]) + ty * (c11[k] - c01[k])),
+                std::array::from_fn(|k| (1.0 - tx) * (c01[k] - c00[k]) + tx * (c11[k] - c10[k])),
+            ]);
+        }
+        let n = rs.taps();
+        let (wx, wy) = (rs.weights(window.t[0]), rs.weights(window.t[1]));
+        let (dx, dy) = (rs.dweights(window.t[0]), rs.dweights(window.t[1]));
+        let mut out = [[0.0f32; 5]; 2];
+        for j in 0..n {
+            for i in 0..n {
+                let c = &self.corners[j][i];
+                let (gx, gy) = (dx[i] * wy[j], wx[i] * dy[j]);
+                for k in 0..5 {
+                    out[0][k] += gx * c[k];
+                    out[1][k] += gy * c[k];
+                }
+            }
+        }
+        Some(out)
     }
 
     /// `∂θ/∂t` of [`blend`] on `window`, one column per axis: the
@@ -361,6 +460,11 @@ impl<'a, P: Pixels> IntegerFits<'a, P> {
     /// is 0 on an axis the forward difference is used, or the backward one
     /// when the forward fit leaves the image.
     fn slope(&mut self, window: &Window) -> Option<[Coefs; 2]> {
+        if self.fit_op.resampler != Resampler::Bilinear {
+            self.corners = self.corners(window.base)?;
+            self.corners_base = Some(window.base);
+            return self.cached_slope(window);
+        }
         let mut out = [[0.0f32; 5]; 2];
         for (axis, col) in out.iter_mut().enumerate() {
             let other = 1 - axis;
@@ -441,7 +545,7 @@ impl SaddlePointRefiner {
             (0..2).all(|k| ((centre[k] as f32 + est[k]) - seed[k]).abs() <= max_off)
         };
 
-        let mut fits = IntegerFits::new(px, fit_op, r, &mut scratch.patch);
+        let mut fits = IntegerFits::new(px, fit_op, fit_op.patch_radius, &mut scratch.patch);
         let coefs = fits.at(centre).ok_or((0.0, RefineStatus::OutOfBounds))?;
         let mut fit = solve(cfg, coefs).map_err(|det_h| (det_h, RefineStatus::IllConditioned))?;
         if !near_seed(fit.u) {
@@ -533,17 +637,30 @@ fn newton_step(m: [[f32; 2]; 2], u: [f32; 2]) -> Option<[f32; 2]> {
     ])
 }
 
-/// Coefficients fitted on the patch resampled on `window`: the bilinear
-/// blend of the integer-centred fits `corners` around its base.
+/// Coefficients fitted on the patch resampled on `window`: the blend of
+/// the integer-centred fits `corners` at the resampler taps.
 #[inline]
-fn blend(corners: &[[Coefs; 2]; 2], window: &Window) -> Coefs {
-    let w = window.weights();
-    std::array::from_fn(|k| {
-        w[0][0] * corners[0][0][k]
-            + w[0][1] * corners[0][1][k]
-            + w[1][0] * corners[1][0][k]
-            + w[1][1] * corners[1][1][k]
-    })
+fn blend(rs: Resampler, corners: &[[Coefs; 4]; 4], window: &Window) -> Coefs {
+    if rs == Resampler::Bilinear {
+        let w = window.weights();
+        return std::array::from_fn(|k| {
+            w[0][0] * corners[0][0][k]
+                + w[0][1] * corners[0][1][k]
+                + w[1][0] * corners[1][0][k]
+                + w[1][1] * corners[1][1][k]
+        });
+    }
+    let (wx, wy) = (rs.weights(window.t[0]), rs.weights(window.t[1]));
+    let mut out = [0.0f32; 5];
+    for (j, row) in corners.iter().enumerate() {
+        for (i, c) in row.iter().enumerate() {
+            let w = wx[i] * wy[j];
+            for k in 0..5 {
+                out[k] += w * c[k];
+            }
+        }
+    }
+    out
 }
 
 /// Saddle of the quadratic with coefficients `coefs`. `Err(det_h)` when
@@ -605,14 +722,17 @@ fn covariance(
     let a: [Coefs; 2] =
         m_inv.map(|row| std::array::from_fn(|k| row[0] * jac[0][k] + row[1] * jac[1][k]));
 
-    // c_δ = Σ w(p)·w(p + δ) over the weight pairs; pixel (i, j) has w[j][i].
-    let w = window.weights();
-    let mut c = [0.0f32; 9];
-    for (j, wj) in w.iter().enumerate() {
-        for (i, wij) in wj.iter().enumerate() {
-            for (j2, wj2) in w.iter().enumerate() {
-                for (i2, wij2) in wj2.iter().enumerate() {
-                    c[3 * (1 + j2 - j) + 1 + i2 - i] += wij * wij2;
+    // c_δ = Σ w(p)·w(p + δ) over the weight pairs; tap (i, j) has wy[j]·wx[i].
+    let rs = fit_op.resampler;
+    let n = rs.taps();
+    let (wx, wy) = (rs.weights(window.t[0]), rs.weights(window.t[1]));
+    let mut c = [0.0f32; 49];
+    for j in 0..n {
+        for i in 0..n {
+            let wij = wx[i] * wy[j];
+            for j2 in 0..n {
+                for i2 in 0..n {
+                    c[7 * (3 + j2 - j) + 3 + i2 - i] += wij * wx[i2] * wy[j2];
                 }
             }
         }
@@ -643,18 +763,19 @@ fn quadratic_basis(x: f32, y: f32) -> [f32; 6] {
     [x * x, x * y, y * y, x, y, 1.0]
 }
 
-/// `(ΦᵀΦ)⁻¹` of the quadratic fit over the integer offsets
-/// `[-radius, radius]²`, or `None` when the grid cannot determine a
-/// quadratic (`radius < 1`).
-fn inverse_normal_matrix(radius: i32) -> Option<[[f64; 6]; 6]> {
-    // Augmented [ΦᵀΦ | I], reduced by Gauss–Jordan with partial pivoting.
+/// `(ΦᵀWΦ)⁻¹` of the quadratic fit over the integer offsets
+/// `[-radius, radius]²` with weights `weight`, or `None` when the grid
+/// cannot determine a quadratic (`radius < 1`).
+fn inverse_normal_matrix(radius: i32, weight: &impl Fn(i32, i32) -> f64) -> Option<[[f64; 6]; 6]> {
+    // Augmented [ΦᵀWΦ | I], reduced by Gauss–Jordan with partial pivoting.
     let mut m = [[0.0f64; 12]; 6];
     for dy in -radius..=radius {
         for dx in -radius..=radius {
+            let w = weight(dx, dy);
             let phi = quadratic_basis(dx as f32, dy as f32).map(f64::from);
             for (row, mrow) in m.iter_mut().enumerate() {
                 for col in 0..6 {
-                    mrow[col] += phi[row] * phi[col];
+                    mrow[col] += w * phi[row] * phi[col];
                 }
             }
         }
@@ -687,37 +808,74 @@ fn inverse_normal_matrix(radius: i32) -> Option<[[f64; 6]; 6]> {
     }))
 }
 
-/// Rows `a..e` of `(ΦᵀΦ)⁻¹Φᵀ` for the [`quadratic_basis`] over the
-/// integer offsets `[-radius, radius]²` (row-major) and their shifted
+/// Rows `a..e` of the fit operator over the pixel patch and their shifted
 /// self-overlaps, or `None` when the grid cannot determine a quadratic
 /// (`radius < 1`).
-fn fit_operator(radius: i32) -> Option<FitOperator> {
-    let normal_inv = inverse_normal_matrix(radius)?;
+fn fit_operator(radius: i32, design: &FitDesign) -> Option<FitOperator> {
+    let ws = design.weight_sigma;
+    let weight = |dx: i32, dy: i32| {
+        if ws > 0.0 {
+            (-f64::from(dx * dx + dy * dy) / (2.0 * ws * ws)).exp()
+        } else {
+            1.0
+        }
+    };
+    let normal_inv = inverse_normal_matrix(radius, &weight)?;
     let side = (2 * radius + 1) as usize;
     let n = side * side;
-    let mut rows = Vec::with_capacity(5 * n);
-    for coef in &normal_inv[..5] {
+    // Fit-grid rows R_w = (ΦᵀWΦ)⁻¹ΦᵀW.
+    let mut fit_rows = vec![0.0f64; 5 * n];
+    for (i, coef) in normal_inv[..5].iter().enumerate() {
         for dy in -radius..=radius {
             for dx in -radius..=radius {
                 let phi = quadratic_basis(dx as f32, dy as f32).map(f64::from);
-                rows.push(coef.iter().zip(phi).map(|(p, f)| p * f).sum::<f64>());
+                let k = ((dy + radius) as usize) * side + (dx + radius) as usize;
+                fit_rows[i * n + k] =
+                    weight(dx, dy) * coef.iter().zip(phi).map(|(p, f)| p * f).sum::<f64>();
+            }
+        }
+    }
+    // Compose with the separable smoothing kernel: pixel patch of half-size
+    // radius + k.
+    let kernel: Vec<f64> = if design.smooth.is_empty() {
+        vec![1.0]
+    } else {
+        design.smooth.clone()
+    };
+    let kh = (kernel.len() / 2) as i32;
+    let pr = radius + kh;
+    let pside = (2 * pr + 1) as usize;
+    let pn = pside * pside;
+    let mut rows = vec![0.0f64; 5 * pn];
+    for i in 0..5 {
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                let k = ((dy + radius) as usize) * side + (dx + radius) as usize;
+                let r = fit_rows[i * n + k];
+                for (jy, ky) in kernel.iter().enumerate() {
+                    for (jx, kx) in kernel.iter().enumerate() {
+                        let qx = dx + jx as i32 - kh + pr;
+                        let qy = dy + jy as i32 - kh + pr;
+                        rows[i * pn + qy as usize * pside + qx as usize] += r * ky * kx;
+                    }
+                }
             }
         }
     }
 
-    let mut overlap = Box::new([[[0.0f32; 5]; 5]; 9]);
+    let mut overlap = Box::new([[[0.0f32; 5]; 5]; 49]);
     for (d, kd) in overlap.iter_mut().enumerate() {
-        let (dx, dy) = (d as i64 % 3 - 1, d as i64 / 3 - 1);
+        let (dx, dy) = (d as i64 % 7 - 3, d as i64 / 7 - 3);
         for (r, krow) in kd.iter_mut().enumerate() {
             for (s, v) in krow.iter_mut().enumerate() {
                 let mut sum = 0.0f64;
-                for y in 0..side as i64 {
-                    for x in 0..side as i64 {
+                for y in 0..pside as i64 {
+                    for x in 0..pside as i64 {
                         let (x2, y2) = (x + dx, y + dy);
-                        if (0..side as i64).contains(&x2) && (0..side as i64).contains(&y2) {
-                            let k = (y as usize) * side + x as usize;
-                            let k2 = (y2 as usize) * side + x2 as usize;
-                            sum += rows[r * n + k] * rows[s * n + k2];
+                        if (0..pside as i64).contains(&x2) && (0..pside as i64).contains(&y2) {
+                            let k = (y as usize) * pside + x as usize;
+                            let k2 = (y2 as usize) * pside + x2 as usize;
+                            sum += rows[r * pn + k] * rows[s * pn + k2];
                         }
                     }
                 }
@@ -726,8 +884,10 @@ fn fit_operator(radius: i32) -> Option<FitOperator> {
         }
     }
     Some(FitOperator {
-        columns: (0..n)
-            .map(|k| std::array::from_fn(|i| rows[i * n + k] as f32))
+        patch_radius: pr,
+        resampler: design.resampler,
+        columns: (0..pn)
+            .map(|k| std::array::from_fn(|i| rows[i * pn + k] as f32))
             .collect(),
         overlap,
     })
@@ -750,6 +910,10 @@ fn saddle_jacobian(fit: &PatchSaddle) -> [[f32; 5]; 2] {
         std::array::from_fn(|k| neg_h_inv[i][0] * du[0][k] + neg_h_inv[i][1] * du[1][k])
     })
 }
+
+#[cfg(test)]
+#[path = "saddle_uq15_experiment.rs"]
+mod uq15_experiment;
 
 #[cfg(test)]
 mod tests {
@@ -922,7 +1086,8 @@ mod tests {
     fn covariance_matches_finite_differences() {
         const SIDE: usize = 15;
         let centre = [7i32, 7];
-        let mut refiner = SaddlePointRefiner::new(SaddlePointConfig::default());
+        for rs in [Resampler::Bilinear, Resampler::Cubic] {
+        let mut refiner = SaddlePointRefiner::with_design(SaddlePointConfig::default(), &FitDesign { resampler: rs, ..FitDesign::default() });
         let eps = 1.0f32;
         // (edge-normal angles rad, saddle position relative to `centre`, edge width px)
         for (angles, offset, width) in [
@@ -987,6 +1152,7 @@ mod tests {
                 );
             }
         }
+    }
     }
 
     /// A seed at the minimum border margin whose re-centred window would
