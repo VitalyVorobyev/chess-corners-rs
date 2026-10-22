@@ -165,6 +165,9 @@ impl ChessDetector {
     #[wasm_bindgen(js_name = applyConfig)]
     pub fn apply_config(&mut self, config: &DetectorConfig) -> Result<(), JsValue> {
         let snapshot = config.snapshot();
+        // Covariances of a detection under the previous config no longer
+        // describe this detector's output.
+        self.last_position_covariance.clear();
         self.inner
             .set_config(snapshot)
             .map_err(|e| JsValue::from_str(&e.to_string()))
@@ -186,21 +189,13 @@ impl ChessDetector {
         width: u32,
         height: u32,
     ) -> Result<js_sys::Float32Array, JsValue> {
+        // Cleared first, so a failed detection leaves no stale covariances.
+        self.last_position_covariance.clear();
         let corners = self
             .inner
             .detect_u8(pixels, width, height)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        self.last_position_covariance.clear();
-        for c in &corners {
-            match c.position_covariance {
-                Some(p) => self
-                    .last_position_covariance
-                    .extend_from_slice(&[p.xx, p.xy, p.yy]),
-                None => self
-                    .last_position_covariance
-                    .extend_from_slice(&[f32::NAN; COVARIANCE_STRIDE]),
-            }
-        }
+        flatten_covariances(&corners, &mut self.last_position_covariance);
         Ok(corners_to_f32_array(&corners))
     }
 
@@ -209,7 +204,7 @@ impl ChessDetector {
     /// with stride 3 per corner, `[xx, xy, yy, ...]`, in px². All three are
     /// `NaN` for a corner without one — only the saddle-point refiner
     /// reports it, and not on upscaled input. Empty before the first
-    /// detection.
+    /// detection, after a failed one, and after `applyConfig`.
     #[wasm_bindgen(js_name = positionCovariance)]
     pub fn position_covariance(&self) -> js_sys::Float32Array {
         let arr = js_sys::Float32Array::new_with_length(self.last_position_covariance.len() as u32);
@@ -483,6 +478,17 @@ const CORNER_STRIDE: usize = 7;
 /// Stride of [`ChessDetector::position_covariance`]: `[xx, xy, yy]`.
 const COVARIANCE_STRIDE: usize = 3;
 
+/// Append each corner's position covariance as `[xx, xy, yy]` (`NaN` when
+/// absent) to `out`.
+fn flatten_covariances(corners: &[chess_corners::CornerDescriptor], out: &mut Vec<f32>) {
+    for c in corners {
+        match c.position_covariance {
+            Some(p) => out.extend_from_slice(&[p.xx, p.xy, p.yy]),
+            None => out.extend_from_slice(&[f32::NAN; COVARIANCE_STRIDE]),
+        }
+    }
+}
+
 fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::Float32Array {
     let mut flat = Vec::with_capacity(corners.len() * CORNER_STRIDE);
     for c in corners {
@@ -513,5 +519,23 @@ fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::
 impl DetectorConfig {
     pub(crate) fn from_inner_for_js(inner: chess_corners::DetectorConfig) -> Self {
         Self::from_value_pub(inner)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chess_corners::{CornerDescriptor, PositionCovariance};
+
+    #[test]
+    fn covariances_flatten_with_nan_for_absent() {
+        let mut with = CornerDescriptor::without_axes(1.0, 2.0, 3.0);
+        with.position_covariance = Some(PositionCovariance::new(0.5, 0.1, 0.25));
+        let without = CornerDescriptor::without_axes(4.0, 5.0, 6.0);
+        let mut out = Vec::new();
+        flatten_covariances(&[with, without], &mut out);
+        assert_eq!(&out[..3], &[0.5, 0.1, 0.25]);
+        assert_eq!(out.len(), 2 * COVARIANCE_STRIDE);
+        assert!(out[3..].iter().all(|v| v.is_nan()));
     }
 }

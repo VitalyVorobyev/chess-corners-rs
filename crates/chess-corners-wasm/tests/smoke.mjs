@@ -107,5 +107,12 @@ const plain = new ChessDetector();
 const plainFound = plain.detect(board, size, size);
 assert.equal(plain.positionCovariance().length, (plainFound.length / 7) * 3);
 assert.ok(plain.positionCovariance().every((v) => Number.isNaN(v)));
+// The covariance buffer never outlives the detection it belongs to.
+assert.throws(() => saddle.detect(board, size + 1, size));
+assert.equal(saddle.positionCovariance().length, 0, "cleared by a failed detection");
+saddle.detect(board, size, size);
+assert.ok(saddle.positionCovariance().length > 0);
+saddle.applyConfig(DetectorConfig.chess());
+assert.equal(saddle.positionCovariance().length, 0, "cleared by applyConfig");
 
 console.log("chess-corners-wasm JSON smoke test: ok");
