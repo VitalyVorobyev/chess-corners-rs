@@ -219,6 +219,119 @@ pub fn aa_chessboard(
     img
 }
 
+/// Exact pixel-area chessboard, axis-aligned or sheared, with exact corner
+/// positions.
+///
+/// The board's lattice axes are `e1 = (1, 0)` and
+/// `e2 = (cos axis_angle, sin axis_angle)` (image frame, y down; `axis_angle`
+/// in radians, in `(0, π)`), so every corner sits at
+/// `offset + cell·(k·e1 + m·e2)` for integers `k`, `m`. `axis_angle = π/2`
+/// gives an axis-aligned board; any other angle shears the vertical edge
+/// family. Cell parity matches [`aa_chessboard`].
+///
+/// Each pixel is the exact mean of the hard pattern over its unit square
+/// (pixel centres on integer coordinates, the same convention as
+/// [`aa_chessboard`]), i.e. an ideal box-filtering sensor, rounded to `u8`.
+/// Unlike supersampling, the edge position carries no sub-sample
+/// quantization, so a refiner's error against the lattice corner is its own
+/// bias plus the final 8-bit rounding.
+///
+/// # Panics
+///
+/// If `axis_angle` is not in `(0, π)`.
+pub fn area_chessboard(
+    size: usize,
+    cell: usize,
+    offset: (f32, f32),
+    axis_angle: f32,
+    dark: u8,
+    bright: u8,
+) -> Vec<u8> {
+    let angle = f64::from(axis_angle);
+    assert!(
+        angle > 0.0 && angle < core::f64::consts::PI,
+        "axis_angle {axis_angle} outside (0, π)"
+    );
+    let c = cell as f64;
+    let (ox, oy) = (f64::from(offset.0), f64::from(offset.1));
+    let (sin, cos) = angle.sin_cos();
+    // Lattice coordinates: u2 = (y − oy)/(c·sin), u1 = (x − ox − (y − oy)·cot)/c.
+    let cot = cos / sin;
+    let u2 = |y: f64| (y - oy) / (c * sin);
+    let u1 = |x: f64, y: f64| (x - ox - (y - oy) * cot) / c;
+    let mid = 0.5 * (f64::from(dark) + f64::from(bright));
+    let half = 0.5 * (f64::from(bright) - f64::from(dark));
+
+    let mut img = vec![0u8; size * size];
+    let mut breaks = Vec::new();
+    for py in 0..size {
+        let (y0, y1) = (py as f64 - 0.5, py as f64 + 0.5);
+        for px in 0..size {
+            let (x0, x1) = (px as f64 - 0.5, px as f64 + 0.5);
+            // ∫ s(u1) dx across the row is c·[S(u1(x1, y)) − S(u1(x0, y))]: linear
+            // in y between the rows where u1 at either x-bound is an integer;
+            // s(u2) is constant between the rows where u2 is an integer. Split
+            // [y0, y1] at all of them; the midpoint rule is then exact.
+            breaks.clear();
+            breaks.extend([y0, y1]);
+            push_integer_crossings(&mut breaks, y0, y1, u2);
+            if cot.abs() > 1e-12 {
+                push_integer_crossings(&mut breaks, y0, y1, |y| u1(x0, y));
+                push_integer_crossings(&mut breaks, y0, y1, |y| u1(x1, y));
+            }
+            breaks.sort_by(f64::total_cmp);
+            let mut avg = 0.0;
+            for seg in breaks.windows(2) {
+                let ym = 0.5 * (seg[0] + seg[1]);
+                let row = c * (tri(u1(x1, ym)) - tri(u1(x0, ym)));
+                avg += square(u2(ym)) * row * (seg[1] - seg[0]);
+            }
+            // Dark where s(u1)·s(u2) = +1.
+            img[py * size + px] = (mid - half * avg).round().clamp(0.0, 255.0) as u8;
+        }
+    }
+    img
+}
+
+/// Square wave: `+1` where `floor(t)` is even, `−1` where it is odd.
+#[inline]
+fn square(t: f64) -> f64 {
+    if t.floor().rem_euclid(2.0) == 0.0 {
+        1.0
+    } else {
+        -1.0
+    }
+}
+
+/// Antiderivative of [`square`] from 0: a triangle wave of period 2.
+#[inline]
+fn tri(t: f64) -> f64 {
+    let r = t.rem_euclid(2.0);
+    if r < 1.0 {
+        r
+    } else {
+        2.0 - r
+    }
+}
+
+/// Push every `y` in `(y0, y1)` where the affine `f(y)` takes an integer
+/// value.
+fn push_integer_crossings(out: &mut Vec<f64>, y0: f64, y1: f64, f: impl Fn(f64) -> f64) {
+    let (f0, f1) = (f(y0), f(y1));
+    if f0 == f1 {
+        return;
+    }
+    let (lo, hi) = (f0.min(f1), f0.max(f1));
+    let mut k = lo.ceil();
+    while k <= hi {
+        let y = y0 + (k - f0) / (f1 - f0) * (y1 - y0);
+        if y > y0 && y < y1 {
+            out.push(y);
+        }
+        k += 1.0;
+    }
+}
+
 /// Count the ground-truth corners visible in a `size × size` image given a
 /// chessboard with `cell`-pixel cells and `offset` origin. A "visible" corner
 /// sits on an `(offset.0 + k·cell, offset.1 + m·cell)` junction strictly
@@ -271,6 +384,80 @@ mod tests {
             }
             assert_eq!(got, want, "hard board {w}x{h} drifted from &1 parity");
         }
+    }
+
+    /// Brute-force pixel mean over a `n × n` sub-sample grid, the reference
+    /// for [`area_chessboard`] (converges to the exact area as `n` grows).
+    fn supersampled_lattice(
+        size: usize,
+        cell: usize,
+        offset: (f32, f32),
+        angle: f64,
+        n: usize,
+    ) -> Vec<f64> {
+        let c = cell as f64;
+        let (sin, cos) = angle.sin_cos();
+        let mut out = vec![0.0; size * size];
+        for py in 0..size {
+            for px in 0..size {
+                let mut acc = 0.0;
+                for sy in 0..n {
+                    let y = py as f64 + (sy as f64 + 0.5) / n as f64 - 0.5 - offset.1 as f64;
+                    let v = (y / (c * sin)).floor();
+                    for sx in 0..n {
+                        let x = px as f64 + (sx as f64 + 0.5) / n as f64 - 0.5 - offset.0 as f64;
+                        let u = ((x - y * cos / sin) / c).floor();
+                        acc += if (u + v).rem_euclid(2.0) == 0.0 {
+                            40.0
+                        } else {
+                            200.0
+                        };
+                    }
+                }
+                out[py * size + px] = acc / (n * n) as f64;
+            }
+        }
+        out
+    }
+
+    /// Axis-aligned and sheared boards agree with a 256×256-sub-sample
+    /// brute force to within the final 8-bit rounding (0.5) plus the brute
+    /// force's own edge error (under 1/512 px of a 160-level step, 0.31). An
+    /// edge misplaced by 0.01 px would show as a 1.6-level error.
+    #[test]
+    fn area_board_matches_brute_force() {
+        const SIZE: usize = 14;
+        for (angle, offset) in [
+            (core::f64::consts::FRAC_PI_2, (6.3f32, 7.55f32)),
+            (60f64.to_radians(), (6.71, 6.2)),
+            (115f64.to_radians(), (7.05, 6.9)),
+        ] {
+            let got = area_chessboard(SIZE, 5, offset, angle as f32, 40, 200);
+            let want = supersampled_lattice(SIZE, 5, offset, angle, 256);
+            for (i, (&g, &w)) in got.iter().zip(&want).enumerate() {
+                assert!(
+                    (g as f64 - w).abs() <= 0.5 + 0.32,
+                    "angle {angle}: pixel {i} = {g}, brute force {w}"
+                );
+            }
+        }
+    }
+
+    /// A chessboard is point-symmetric about each corner, so with the corner
+    /// on a pixel centre the rendered image is exactly symmetric about it:
+    /// the true corner is where the lattice says it is.
+    #[test]
+    fn area_board_is_point_symmetric_about_corner() {
+        const SIZE: usize = 21;
+        let img = area_chessboard(SIZE, 6, (10.0, 10.0), 60f32.to_radians(), 40, 200);
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                let mirror = (SIZE - 1 - y) * SIZE + (SIZE - 1 - x);
+                assert_eq!(img[y * SIZE + x], img[mirror], "pixel ({x}, {y})");
+            }
+        }
+        // Not trivially symmetric: the board has both levels.
+        assert!(img.contains(&40) && img.contains(&200));
     }
 
     /// The 3-argument anti-aliased fixtures the benches/tests used hard-coded

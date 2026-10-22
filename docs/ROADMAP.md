@@ -93,9 +93,9 @@ from a measured bias/precision split, not ahead of it.
 |---------|-------|-------|
 | `1.4.0` | Saddle-point position covariance in `RefineResult`; the refiner is also faster | `UQ-00` |
 | next | Bias/precision benchmark per refiner; published noise-row numbers re-measured (the test noise helper produced 1.3× the stated σ before the fix) | `UQ-01..02` |
-| decision gate | Pick the descriptor API shape from the `UQ-01` report: noise-only covariance, or covariance plus a model-error term | — |
-| `1.5.0` | Per-image noise estimate (px² output); covariance for Förstner and CenterOfMass; covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; a book Part on uncertainty | `UQ-03..05` |
-| `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); bias reduction where `UQ-01` shows it dominates | `UQ-06..07` |
+| decision | `UQ-01` found SaddlePoint bias (~0.12 px on sharp corners) far above noise scatter, removable by re-centred refitting: reduce bias first, then expose the covariance | — |
+| `1.5.0` | SaddlePoint re-centred refit (default) with a validated covariance; per-image noise estimate (px² output); SaddlePoint covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; CenterOfMass non-refinement fix; a book Part on uncertainty | `UQ-03`, `UQ-05`, `UQ-07`, `UQ-09` |
+| `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); Förstner and CenterOfMass covariance once their bias is addressed | `UQ-04`, `UQ-06` |
 | ongoing | Realistic ground truth (calib-synth / etendue renders; end-to-end σ̂₀ check in calibration-rs) | `UQ-08`, `ML-01`, `ML-02` |
 
 **Known gaps this program has to close.**
