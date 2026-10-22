@@ -57,6 +57,8 @@ at the top level:
   (`without_orientation()`), which skips the fit and leaves `axes` as
   `None`.
 - `merge_radius`: duplicate-suppression distance in input pixels.
+- `noise_sigma`: image pixel-noise σ in gray levels, or `None` to estimate
+  it per image; scales refiner covariances to px².
 
 Detector-specific fields live inside the active strategy. This avoids
 parallel knobs such as "detector mode" plus a stale strategy-specific
@@ -85,7 +87,13 @@ built-in 3-point Gaussian peak fit configured via
 `IllConditioned`), and `covariance_per_noise_variance:
 Option<PositionCovariance>` — the first-order position covariance per
 unit image-noise variance (px² per gray-level²), set only by the
-saddle-point refiner on accepted corners. Runtime refiners own their
+saddle-point refiner on accepted corners. `Corner` carries it through
+merging; the facade turns it into `CornerDescriptor::position_covariance`
+in px² (`σₙ²·C + f²I`, `f = 0.015` px) after `describe_corners`, with σₙ
+from `noise_sigma` or `estimate_noise_sigma_u8` on the refinement image.
+Final refinement always runs on the detector's input image (pyramid seeds
+are refined into the base level), so no rescaling is needed; on upscaled
+input the noise is spatially correlated and no covariance is reported. Runtime refiners own their
 scratch buffers and reuse them across seeds. The saddle-point refiner
 refits on a patch re-centred at its previous estimate; since resampling
 and the fit are linear, each refit is a bilinear blend of fits on
@@ -118,12 +126,16 @@ configuration classes that round-trip through the same JSON shape as the
 Rust facade. `Detector.detect(image)` accepts a 2D C-contiguous `uint8`
 NumPy array and returns a structure-of-arrays `Detections` object with
 named fields — `.xy` (`(N, 2)`), `.response` (`(N,)`), `.angles`
-(`(N, 2)`), `.sigmas` (`(N, 2)`) — where `.angles` / `.sigmas` are `None`
+(`(N, 2)`), `.sigmas` (`(N, 2)`), `.position_covariance` (`(N, 2, 2)`,
+`NaN` rows where absent) — where `.angles` / `.sigmas` are `None`
 when orientation is disabled (`without_orientation()`).
 
 The WebAssembly package exposes the same detector/configuration concepts
 for JavaScript and TypeScript, returning a flat stride-7 `Float32Array`
 (`x, y, response, axis0_angle, axis0_sigma, axis1_angle, axis1_sigma`; the
-four axis values are `NaN` when orientation is disabled).
+four axis values are `NaN` when orientation is disabled), plus a stride-3
+`positionCovariance()` accessor for the last detection. The C ABI
+(`cc_abi_version` 5) carries the covariance in `cc_corner` with a
+presence flag.
 
 The exact per-binding shapes are the rustdoc/book reference.

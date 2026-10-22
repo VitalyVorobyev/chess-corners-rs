@@ -21,6 +21,7 @@ active strategy variant.
 | `upscale`             | `UpscaleConfig::Disabled` or `UpscaleConfig::Fixed(factor)` (`factor ∈ {2, 3, 4}`). Pre-pipeline bilinear upscaling for low-resolution inputs.    |
 | `orientation_method`  | `OrientationMethod::RingFit` (default) or `DiskFit`. Drives the two-axis descriptor fit on both detectors; `without_orientation()` skips the fit and leaves each descriptor's `axes` as `None`. |
 | `merge_radius`        | Duplicate-suppression distance (base-image pixels) for the final cross-scale merge step.                                                          |
+| `noise_sigma`         | `None` (estimate per image, default) or the image's pixel-noise σ in gray levels; turns the saddle-point refiner's covariance into each descriptor's `position_covariance` in px². |
 
 Inside `DetectionParams` (set via `DetectorConfig.detection`):
 
@@ -254,6 +255,7 @@ print(det.response.shape) # (N,)  float32
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.sigmas` — `(N, 2)` float32, 1σ uncertainty per axis in radians, or `None` when orientation is disabled
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (only the saddle-point refiner reports it)
 
 When the orientation fit is skipped (`cfg.without_orientation()`),
 `det.angles` and `det.sigmas` are `None`.
@@ -348,6 +350,8 @@ const corners = detector.detect_rgba(imageData.data, width, height);
 
 // corners is Float32Array, stride 7 per corner — same layout as Python.
 // (After cfg.withoutOrientation(), the four axis values are NaN per corner.)
+// detector.positionCovariance() then returns the position covariance of
+// the same corners, stride 3 ([xx, xy, yy] in px²; NaN when absent).
 for (let i = 0; i < corners.length; i += 7) {
     console.log(`(${corners[i].toFixed(2)}, ${corners[i + 1].toFixed(2)})`);
 }

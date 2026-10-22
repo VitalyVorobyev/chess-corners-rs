@@ -282,6 +282,7 @@ pub struct CornerDescriptor {
     pub y: f32,
     pub response: f32,
     pub axes: Option<[AxisEstimate; 2]>,
+    pub position_covariance: Option<PositionCovariance>,
 }
 
 pub struct AxisEstimate {
@@ -300,6 +301,12 @@ Fields:
 - `axes` – `Some([axis0, axis1])` carries the two local grid axis
   directions and their 1σ uncertainties, or `None` when the
   orientation fit was disabled (§3.4.6).
+- `position_covariance` – the 2×2 covariance `{ xx, xy, yy }` of
+  `(x, y)` in px²: the scatter due to white pixel noise plus a
+  0.015 px per-axis model-error floor. Only the saddle-point refiner
+  reports it (Part V); the detector scales it by the image noise level,
+  estimated per image or set with `DetectorConfig::noise_sigma`, and
+  leaves it `None` on upscaled input.
 
 The axis convention:
 

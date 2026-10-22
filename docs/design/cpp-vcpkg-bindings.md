@@ -31,7 +31,7 @@ every boundary function is panic-trapped.
 
 | Rust | C |
 |------|---|
-| `CornerDescriptor { x, y, response, axes: Option<[AxisEstimate;2]> }` | `cc_corner { float x, y, response; cc_axis axes[2]; uint8_t has_orientation; }` |
+| `CornerDescriptor { x, y, response, axes: Option<[AxisEstimate;2]>, position_covariance: Option<PositionCovariance> }` | `cc_corner { float x, y, response; cc_axis axes[2]; cc_covariance position_covariance; uint8_t has_orientation, has_position_covariance; }` |
 | `AxisEstimate { angle, sigma }` | `cc_axis { float angle, sigma; }` |
 | `DetectorConfig` (+ nested enums) | `cc_config` flat struct of scalars + `uint32_t` enum tags (no discriminant UB) |
 | `ChessError` | `cc_status` enum (`CC_OK=0`, `CC_ERR_*`) |

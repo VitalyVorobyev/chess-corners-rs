@@ -27,6 +27,8 @@ by" lists the downstream stages. Paths are relative to the repo root.
 | **O1** | RingFit two-axis orientation (Gauss-Newton + σ-LUT) | Orientation | `crates/chess-corners-core/src/orientation/ring_fit/` | VI | `rayon` | ring samples → 2 axes + σ | X1 |
 | **O2** | DiskFit two-axis orientation (full-disk, lazy RingFit fallback) | Orientation | `crates/chess-corners-core/src/orientation/disk_sector/` | VI | — | disk samples → 2 axes + σ | X1 |
 | **U1** | Per-axis σ uncertainty calibration LUT | Orientation helper | `crates/chess-corners-core/src/orientation/ring_fit/uncertainty.rs` | VI | — | `(amp, rms)` → σ correction | O1, O2 |
+| **N1** | Image noise σ estimate (product of third differences, third-order gate, per-band truncated variance) | Noise | `crates/chess-corners-core/src/noise.rs` | — | — | `u8` image → σ (gray levels) | C1 |
+| **C1** | Position covariance in px² (`σ²·C + f²I`) | Descriptors | `crates/chess-corners/src/multiscale.rs` (`describe`), `Corner::position_covariance` | III | — | refiner covariance + σ → `CornerDescriptor::position_covariance` | output |
 | **X1** | Corner descriptors (axes, response) | Descriptors | `crates/chess-corners-core/src/orientation/descriptor.rs` | VI | `rayon` | corners + image → `CornerDescriptor[]` | output |
 | **S1** | Box pyramid 2× downsample | Scale | `crates/box-image-pyramid/src/lib.rs` | VII | `par_pyramid` | `u8` image → pyramid levels | S3 |
 | **S2** | Integer bilinear upscale (×2/3/4) | Scale | `crates/chess-corners/src/upscale.rs` | VII | — | low-res `u8` → upscaled `u8` | S1, R1/R2 |
@@ -53,7 +55,8 @@ u8 image
         [O1] RingFit  /  [O2] DiskFit   (two-axis orientation; uses [U1] σ-LUT, [H1] ring tables)
                        │
                        ▼
-        [X1] descriptors → CornerDescriptor[]   (S3 merges cross-level duplicates)
+        [X1] descriptors → CornerDescriptor[]   (S3 merges cross-level duplicates;
+                                                 [C1] attaches F3 covariance × [N1] σ²)
                        │
                        ▼
                     output
@@ -64,8 +67,8 @@ u8 image
 | Crate | Stages it owns |
 |-------|----------------|
 | `box-image-pyramid` | S1 (fully standalone; zero chess coupling) |
-| `chess-corners-core` | R1, R2, H1, D1, D2, T1, F1–F3, T2, O1, O2, U1, X1 |
-| `chess-corners` (facade) | S2, S3 + the high-level `Detector`/config that selects R*/D*/F*/O* |
+| `chess-corners-core` | R1, R2, H1, D1, D2, T1, F1–F3, T2, O1, O2, U1, X1, N1 |
+| `chess-corners` (facade) | S2, S3, C1 + the high-level `Detector`/config that selects R*/D*/F*/O* |
 | `chess-corners-ml` | M1 (only with `ml-refiner`) |
 | `chess-corners-py` / `-wasm` | bindings over the facade; own no algorithm |
 

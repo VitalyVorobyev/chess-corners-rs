@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `CornerDescriptor::position_covariance`: the 2×2 covariance of each
+  corner's position in px², for weighting corners in a calibration. It is
+  the scatter due to white pixel noise plus a 0.015 px per-axis
+  model-error floor. Reported for the `SaddlePoint` refiner; `None` for the
+  other refiners, the Radon detector, and upscaled input. Python
+  `Detections.position_covariance` (`(N, 2, 2)`, `NaN` rows where absent),
+  WASM `ChessDetector.positionCovariance()` (stride 3), C `cc_corner`
+  `position_covariance` / `has_position_covariance` (`cc_abi_version` 5),
+  and the CLI's corner JSON carry it.
+- `DetectorConfig::noise_sigma` (`with_noise_sigma`): the image's pixel
+  noise in gray levels used for that covariance; `None` (default)
+  estimates it from each image. Available in Python, WASM, the C ABI
+  (`has_noise_sigma` / `noise_sigma`) and the JSON schema.
+- `estimate_noise_sigma_u8` (`chess-corners-core`): estimates the white
+  pixel-noise σ of an 8-bit image, ignoring edges, corners, smooth shading
+  and saturated pixels.
+- `Corner::covariance_per_noise_variance` and `Corner::position_covariance`
+  (`chess-corners-core`): the refiner's covariance carried through
+  detection, and its px² form for a given noise level.
+
 ### Changed
 
 - The `SaddlePoint` refiner refits on a patch re-centred at its own

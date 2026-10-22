@@ -107,8 +107,9 @@ from a measured bias/precision split, not ahead of it.
 - Orientation σ mixes methods: RingFit scales a Gauss-Newton covariance by
   the fit residual plus a calibration factor; DiskFit is a heuristic that is
   overcautious on clean corners.
-- The detector drops refine score, status and covariance before
-  `CornerDescriptor` (`detect/chess/detect.rs`, `refine_corners_on_image`).
+- The detector drops refine score and status before `CornerDescriptor`
+  (`detect/chess/detect.rs`, `refine_corners_on_image`); the covariance is
+  carried (`UQ-05`).
 
 ## Continuous
 

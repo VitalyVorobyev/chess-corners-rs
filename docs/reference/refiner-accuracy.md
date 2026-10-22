@@ -245,6 +245,79 @@ of σ_emp in every row except 90/150, blur 2.5, σₙ = 4 (+7%).
   40° cells). `radius: 1` helps there (40°, blur
   1.5: 0.104 px) but is worse on blurred cell-8 corners.
 
+## Noise estimate and end-to-end covariance
+
+`UQ-03` / `UQ-05`: the detector reports `CornerDescriptor::position_covariance`
+= `σₙ²·C + f²I` (`f = 0.015` px), with σₙ from `DetectorConfig::noise_sigma`
+or `estimate_noise_sigma_u8`.
+
+```sh
+cargo test -p chess-corners-core --release --test noise_estimate -- --ignored --nocapture
+cargo test -p chess-corners --release --test position_covariance -- --ignored --nocapture
+```
+
+**Estimator** (`core/src/noise.rs`): the 4×4 product of third differences
+`d ⊗ d`, `d = (1, −3, 3, −1)` (cancels anything at most quadratic along an
+axis; output std 20σ), gated by the orthogonal third-order statistics
+`d⊗s, s⊗d, d⊗l, l⊗d` (independent of the operator under Gaussian noise, so
+the gate does not bias it), gate and median-based scale iterated to a fixed
+point, then a 4σ-truncated second moment per intensity band (64 gray
+levels), bands weighted by admitted / P(admit) (χ²₄). Saturated windows are
+skipped. Windows are sampled on a staggered grid: ~4 k first, ×4 denser
+while fewer than 1 024 pass the gate, at most 65 k.
+
+Relative error against the realised σ (std of `noisy − clean`, rounding
+included), 256² `area_chessboard`, 40/200, mean of 3 seeds, both
+geometries × cells 5/8/12 × blur 0/0.8/1.5/2.5:
+
+| noise | worst (all reported cells) | declined (`None`) |
+|---|---|---|
+| white 0.5 | +18% (blur ≥ 1.5: residual pattern ≈ noise) | sharp/0.8-blur 5 px cells, 0.8-blur sheared 8 px |
+| white 1 | +5.5% | same as 0.5, fewer |
+| white 2 | −1.3% | sheared sharp 5 px only |
+| white 4 | −1.5% | sheared sharp 5 px only |
+| white 8 | +45% sheared sharp 5 px, +12% sheared sharp 8 px; else ≤ 2% | — |
+| signal-dependent `a + 8I/255`, a = 1 / 4 | +5.6% / −1.9% (vs root mean variance) | sheared sharp 5 px |
+
+Cost (min of 20, M4 Pro, `testimages/`): 0.04 ms on 720×540 and 2048×1536
+(one ~4 k-window pass), 0.23 ms on a low-noise (σ̂ ≈ 0.2) 1024×576 image
+that needs a second, denser pass; the SaddlePoint multiscale detect is
+0.5 / 1.0 / 4.2 ms on those images. Nothing is estimated unless a refined
+corner carries a covariance (the default refiner reports none).
+
+**End to end** (facade, SaddlePoint, `area_chessboard` 200², cell 8, 25
+boards per row, ~13 k matched corners per cell): σ̂₀² = mean(eᵀΣ⁻¹e)/2 about
+the truth with the reported covariance, and in parentheses with the floor
+removed (noise-only). Estimated σₙ; supplying the realised σ changes it by
+≤ 0.08.
+
+| board | blur | σₙ 1 | σₙ 2 | σₙ 4 | σₙ 8 |
+|---|---|---|---|---|---|
+| axis 40/200 | 0 | 0.17 (0.98) | 0.42 (0.98) | 0.74 (0.99) | 0.91 (0.99) |
+| axis 40/200 | 0.8 | 0.23 (1.09) | 0.50 (1.01) | 0.79 (1.00) | 0.93 (1.00) |
+| axis 40/200 | 1.5 | 0.35 (0.98) | 0.66 (1.00) | 0.88 (1.00) | 0.97 (1.00) |
+| axis 40/200 | 2.5 | 0.65 (0.93) | 0.87 (0.98) | 0.97 (1.00) | 1.00 (1.01) |
+| axis 90/150 | 0 | 0.58 (0.98) | 0.83 (0.99) | 0.95 (1.00) | 1.00 (1.02) |
+| axis 90/150 | 0.8 | 0.67 (1.03) | 0.87 (1.00) | 0.97 (1.01) | 1.01 (1.02) |
+| axis 90/150 | 1.5 | 0.84 (1.05) | 0.95 (1.02) | 1.00 (1.02) | 0.92* |
+| skew60 40/200 | 0 | 0.23 (1.26) | 0.46 (1.05) | 0.74 (0.99) | 0.82 (0.89)† |
+| skew60 40/200 | 0.8 | 0.23 (1.04)‡ | 0.53 (1.02) | 0.80 (1.00) | 0.93 (0.99) |
+| skew60 40/200 | 1.5 | 0.45 (1.08) | 0.72 (1.02) | 0.90 (0.99) | 0.98 (1.01) |
+
+\* low SNR: 5% of detections > 0.5 px off a lattice corner (excluded).
+† σₙ over-estimated by 6% (supplied σ: 0.998). ‡ the estimator declined on
+24 of 25 boards (no covariance reported there).
+
+The noise part is calibrated end to end (0.93–1.13 without the floor,
+1.26 only for sharp sheared corners at σₙ = 1, whose ~0.01 px bias equals
+the scatter). The 0.015 px floor dominates wherever the scatter is below
+~0.02 px — sharp or high-contrast corners at σₙ ≤ 2 — and drives σ̂₀² to
+0.17–0.5 there: the reported σ is 1.4–2.4× the actual error. Open
+decision (`UQ-05`): keep the floor (conservative), shrink it, or drop it.
+Scaling each row by `s²/(s² + f²)` (scatter `s` from the 0.015 px row):
+`f = 0.003` px gives ≈ 0.82 on the sharp axis-aligned σₙ = 1 row and ≈ 1.07
+on the sharp sheared one; `f = 0.005` gives ≈ 0.63 / 0.84.
+
 ## Recommendation for 1.5.0
 
 **Reduce SaddlePoint bias first, then ship its noise covariance with a
