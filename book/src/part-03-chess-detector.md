@@ -370,6 +370,10 @@ optimum:
    the final Gauss–Newton normal matrix.
 4. The angle sigmas are the relevant diagonal entries:
    `σθ₁ = √Σ[2,2]`, `σθ₂ = √Σ[3,3]` (clamped to ≥ 0, capped at π).
+5. Both sigmas are multiplied by an empirical calibration factor. It is
+   1.25 for clean fits and falls to 1.0 as the residual grows relative
+   to the fitted amplitude, so `sigma` matches the angle error measured
+   on synthetic corners.
 
 This is the textbook Cramér–Rao‑style uncertainty for nonlinear
 least squares — it assumes residuals are approximately iid Gaussian
