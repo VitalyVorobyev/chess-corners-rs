@@ -45,7 +45,7 @@ jobs:
 
       - name: Authenticate to crates.io via Trusted Publishing (OIDC)
         id: cratesio
-        uses: rust-lang/crates-io-auth-action@v1.0.4
+        uses: rust-lang/crates-io-auth-action@v1.0.5
 
       - name: Publish box-image-pyramid
         env:
@@ -142,7 +142,7 @@ jobs:
 
       - name: Authenticate to crates.io via Trusted Publishing (OIDC)
         id: cratesio
-        uses: rust-lang/crates-io-auth-action@v1.0.4
+        uses: rust-lang/crates-io-auth-action@v1.0.5
 
       - name: Publish crates in dependency order
         env:
