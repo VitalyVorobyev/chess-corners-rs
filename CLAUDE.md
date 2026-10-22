@@ -84,7 +84,7 @@ cargo test -p chess-corners
 cargo test -p chess-corners-core --features rayon
 cargo test -p chess-corners --no-default-features --features simd    # nightly only
 
-# Lint (stable toolchain)
+# Lint (fmt on stable; clippy on nightly because --all-features enables `simd`)
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -139,13 +139,13 @@ chess-corners-testutil (Dev-only shared test fixtures; publish = false)
 
 1. **Response** (`core/detect/chess/response.rs`, `core/detect/radon/response.rs`) — Dense ChESS / Radon response computation
 2. **Detection** (`core/detect/`) — Thresholding + NMS + cluster filtering
-3. **Refinement** (`core/refine/`) — Pluggable trait with 3 built-in refiners: CenterOfMass, Förstner, SaddlePoint
+3. **Refinement** (`core/refine/`) — Refiners are built-in variants behind the sealed `CornerRefiner` trait: three in core (CenterOfMass, Förstner, SaddlePoint) plus the facade's optional ML refiner (`ml-refiner`)
 4. **Descriptors** (`core/orientation/descriptor.rs`) — Corner descriptors lifted from raw detections via `describe_corners`. Carries two-axis orientation with per-axis 1σ uncertainty.
 5. **Orientation methods** (`core/orientation/`) — Detector-agnostic. `RingFit` (default) runs a 16-sample ring Gauss-Newton fit; `DiskFit` is a full-disk crossing-line estimator with a lazy-gate fallback to `RingFit`. Both ChESS and Radon detectors share this stage.
 
 ### Multiscale Pipeline (`chess-corners`)
 
-Coarse-to-fine pyramid detection with reusable `PyramidBuffers` for successive frames. Configured via `DetectorConfig.multiscale: Option<MultiscaleParams>` → `PyramidParams`. Both ChESS and Radon detectors are driven by the `DenseDetector` trait; `multiscale` and `refiner` are top-level on `DetectorConfig` and apply to both.
+Coarse-to-fine pyramid detection with reusable `PyramidBuffers` for successive frames. Configured via `DetectorConfig.multiscale: MultiscaleConfig` (`SingleScale` or `Pyramid { levels, min_size, refinement_radius }`). Both ChESS and Radon detectors are driven by the `DenseDetector` trait and share `multiscale`, `upscale`, `threshold`, `detection` and `orientation_method` on `DetectorConfig`; detector-specific tuning lives in the `DetectionStrategy` payload (`ChessConfig` carries the subpixel `refiner: ChessRefiner`; `RadonConfig` carries its own peak-fit mode).
 
 Optional pre-pipeline **integer bilinear upscaling** (`chess_corners::upscale`, configured via `DetectorConfig.upscale`) runs ahead of the pyramid for low-resolution inputs where target corners lack the 5 px ring support. Output descriptor coordinates are always rescaled back to the original input pixel frame.
 
@@ -153,11 +153,15 @@ Optional pre-pipeline **integer bilinear upscaling** (`chess_corners::upscale`, 
 
 | Feature | Crate | Effect |
 |---------|-------|--------|
+| `std` | core (default) | Standard-library support |
 | `rayon` | core, facade | Parallel response computation |
 | `simd` | core, facade | Portable SIMD (nightly only) |
 | `image` | facade (default) | `image::GrayImage` integration |
 | `ml-refiner` | facade, py | ML-backed refinement via ONNX |
 | `tracing` | core, facade | Structured logging spans |
+| `radon-sat-u32` | core | `u32` Radon summed-area table (half the memory, wider SIMD lanes; limits images to roughly 16 MP) instead of the default `i64` |
+| `schemars` | core, facade | Derive `JsonSchema` for the detector config types (used by `xtask emit-schemas`) |
+| `embed-model` | ml (default) | Embed the ONNX model weights in the binary |
 | `par_pyramid` | facade, box-image-pyramid | SIMD/rayon in pyramid downsampling |
 | `cli` | facade | CLI-only deps (clap, anyhow, serde, tracing-subscriber) |
 
@@ -173,10 +177,14 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 cargo doc --workspace --no-deps --all-features
 mdbook build book
+cargo run -p xtask -- emit-schemas --check
 ```
 
 Notes:
 
+- `emit-schemas --check` fails when `schemas/detector_config.json` has
+  drifted from the Rust config types; it matters whenever a config type or
+  its docs change (fix with `cargo run -p xtask -- emit-schemas`).
 - `cargo doc` warnings (broken intra-doc links, missing docs on public
   items, links to private items) are blocking — do not push with them.
 - Book rewrites should also be visually inspected: `mdbook serve book`.
@@ -293,7 +301,7 @@ and remove it in the next major. Diagnostic-only paths
 
 **Read [`docs/process/subagent-workflow.md`](docs/process/subagent-workflow.md)
 first.** It is the canonical guide for when and how to dispatch work
-in this workspace. Two named agents live under `.claude/agents/`:
+in this workspace. Three agents live under `.claude/agents/` (`calibration-target-detector` is a domain agent for chessboard/ChArUco detection pipeline work; the two below handle implementation dispatch):
 
 - **`quick-implementer`** (Sonnet) — specifiable mechanical work:
   re-exports, CLI plumbing, applying a pre-described fix, running
@@ -387,7 +395,7 @@ output (build logs, `cargo test` outputs > 100 lines, parameter sweeps,
 ## CI Matrix
 
 - OS: ubuntu, windows, macos × Toolchain: stable, nightly
-- `fmt` and `clippy` run on stable only
+- `fmt` runs on stable only; `clippy` runs on nightly only (`--all-features` enables the nightly-only `simd` feature)
 - SIMD tests run on nightly only
 - Python wheel smoke test on Linux (manylinux 2014, Python 3.10+)
 - WASM build smoke test on Linux (wasm-pack, `--target web`)

@@ -19,7 +19,7 @@ The codebase prioritizes:
 These rules apply to automated agents (Codex, Claude Code, etc.).
 
 **Before large work, read the knowledge base** under
-[`docs/`](docs/README.md): `docs/ROADMAP.md` (milestones to `v1.0.0`),
+[`docs/`](docs/README.md): `docs/ROADMAP.md` (milestones and release status),
 `docs/BACKLOG.md` (task registry), and the per-workstream RFCs plus the
 algorithm index in `docs/design/`. Route verbose / mechanical /
 long-running work to subagents per
@@ -119,7 +119,8 @@ Before opening a PR, run the full gate sequence (CLAUDE.md is canonical):
 When the bindings change, also:
 
 * Python: `(cd crates/chess-corners-py && maturin develop --release)`
-  then `pytest crates/chess-corners-py/python_tests`
+  (run inside the `.venv`, see *Python workflow*) then
+  `pytest crates/chess-corners-py/python_tests`
 * WASM: `wasm-pack build crates/chess-corners-wasm --target web`
 
 Minimal builds are still worth a spot check (`cargo test -p
@@ -134,9 +135,10 @@ requested or CI requires it).
 For Python package work in this repository:
 
 * prefer **`uv`** over raw `pip` / ad hoc virtualenv commands
-* use the checked-in **`.venv`** for local Python verification unless told otherwise
+* use the repo-root **`.venv`** (git-ignored; create it with `uv venv .venv` if missing) for local Python verification unless told otherwise
 * run Python commands through `uv run --python .venv/bin/python ...`
 * install Python packages into that venv with `uv pip install --python .venv/bin/python ...`
+* quick dev loop: `uv run --python .venv/bin/python maturin develop --release -m crates/chess-corners-py/Cargo.toml` (editable install into the venv)
 * build the Python wheel with `uv run --python .venv/bin/python maturin build -m crates/chess-corners-py/Cargo.toml ...`
 
 When updating Python bindings, examples, or docs, verify the **installed wheel**
