@@ -142,7 +142,7 @@ those three.
 ## 7.6 Throughput vs accuracy
 
 Log-log axes. Two orders of magnitude separate the fastest refiner
-(CenterOfMass at ~20 ns/corner) from ML inference (~150 µs/corner at
+(CenterOfMass at ~16 ns/corner) from ML inference (~150 µs/corner at
 batch = 1).
 
 ![Throughput vs accuracy](img/bench/throughput_vs_accuracy.png)
@@ -151,9 +151,9 @@ The Pareto frontier, fast-to-slow:
 
 | Refiner             | Time / corner | Clean-data mean error | Notes                                                                 |
 |---------------------|---------------|-----------------------|-----------------------------------------------------------------------|
-| `CenterOfMass`      | ~20 ns        | 0.08 px               | Unmatched throughput; fails at cell ≤ 5 (see §7.5).                   |
+| `CenterOfMass`      | ~16 ns        | 0.08 px               | Unmatched throughput; fails at cell ≤ 5 (see §7.5).                   |
 | `Förstner`          | ~60 ns        | 0.06 px               | Degrades with blur.                                                   |
-| `SaddlePoint`       | ~250 ns       | 0.045 px              | Lowest mean error among the built-in refiners on every row up to `σ_noise = 8`. |
+| `SaddlePoint`       | ~180 ns       | 0.045 px              | Lowest mean error among the built-in refiners on every row up to `σ_noise = 8`. |
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.07 px               | OpenCV's iterative gradient refiner.                                  |
 | `ML (ONNX)`         | ~150 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row (`σ_noise = 12`).             |
 
