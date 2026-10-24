@@ -35,6 +35,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   presets' value) or `CC_REFINER_SADDLE_POINT`, and rejects the other tags
   with `CC_ERR_INVALID_CONFIG` (it ignored them before).
 
+### Fixed
+
+- `DetectorConfig::radon_multiscale()` no longer returns hundreds to
+  thousands of weak non-corner peaks: the relative `threshold` now applies
+  against the strongest corner of the frame, not of each refinement window
+  (`testimages/large.png`: 7004 → 274 corners, all of them single-scale
+  Radon corners at the same positions).
+- The Radon detector no longer reports peaks beside straight edges that
+  run along one of its ray directions — on sharp boards rotated near 45°,
+  hundreds per frame about half a cell from the corners. A peak is now
+  kept only where the image is a saddle. Single-scale Radon output on
+  `mid.png` and `large.png` is unchanged; on `small.png` three non-corner
+  peaks are dropped (75 → 72). Corners on 60°-sheared 4–6 px cells under
+  lens blur σ ≥ 1.5 px, where blur leaves little saddle, are dropped too.
+
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.

@@ -121,13 +121,27 @@ turns it into subpixel corner positions:
    scene automatically. (ChESS, whose `R` has a stable per-corner scale,
    instead reads `threshold` as an absolute floor; see
    [Part III §3.3.1](part-03-chess-detector.md#331-thresholding-and-nms).)
+   On the coarse-to-fine path (§4.7) `max(R)` is the strongest peak
+   found across the refinement windows.
 3. **Non-maximum suppression.** Each surviving pixel must be the
    strict maximum within a `(2·nms_radius + 1)²` window. (`nms_radius`
    is set via `DetectorConfig.detection`, shared with the ChESS detector.)
 4. **Cluster filter.** The pixel must have at least `min_cluster_size`
    positive neighbors in the NMS window. Rejects isolated noise.
    (`min_cluster_size` is likewise on `DetectorConfig.detection`.)
-5. **3-point peak fit.** Given the NMS winner `R_c` at `(x, y)` and
+5. **Saddle test.** The four-ray score also peaks, at roughly a third
+   of a corner's response, beside a straight edge that runs along one of
+   the ray directions: the ray parallel to the edge lies in one cell
+   while the others cross the edge. Boards rotated near 45° line up
+   every edge with a diagonal ray. Around an X-junction the image is a
+   saddle; beside an edge it bends across the edge only. A quadratic is
+   fitted to the working image over a disk of radius `ray_radius`, and
+   the peak is kept only when the fit's two principal curvatures have
+   opposite signs and the smaller is at least 0.2 of the larger (on a
+   sharp board, an X-junction whose grid axes are 48° or more apart).
+   Heavy blur on small sheared cells washes most of the saddle out, and
+   those corners are dropped with the edge peaks.
+6. **3-point peak fit.** Given the NMS winner `R_c` at `(x, y)` and
    its four axial neighbors `R_{x±1}`, `R_{y±1}`, fit a 1D parabola
    along each axis to find the subpixel offset. The paper's
    Gaussian peak fit (`PeakFitMode::Gaussian`) fits the parabola to
@@ -139,7 +153,7 @@ The peak fit is a closed-form operation on three samples per axis —
 no iteration. Implementation: `radon::fit_peak_frac` in
 `chess-corners-core`.
 
-6. **Saddle-point refinement** (optional). With
+7. **Saddle-point refinement** (optional). With
    `RadonConfig.refiner = RadonRefiner::SaddlePoint(_)`, each peak seeds
    the `SaddlePoint` refiner of [Part V §5.4](part-05-refiners.md#54-saddlepoint)
    on the input image, which re-centres a quadratic fit on the corner
@@ -147,7 +161,7 @@ no iteration. Implementation: `radon::fit_peak_frac` in
    ([Part VIII](part-08-uncertainty.md)). A corner whose refinement does
    not converge keeps its peak-fit position, without a covariance; no
    peak is dropped. The default, `RadonRefiner::PeakFit`, stops at
-   step 5.
+   step 6.
 
 The peak fit locates a maximum of a blurred, supersampled response
 map, so on synthetic boards its error grows with lens blur and with
@@ -176,7 +190,7 @@ values. The practical differences:
 |-----------------------------------|-----------------------------------|-------------------------------------------|
 | Support required                  | 16 samples at radius 5 or 10      | 4 rays of length `2·ray_radius + 1`       |
 | Minimum cell size in repo sweep   | Degrades when the ring crosses neighbouring cells | Tested down to ~4 px with `image_upsample = 2` |
-| Seeding small / blurred cells     | Misses most corners on 4–5 px cells, and on 60°-sheared 8 px cells at blur σ 2.5 | Seeds 5–12 px cells through blur σ 2.5 at noise σ ≤ 2 (4 px cells through σ 1.5) |
+| Seeding small / blurred cells     | Misses most corners on 4–5 px cells, and on 60°-sheared 8 px cells at blur σ 2.5 | Seeds 5–12 px cells through blur σ 2.5 at noise σ ≤ 2 (4 px cells through σ 1.5); 60°-sheared 4–6 px cells only through blur σ 1–1.5, past which too little saddle remains for the saddle test (§4.4) |
 | Defocus / blur mechanism          | Ring samples can smear across cells | Ray integral averages over a short support |
 | Cost per image                    | One ring sample per pixel (+SIMD) | 4 SATs + one dense map per pixel          |
 | Memory overhead                   | One `ResponseMap`                 | Four SATs + response + blur scratch       |
@@ -320,7 +334,11 @@ When to try `radon_multiscale` before single-scale `radon`:
 
 For small frames or when per-frame latency is not a concern,
 single-scale `radon` is simpler and worth measuring against the
-multiscale preset.
+multiscale preset. The coarse-to-fine pass only finds corners the
+coarsest level seeds: where the cells shrink to a few pixels there (on
+`testimages/small.png`, a ChArUco board with 40 px cells, the 3-level
+pyramid seeds 9 of the 72 single-scale corners), use fewer levels or a
+larger `refinement_radius`.
 
 ### Tuning
 
