@@ -18,8 +18,10 @@ stranded at `0.11.2` (closed by `1.1.0`, `DEBT-11`), and the vcpkg port SHA512
 was a placeholder (`CPP-05`). `1.1.0`, `1.2.0` (facade ROI detection) and
 `1.3.0` (detector-config JSON Schema + WASM JSON config path) have since
 shipped on every channel, followed by `1.3.1` (maintenance), `1.4.0`
-(saddle-point position covariance, `UQ-00`) and `1.5.0` (per-corner position
-covariance on the detector output, `UQ-05`), the current version on crates.io,
+(saddle-point position covariance, `UQ-00`), `1.5.0` (per-corner position
+covariance on the detector output, `UQ-05`) and `1.6.0` (per-localizer position
+covariance behind `Uncertainty`, Radon refiner choice, public noise estimate,
+Radon false-detection fixes), the current version on crates.io,
 PyPI and npm
 (`chess-corners-ml` stays at `0.13.0`). The only open release residual is
 `CPP-05`: the vcpkg port still targets `1.1.0` and has never been
@@ -55,12 +57,13 @@ checked anything.
 
 **`1.2.0` and `1.3.0` are released on every channel** — `v1.2.0`,
 `wasm-v1.2.0`, `v1.3.0` and `wasm-v1.3.0` are tagged; crates.io, PyPI and npm
-`latest` are at `1.5.0` (`chess-corners-ml` unchanged at `0.13.0`). See
+`latest` are at `1.6.0` (`chess-corners-ml` unchanged at `0.13.0`). See
 [`changelog/1.2.0.md`](changelog/1.2.0.md),
 [`changelog/1.3.0.md`](changelog/1.3.0.md),
 [`changelog/1.3.1.md`](changelog/1.3.1.md),
-[`changelog/1.4.0.md`](changelog/1.4.0.md) and
-[`changelog/1.5.0.md`](changelog/1.5.0.md).
+[`changelog/1.4.0.md`](changelog/1.4.0.md),
+[`changelog/1.5.0.md`](changelog/1.5.0.md) and
+[`changelog/1.6.0.md`](changelog/1.6.0.md).
 
 One residual stays open: **`CPP-05`**. The vcpkg port targets `1.1.0` with
 the real source-tarball SHA512, so it is installable, but it was not bumped
@@ -97,7 +100,7 @@ from a measured bias/precision split, not ahead of it.
 | next | Bias/precision benchmark per refiner; published noise-row numbers re-measured (the test noise helper produced 1.3× the stated σ before the fix) | `UQ-01..02` |
 | decision | `UQ-01` found SaddlePoint bias (~0.12 px on sharp corners) far above noise scatter, removable by re-centred refitting: reduce bias first, then expose the covariance | — |
 | `1.5.0` | SaddlePoint re-centred refit (default) with a validated covariance; per-image noise estimate (px² output); SaddlePoint covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; CenterOfMass non-refinement fix; a book Part on uncertainty; camera-formed (lens blur before pixel integration) evidence fixtures and the floor tuned on rotated boards | `UQ-03`, `UQ-05`, `UQ-07`, `UQ-09`, `UQ-15` |
-| `1.6.0` | Position covariance for every localizer behind `Uncertainty { Off, Propagated }` (noise through each localizer's Jacobian plus a per-localizer systematic term with a real-data floor); opt-in SaddlePoint refinement of Radon corners (`RadonRefiner`; default stays the peak fit, `UQ-22`); per-image noise estimate public in every binding; robustness audit and real-data validation; book Part VIII rewritten on that evidence | `UQ-18`, `UQ-23`–`UQ-28`, `UQ-30` |
+| `1.6.0` (shipped) | Position covariance for every localizer behind `Uncertainty { Off, Propagated }` (noise through each localizer's Jacobian plus a per-localizer systematic term with a real-data floor); opt-in SaddlePoint refinement of Radon corners (`RadonRefiner`; default stays the peak fit, `UQ-22`); per-image noise estimate public in every binding; robustness audit and real-data validation; book Part VIII rewritten on that evidence | `UQ-18`, `UQ-23`–`UQ-28`, `UQ-30` |
 | `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); per-corner systematic term that sees board rotation and Radon peak switching; cubic re-centring for SaddlePoint; a noise estimate for correlated noise | `UQ-06`, `UQ-16`, `UQ-32` |
 | ongoing | Realistic ground truth (calib-synth / etendue renders; end-to-end σ̂₀ check in calibration-rs) | `UQ-08`, `ML-01`, `ML-02` |
 

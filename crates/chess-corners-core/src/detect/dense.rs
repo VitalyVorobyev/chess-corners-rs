@@ -193,6 +193,10 @@ pub trait DenseDetector: private::Sealed {
 
     /// Whether [`Self::refine_peaks_on_image`] consumes the refiner:
     /// `true` for both built-in detectors.
+    #[deprecated(
+        since = "1.6.0",
+        note = "both built-in detectors refine on the image; this is always `true`"
+    )]
     fn refines_on_image(&self) -> bool {
         true
     }
