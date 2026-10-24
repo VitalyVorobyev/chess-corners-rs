@@ -150,7 +150,7 @@ let cfg = DetectorConfig::chess().with_chess(|c| {
 The Radon detector locates its peaks with a 3-point fit on the response
 map (`RadonConfig.peak_fit`); by default that position is final.
 `RadonConfig.refiner` can instead refine each peak with the saddle-point
-fit on the image, which also reports a position covariance:
+fit on the image, which is more accurate:
 
 ```rust
 use chess_corners::{DetectorConfig, RadonRefiner};

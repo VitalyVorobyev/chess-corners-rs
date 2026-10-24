@@ -225,10 +225,19 @@ never worse than the peak fit; on **4 px cells** the refinement window
 spans the neighbouring corners and is no better — with a 60° shear it is
 worse (blur 1.5, noise 2: 0.12 px with the peak fit, 0.17 px refined,
 and 19% of the refined corners move more than 0.5 px off), so keep the
-peak fit there. These are synthetic-only measurements (straight edges,
-Gaussian blur, white noise); check the refinement on your own images
-before relying on it. It adds about 0.5 µs per corner (≤ 3% of a Radon
+peak fit there. It adds about 0.5 µs per corner (≤ 3% of a Radon
 frame on the test images).
+
+On a real stereo calibration set with an accurate ChArUco target the
+refinement also lowers the error: 0.038 px per axis at each corner
+against 0.056 px for the peak fit, the same as ChESS with `SaddlePoint`
+([Part IX §9.6](part-09-benchmarks.md#96-accuracy-on-real-calibration-images)).
+Select `RadonRefiner::SaddlePoint` for calibration. The peak fit keeps
+one advantage: it is barely moved by illumination gradients, which bias
+the saddle-point fit, so under strong local shading it is the more
+accurate of the two ([Part VIII §8.5](part-08-uncertainty.md#85-where-it-does-not-hold)).
+On that set the Radon detector found about 70% of the corners, missing
+the most blurred ones that ChESS found.
 
 ChESS is faster on the measured clean test images. The Radon detector
 is useful when the ChESS ring response does not seed enough corners,

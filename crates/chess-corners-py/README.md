@@ -102,7 +102,7 @@ Refiners are per-detector: `ChessRefiner` carries one of
 `center_of_mass`, `forstner`, `saddle_point`, or `ml` (with the
 `ml-refiner` feature). `RadonRefiner` carries `peak_fit` (the default:
 keep the response-map peak fit) or `saddle_point` (refine each Radon peak
-on the image, with a position covariance).
+on the image; more accurate).
 The active `ChessRefiner` variant's tuning is reachable via the
 `payload` property:
 
