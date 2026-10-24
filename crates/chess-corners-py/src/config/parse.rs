@@ -337,11 +337,26 @@ pub(crate) fn orientation_method_str(v: RsOrientationMethod) -> &'static str {
     }
 }
 
-pub(crate) fn uncertainty_str(v: RsUncertainty) -> &'static str {
+/// The config string of `v`; an error for a tier these bindings do not
+/// know (never mapped silently to another tier).
+pub(crate) fn uncertainty_str(v: RsUncertainty) -> PyResult<&'static str> {
     match v {
-        RsUncertainty::Off => "off",
-        RsUncertainty::Propagated => "propagated",
-        _ => "propagated",
+        RsUncertainty::Off => Ok("off"),
+        RsUncertainty::Propagated => Ok("propagated"),
+        other => Err(config_error(format!(
+            "unsupported uncertainty tier {other:?}"
+        ))),
+    }
+}
+
+/// The Python enum of `v`; an error for a tier these bindings do not know.
+pub(crate) fn uncertainty_py(v: RsUncertainty) -> PyResult<Uncertainty> {
+    match v {
+        RsUncertainty::Off => Ok(Uncertainty::Off),
+        RsUncertainty::Propagated => Ok(Uncertainty::Propagated),
+        other => Err(config_error(format!(
+            "unsupported uncertainty tier {other:?}"
+        ))),
     }
 }
 

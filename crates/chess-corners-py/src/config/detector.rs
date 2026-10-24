@@ -12,7 +12,7 @@ use pyo3::types::{PyDict, PyString, PyType};
 use super::multiscale::MultiscaleConfig;
 use super::parse::{
     config_error, extract_float, json_dumps, json_loads, orientation_method_str,
-    parse_orientation_method, parse_uncertainty, reject_unknown_keys, require_dict,
+    parse_orientation_method, parse_uncertainty, reject_unknown_keys, require_dict, uncertainty_py,
     uncertainty_str, ChessRing, OrientationMethod, PeakFitMode, Uncertainty,
 };
 use super::refiners::{ChessRefiner, RadonRefiner};
@@ -384,8 +384,8 @@ impl DetectorConfig {
     }
 
     #[getter]
-    fn uncertainty(&self) -> Uncertainty {
-        self.uncertainty.into()
+    fn uncertainty(&self) -> PyResult<Uncertainty> {
+        uncertainty_py(self.uncertainty)
     }
     #[setter]
     fn set_uncertainty(&mut self, v: Uncertainty) {
@@ -409,7 +409,7 @@ impl DetectorConfig {
         d.set_item("merge_radius", self.merge_radius as f64)?;
         // `None` (estimate per image) serialises to a JSON `null`.
         d.set_item("noise_sigma", self.noise_sigma.map(f64::from))?;
-        d.set_item("uncertainty", uncertainty_str(self.uncertainty))?;
+        d.set_item("uncertainty", uncertainty_str(self.uncertainty)?)?;
         Ok(d.unbind())
     }
 

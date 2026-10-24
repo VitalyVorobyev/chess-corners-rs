@@ -196,13 +196,18 @@ impl From<Uncertainty> for RsUncertainty {
     }
 }
 
-impl From<RsUncertainty> for Uncertainty {
-    fn from(v: RsUncertainty) -> Self {
+impl TryFrom<RsUncertainty> for Uncertainty {
+    type Error = wasm_bindgen::JsError;
+
+    /// A tier these bindings do not know is an error, never mapped silently
+    /// to another tier.
+    fn try_from(v: RsUncertainty) -> Result<Self, Self::Error> {
         match v {
-            RsUncertainty::Off => Uncertainty::Off,
-            RsUncertainty::Propagated => Uncertainty::Propagated,
-            // Any future variants map to the default.
-            _ => Uncertainty::Propagated,
+            RsUncertainty::Off => Ok(Uncertainty::Off),
+            RsUncertainty::Propagated => Ok(Uncertainty::Propagated),
+            other => Err(wasm_bindgen::JsError::new(&format!(
+                "unsupported uncertainty tier {other:?}"
+            ))),
         }
     }
 }
@@ -617,10 +622,10 @@ mod tests {
     #[test]
     fn uncertainty_defaults_to_propagated_and_round_trips() {
         let cfg = DetectorConfig::chess();
-        assert_eq!(cfg.uncertainty(), Uncertainty::Propagated);
+        assert_eq!(cfg.uncertainty().ok(), Some(Uncertainty::Propagated));
         assert_eq!(cfg.snapshot().uncertainty, RsUncertainty::Propagated);
         let off = cfg.with_uncertainty(Uncertainty::Off);
-        assert_eq!(off.uncertainty(), Uncertainty::Off);
+        assert_eq!(off.uncertainty().ok(), Some(Uncertainty::Off));
         assert_eq!(off.snapshot().uncertainty, RsUncertainty::Off);
         // Original is unchanged.
         assert_eq!(cfg.snapshot().uncertainty, RsUncertainty::Propagated);

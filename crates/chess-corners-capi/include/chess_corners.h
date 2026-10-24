@@ -191,8 +191,8 @@ typedef struct cc_config {
   float noise_sigma;
   /**
    * One of the `CC_UNCERTAINTY_*` constants (any other value is
-   * `CC_ERR_INVALID_CONFIG`). A zero-initialised config selects
-   * `CC_UNCERTAINTY_OFF`; the presets select `CC_UNCERTAINTY_PROPAGATED`.
+   * `CC_ERR_INVALID_CONFIG`). A zero-initialised config, like the
+   * presets, selects `CC_UNCERTAINTY_PROPAGATED`.
    */
   cc_uncertainty_t uncertainty;
 } cc_config;
@@ -257,7 +257,7 @@ typedef struct cc_corner {
   struct cc_axis axes[2];
   /**
    * Covariance of `(x, y)` in px²: first-order scatter due to white
-   * pixel noise plus a small model-error floor (the Rust
+   * pixel noise plus the localizer's systematic error (the Rust
    * `Corner::position_covariance` documents the model). Valid only
    * when `has_position_covariance` is `1`; zeroed otherwise.
    */
@@ -270,9 +270,10 @@ typedef struct cc_corner {
   uint8_t has_orientation;
   /**
    * `1` when `position_covariance` is set. Under
-   * `CC_UNCERTAINTY_PROPAGATED` every localizer reports one on corners
-   * whose refinement converged; none does under `CC_UNCERTAINTY_OFF` or
-   * when the input is upscaled (`upscale_factor` other than `0`).
+   * `CC_UNCERTAINTY_PROPAGATED` every localizer reports one (a ChESS
+   * saddle-point refinement only when it converged); none does under
+   * `CC_UNCERTAINTY_OFF` or when the input is upscaled
+   * (`upscale_factor` other than `0`).
    */
   uint8_t has_position_covariance;
 } cc_corner;
@@ -315,8 +316,8 @@ typedef struct cc_result {
 
 /**
  * Saddle-point refiner. Valid for both strategies. Under Radon a corner
- * whose refinement does not converge keeps its peak-fit position, without
- * a position covariance.
+ * whose refinement does not converge keeps its peak-fit position and
+ * covariance.
  */
 #define CC_REFINER_SADDLE_POINT 2
 
@@ -343,17 +344,17 @@ typedef struct cc_result {
 #define CC_ORIENTATION_NONE 2
 
 /**
+ * Every corner whose localizer supports it reports a position covariance
+ * (the default, and the value of a zero-initialised config).
+ */
+#define CC_UNCERTAINTY_PROPAGATED 0
+
+/**
  * No position covariance and no noise estimate: every corner has
  * `has_position_covariance == 0`. Positions are identical to
  * `CC_UNCERTAINTY_PROPAGATED`. `noise_sigma` is ignored.
  */
-#define CC_UNCERTAINTY_OFF 0
-
-/**
- * Every corner whose localizer supports it reports a position covariance
- * (the default).
- */
-#define CC_UNCERTAINTY_PROPAGATED 1
+#define CC_UNCERTAINTY_OFF 1
 
 /**
  * Paper-default radius-5 ring (16 samples).

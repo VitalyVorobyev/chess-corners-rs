@@ -65,8 +65,8 @@ pub const CC_REFINER_CENTER_OF_MASS: cc_refiner_t = 0;
 /// Förstner refiner. ChESS strategy only.
 pub const CC_REFINER_FORSTNER: cc_refiner_t = 1;
 /// Saddle-point refiner. Valid for both strategies. Under Radon a corner
-/// whose refinement does not converge keeps its peak-fit position, without
-/// a position covariance.
+/// whose refinement does not converge keeps its peak-fit position and
+/// covariance.
 pub const CC_REFINER_SADDLE_POINT: cc_refiner_t = 2;
 /// Radon's response-map peak fit, with no image refinement. Radon strategy
 /// only (the Radon default).
@@ -84,13 +84,13 @@ pub const CC_ORIENTATION_NONE: cc_orientation_method_t = 2;
 
 /// Position-uncertainty tier stored in `cc_config::uncertainty`.
 pub type cc_uncertainty_t = u32;
+/// Every corner whose localizer supports it reports a position covariance
+/// (the default, and the value of a zero-initialised config).
+pub const CC_UNCERTAINTY_PROPAGATED: cc_uncertainty_t = 0;
 /// No position covariance and no noise estimate: every corner has
 /// `has_position_covariance == 0`. Positions are identical to
 /// `CC_UNCERTAINTY_PROPAGATED`. `noise_sigma` is ignored.
-pub const CC_UNCERTAINTY_OFF: cc_uncertainty_t = 0;
-/// Every corner whose localizer supports it reports a position covariance
-/// (the default).
-pub const CC_UNCERTAINTY_PROPAGATED: cc_uncertainty_t = 1;
+pub const CC_UNCERTAINTY_OFF: cc_uncertainty_t = 1;
 
 /// ChESS sampling-ring tag stored in `cc_config::chess_ring`.
 ///
@@ -156,7 +156,7 @@ pub struct cc_corner {
     /// `has_orientation` is `1`; zeroed otherwise.
     pub axes: [cc_axis; 2],
     /// Covariance of `(x, y)` in px²: first-order scatter due to white
-    /// pixel noise plus a small model-error floor (the Rust
+    /// pixel noise plus the localizer's systematic error (the Rust
     /// `Corner::position_covariance` documents the model). Valid only
     /// when `has_position_covariance` is `1`; zeroed otherwise.
     pub position_covariance: cc_covariance,
@@ -165,9 +165,10 @@ pub struct cc_corner {
     /// is zeroed.
     pub has_orientation: u8,
     /// `1` when `position_covariance` is set. Under
-    /// `CC_UNCERTAINTY_PROPAGATED` every localizer reports one on corners
-    /// whose refinement converged; none does under `CC_UNCERTAINTY_OFF` or
-    /// when the input is upscaled (`upscale_factor` other than `0`).
+    /// `CC_UNCERTAINTY_PROPAGATED` every localizer reports one (a ChESS
+    /// saddle-point refinement only when it converged); none does under
+    /// `CC_UNCERTAINTY_OFF` or when the input is upscaled
+    /// (`upscale_factor` other than `0`).
     pub has_position_covariance: u8,
 }
 
@@ -254,8 +255,8 @@ pub struct cc_config {
     /// `has_noise_sigma` is non-zero.
     pub noise_sigma: f32,
     /// One of the `CC_UNCERTAINTY_*` constants (any other value is
-    /// `CC_ERR_INVALID_CONFIG`). A zero-initialised config selects
-    /// `CC_UNCERTAINTY_OFF`; the presets select `CC_UNCERTAINTY_PROPAGATED`.
+    /// `CC_ERR_INVALID_CONFIG`). A zero-initialised config, like the
+    /// presets, selects `CC_UNCERTAINTY_PROPAGATED`.
     pub uncertainty: cc_uncertainty_t,
 }
 
@@ -545,7 +546,7 @@ pub extern "C" fn cc_status_str(status: cc_status) -> *const c_char {
 /// ABI version of this library. Bumped manually on any breaking ABI change.
 #[no_mangle]
 pub extern "C" fn cc_abi_version() -> u32 {
-    7
+    6
 }
 
 #[cfg(test)]
@@ -620,7 +621,7 @@ mod tests {
 
     #[test]
     fn abi_version_is_stable() {
-        assert_eq!(cc_abi_version(), 7);
+        assert_eq!(cc_abi_version(), 6);
     }
 
     #[test]

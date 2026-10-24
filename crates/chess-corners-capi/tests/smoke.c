@@ -78,8 +78,9 @@ int main(void) {
         return 5;
     }
 
-    /* The saddle-point refiner reports a position covariance. This board is
-     * saturated (0/255), so its noise cannot be estimated: supply it. */
+    /* Every refiner reports a position covariance; check the saddle-point
+     * one. This board is saturated (0/255), so its noise cannot be
+     * estimated: supply it. */
     cc_config saddle = cc_config_chess();
     saddle.refiner = CC_REFINER_SADDLE_POINT;
     saddle.has_noise_sigma = 1;
@@ -110,6 +111,13 @@ int main(void) {
     cc_config plain = cc_config_chess();
     if (plain.uncertainty != CC_UNCERTAINTY_PROPAGATED) {
         fprintf(stderr, "preset does not default to propagated uncertainty\n");
+        free(img);
+        return 10;
+    }
+    /* A zero-initialised config selects the same default tier. */
+    cc_config zeroed = {0};
+    if (zeroed.uncertainty != CC_UNCERTAINTY_PROPAGATED) {
+        fprintf(stderr, "zero-initialised config is not the default tier\n");
         free(img);
         return 10;
     }

@@ -511,8 +511,8 @@ impl DetectorConfig {
     /// a position covariance per corner, `Uncertainty.Off` reports none.
     /// JSON: `"uncertainty": "off" | "propagated"`.
     #[wasm_bindgen(getter)]
-    pub fn uncertainty(&self) -> Uncertainty {
-        (*self.uncertainty.borrow()).into()
+    pub fn uncertainty(&self) -> Result<Uncertainty, JsError> {
+        Uncertainty::try_from(*self.uncertainty.borrow())
     }
     #[wasm_bindgen(setter)]
     pub fn set_uncertainty(&mut self, v: Uncertainty) {

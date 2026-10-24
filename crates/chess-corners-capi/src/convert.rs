@@ -186,8 +186,10 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
     };
     let uncertainty: cc_uncertainty_t = match config.uncertainty {
         Uncertainty::Off => CC_UNCERTAINTY_OFF,
-        // Future variants fall back to the default tier.
-        _ => CC_UNCERTAINTY_PROPAGATED,
+        Uncertainty::Propagated => CC_UNCERTAINTY_PROPAGATED,
+        // A tier without a C tag is a bug, never mapped to another tier
+        // (the presets trap the panic).
+        other => panic!("uncertainty tier {other:?} has no C tag"),
     };
     let upscale_factor = match config.upscale {
         UpscaleConfig::Disabled => 0,

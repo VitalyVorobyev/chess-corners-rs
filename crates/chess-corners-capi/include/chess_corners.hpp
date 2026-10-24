@@ -25,7 +25,7 @@ namespace chess_corners {
 /// Checked against `cc_abi_version()` before each detection (see
 /// `check_abi()`); a mismatch means the header and the linked library are
 /// incompatible and detection throws rather than reading a stale layout.
-inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 7;
+inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 6;
 
 /// One local grid-axis direction with its 1-sigma angular uncertainty.
 ///
@@ -52,9 +52,10 @@ struct Covariance {
 /// `false` and `axes` is zeroed.
 ///
 /// `position_covariance` is the covariance of `(x, y)` in px^2 (white-noise
-/// scatter plus a small model-error floor; see `cc_corner`). It is set under
-/// `CC_UNCERTAINTY_PROPAGATED` (the default) on corners whose refinement
-/// converged, and not under `CC_UNCERTAINTY_OFF` or on upscaled input.
+/// scatter plus the localizer's systematic error; see `cc_corner`). It is
+/// set under `CC_UNCERTAINTY_PROPAGATED` (the default) for every localizer
+/// (a ChESS saddle-point refinement only when it converged), and not under
+/// `CC_UNCERTAINTY_OFF` or on upscaled input.
 struct Corner {
     float x = 0.0f;
     float y = 0.0f;
