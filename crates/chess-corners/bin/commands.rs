@@ -217,7 +217,10 @@ fn log_active_refiner(cfg: &DetectorConfig) {
     match &cfg.strategy {
         DetectionStrategy::Chess(chess) => info!("refiner: {:?}", chess.refiner),
         DetectionStrategy::Radon(radon) => {
-            info!("subpixel: {:?} peak fit (built-in)", radon.peak_fit)
+            info!(
+                "refiner: {:?} ({:?} peak fit)",
+                radon.refiner, radon.peak_fit
+            )
         }
         _ => info!("refiner: <unknown strategy>"),
     }

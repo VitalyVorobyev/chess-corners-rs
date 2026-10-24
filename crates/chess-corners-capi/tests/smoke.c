@@ -112,6 +112,31 @@ int main(void) {
         return 8;
     }
 
+    /* Radon keeps its peak fit by default and accepts only the peak-fit and
+     * saddle-point refiner tags. */
+    cc_config radon = cc_config_radon();
+    if (radon.refiner != CC_REFINER_PEAK_FIT) {
+        fprintf(stderr, "Radon preset does not default to the peak fit\n");
+        free(img);
+        return 9;
+    }
+    radon.refiner = CC_REFINER_CENTER_OF_MASS;
+    if (cc_detect_u8(img, w, h, &radon, &ignored) != CC_ERR_INVALID_CONFIG) {
+        fprintf(stderr, "center-of-mass under Radon was not rejected\n");
+        free(img);
+        return 10;
+    }
+
+    /* The saturated board has no structure-free area: no noise estimate. */
+    float sigma = -1.0f;
+    uint32_t has_sigma = 7;
+    if (cc_estimate_noise_sigma_u8(img, w, h, &sigma, &has_sigma) != CC_OK ||
+        has_sigma != 0) {
+        fprintf(stderr, "noise estimate on a saturated board\n");
+        free(img);
+        return 11;
+    }
+
     free(img);
     printf("smoke OK\n");
     return 0;

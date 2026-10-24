@@ -57,14 +57,20 @@ pub const CC_STRATEGY_RADON: cc_strategy_t = 1;
 /// Subpixel-refiner tag stored in `cc_config::refiner`.
 ///
 /// Refiner-specific tuning is not exposed over the flat ABI; the selected
-/// refiner runs with its library defaults.
+/// refiner runs with its library defaults. A tag not valid for the
+/// selected strategy is rejected with `CC_ERR_INVALID_CONFIG`.
 pub type cc_refiner_t = u32;
-/// Center-of-mass refiner. Valid for both strategies.
+/// Center-of-mass refiner. ChESS strategy only (the ChESS default).
 pub const CC_REFINER_CENTER_OF_MASS: cc_refiner_t = 0;
-/// Förstner refiner. Valid for the ChESS strategy only.
+/// Förstner refiner. ChESS strategy only.
 pub const CC_REFINER_FORSTNER: cc_refiner_t = 1;
-/// Saddle-point refiner. Valid for the ChESS strategy only.
+/// Saddle-point refiner. Valid for both strategies. Under Radon a corner
+/// whose refinement does not converge keeps its peak-fit position, without
+/// a position covariance.
 pub const CC_REFINER_SADDLE_POINT: cc_refiner_t = 2;
+/// Radon's response-map peak fit, with no image refinement and no position
+/// covariance. Radon strategy only (the Radon default).
+pub const CC_REFINER_PEAK_FIT: cc_refiner_t = 3;
 
 /// Orientation-fit tag stored in `cc_config::orientation_method`.
 pub type cc_orientation_method_t = u32;
@@ -149,8 +155,9 @@ pub struct cc_corner {
     /// is zeroed.
     pub has_orientation: u8,
     /// `1` when `position_covariance` is set. Only the saddle-point refiner
-    /// reports one, on accepted corners whose refinement converged, and not
-    /// when the input is upscaled (`upscale_factor` other than `0`).
+    /// reports one (either strategy), on corners whose refinement
+    /// converged, and not when the input is upscaled (`upscale_factor`
+    /// other than `0`).
     pub has_position_covariance: u8,
 }
 
@@ -434,6 +441,73 @@ unsafe fn free_impl(r: *mut cc_result) {
     result.len = 0;
 }
 
+// ─── Noise estimate ─────────────────────────────────────────────────────
+
+/// Estimate the standard deviation of the pixel noise of an 8-bit,
+/// row-major grayscale image, in gray levels: the per-image estimate
+/// `cc_detect_u8` uses to express position covariances when
+/// `cc_config::has_noise_sigma` is `0`.
+///
+/// On `CC_OK`, `*out_has_sigma` is `1` and `*out_sigma` holds the estimate,
+/// or `*out_has_sigma` is `0` (and `*out_sigma` is `0`) when the image is
+/// smaller than 4×4 or has too few structure-free areas for an estimate.
+/// On any error status the outputs are left untouched.
+///
+/// # Safety
+///
+/// - `pixels` must point to at least `width * height` readable bytes.
+/// - `out_sigma` and `out_has_sigma` must point to writable values.
+#[no_mangle]
+pub unsafe extern "C" fn cc_estimate_noise_sigma_u8(
+    pixels: *const u8,
+    width: u32,
+    height: u32,
+    out_sigma: *mut f32,
+    out_has_sigma: *mut u32,
+) -> cc_status {
+    // SAFETY: as in `cc_detect_u8` — the closure captures only `Copy`
+    // pointers, re-checked for null before any dereference, so a caught
+    // panic leaves no partially-mutated state observable.
+    match catch_unwind(AssertUnwindSafe(|| unsafe {
+        noise_impl(pixels, width, height, out_sigma, out_has_sigma)
+    })) {
+        Ok(status) => status,
+        Err(_) => cc_status::CC_ERR_PANIC,
+    }
+}
+
+unsafe fn noise_impl(
+    pixels: *const u8,
+    width: u32,
+    height: u32,
+    out_sigma: *mut f32,
+    out_has_sigma: *mut u32,
+) -> cc_status {
+    if pixels.is_null() || out_sigma.is_null() || out_has_sigma.is_null() {
+        return cc_status::CC_ERR_NULL_POINTER;
+    }
+    if width == 0 || height == 0 {
+        return cc_status::CC_ERR_DIMENSION_MISMATCH;
+    }
+    let Some(len) = (width as usize).checked_mul(height as usize) else {
+        return cc_status::CC_ERR_DIMENSION_MISMATCH;
+    };
+    // SAFETY: the caller guarantees `pixels` is valid for `width * height`
+    // bytes, which equals `len`.
+    let pixels = unsafe { slice::from_raw_parts(pixels, len) };
+    let sigma = match chess_corners::estimate_noise_sigma_u8(pixels, width, height) {
+        Ok(s) => s,
+        Err(e) => return convert::map_error(&e),
+    };
+    // SAFETY: both outputs are non-null (checked above) and writable per
+    // the contract.
+    unsafe {
+        *out_sigma = sigma.unwrap_or(0.0);
+        *out_has_sigma = u32::from(sigma.is_some());
+    }
+    cc_status::CC_OK
+}
+
 // ─── Introspection ──────────────────────────────────────────────────────
 
 /// Human-readable, static description of a status code.
@@ -456,7 +530,7 @@ pub extern "C" fn cc_status_str(status: cc_status) -> *const c_char {
 /// ABI version of this library. Bumped manually on any breaking ABI change.
 #[no_mangle]
 pub extern "C" fn cc_abi_version() -> u32 {
-    5
+    6
 }
 
 #[cfg(test)]
@@ -531,7 +605,7 @@ mod tests {
 
     #[test]
     fn abi_version_is_stable() {
-        assert_eq!(cc_abi_version(), 5);
+        assert_eq!(cc_abi_version(), 6);
     }
 
     #[test]
@@ -630,6 +704,74 @@ mod tests {
             detect_board(&cfg).map(|c| c.len()),
             Err(cc_status::CC_ERR_INVALID_CONFIG)
         );
+    }
+
+    #[test]
+    fn radon_refiner_tags_are_validated_and_round_trip() {
+        let mut cfg = cc_config_radon();
+        assert_eq!(cfg.refiner, CC_REFINER_PEAK_FIT);
+        cfg.refiner = CC_REFINER_SADDLE_POINT;
+        let rs = convert::to_detector_config(&cfg).expect("valid");
+        assert_eq!(convert::flatten(&rs).refiner, CC_REFINER_SADDLE_POINT);
+        for bad in [CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, 99] {
+            cfg.refiner = bad;
+            assert_eq!(
+                convert::to_detector_config(&cfg),
+                Err(cc_status::CC_ERR_INVALID_CONFIG),
+                "tag {bad} under Radon"
+            );
+        }
+        let mut chess = cc_config_chess();
+        chess.refiner = CC_REFINER_PEAK_FIT;
+        assert_eq!(
+            convert::to_detector_config(&chess),
+            Err(cc_status::CC_ERR_INVALID_CONFIG)
+        );
+    }
+
+    #[test]
+    fn radon_saddle_point_corners_carry_a_covariance() {
+        let mut cfg = cc_config_radon();
+        cfg.has_noise_sigma = 1;
+        cfg.noise_sigma = 2.0;
+        cfg.refiner = CC_REFINER_SADDLE_POINT;
+        let corners = detect_board(&cfg).expect("detection");
+        assert!(corners.iter().any(|c| c.has_position_covariance == 1));
+        cfg.refiner = CC_REFINER_PEAK_FIT;
+        let plain = detect_board(&cfg).expect("detection");
+        assert!(!plain.is_empty());
+        assert!(plain.iter().all(|c| c.has_position_covariance == 0));
+    }
+
+    #[test]
+    fn noise_estimate_matches_the_facade() {
+        let size = 96u32;
+        let mut img = vec![0u8; (size * size) as usize];
+        let mut state = 3u32;
+        for y in 0..size {
+            for x in 0..size {
+                state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+                let bright = ((x / 8) + (y / 8)) % 2 == 0;
+                img[(y * size + x) as usize] =
+                    if bright { 190 } else { 50 } + ((state >> 16) % 9) as u8;
+            }
+        }
+        let (mut sigma, mut has) = (-1.0f32, 7u32);
+        // SAFETY: `img` holds `size * size` bytes; the outputs are writable.
+        let st =
+            unsafe { cc_estimate_noise_sigma_u8(img.as_ptr(), size, size, &mut sigma, &mut has) };
+        assert_eq!(st, cc_status::CC_OK);
+        let expected = chess_corners::estimate_noise_sigma_u8(&img, size, size).unwrap();
+        assert_eq!((has == 1).then_some(sigma), expected);
+        assert!(expected.is_some());
+
+        // SAFETY: a null pixel pointer is the violation the check guards.
+        let st =
+            unsafe { cc_estimate_noise_sigma_u8(ptr::null(), size, size, &mut sigma, &mut has) };
+        assert_eq!(st, cc_status::CC_ERR_NULL_POINTER);
+        // SAFETY: as above; zero dimensions are rejected before any read.
+        let st = unsafe { cc_estimate_noise_sigma_u8(img.as_ptr(), 0, size, &mut sigma, &mut has) };
+        assert_eq!(st, cc_status::CC_ERR_DIMENSION_MISMATCH);
     }
 
     #[test]

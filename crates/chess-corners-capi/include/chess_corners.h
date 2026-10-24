@@ -58,7 +58,8 @@ typedef uint32_t cc_strategy_t;
  * Subpixel-refiner tag stored in `cc_config::refiner`.
  *
  * Refiner-specific tuning is not exposed over the flat ABI; the selected
- * refiner runs with its library defaults.
+ * refiner runs with its library defaults. A tag not valid for the
+ * selected strategy is rejected with `CC_ERR_INVALID_CONFIG`.
  */
 typedef uint32_t cc_refiner_t;
 
@@ -257,8 +258,9 @@ typedef struct cc_corner {
   uint8_t has_orientation;
   /**
    * `1` when `position_covariance` is set. Only the saddle-point refiner
-   * reports one, on accepted corners whose refinement converged, and not
-   * when the input is upscaled (`upscale_factor` other than `0`).
+   * reports one (either strategy), on corners whose refinement
+   * converged, and not when the input is upscaled (`upscale_factor`
+   * other than `0`).
    */
   uint8_t has_position_covariance;
 } cc_corner;
@@ -290,19 +292,27 @@ typedef struct cc_result {
 #define CC_STRATEGY_RADON 1
 
 /**
- * Center-of-mass refiner. Valid for both strategies.
+ * Center-of-mass refiner. ChESS strategy only (the ChESS default).
  */
 #define CC_REFINER_CENTER_OF_MASS 0
 
 /**
- * Förstner refiner. Valid for the ChESS strategy only.
+ * Förstner refiner. ChESS strategy only.
  */
 #define CC_REFINER_FORSTNER 1
 
 /**
- * Saddle-point refiner. Valid for the ChESS strategy only.
+ * Saddle-point refiner. Valid for both strategies. Under Radon a corner
+ * whose refinement does not converge keeps its peak-fit position, without
+ * a position covariance.
  */
 #define CC_REFINER_SADDLE_POINT 2
+
+/**
+ * Radon's response-map peak fit, with no image refinement and no position
+ * covariance. Radon strategy only (the Radon default).
+ */
+#define CC_REFINER_PEAK_FIT 3
 
 /**
  * 16-sample ring Gauss-Newton fit (the default).
@@ -401,6 +411,28 @@ enum cc_status cc_detect_u8(const uint8_t *pixels,
  * `cc_detect_u8` and not yet freed.
  */
 void cc_result_free(struct cc_result *r);
+
+/**
+ * Estimate the standard deviation of the pixel noise of an 8-bit,
+ * row-major grayscale image, in gray levels: the per-image estimate
+ * `cc_detect_u8` uses to express position covariances when
+ * `cc_config::has_noise_sigma` is `0`.
+ *
+ * On `CC_OK`, `*out_has_sigma` is `1` and `*out_sigma` holds the estimate,
+ * or `*out_has_sigma` is `0` (and `*out_sigma` is `0`) when the image is
+ * smaller than 4×4 or has too few structure-free areas for an estimate.
+ * On any error status the outputs are left untouched.
+ *
+ * # Safety
+ *
+ * - `pixels` must point to at least `width * height` readable bytes.
+ * - `out_sigma` and `out_has_sigma` must point to writable values.
+ */
+enum cc_status cc_estimate_noise_sigma_u8(const uint8_t *pixels,
+                                          uint32_t width,
+                                          uint32_t height,
+                                          float *out_sigma,
+                                          uint32_t *out_has_sigma);
 
 /**
  * Human-readable, static description of a status code.

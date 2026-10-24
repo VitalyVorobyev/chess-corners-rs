@@ -22,15 +22,15 @@
 
 use chess_corners::{
     ChessError, ChessRefiner, ChessRing, CornerDescriptor, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig, UpscaleConfig,
+    MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig, RadonRefiner, UpscaleConfig,
 };
 
 use crate::{
     cc_axis, cc_chess_ring_t, cc_config, cc_corner, cc_covariance, cc_peak_fit_t, cc_refiner_t,
     cc_status, CC_CHESS_RING_BROAD, CC_CHESS_RING_CANONICAL, CC_ORIENTATION_DISK_FIT,
     CC_ORIENTATION_NONE, CC_ORIENTATION_RING_FIT, CC_PEAK_FIT_GAUSSIAN, CC_PEAK_FIT_PARABOLIC,
-    CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS,
-    CC_STRATEGY_RADON,
+    CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, CC_REFINER_PEAK_FIT, CC_REFINER_SADDLE_POINT,
+    CC_STRATEGY_CHESS, CC_STRATEGY_RADON,
 };
 
 /// Convert a flat [`cc_config`] into a facade [`DetectorConfig`].
@@ -41,8 +41,9 @@ use crate::{
 /// apply to the active strategy (`chess_ring` under Radon; the Radon
 /// geometry under ChESS) are ignored.
 ///
-/// Returns [`cc_status::CC_ERR_INVALID_CONFIG`] on an unknown enum tag and
-/// [`cc_status::CC_ERR_UPSCALE`] on an invalid `upscale_factor`.
+/// Returns [`cc_status::CC_ERR_INVALID_CONFIG`] on an unknown enum tag or a
+/// refiner tag not valid for the strategy, and [`cc_status::CC_ERR_UPSCALE`]
+/// on an invalid `upscale_factor`.
 pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_status> {
     let multiscale = if cfg.multiscale != 0 {
         MultiscaleConfig::pyramid_default()
@@ -87,9 +88,13 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
                 c.refiner = refiner;
             })
         }
-        // Radon has no pluggable refiner or ring (subpixel is its peak
-        // fit); the `refiner` and `chess_ring` tags are ignored here.
+        // Radon has no ring; the `chess_ring` tag is ignored here.
         CC_STRATEGY_RADON => {
+            let refiner = match cfg.refiner {
+                CC_REFINER_SADDLE_POINT => RadonRefiner::saddle_point(),
+                CC_REFINER_PEAK_FIT => RadonRefiner::peak_fit(),
+                _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
+            };
             let peak_fit = match cfg.peak_fit {
                 CC_PEAK_FIT_PARABOLIC => PeakFitMode::Parabolic,
                 CC_PEAK_FIT_GAUSSIAN => PeakFitMode::Gaussian,
@@ -100,6 +105,7 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
                 r.image_upsample = cfg.image_upsample;
                 r.response_blur_radius = cfg.response_blur_radius;
                 r.peak_fit = peak_fit;
+                r.refiner = refiner;
             })
         }
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
@@ -140,11 +146,11 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
             chess_refiner_tag(c.refiner),
             chess_ring_tag(c.ring),
         ),
-        // Radon has no pluggable refiner or ring; report the default tags
-        // (ignored for Radon on the round-trip back).
-        DetectionStrategy::Radon(_) => (
+        // Radon has no ring; report the default tag (ignored for Radon on
+        // the round-trip back).
+        DetectionStrategy::Radon(r) => (
             CC_STRATEGY_RADON,
-            CC_REFINER_CENTER_OF_MASS,
+            radon_refiner_tag(r.refiner),
             CC_CHESS_RING_CANONICAL,
         ),
         _ => (
@@ -203,6 +209,15 @@ fn chess_refiner_tag(refiner: ChessRefiner) -> cc_refiner_t {
         // Future / feature-gated variants (e.g. the ML refiner) have no flat
         // tag; fall back to the universally valid center-of-mass tag.
         _ => CC_REFINER_CENTER_OF_MASS,
+    }
+}
+
+fn radon_refiner_tag(refiner: RadonRefiner) -> cc_refiner_t {
+    match refiner {
+        RadonRefiner::PeakFit => CC_REFINER_PEAK_FIT,
+        RadonRefiner::SaddlePoint(_) => CC_REFINER_SADDLE_POINT,
+        // Future variants have no flat tag; fall back to the Radon default.
+        _ => CC_REFINER_PEAK_FIT,
     }
 }
 

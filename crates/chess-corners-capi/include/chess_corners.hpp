@@ -25,7 +25,7 @@ namespace chess_corners {
 /// Checked against `cc_abi_version()` before each detection (see
 /// `check_abi()`); a mismatch means the header and the linked library are
 /// incompatible and detection throws rather than reading a stale layout.
-inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 5;
+inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 6;
 
 /// One local grid-axis direction with its 1-sigma angular uncertainty.
 ///
@@ -53,8 +53,8 @@ struct Covariance {
 ///
 /// `position_covariance` is the covariance of `(x, y)` in px^2 (white-noise
 /// scatter plus a small model-error floor; see `cc_corner`). It is set only with
-/// the saddle-point refiner, on corners whose refinement converged, and not
-/// on upscaled input.
+/// the saddle-point refiner (`CC_REFINER_SADDLE_POINT`, either strategy), on
+/// corners whose refinement converged, and not on upscaled input.
 struct Corner {
     float x = 0.0f;
     float y = 0.0f;
@@ -99,9 +99,13 @@ private:
 /// Radon strategy only. Fields that do not apply to the active `strategy`
 /// are ignored.
 ///
+/// `refiner` is one of the `CC_REFINER_*` tags valid for `strategy`: ChESS
+/// takes center-of-mass, Förstner or saddle-point; Radon takes
+/// `CC_REFINER_PEAK_FIT` (its default) or saddle-point.
+///
 /// `noise_sigma` is the image's pixel-noise standard deviation in gray
 /// levels, used to express position covariances in px^2; empty estimates it
-/// from each image.
+/// from each image (see `estimate_noise_sigma`).
 struct Config {
     cc_strategy_t strategy;
     float threshold;
@@ -260,6 +264,26 @@ inline std::vector<Corner> detect(const std::uint8_t* pixels,
         corners.push_back(dst);
     }
     return corners;
+}
+
+/// Estimate the pixel-noise standard deviation of an 8-bit, row-major
+/// grayscale image, in gray levels: the per-image estimate detection uses
+/// when `Config::noise_sigma` is empty. Empty when the image is smaller than
+/// 4x4 or has too few structure-free areas. `pixels` must point to at least
+/// `width * height` readable bytes. Throws `chess_corners::Error` on a
+/// non-`CC_OK` status, or `std::runtime_error` on an ABI-version mismatch.
+inline std::optional<float> estimate_noise_sigma(const std::uint8_t* pixels,
+                                                 std::uint32_t width,
+                                                 std::uint32_t height) {
+    check_abi();
+    float sigma = 0.0f;
+    std::uint32_t has_sigma = 0;
+    const cc_status status =
+        cc_estimate_noise_sigma_u8(pixels, width, height, &sigma, &has_sigma);
+    if (status != CC_OK) {
+        throw Error(status);
+    }
+    return has_sigma != 0 ? std::optional<float>(sigma) : std::nullopt;
 }
 
 /// Detect corners in a contiguous grayscale buffer.

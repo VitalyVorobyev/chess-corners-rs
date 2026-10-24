@@ -2,7 +2,8 @@
 
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessRefiner as RsChessRefiner,
-    ForstnerConfig as RsForstnerConfig, SaddlePointConfig as RsSaddlePointConfig,
+    ForstnerConfig as RsForstnerConfig, RadonRefiner as RsRadonRefiner,
+    SaddlePointConfig as RsSaddlePointConfig,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
@@ -658,6 +659,142 @@ impl ChessRefiner {
                 saddle_point: RsSaddlePointConfig::default(),
             }),
             other => Err(config_error(format!("refiner.{other} not supported"))),
+        }
+    }
+
+    #[pyo3(signature = (*, indent=None, sort_keys=true))]
+    fn to_json(&self, py: Python<'_>, indent: Option<i64>, sort_keys: bool) -> PyResult<String> {
+        let dict = self.to_dict(py)?;
+        json_dumps(py, dict.bind(py), indent, sort_keys)
+    }
+
+    #[classmethod]
+    fn from_json(cls: &Bound<'_, PyType>, py: Python<'_>, text: &str) -> PyResult<Self> {
+        let value = json_loads(py, text)
+            .map_err(|e| config_error(format!("failed to parse config JSON: {e}")))?;
+        Self::from_dict(cls, &value)
+    }
+
+    #[pyo3(signature = (*, indent=2, sort_keys=true))]
+    fn pretty(&self, py: Python<'_>, indent: i64, sort_keys: bool) -> PyResult<String> {
+        self.to_json(py, Some(indent), sort_keys)
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        self.pretty(py, 2, true)
+    }
+    fn __str__(&self, py: Python<'_>) -> PyResult<String> {
+        self.pretty(py, 2, true)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RadonRefiner (variant-tagged wrapper).
+// ---------------------------------------------------------------------------
+
+/// Final subpixel position of a Radon corner. Build via
+/// `RadonRefiner.peak_fit()` (the default: keep the response-map peak fit)
+/// or `RadonRefiner.saddle_point(...)` (saddle-point refinement on the
+/// input image, which reports a position covariance).
+#[pyclass(module = "chess_corners")]
+#[derive(Clone, Debug)]
+pub struct RadonRefiner {
+    pub(crate) inner: RsRadonRefiner,
+}
+
+impl RadonRefiner {
+    pub(crate) fn from_rs(inner: RsRadonRefiner) -> Self {
+        Self { inner }
+    }
+
+    pub(crate) fn to_rs(&self) -> RsRadonRefiner {
+        self.inner
+    }
+}
+
+#[pymethods]
+impl RadonRefiner {
+    /// Default-construct: the response-map peak fit.
+    #[new]
+    fn new() -> Self {
+        Self::from_rs(RsRadonRefiner::default())
+    }
+
+    /// Keep the response-map peak fit; no position covariance.
+    #[classmethod]
+    #[pyo3(name = "peak_fit")]
+    fn ctor_peak_fit(_cls: &Bound<'_, PyType>) -> Self {
+        Self::from_rs(RsRadonRefiner::peak_fit())
+    }
+
+    /// Saddle-point refinement of each peak on the input image.
+    #[classmethod]
+    #[pyo3(name = "saddle_point", signature = (cfg=None))]
+    fn ctor_saddle_point(
+        _cls: &Bound<'_, PyType>,
+        py: Python<'_>,
+        cfg: Option<Py<SaddlePointConfig>>,
+    ) -> Self {
+        let inner = cfg.map(|c| c.borrow(py).inner).unwrap_or_default();
+        Self::from_rs(RsRadonRefiner::SaddlePoint(inner))
+    }
+
+    /// Variant tag: `"peak_fit"` or `"saddle_point"`.
+    #[getter]
+    fn kind(&self) -> &'static str {
+        match self.inner {
+            RsRadonRefiner::PeakFit => "peak_fit",
+            _ => "saddle_point",
+        }
+    }
+
+    /// Tuning payload: a `SaddlePointConfig` for `saddle_point`, `None`
+    /// for `peak_fit`. Modifying the returned object does not affect the
+    /// refiner; rebuild via `RadonRefiner.saddle_point(cfg)` to apply it.
+    #[getter]
+    fn payload(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        match self.inner {
+            RsRadonRefiner::SaddlePoint(inner) => {
+                Ok(Py::new(py, SaddlePointConfig { inner })?.into_any())
+            }
+            _ => Ok(py.None()),
+        }
+    }
+
+    pub(crate) fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let d = PyDict::new(py);
+        match self.inner {
+            RsRadonRefiner::SaddlePoint(inner) => {
+                d.set_item("saddle_point", SaddlePointConfig { inner }.to_dict(py)?)?;
+            }
+            _ => d.set_item("peak_fit", py.None())?,
+        }
+        Ok(d.unbind())
+    }
+
+    /// Accepts the externally-tagged serde shape: the bare string
+    /// `"peak_fit"` (or `{"peak_fit": null}`) and
+    /// `{"saddle_point": {...}}`.
+    #[classmethod]
+    pub(crate) fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        const PATH: &str = "radon.refiner";
+        if super::parse::accept_dict_or_bare_string(data, &["peak_fit"], &["saddle_point"], PATH)?
+            .is_some()
+        {
+            return Ok(Self::from_rs(RsRadonRefiner::PeakFit));
+        }
+        let dict = require_dict(data, PATH)?;
+        reject_unknown_keys(&dict, &["peak_fit", "saddle_point"], PATH)?;
+        match (dict.get_item("peak_fit")?, dict.get_item("saddle_point")?) {
+            (Some(_), None) => Ok(Self::from_rs(RsRadonRefiner::PeakFit)),
+            (None, Some(value)) => {
+                let cls = data.py().get_type::<SaddlePointConfig>();
+                let cfg = SaddlePointConfig::from_dict(&cls, &value)?;
+                Ok(Self::from_rs(RsRadonRefiner::SaddlePoint(cfg.inner)))
+            }
+            _ => Err(config_error(format!(
+                "{PATH} must have exactly one of: peak_fit, saddle_point"
+            ))),
         }
     }
 

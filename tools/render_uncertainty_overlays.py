@@ -18,7 +18,9 @@ bindings:
 - ``uncertainty_board_ellipses.png`` — predicted covariance ellipses
   (exaggerated) on a board whose lens blur grows from left to right.
 - ``uncertainty_calibration.png`` — predicted vs measured error per imaging
-  condition, and the whitened errors against a unit normal.
+  condition, and the whitened errors against a unit normal. With
+  ``--detector radon`` the same grid runs through the Radon detector with
+  saddle-point refinement and the figure goes to ``out/`` instead.
 
 Deterministic: fixed seeds. Takes about a minute.
 """
@@ -422,12 +424,18 @@ def clean_boards(cell: float, axis_angle: float, rotation: float, psf: float, bo
     return out
 
 
-def run_condition(clean, noise: float, seed: int):
+def run_condition(clean, noise: float, seed: int, radon: bool = False):
     """Errors and covariances of matched corners that carry a covariance,
     and the fraction of true corners matched within 0.5 px, on noisy copies
     of the ``clean`` boards."""
     rng = np.random.default_rng(seed)
-    det = detector(cc.ChessRefiner.saddle_point())  # σ estimated per image
+    # σ estimated per image.
+    if radon:
+        cfg = cc.DetectorConfig.radon().without_orientation()
+        cfg = cfg.with_radon(refiner=cc.RadonRefiner.saddle_point())
+        det = cc.Detector(cfg)
+    else:
+        det = detector(cc.ChessRefiner.saddle_point())
     errs, covs, n_truth, n_match = [], [], 0, 0
     for board, img in clean:
         h, w = img.shape
@@ -449,7 +457,7 @@ def whiten(errs: np.ndarray, covs: np.ndarray) -> np.ndarray:
     return np.linalg.solve(chol, errs[..., None])[..., 0]
 
 
-def fig_calibration(out: Path, boards: int) -> None:
+def fig_calibration(out: Path, boards: int, radon: bool = False) -> None:
     blurs = [0.5, 0.8, 1.5, 2.5]
     noises = [1.0, 2.0, 4.0, 8.0]
     # (label, axis angle, rotation, colour, marker, grid-aligned)
@@ -469,7 +477,7 @@ def fig_calibration(out: Path, boards: int) -> None:
             clean = clean_boards(8.0, angle, rot, b, boards, seed)
             for n in noises:
                 seed += 1
-                errs, covs, rate = run_condition(clean, n, seed)
+                errs, covs, rate = run_condition(clean, n, seed, radon)
                 if len(errs) < 200 or rate < 0.99:
                     print(f"  skip {label} blur {b} noise {n}: {len(errs)} corners, match rate {rate:.2f}")
                     continue
@@ -522,6 +530,7 @@ def main() -> None:
     ap.add_argument("--draws", type=int, default=600, help="noise draws for the single-corner figure")
     ap.add_argument("--boards", type=int, default=6, help="boards per condition for the calibration figure")
     ap.add_argument("--only", choices=["bias", "board", "calibration"], help="render one figure")
+    ap.add_argument("--detector", choices=["chess", "radon"], default="chess", help="detector for the calibration figure")
     args = ap.parse_args()
     BOOK_IMG.mkdir(parents=True, exist_ok=True)
     if args.only in (None, "bias"):
@@ -529,7 +538,11 @@ def main() -> None:
     if args.only in (None, "board"):
         fig_board_ellipses(BOOK_IMG / "uncertainty_board_ellipses.png")
     if args.only in (None, "calibration"):
-        fig_calibration(BOOK_IMG / "uncertainty_calibration.png", args.boards)
+        if args.detector == "radon":
+            (WORKSPACE / "out").mkdir(exist_ok=True)
+            fig_calibration(WORKSPACE / "out" / "uncertainty_calibration_radon.png", args.boards, radon=True)
+        else:
+            fig_calibration(BOOK_IMG / "uncertainty_calibration.png", args.boards)
 
 
 if __name__ == "__main__":

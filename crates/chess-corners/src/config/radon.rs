@@ -1,5 +1,50 @@
-use chess_corners_core::{PeakFitMode, RadonDetectorParams};
+use chess_corners_core::{PeakFitMode, RadonDetectorParams, RefinerKind, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
+
+/// Final subpixel position of a Radon corner.
+///
+/// The Radon detector always locates its peaks with a 3-point fit on the
+/// response map ([`RadonConfig::peak_fit`]); this selects whether that
+/// position is final or seeds a saddle-point refinement on the input
+/// image. Only the saddle-point refinement reports a
+/// [`position_covariance`](crate::CornerDescriptor::position_covariance).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum RadonRefiner {
+    /// Keep the response-map peak fit (the default); no position
+    /// covariance.
+    #[default]
+    PeakFit,
+    /// Refine each peak with the saddle-point fit on the input image and
+    /// report its position covariance. A corner whose saddle-point
+    /// refinement does not converge keeps its peak-fit position, without a
+    /// covariance. On synthetic boards it is several times more accurate
+    /// than the peak fit under lens blur and board rotation, except on
+    /// cells of about 4 px, where the fit window spans the neighbouring
+    /// corners.
+    SaddlePoint(SaddlePointConfig),
+}
+
+impl RadonRefiner {
+    /// Response-map peak fit only.
+    pub fn peak_fit() -> Self {
+        Self::PeakFit
+    }
+    /// Saddle-point refinement with default tuning.
+    pub fn saddle_point() -> Self {
+        Self::SaddlePoint(SaddlePointConfig::default())
+    }
+
+    /// The image-domain refiner this selection runs, if any.
+    pub(crate) fn image_refiner(self) -> Option<RefinerKind> {
+        match self {
+            Self::PeakFit => None,
+            Self::SaddlePoint(cfg) => Some(RefinerKind::SaddlePoint(cfg)),
+        }
+    }
+}
 
 /// Configuration for the whole-image Radon detector branch of
 /// [`crate::DetectionStrategy`].
@@ -14,6 +59,9 @@ use serde::{Deserialize, Serialize};
 /// - [`image_upsample`](RadonConfig::image_upsample) — `2` (the default)
 ///   reproduces the paper's 2× supersampled detection; `1` is faster but
 ///   less accurate on low-resolution inputs.
+/// - [`refiner`](RadonConfig::refiner) — the response-map peak fit alone
+///   (the default) or saddle-point refinement on the input image, which
+///   reports a position covariance.
 ///
 /// # Advanced tuning
 ///
@@ -51,6 +99,10 @@ pub struct RadonConfig {
     /// on log-response (more accurate near the peak); `Parabolic` fits
     /// directly on the response values. See [`PeakFitMode`].
     pub peak_fit: PeakFitMode,
+    /// Final subpixel position: the peak fit alone (the default), or
+    /// saddle-point refinement of each peak on the input image. See
+    /// [`RadonRefiner`].
+    pub refiner: RadonRefiner,
 }
 
 impl Default for RadonConfig {
@@ -63,6 +115,7 @@ impl Default for RadonConfig {
             image_upsample: core_defaults.image_upsample,
             response_blur_radius: core_defaults.response_blur_radius,
             peak_fit: core_defaults.peak_fit,
+            refiner: RadonRefiner::default(),
         }
     }
 }

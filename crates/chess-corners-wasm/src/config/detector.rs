@@ -4,7 +4,7 @@ use chess_corners::{DetectorConfig as RsDetectorConfig, OrientationMethod as RsO
 use wasm_bindgen::prelude::*;
 
 use super::multiscale::MultiscaleConfig;
-use super::refiners::ChessRefiner;
+use super::refiners::{ChessRefiner, RadonRefiner};
 use super::strategy::{DetectionParams, DetectionStrategy};
 use super::upscale::UpscaleConfig;
 use super::{cell, Cell, ChessRing, OrientationMethod, PeakFitMode};
@@ -239,6 +239,19 @@ impl DetectorConfig {
         out
     }
 
+    /// Return a copy of this config with the Radon refiner replaced
+    /// (switching to the Radon strategy if needed).
+    /// JS: `cfg.withRadonRefiner(RadonRefiner.withPeakFit())`.
+    #[wasm_bindgen(js_name = withRadonRefiner)]
+    pub fn with_radon_refiner(&self, refiner: &RadonRefiner) -> Self {
+        let mut out = self.deep_clone();
+        if out.strategy.kind() != "radon" {
+            out.strategy.use_radon();
+        }
+        out.strategy.radon().set_refiner(refiner);
+        out
+    }
+
     /// Return a copy of this config with ChESS strategy fields patched
     /// from a plain JS options object.
     ///
@@ -297,6 +310,7 @@ impl DetectorConfig {
     /// - `responseBlurRadius`: integer
     /// - `peakFit`: `PeakFitMode`
     ///
+    /// To set the refiner use the typed [`Self::with_radon_refiner`] builder.
     /// Unknown keys throw `Error("unexpected option: '<key>'")`.
     /// JS: `cfg.withRadon({ rayRadius: 6, imageUpsample: 2, responseBlurRadius: 1, peakFit: PeakFitMode.Gaussian })`.
     #[wasm_bindgen(js_name = withRadon)]
@@ -599,6 +613,40 @@ mod json_tests {
         assert!(json["strategy"].get("radon").is_some(), "{json}");
         assert!(json["multiscale"].get("pyramid").is_some(), "{json}");
         assert_eq!(json["upscale"], "disabled");
+    }
+
+    #[test]
+    fn radon_refiner_round_trips_through_wrapper_and_json() {
+        let cfg = DetectorConfig::from_value(RsDetectorConfig::radon());
+        let mut refiner = cfg.strategy().radon().refiner();
+        assert_eq!(refiner.kind(), "peak_fit");
+        refiner.set_saddle_point(&crate::config::SaddlePointConfig::new());
+        assert_eq!(refiner.kind(), "saddle_point");
+        refiner.use_peak_fit();
+        let snap = cfg.snapshot();
+        let chess_corners::DetectionStrategy::Radon(r) = snap.strategy else {
+            panic!("expected radon strategy")
+        };
+        assert_eq!(r.refiner, chess_corners::RadonRefiner::PeakFit);
+        let json = serde_json::to_value(snap).unwrap();
+        assert_eq!(json["strategy"]["radon"]["refiner"], "peak_fit");
+
+        // Setting a saddle-point payload switches back.
+        let mut sp = crate::config::SaddlePointConfig::new();
+        sp.set_max_offset(0.75);
+        refiner.set_saddle_point(&sp);
+        let chess_corners::DetectionStrategy::Radon(r) = cfg.snapshot().strategy else {
+            panic!("expected radon strategy")
+        };
+        match r.refiner {
+            chess_corners::RadonRefiner::SaddlePoint(sp) => assert_eq!(sp.max_offset, 0.75),
+            other => panic!("expected saddle point, got {other:?}"),
+        }
+
+        let parsed: RsDetectorConfig =
+            serde_json::from_str(r#"{"strategy": {"radon": {"refiner": "peak_fit"}}}"#).unwrap();
+        let back = DetectorConfig::from_value(parsed);
+        assert_eq!(back.strategy().radon().refiner().kind(), "peak_fit");
     }
 
     #[test]

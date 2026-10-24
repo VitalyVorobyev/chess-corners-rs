@@ -98,7 +98,8 @@
 //! Switch to the whole-image Radon detector when ChESS misses corners on
 //! the images you care about. The strategy lives inside
 //! [`DetectorConfig::strategy`]; pick a Radon preset to get sensible
-//! defaults:
+//! defaults ([`RadonRefiner`] adds an optional saddle-point refinement
+//! that reports a position covariance):
 //!
 //! ```
 //! use chess_corners::{Detector, DetectorConfig};
@@ -172,7 +173,7 @@
 //! [`DetectorConfig`] is strategy-typed: the [`DetectorConfig::strategy`]
 //! field is a [`DetectionStrategy`] enum carrying either a
 //! [`ChessConfig`] (detector ring, refiner) or a [`RadonConfig`]
-//! (whole-image Duda-Frese parameters). Acceptance is a single
+//! (whole-image Duda-Frese parameters, refiner). Acceptance is a single
 //! [`threshold`](DetectorConfig::threshold) number — read as an absolute
 //! response floor by ChESS and as a fraction of the per-frame maximum by
 //! Radon. [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
@@ -234,6 +235,7 @@ mod error;
 #[cfg(feature = "ml-refiner")]
 mod ml_refiner;
 mod multiscale;
+mod noise;
 mod radon;
 mod upscale;
 
@@ -245,7 +247,7 @@ mod upscale;
 // via a direct `chess-corners-core` dependency.
 pub use crate::config::{
     ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, RadonConfig,
+    MultiscaleConfig, RadonConfig, RadonRefiner,
 };
 pub use crate::error::ChessError;
 
@@ -263,3 +265,4 @@ pub use chess_corners_core::{
 
 // Primary detector entry point.
 pub use crate::detector::Detector;
+pub use crate::noise::estimate_noise_sigma_u8;

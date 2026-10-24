@@ -44,7 +44,7 @@ use wasm_bindgen::prelude::*;
 pub use crate::config::{
     CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy,
     DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig,
-    SaddlePointConfig, UpscaleConfig,
+    RadonRefiner, SaddlePointConfig, UpscaleConfig,
 };
 
 /// Default detector configuration as a JSON string, in the same shape as
@@ -61,6 +61,62 @@ pub fn default_detector_config_json() -> Result<String, JsError> {
 #[wasm_bindgen(js_name = defaultDetectorConfigJson)]
 pub fn default_detector_config_json_alias() -> Result<String, JsError> {
     default_detector_config_json()
+}
+
+/// Estimate the standard deviation of the pixel noise of an 8-bit
+/// grayscale image (`width * height` bytes, row-major), in gray levels:
+/// the per-image estimate the detector uses to express position
+/// covariances when `noiseSigma` is unset. Returns `undefined` when the
+/// image is smaller than 4×4 or has too few structure-free areas. Throws
+/// if the buffer length does not match `width * height`.
+#[wasm_bindgen]
+pub fn estimate_noise_sigma(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<Option<f32>, JsValue> {
+    chess_corners::estimate_noise_sigma_u8(pixels, width, height)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Camel-case alias for [`estimate_noise_sigma`].
+#[wasm_bindgen(js_name = estimateNoiseSigma)]
+pub fn estimate_noise_sigma_alias(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<Option<f32>, JsValue> {
+    estimate_noise_sigma(pixels, width, height)
+}
+
+/// [`estimate_noise_sigma`] on RGBA pixels (e.g. from canvas
+/// `getImageData`), converted to grayscale exactly as `detectRgba` does,
+/// so the value matches the one that detection uses. Throws if the buffer
+/// length does not match `4 * width * height`.
+#[wasm_bindgen]
+pub fn estimate_noise_sigma_rgba(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<Option<f32>, JsValue> {
+    let expected = 4 * width as usize * height as usize;
+    if pixels.len() != expected {
+        return Err(JsValue::from_str(&format!(
+            "RGBA buffer holds {} bytes, expected 4 * width * height = {expected}",
+            pixels.len()
+        )));
+    }
+    estimate_noise_sigma(&rgba_to_gray(pixels, width, height), width, height)
+}
+
+/// Camel-case alias for [`estimate_noise_sigma_rgba`].
+#[wasm_bindgen(js_name = estimateNoiseSigmaRgba)]
+pub fn estimate_noise_sigma_rgba_alias(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<Option<f32>, JsValue> {
+    estimate_noise_sigma_rgba(pixels, width, height)
 }
 
 /// Convert RGBA pixels to grayscale using BT.601 luminance weights.
