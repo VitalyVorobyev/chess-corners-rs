@@ -127,3 +127,45 @@ spatially uniform PSF per image; shading amplitudes are a judgement call
 (bias scales roughly linearly with gradient). A per-estimator decomposition
 of the real-data error from pairwise disagreements contradicted the
 calibration residuals and is not used.
+
+## Noise estimate on correlated noise (`UQ-25`)
+
+At SaddlePoint's re-centred fixed point the noise enters only through the
+5×5 slope coefficients, so the σ that calibrates the white-noise propagation
+is the noise in that band, σ_J (the realised noise filtered by that kernel).
+Supplying σ_J gives σ̂₀² 0.85–1.15 on white, Bayer-demosaiced and JPEG boards;
+supplying the per-pixel σ gives 1.6–3.1 on Bayer.
+
+The estimator (product of third differences over edge-free 4×4 windows)
+measures a different band. On correlated noise it sees 0.02–0.10 of σ_J²
+(Bayer), 0.02–0.03 (JPEG q75), 0.06–1.2 (q90), while its χ² gate components
+carry 2–15× more variance, so it rejects pure-noise windows. Current
+estimator, estimate/σ_J at corners and σ̂₀² with the estimate (192² and
+640×480 boards, cells 8–12, blur 1):
+
+| noise | σ 1 | σ 2 | σ 4 | σ 8 |
+|---|---|---|---|---|
+| white | 0.96–0.98 (declines on cell 8), σ̂₀² 0.77–0.91 | 0.96–1.0, 0.88–1.03 | 1.0, 0.97–1.01 | 1.0, 1.0 |
+| Bayer | 3.0–3.6, 0.10–0.22 | 1.85–1.95, 0.31–0.34 | 0.92–1.02, 1.1–1.3 | 0.49–0.53, 3.9–4.8 |
+| JPEG q90 | declines | declines | declines | 1.10, 0.80–0.83 |
+| JPEG q75 | declines | declines | declines | declines |
+
+- Bayer: the estimate reads demosaic structure along edges (4.15–4.20 gray
+  levels at every σ from 1 to 8), not noise.
+- JPEG: on 10 px cells every 8×8 block holds an edge; ringing is 0.6–0.9× the
+  noise in the operator. Quantization also makes noise at corners larger than
+  in flat areas, so even a perfect flat-area estimate on 32 px cells is 1.2–7.8×
+  too low at q75–q90, σ 1–4.
+- The band is not identifiable from 4×4 windows (the structure-free
+  components determine the noise autocovariance to rank 16 of 25; 98% of the
+  σ_J functional lies outside their row space). Short-range correlation
+  models land within 0.4–1.4× of σ_J on flat noise.
+- A coarse-band estimator (3×3 binning) matches σ_J within ±4% on flat noise
+  and calibrates 32 px boards, but on dense boards and real images reads
+  structure at 5–100× σ_J: its noise anchor (quietest windows) is not noise at
+  that scale.
+
+Outcome: no change shipped. On demosaiced or JPEG input the per-image
+estimate is not reliable and σ should be supplied (`noise_sigma`); for JPEG a
+flat-area measurement under-reads corner noise at low σ. The book and the
+estimator's rustdoc state this (`UQ-28`).
