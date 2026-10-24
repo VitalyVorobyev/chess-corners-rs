@@ -5,7 +5,7 @@
 //! built-in refiners.
 
 use super::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
-use crate::detect::chess::response::add_response_gradient;
+use crate::detect::chess::response::ResponseStencil;
 use crate::imageview::ImageView;
 use crate::uncertainty::{
     knot, CovarianceModel, PixelGradients, PixelTile, SystematicModel, Uncertainty, EDGE_REACH,
@@ -120,6 +120,7 @@ impl CenterOfMassRefiner {
         self.tile.load(img, centre, reach.max(EDGE_REACH));
         self.grads
             .reset([centre[0] - reach, centre[1] - reach], side);
+        let stencil = ResponseStencil::new(ring, &self.tile, &self.grads);
         for dy in -r..=r {
             let yy = centre[1] + dy;
             for dx in -r..=r {
@@ -128,7 +129,7 @@ impl CenterOfMassRefiner {
                     continue;
                 }
                 let scale = [(xx as f32 - xy[0]) / mass, (yy as f32 - xy[1]) / mass];
-                add_response_gradient(&self.tile, xx, yy, ring, scale, &mut self.grads);
+                stencil.add_gradient(&self.tile, xx, yy, scale, &mut self.grads);
             }
         }
         let noise = self.grads.covariance()?;

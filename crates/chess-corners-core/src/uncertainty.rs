@@ -157,21 +157,57 @@ impl PixelGradients {
         if i < 0 || j < 0 || i as usize >= self.side || j as usize >= self.side {
             return;
         }
-        let g = &mut self.grad[j as usize * self.side + i as usize];
+        self.add_at(j as usize * self.side + i as usize, v);
+    }
+
+    /// Row stride of the support, for [`Self::add_at`] offsets.
+    #[inline]
+    pub(crate) fn side(&self) -> usize {
+        self.side
+    }
+
+    /// Index of pixel `(x, y)` in the support, which must hold it; pixel
+    /// `(x + dx, y + dy)` is at `index(x, y) + dy·side + dx`.
+    #[inline]
+    pub(crate) fn index(&self, x: i32, y: i32) -> usize {
+        let (i, j) = ((x - self.origin[0]) as usize, (y - self.origin[1]) as usize);
+        debug_assert!(i < self.side && j < self.side);
+        j * self.side + i
+    }
+
+    /// Add `v` to the gradient of the pixel at support index `k` (see
+    /// [`Self::index`]).
+    #[inline]
+    pub(crate) fn add_at(&mut self, k: usize, v: [f32; 2]) {
+        let g = &mut self.grad[k];
         g[0] += v[0];
         g[1] += v[1];
     }
 
     /// `Σₚ gₚ gₚᵀ`, or `None` when it is not finite.
     pub(crate) fn covariance(&self) -> Option<PositionCovariance> {
-        let (mut xx, mut xy, mut yy) = (0.0f64, 0.0f64, 0.0f64);
-        for g in &self.grad[..self.side * self.side] {
+        // Four partial sums, so the additions do not wait on one chain.
+        // Each product of two `f32` is exact in `f64`, and the sums carry
+        // 29 more bits than the `f32` result: the order moves the result
+        // by far less than its last bit.
+        let mut acc = [[0.0f64; 3]; 4];
+        let (chunks, rest) = self.grad[..self.side * self.side].as_chunks::<4>();
+        let mut add = |l: usize, g: &[f32; 2]| {
             let (gx, gy) = (f64::from(g[0]), f64::from(g[1]));
-            xx += gx * gx;
-            xy += gx * gy;
-            yy += gy * gy;
+            acc[l][0] += gx * gx;
+            acc[l][1] += gx * gy;
+            acc[l][2] += gy * gy;
+        };
+        for c in chunks {
+            for (l, g) in c.iter().enumerate() {
+                add(l, g);
+            }
         }
-        let cov = PositionCovariance::new(xx as f32, xy as f32, yy as f32);
+        for g in rest {
+            add(0, g);
+        }
+        let total = |k: usize| ((acc[0][k] + acc[1][k]) + (acc[2][k] + acc[3][k])) as f32;
+        let cov = PositionCovariance::new(total(0), total(1), total(2));
         [cov.xx, cov.xy, cov.yy]
             .iter()
             .all(|v| v.is_finite())
@@ -193,6 +229,45 @@ const EDGE_DISK_RADIUS: i32 = 5;
 /// Half-size of the square [`PixelTile::edge_width`] needs around its
 /// centre: the disk, one pixel for the gradient and two for the smoothing.
 pub(crate) const EDGE_REACH: i32 = EDGE_DISK_RADIUS + 3;
+
+/// The pixels of the radius-[`EDGE_DISK_RADIUS`] disk in scan order (rows
+/// top to bottom, each left to right), as flat indices into the
+/// `(2·radius + 3)²` smoothed square [`PixelTile::edge_width`] works on.
+const EDGE_DISK: [u8; edge_disk_len()] = {
+    const R: i32 = EDGE_DISK_RADIUS;
+    const N: i32 = 2 * (R + 1) + 1;
+    let mut disk = [0u8; edge_disk_len()];
+    let (mut m, mut dy) = (0, -R);
+    while dy <= R {
+        let mut dx = -R;
+        while dx <= R {
+            if dx * dx + dy * dy <= R * R {
+                disk[m] = ((dy + R + 1) * N + dx + R + 1) as u8;
+                m += 1;
+            }
+            dx += 1;
+        }
+        dy += 1;
+    }
+    disk
+};
+
+/// Number of pixels in the [`EDGE_DISK`].
+const fn edge_disk_len() -> usize {
+    const R: i32 = EDGE_DISK_RADIUS;
+    let (mut n, mut dy) = (0, -R);
+    while dy <= R {
+        let mut dx = -R;
+        while dx <= R {
+            if dx * dx + dy * dy <= R * R {
+                n += 1;
+            }
+            dx += 1;
+        }
+        dy += 1;
+    }
+    n
+}
 
 /// A square of image pixels around a corner, copied once (clamped at the
 /// image border like [`ImageView::sample`]) so a localizer's covariance
@@ -238,7 +313,29 @@ impl PixelTile {
     /// Pixel `(x, y)` (external frame); must lie in the tile.
     #[inline]
     pub(crate) fn at(&self, x: i32, y: i32) -> f32 {
-        self_at(&self.data, self.origin, self.side, x, y)
+        self.data[self.index(x, y)]
+    }
+
+    /// Index of pixel `(x, y)` (external frame) in [`Self::data`], which
+    /// must hold it; pixel `(x + dx, y + dy)` is at
+    /// `index(x, y) + dy·side + dx`.
+    #[inline]
+    pub(crate) fn index(&self, x: i32, y: i32) -> usize {
+        let (i, j) = ((x - self.origin[0]) as usize, (y - self.origin[1]) as usize);
+        debug_assert!(i < self.side && j < self.side);
+        j * self.side + i
+    }
+
+    /// The tile's pixels, row-major, [`Self::side`] per row.
+    #[inline]
+    pub(crate) fn data(&self) -> &[f32] {
+        &self.data
+    }
+
+    /// Row stride of [`Self::data`].
+    #[inline]
+    pub(crate) fn side(&self) -> usize {
+        self.side
     }
 
     /// Width of the edges around pixel `centre`, in px, robust to pixel
@@ -264,90 +361,94 @@ impl PixelTile {
         let y0 = (centre[1] - reach - self.origin[1]) as usize;
         debug_assert!(x0 + RAW <= self.side && y0 + RAW <= self.side);
         // Separable [1 4 6 4 1] smoothing, unnormalised: the width is a
-        // ratio of a contrast to a gradient, so the scale cancels.
-        let mut horiz = [0.0f32; RAW * N];
-        for (j, out) in horiz.as_chunks_mut::<N>().0.iter_mut().enumerate() {
+        // ratio of a contrast to a gradient, so the scale cancels. Pixels
+        // are integers and the weights sum to 16 per pass, so every sum is an
+        // integer below 2¹⁶, exact in `f32` in any order: down the columns,
+        // then across.
+        let raw = |j: usize| -> &[f32; RAW] {
             let start = (y0 + j) * self.side + x0;
-            let row = &self.data[start..start + RAW];
-            for (i, o) in out.iter_mut().enumerate() {
-                *o = (row[i] + row[i + 4]) + 4.0 * (row[i + 1] + row[i + 3]) + 6.0 * row[i + 2];
+            self.data[start..start + RAW]
+                .try_into()
+                .expect("the tile holds the edge-width square")
+        };
+        let binomial = |a: f32, b: f32, c: f32, d: f32, e: f32| (a + e) + 4.0 * (b + d) + 6.0 * c;
+        let mut down = [[0.0f32; RAW]; N];
+        for (j, out) in down.iter_mut().enumerate() {
+            let (r0, r1, r2, r3, r4) = (raw(j), raw(j + 1), raw(j + 2), raw(j + 3), raw(j + 4));
+            for i in 0..RAW {
+                out[i] = binomial(r0[i], r1[i], r2[i], r3[i], r4[i]);
             }
         }
         let mut sm = [0.0f32; N * N];
-        for (j, out) in sm.as_chunks_mut::<N>().0.iter_mut().enumerate() {
-            let r = |d: usize| &horiz[(j + d) * N..(j + d + 1) * N];
-            let (r0, r1, r2, r3, r4) = (r(0), r(1), r(2), r(3), r(4));
+        for (out, row) in sm.as_chunks_mut::<N>().0.iter_mut().zip(&down) {
             for i in 0..N {
-                out[i] = (r0[i] + r4[i]) + 4.0 * (r1[i] + r3[i]) + 6.0 * r2[i];
+                out[i] = binomial(row[i], row[i + 1], row[i + 2], row[i + 3], row[i + 4]);
             }
         }
-        let mut values = [0.0f32; N * N];
-        let mut grads = [0.0f32; N * N];
-        let mut m = 0;
-        for dy in -R..=R {
-            // Half-width of the disk on this row.
-            let half = (0..=R)
-                .rev()
-                .find(|dx| dx * dx + dy * dy <= R * R)
-                .unwrap_or(0);
-            let row = (dy + R + 1) as usize;
-            let (up, mid, down) = (
-                &sm[(row - 1) * N..row * N],
-                &sm[row * N..(row + 1) * N],
-                &sm[(row + 1) * N..(row + 2) * N],
-            );
-            for dx in -half..=half {
-                let i = (dx + R + 1) as usize;
-                values[m] = mid[i];
-                let gx = mid[i + 1] - mid[i - 1];
-                let gy = down[i] - up[i];
-                grads[m] = gx * gx + gy * gy;
-                m += 1;
-            }
+        // The disk's samples in scan order: value and squared gradient
+        // (central difference without the ½).
+        let mut values = [0.0f32; EDGE_DISK.len()];
+        let mut grads = [0.0f32; EDGE_DISK.len()];
+        for (m, &i) in EDGE_DISK.iter().enumerate() {
+            let i = usize::from(i);
+            values[m] = sm[i];
+            let gx = sm[i + 1] - sm[i - 1];
+            let gy = sm[i + N] - sm[i - N];
+            grads[m] = gx * gx + gy * gy;
         }
-        let (values, grads) = (&values[..m], &grads[..m]);
-        debug_assert!(m <= 81);
         // Plateau levels: means of the samples within a fifth of the range
         // of the extremes; ridge gradient: mean of the eight largest
-        // magnitudes. Averages, so noise moves them little.
-        let (vmin, vmax) = values
-            .iter()
-            .fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), &v| {
-                (a.min(v), b.max(v))
-            });
-        let band = 0.2 * (vmax - vmin);
-        let (mut hi, mut nh, mut lo, mut nl) = (0.0f32, 0u32, 0.0f32, 0u32);
-        for &v in values {
-            if v >= vmax - band {
-                hi += v;
-                nh += 1;
-            }
-            if v <= vmin + band {
-                lo += v;
-                nl += 1;
+        // magnitudes. Averages, so noise moves them little. The values are
+        // integers and their sum stays below 2²⁴, so the extremes and sums
+        // are exact in any order: four lanes at a time.
+        let (mut vmin, mut vmax) = ([f32::INFINITY; 4], [f32::NEG_INFINITY; 4]);
+        let (chunks, rest) = values.as_chunks::<4>();
+        for c in chunks {
+            for l in 0..4 {
+                vmin[l] = vmin[l].min(c[l]);
+                vmax[l] = vmax[l].max(c[l]);
             }
         }
+        let vmin = vmin
+            .iter()
+            .chain(rest)
+            .fold(f32::INFINITY, |a, &v| a.min(v));
+        let vmax = vmax
+            .iter()
+            .chain(rest)
+            .fold(f32::NEG_INFINITY, |a, &v| a.max(v));
+        let band = 0.2 * (vmax - vmin);
+        let (top_cut, low_cut) = (vmax - band, vmin + band);
+        let (mut hi, mut nh, mut lo, mut nl) = ([0.0f32; 4], [0u32; 4], [0.0f32; 4], [0u32; 4]);
+        let mut tally = |l: usize, v: f32| {
+            let (h, w) = (v >= top_cut, v <= low_cut);
+            hi[l] += if h { v } else { 0.0 };
+            nh[l] += u32::from(h);
+            lo[l] += if w { v } else { 0.0 };
+            nl[l] += u32::from(w);
+        };
+        for c in chunks {
+            for l in 0..4 {
+                tally(l, c[l]);
+            }
+        }
+        for &v in rest {
+            tally(0, v);
+        }
+        let sum4 = |v: [f32; 4]| (v[0] + v[1]) + (v[2] + v[3]);
+        let (hi, lo) = (sum4(hi), sum4(lo));
+        let (nh, nl): (u32, u32) = (nh.iter().sum(), nl.iter().sum());
         // The eight largest squared gradients; roots of those only.
-        let mut top = [0.0f32; 81];
-        let top = &mut top[..m];
-        top.copy_from_slice(grads);
+        let m = grads.len();
         let k = 8;
-        top.select_nth_unstable_by(m - k - 1, |a, b| a.total_cmp(b));
-        let gs: f32 = top[m - k..].iter().map(|g2| g2.sqrt()).sum();
+        grads.select_nth_unstable_by(m - k - 1, |a, b| a.total_cmp(b));
+        let gs: f32 = grads[m - k..].iter().map(|g2| g2.sqrt()).sum();
         let ng = k as u32;
         let (high, low) = (hi / nh.max(1) as f32, lo / nl.max(1) as f32);
         // Central difference without the ½: halve.
         let g = 0.5 * gs / ng.max(1) as f32;
         (g > 0.0).then(|| (high - low) / ((2.0 * core::f32::consts::PI).sqrt() * g))
     }
-}
-
-/// Pixel `(x, y)` of a tile's data (see [`PixelTile::at`]).
-#[inline]
-fn self_at(data: &[f32], origin: [i32; 2], side: usize, x: i32, y: i32) -> f32 {
-    let (i, j) = ((x - origin[0]) as usize, (y - origin[1]) as usize);
-    debug_assert!(i < side && j < side);
-    data[j * side + i]
 }
 
 /// [`PixelTile::edge_width`] of `img` around `centre`, through `tile`.

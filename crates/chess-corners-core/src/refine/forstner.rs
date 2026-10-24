@@ -160,10 +160,11 @@ impl ForstnerRefiner {
                 // ∂u/∂gₓ = A⁻¹·w·(eₓ (g·q) + g qₓ), ∂gₓ/∂I(x ± 1) = ±½.
                 let vx = mul([w * (gq + g[0] * q[0]), w * g[1] * q[0]]).map(|v| 0.5 * v);
                 let vy = mul([w * g[0] * q[1], w * (gq + g[1] * q[1])]).map(|v| 0.5 * v);
-                self.grads.add(gx + 1, gy, vx);
-                self.grads.add(gx - 1, gy, vx.map(|v| -v));
-                self.grads.add(gx, gy + 1, vy);
-                self.grads.add(gx, gy - 1, vy.map(|v| -v));
+                let (at, row) = (self.grads.index(gx, gy), self.grads.side());
+                self.grads.add_at(at + 1, vx);
+                self.grads.add_at(at - 1, vx.map(|v| -v));
+                self.grads.add_at(at + row, vy);
+                self.grads.add_at(at - row, vy.map(|v| -v));
             }
         }
         let noise = self.grads.covariance()?;
