@@ -27,8 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conservative on ideal synthetic corners and overconfident for the Radon
   peak fit on blurred corners near 45° and for the center of mass on sharp
   boards rotated a few degrees. Cost of the default tier: single-scale
-  ChESS frame time +3–9% (the test images), coarse-to-fine +7–22%,
-  Radon +0.4–2.5%. `Off` reports no covariance and makes no noise
+  ChESS frame time +2–7% (the test images), coarse-to-fine +5–13%,
+  Radon within ±2.5%. `Off` reports no covariance and makes no noise
   estimate; positions are identical under both. Also
   `Refiner::with_uncertainty` in `chess-corners-core` (turns the covariance
   off in custom refinement loops), Python (`Uncertainty`,

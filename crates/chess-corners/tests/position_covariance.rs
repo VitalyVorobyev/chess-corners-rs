@@ -384,6 +384,167 @@ fn positions_do_not_depend_on_the_tier() {
     }
 }
 
+/// Pinned covariances, so a change to any localizer's covariance, the edge
+/// width or the noise estimate shows up: on the standard image, with the
+/// estimated noise level, the corner nearest each of three points for every
+/// localizer (single scale; the center of mass also coarse-to-fine). The
+/// tolerance absorbs floating-point differences between platforms only.
+#[test]
+fn covariance_values_are_pinned() {
+    const NOISE_SIGMA: f32 = 1.9993361;
+    // Per configuration and point: x, y, Σxx, Σxy, Σyy.
+    const PINNED: [(&str, [[f32; 5]; 3]); 6] = [
+        (
+            "ChESS + CenterOfMass",
+            [
+                [99.22536, 99.60285, 0.010485078, -0.0002377624, 0.010808984],
+                [
+                    59.242657,
+                    139.60876,
+                    0.010615669,
+                    -0.00021459389,
+                    0.010915718,
+                ],
+                [
+                    139.21205,
+                    59.597885,
+                    0.010516225,
+                    -0.00023072022,
+                    0.010869775,
+                ],
+            ],
+        ),
+        (
+            "ChESS + Förstner",
+            [
+                [99.20676, 99.7532, 0.036144298, -0.024723655, 0.04496824],
+                [59.17938, 139.71475, 0.027122717, -0.020824092, 0.047181513],
+                [139.17358, 59.75105, 0.027476914, -0.01871596, 0.041276004],
+            ],
+        ),
+        (
+            "ChESS + SaddlePoint",
+            [
+                [
+                    99.305984,
+                    99.599236,
+                    0.0030151466,
+                    1.0985317e-5,
+                    0.0030227874,
+                ],
+                [59.32548, 139.62607, 0.003024958, -6.909327e-6, 0.0030245928],
+                [
+                    139.28033,
+                    59.58964,
+                    0.0030213383,
+                    5.6493986e-6,
+                    0.0030306599,
+                ],
+            ],
+        ),
+        (
+            "Radon peak fit",
+            [
+                [99.31389, 99.61113, 0.003637217, -3.2746528e-5, 0.003605367],
+                [59.324265, 139.58293, 0.003526693, -1.962451e-5, 0.003508442],
+                [
+                    139.28313,
+                    59.589054,
+                    0.0036220348,
+                    -2.9161387e-5,
+                    0.0035713566,
+                ],
+            ],
+        ),
+        (
+            "Radon + SaddlePoint",
+            [
+                [
+                    99.305984,
+                    99.599236,
+                    0.0030151466,
+                    1.0985317e-5,
+                    0.0030227874,
+                ],
+                [59.32548, 139.62607, 0.003024958, -6.909327e-6, 0.0030245928],
+                [
+                    139.28033,
+                    59.58964,
+                    0.0030213383,
+                    5.6493986e-6,
+                    0.0030306599,
+                ],
+            ],
+        ),
+        (
+            "ChESS + CenterOfMass, coarse-to-fine",
+            [
+                [99.22536, 99.60285, 0.010485078, -0.0002377624, 0.010808984],
+                [
+                    59.242657,
+                    139.60876,
+                    0.010615669,
+                    -0.00021459389,
+                    0.010915718,
+                ],
+                [
+                    139.21205,
+                    59.597885,
+                    0.010516225,
+                    -0.00023072022,
+                    0.010869775,
+                ],
+            ],
+        ),
+    ];
+    const POINTS: [[f32; 2]; 3] = [[100.0, 100.0], [60.0, 140.0], [140.0, 60.0]];
+    let close = |a: f32, b: f32| (a - b).abs() <= 1e-4 * b.abs().max(1e-3);
+    let img = standard_image();
+    let sigma = estimate_noise_sigma_u8(img, SIZE, SIZE).expect("noise estimate");
+    let print = std::env::var_os("PRINT_PINNED").is_some();
+    if print {
+        println!("const NOISE_SIGMA: f32 = {sigma:?};");
+    } else {
+        assert!(
+            close(sigma, NOISE_SIGMA),
+            "noise σ {sigma} vs {NOISE_SIGMA}"
+        );
+    }
+    let configs = localizers().into_iter().chain([(
+        "ChESS + CenterOfMass, coarse-to-fine",
+        DetectorConfig::chess_multiscale(),
+    )]);
+    for (k, (name, cfg)) in configs.enumerate() {
+        let corners = Detector::new(cfg)
+            .unwrap()
+            .detect_u8(img, SIZE as u32, SIZE as u32)
+            .unwrap();
+        let got: [[f32; 5]; 3] = POINTS.map(|[px, py]| {
+            let c = corners
+                .iter()
+                .min_by(|a, b| {
+                    let d = |c: &CornerDescriptor| (c.x - px).powi(2) + (c.y - py).powi(2);
+                    d(a).total_cmp(&d(b))
+                })
+                .expect("corners");
+            let cov = c.position_covariance.expect("covariance");
+            [c.x, c.y, cov.xx, cov.xy, cov.yy]
+        });
+        if print {
+            println!("(\"{name}\", {got:?}),");
+            continue;
+        }
+        let (pinned_name, pinned) = PINNED[k];
+        assert_eq!(name, pinned_name);
+        for (g, p) in got.iter().zip(&pinned) {
+            assert!(
+                g.iter().zip(p).all(|(&a, &b)| close(a, b)),
+                "{name}: {g:?} vs pinned {p:?}"
+            );
+        }
+    }
+}
+
 /// Radon with saddle-point refinement keeps every peak: a corner whose
 /// refinement converged has moved off the peak fit, and every other corner
 /// keeps its peak-fit position and covariance exactly.

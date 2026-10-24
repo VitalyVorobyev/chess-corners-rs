@@ -119,24 +119,31 @@ medians.
 
 ## Cost
 
-Per corner, 512² board (Off → Propagated): CoM 19 → 675 ns, Förstner 58 →
-569 ns, SaddlePoint 228 → 625 ns; the shared edge width is ~350 ns of each.
-Radon peak covariance 2.7 µs per peak, only for peaks that keep the peak
-fit. (Before this pass: CoM 580, Förstner 352, SaddlePoint 382 ns with a
-non-robust width; the tile removed per-pixel clamped sampling from the CoM
-Jacobian, the robust width added the rest.)
+Per corner, 512² board (Off → Propagated): CoM 19 → 526 ns, Förstner 57 →
+486 ns, SaddlePoint 207 → 569 ns. The shared edge width is ~240 ns of each,
+~90 ns of it the selection of the eight largest gradients, whose summation
+order (and so the width's last bit) follows `select_nth_unstable`; the CoM
+Jacobian is ~220 ns. Radon peak covariance 2.6 µs per peak, only for peaks
+that keep the peak fit. Per frame, the noise estimate costs 43–55 µs on the
+test images. Every refined corner is reported (≥ 99%: merge and the frame
+filters drop almost none), so computing covariances later would save
+nothing.
 
-Frame time, `testimages/` small / mid / large, default build, mean:
+Frame time, `testimages/` small / mid / large, default build, mean (the p95
+cost is within about a point of it):
 
 | config | Off | Propagated | default-on cost |
 |---|---|---|---|
-| ChESS single scale | 4.00 / 4.26 / 23.47 ms | 4.38 / 4.41 / 24.12 ms | +9.4 / +3.5 / +2.8% |
-| ChESS multiscale | 0.81 / 0.83 / 5.85 ms | 0.99 / 0.97 / 6.25 ms | +21.6 / +16.7 / +6.8% |
-| Radon single scale | 13.59 / 29.09 / 151.3 ms | 13.93 / 29.30 / 152.0 ms | +2.5 / +0.7 / +0.4% |
+| ChESS single scale | 3.77 / 4.15 / 22.80 ms | 4.02 / 4.23 / 23.22 ms | +6.7 / +2.1 / +1.8% |
+| ChESS multiscale | 0.79 / 0.80 / 5.66 ms | 0.89 / 0.89 / 5.93 ms | +13.4 / +11.1 / +4.8% |
+| Radon single scale | 12.69 / 28.46 / 146.5 ms | 12.95 / 27.75 / 147.4 ms | +2.0 / −2.5 / +0.6% |
 
-Off vs 1.5.0, p95, `codegen-units = 1` (both trees): ChESS +0.8 / +0.8 /
-+0.2%; Radon −2.0 / −4.4 / −2.0%. In the default build the Radon kernel
-alone moves by ±2.6% with code layout (it reverses with one codegen unit).
+The cost is the noise estimate plus ~0.5 µs per corner, so it is largest
+on small, sparse frames: on small multiscale the noise estimate alone is
+~7% of the frame. Off vs 1.5.0, p95, default build: ChESS single −4.5 /
+−0.7 / −0.9%, multiscale −1.7 / −0.6 / −1.2%; Radon −0.8 / −1.7 / 0.0%.
+The Radon kernel moves by a few percent with code layout alone (the
+negative mid cost above).
 
 ## Limits
 
