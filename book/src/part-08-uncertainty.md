@@ -215,11 +215,18 @@ to check a value you supply: `chess_corners::estimate_noise_sigma_u8`
   phase-dependent error. Each localizer's term also carries a floor
   measured on real calibration images, where corners are not ideal:
   about 0.05 px per axis for `SaddlePoint` and the Radon peak fit, 0.07
-  for CenterOfMass and 0.15 for Förstner. On ideal synthetic corners the
-  covariance is therefore conservative (§8.4).
+  for CenterOfMass and 0.11 for Förstner. On ideal synthetic corners
+  the covariance is therefore conservative (§8.4).
+- The edge width cannot see the board's rotation: CenterOfMass is
+  overconfident on sharp boards rotated a few degrees, and the Radon peak
+  fit on blurred corners near 45°, where its flat-topped response lets
+  noise move the peak by up to a pixel (\\(\hat\sigma_0^2\\) up to about 4
+  on synthetic boards, more under asymmetric blur).
 - Error shared by every corner of a view (defocus, depth, lens-model
   error) is outside any single-corner covariance; it shows up in the
-  downstream \\(\hat\sigma_0^2\\).
+  downstream \\(\hat\sigma_0^2\\). Weighting a calibration by these
+  covariances is neutral on real data: it does not lower the held-out
+  error, because much of a corner's error repeats across views.
 
 ## 8.4 How well it holds
 

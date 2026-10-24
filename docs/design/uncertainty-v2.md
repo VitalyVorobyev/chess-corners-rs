@@ -144,6 +144,25 @@ The per-corner output stays one total `position_covariance`.
 4. Bindings parity for covariance arrays and the noise estimate.
 5. Criterion: ns/corner per localizer and tier; frame time per tier.
 
+**Waivers (UQ-24).**
+
+- *Radon peak fit, Monte Carlo gate.* On blurred boards near 45° the
+  blurred response is flat-topped and noise moves the peak pixel by up to
+  a pixel, a discontinuity no first-order (or second-order) noise term
+  describes: whitened std 1.4–2.5 at lens σ 1.5–2.5 and 45°, 1.1–1.3 at 30°
+  on the independent generator; 0.9–1.1 elsewhere. A second-order growth
+  term from the fit's curvature (`1 + 3·var(D)/D²`) fixes the high-noise
+  cells (σₙ 8: 1.53 → 1.38, 1.31 → < 1.1) but not the low-noise ones; the
+  response curvature does not predict the systematic error either
+  (|corr| ≤ 0.1). σ̂₀² there: 2.3–4.1 (45°, blur 2.5, σₙ ≤ 2), up to 8 under
+  coma. Documented as a limit; a switching model (probability of the
+  neighbouring peak times the jump between the two fits) is the candidate
+  fix.
+- *CenterOfMass, Förstner at σₙ 8 and blur 2.5:* whitened std 0.72–0.88,
+  conservative (low SNR).
+- *Off within 2% of 1.5.0:* see `reference/uncertainty-model.md` §Cost for
+  the code-layout evidence on the Radon path.
+
 ## 8. Decision gates
 
 - **UQ-26 (asymmetry):** synthetic part passed (§4.2); correction and

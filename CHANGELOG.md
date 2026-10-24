@@ -14,20 +14,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `position_covariance` — the ChESS center-of-mass, Förstner and
   saddle-point refiners, the Radon peak fit and saddle-point refinement of
   Radon peaks (not the ML refiner): image noise propagated through the
-  localizer, plus a per-localizer systematic term from the corner's offset to
-  the localizer's fit window and the width of its edges, with a floor
-  measured on real calibration images (about 0.05 px per axis for the
-  saddle-point fit and the Radon peak fit, 0.07 for center of mass, 0.15
-  for Förstner). Error that every corner of an image shares (defocus,
-  depth, lens-model error) is outside any single-corner covariance and
-  shows up in a downstream calibration's variance factor. `Off` reports no
-  covariance and makes no noise estimate; positions are the same under
-  both. Also `Refiner::with_uncertainty` and
-  `DenseDetector::attach_peak_covariance` in `chess-corners-core`, Python
-  (`Uncertainty`, `DetectorConfig.uncertainty`, `with_uncertainty`), WASM
-  (`Uncertainty`, `cfg.uncertainty`, `withUncertainty`), the JSON schema,
-  and the C ABI (`cc_config::uncertainty`, `CC_UNCERTAINTY_OFF` /
-  `CC_UNCERTAINTY_PROPAGATED`).
+  localizer, plus a per-localizer systematic term (from the corner's offset
+  to the localizer's fit window and the width of its edges) with a floor
+  measured on real calibration images, about 0.05 px per axis for the
+  saddle-point fit and the Radon peak fit, 0.07 for center of mass and 0.11
+  for Förstner. On real images the reported σ then matches each
+  localizer's own error; error that every corner of an image shares
+  (defocus, depth, lens-model error) is outside any single-corner
+  covariance and shows up in a downstream calibration's variance factor.
+  Weighting a calibration by these covariances is neutral (held-out error
+  unchanged within 0.5% for the saddle-point fit); the covariance is
+  conservative on ideal synthetic corners and overconfident for the Radon
+  peak fit on blurred corners near 45° and for the center of mass on sharp
+  boards rotated a few degrees. Cost of the default tier: single-scale
+  ChESS frame time +3–9% (the test images), coarse-to-fine +7–22%,
+  Radon +0.4–2.5%. `Off` reports no covariance and makes no noise
+  estimate; positions are identical under both. Also
+  `Refiner::with_uncertainty` in `chess-corners-core` (turns the covariance
+  off in custom refinement loops), Python (`Uncertainty`,
+  `DetectorConfig.uncertainty`, `with_uncertainty`), WASM (`Uncertainty`,
+  `cfg.uncertainty`, `withUncertainty`), the JSON schema, and the C ABI
+  (`cc_config::uncertainty`: `CC_UNCERTAINTY_PROPAGATED` (0, so a
+  zero-initialised config is the default) / `CC_UNCERTAINTY_OFF`).
 - `RadonConfig::refiner` (`RadonRefiner`): the final subpixel position of
   a Radon corner — `PeakFit` (the default, unchanged behaviour) keeps the
   response-map peak fit; `SaddlePoint(SaddlePointConfig)` refines each peak
@@ -53,9 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0.006 px floor is replaced by its systematic term (larger: the covariance
   is conservative on ideal synthetic corners). Select `Uncertainty::Off`
   for no covariance and no per-image noise estimate.
-- C ABI: `cc_abi_version` is 7 (`cc_config::uncertainty` appended; a
-  zero-initialised `cc_config` selects `CC_UNCERTAINTY_OFF`, the presets
-  `CC_UNCERTAINTY_PROPAGATED`). `cc_config::refiner` is validated per
+- `RadonDetector::refine_peaks_on_image` (`chess-corners-core`) replaces a
+  peak's position whenever the refiner accepts it and reaches its own fixed
+  point: every single-shot refiner (center of mass, Förstner) now moves the
+  peaks; the saddle-point refiner still keeps the peak fit where its
+  re-centring does not converge.
+- C ABI: `cc_abi_version` is 6 (`cc_config::uncertainty` appended).
+  `cc_config::refiner` is validated per
   strategy: Radon takes `CC_REFINER_PEAK_FIT` (the `cc_config_radon*`
   presets' value) or `CC_REFINER_SADDLE_POINT`, and rejects the other tags
   with `CC_ERR_INVALID_CONFIG` (it ignored them before).

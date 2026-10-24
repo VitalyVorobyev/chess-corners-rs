@@ -1,7 +1,8 @@
 # Position covariance for every localizer (UQ-24)
 
 Internal evidence for the `Uncertainty::Propagated` tier
-([design](../design/uncertainty-v2.md) §3, §4.1, §6). Aggregates only.
+([design](../design/uncertainty-v2.md) §3, §4.1, §6, §7 waivers).
+Aggregates only.
 
 Tools: `crates/chess-corners-core/src/uncertainty_eval.rs` (Monte Carlo,
 σ̂₀², calibration dumps; `--ignored` tests), `tools/refiner_robustness/`
@@ -12,130 +13,130 @@ Local outputs: `bench_results/uq24/`, `tools/refiner_robustness/out/`.
 
 ## Model
 
-`Σ = max(σₙ², 1/12)·C + Σ_sys`, `C = Σₚ gₚgₚᵀ` with `gₚ = ∂x̂/∂Iₚ`.
+`Σ = max(σₙ², 1/12)·C·(growth) + Σ_sys`, `C = Σₚ gₚgₚᵀ`, `gₚ = ∂x̂/∂Iₚ`.
 
 - **Jacobians.** CenterOfMass: through the ChESS response (`SR − DR −
   16|μₙ−μₗ|`, signs of each `|·|`) of every positive pixel of the window and
   the centroid ratio; the response map carries its ring so the refiner knows
   the response function. Förstner: `du = A⁻¹ Σ w (dg gᵀ + g dgᵀ)(p − u)`.
-  Radon peak fit: 3-point fit gradient → 3×3 box blur → `(S_max − S_min)²`
-  with arg-max/min rays fixed → ray sums → 2× bilinear upsample (its 8-bit
-  rounding treated as identity). SaddlePoint unchanged. Central-difference
-  checks: CoM 1e-4 and Radon 1e-3 (float re-implementations), Förstner 2e-3
-  (±1 gray level on the real refiner), SaddlePoint 1e-3.
+  Radon peak fit: 3-point fit → 3×3 box blur → `(S_max − S_min)²` with
+  arg-max/min rays fixed → ray sums → 2× bilinear upsample; the 8-bit
+  rounding of the upsampled samples enters as 1/12 per working sample in
+  `Σ_sys`, and the noise term grows by `1 + 3·var(D)/D²` per axis (`D` the
+  fit's curvature). SaddlePoint unchanged. Central-difference checks: CoM
+  1e-4 (float re-implementation), Radon 2e-5 at upsample 1 / 2.3e-2 at 2
+  (the reference does not round), Förstner 2e-3 (±1 gray level),
+  SaddlePoint 1e-3. One convergence predicate for SaddlePoint under both
+  tiers (regular window sensitivity); tested for bit-identical positions.
 - **Systematic term** (`SystematicModel`, one table per localizer next to its
-  estimator): observed window offset `û`, edge width `w` (intensity range over
-  the radius-5 disk / (√2π · max gradient); tracks lens blur up to σ ≈ 2.5),
-  gain `g(w)` and residual `ρ(w)` per knot, Bayesian pull estimate with a
-  uniform prior over the grid cell, plus a real-data floor `f²I`.
+  estimator): observed window offset `û`, edge width `w`, gain `g(w)` and
+  residual `ρ(w)` per knot, Bayesian pull estimate with a uniform prior over
+  the grid cell, plus a real-data floor `f²I`.
+- **Edge width** (`PixelTile::edge_width`, shared tile with the CoM and
+  Förstner Jacobians): on a 5×5-binomial-smoothed radius-5 disk, contrast
+  (means within a fifth of the range of the extremes) over √2π × mean of the
+  eight largest gradients. Camera-formed boards: 1.12 / 1.15 / 1.31 / 1.40 /
+  1.50 px at lens σ 0.3 / 0.5 / 1.1 / 1.5 / 2.5 (std 0.03–0.15 over cells,
+  rotations). At a contrast of 60 and σₙ ≤ 8: within 6% of noise-free
+  (≤ 15% at σₙ 8, blur 2.5).
 
 ## Monte Carlo noise term (whitened std, 1 = calibrated)
 
 Lens-blur renderer, cells 8/12, 0/8/45°, blur 0.5/1.5/2.5, σₙ 1/2/8, 64
-draws; independent generator: 4 scenes, 32 draws.
+draws; independent generator: 4 scenes, 32 draws. 66 cells per localizer.
 
-| localizer | where 0.9–1.1 | outside |
+| localizer | range | outside 0.9–1.1 |
 |---|---|---|
-| SaddlePoint, Radon+SP | everywhere (0.98–1.07) | — |
-| CenterOfMass, Förstner | σₙ ≤ 2 everywhere; σₙ 8 at blur ≤ 1.5 | σₙ 8, blur 2.5: 0.72–0.88 (conservative, low SNR) |
-| Radon peak fit | blur 0.5 everywhere; blur 1.5 at 0/8° | blur 1.5 at 45°: 1.5; blur 2.5: 1.1–1.25 (0/8°), 2.0–2.6 (45°); independent generator 30°, σ 2: 1.24–1.41 |
+| SaddlePoint, Radon+SP | 0.98–1.07 | none |
+| CenterOfMass | 0.80–1.01 | 9, all σₙ 8 (conservative) |
+| Förstner | 0.72–1.01 | 7, σₙ 8 at blur ≥ 2 (conservative) |
+| Radon peak fit | 0.99–2.54 | 17: blur ≥ 1.5 at 45° (1.4–2.5 at σₙ ≤ 2), 1.1–1.25 at 8°/30° blur 2–2.5 |
 
-The Radon failures are not linearisation error (the Jacobian is exact):
-the blurred, rotated response is flat-topped and noise moves the peak pixel
-by up to ~1 px. CoM/Förstner are grouped by fit window (noise can move the
-seed peak, a systematic-model effect).
+Radon's failures are peak-pixel switching on a flat-topped response
+(waiver in the design doc); the second-order growth term moves the σₙ 8
+cells (1.53 → 1.38, 1.31 → < 1.1) but not the low-noise ones, and the
+response curvature does not predict the systematic error (|corr| ≤ 0.1).
 
 ## Systematic tables (synthetic, both generators pooled)
 
-Fitted per edge-width knot on noise-free corners (cells 6–12, rotations
-0–45°, 60° shear, lens σ 0.3–3, ~70 k corners per localizer; the two
-generators agree, e.g. Förstner gain 0.77/0.78, 0.65/0.64, 0.27/0.16,
-−0.13/−0.16 at w 0.7, 1.0, 1.5, 1.9).
+Noise-free corners, cells 6–12, rotations 0–45°, 60° shear, lens σ 0.3–3,
+~70 k per localizer; the generators agree on the gains.
 
-- Förstner: gain 0.78 → 0 (w ≈ 1.75) → −0.28; the linear pull explains
-  most of its bias at w ≤ 1.3 (RMS 0.07–0.16 → 0.008–0.05 px).
-- CenterOfMass: no pull (gain fits 0.89–1.07, non-monotone); its 0.04–0.09
-  px error depends on the board's rotation (8°: 0.17 px, 0/45°: 0.02–0.05 at
-  blur 0.3), which width cannot see; `g = 1`, `ρ` = RMS by width.
-- Radon peak fit: gain 0.91–1.0 (w ≤ 1), 0.81–0.84 (1.15–1.5), 0.54 (2.1);
-  largest at 45° and under shear (anisotropic `G`, off-diagonals ±0.5).
-- SaddlePoint: `ρ` 0.002–0.012 px by width (replaces the fixed 0.006).
+- Förstner: gain 0.78 → 0 (w ≈ 1.5) → −0.22; the linear pull explains most
+  of its bias at w ≤ 1.24 (RMS 0.07–0.12 → 0.015–0.025 px).
+- CenterOfMass: no pull (`g = 1`); RMS 0.04–0.09 px, strongly
+  rotation-dependent (8°: 0.17 px at blur 0.3; 0/45°: 0.02–0.05), which
+  width cannot see.
+- Radon peak fit: gain 0.86–0.95 (w ≤ 1.35), 0.64–0.76 (w ≥ 1.4); largest
+  at 45° and under shear.
+- SaddlePoint: `ρ` 0.004–0.011 px by width.
 
-Window-offset G is strongly orientation-dependent (Förstner at blur 1.5:
-0.28 at 0°, ≈0 at 45°); a per-corner measured gain (estimate at windows
-shifted ±1 px) cuts Förstner's residual 3–10× at w ≤ 1.1 but not at heavy
-blur, and does nothing for CoM / Radon. Not adopted (outside the design's
-observables).
+Correction vs covariance: removing the modelled pull would lower Förstner's
+noise-free RMS 3–8× at w ≤ 1.24 (still ≥ 2× SaddlePoint's error), nothing
+useful for CoM or Radon; all report it as covariance, positions unchanged.
 
-**Correction vs covariance.** Removing the modelled pull would lower the
-noise-free RMS of Förstner 2.5–9× at w ≤ 1.3 (still 2–10× SaddlePoint's
-error) and nothing useful elsewhere (CoM 0%, Radon ≤ 8%). All localizers
-report it as covariance; positions unchanged.
+## Real-data floor and weighting
 
-## Real-data floor
+`UQ-30` harness (stereo ChArUco set, rig calibration), local remainder (lens
+field, per-corner target term and per-view smooth pattern removed). Floor =
+value making the local-remainder σ̂₀² 1, max over the two corner sets:
 
-`UQ-30` harness (stereo ChArUco set, rig calibration): the localizer's
-*local remainder* (lens field, per-corner target term and the per-view
-smooth pattern common to all localizers removed). Floor = value that makes
-`σ̂₀²` of the local remainder 1 with the synthetic model's Σ:
+| localizer | floor all / with blurred corners | shipped | σ̂₀² all / blurred | Spearman(σ, \|e\|) all / blurred |
+|---|---|---|---|---|
+| CenterOfMass | 0.074 / 0.074 | 0.074 | 1.00 / 1.00 | 0.13 / 0.23 |
+| Förstner | 0.096 / 0.110 | 0.110 | 0.86 / 1.00 | 0.56 / 0.72 |
+| SaddlePoint (both seeds) | 0.038 / 0.053 | 0.053 | 0.53 / 0.98 | 0.19 / 0.36 |
+| Radon peak fit | 0.045 / — | 0.045 | 0.99 / — | 0.15 / — |
 
-| localizer | floor needed (all / with blurred corners) | shipped |
-|---|---|---|
-| CenterOfMass | 0.073 / 0.071 | 0.073 |
-| Förstner | 0.123 / 0.151 | 0.150 |
-| SaddlePoint (both seeds) | 0.038 / 0.053 | 0.053 |
-| Radon peak fit | 0.050 / — | 0.050 |
-
-With the shipped floors: local-remainder σ̂₀² 0.53–1.00 (all), 0.98–1.00
-(with blurred corners); Spearman(predicted σ, |e|) on the local remainder
-0.15–0.17 (SP, CoM, Radon), 0.60–0.73 (Förstner).
-
-**Weighting** (rig calibration, Σ-whitened vs uniform; held-out CV RMS and
+Weighting (Σ-whitened vs uniform rig calibration; held-out CV RMS and
 cross-fold remainder):
 
-| set | localizer | CV uniform / weighted | x-fold remainder uniform / weighted |
+| set | localizer | CV u / w | x-fold remainder u / w |
 |---|---|---|---|
-| all | CoM | .3788 / .3789 | .1787 / .1785 |
-| all | Förstner | .4252 / .4256 | .2701 / .2706 |
+| all | CoM | .3788 / .3788 | .1787 / .1785 |
+| all | Förstner | .4252 / .4267 | .2701 / .2719 |
 | all | SaddlePoint | .3542 / .3542 | .1061 / .1062 |
-| all | Radon | .3595 / .3601 | .1239 / .1255 |
+| all | Radon | .3595 / .3597 | .1239 / .1246 |
 | all | Radon+SP | .3537 / .3537 | .1043 / .1044 |
-| with blurred | CoM | .4213 / .4215 | .1781 / .1782 |
-| with blurred | Förstner | .5778 / .5861 | .4464 / .4507 |
-| with blurred | SaddlePoint | .4088 / .4093 | .1348 / .1371 |
+| blurred | CoM | .4213 / .4217 | .1781 / .1782 |
+| blurred | Förstner | .5778 / .5901 | .4464 / .4519 |
+| blurred | SaddlePoint | .4088 / .4093 | .1348 / .1371 |
 
-1.5.0's SaddlePoint covariance on the same set: .4088 → .4186 and .1348 →
-.1485. Weighting never helps here and the residual cost shrinks
-monotonically with the floor (SaddlePoint x-fold +2.7% at floor 0.038, +1.7%
-at 0.053, +0.9% at 0.08, +0.5% at 0.106): much of a corner's error
-(blur bias) repeats per corner id across views, so down-weighting blurred
-(peripheral) corners costs lens-model geometry. Per-camera free
-calibrations on four real sets (`run_real_weighted.py`): held-out RMS
-weighted − uniform within ±0.0004 px for every localizer.
+1.5.0's SaddlePoint covariance: .4186 / .1485 on the blurred set. Weighting
+never helps here; its cost falls monotonically with the floor (SaddlePoint
+x-fold +2.7% at 0.038, +1.7% at 0.053, +0.5% at 0.106) because much of a
+corner's error (blur bias) repeats per corner id across views.
 
-## σ̂₀² on synthetic boards (σₙ supplied)
+## σ̂₀² on synthetic boards (σₙ supplied; 189 cells per localizer)
 
 Both generators, cells 8/12, 0/8/45°, blur 0.5/1.5/2.5, σₙ 1/2/8, plus the
-audit's PSF / illumination conditions (189 cells per localizer). With the
-real-data floor the covariance is conservative on ideal corners: median /
-90th percentile / max — SaddlePoint 0.30 / 0.94 / 2.3, CoM 0.41 / 0.99 /
-1.8, Förstner 0.57 / 1.3 / 2.0, Radon peak 0.75 / 2.0 / 7.4. Above 1.6:
-SaddlePoint only under ±15 % shading; CoM only at 8°, blur 0.5; Förstner
-only under coma; Radon peak in 32 of 189 cells — 45° at blur 1.5–2.5 and
-coma / decentred defocus. Estimating σₙ instead of supplying it gives the
-same medians. The asymmetry cases are UQ-26's.
+audit's PSF / illumination conditions. Median / 90th pct / max: SaddlePoint
+0.30 / 0.94 / 2.2 (> 1.6 only under ±15% shading), CoM 0.41 / 0.93 / 1.7
+(only 8°, blur 0.5), Förstner 0.59 / 1.38 / 3.5 (45° blur 1.5, coma,
+perspective), Radon peak 0.80 / 2.09 / 9.3 (29 cells: 45° blur 1.5–2.5 up
+to ~4, coma / decentred defocus up to 9). Estimated σₙ gives the same
+medians.
 
 ## Cost
 
-Per corner (512² board, 3 362 seeds; Off → Propagated): CoM 18 → 580 ns,
-Förstner 63 → 352 ns, SaddlePoint 208 → 382 ns; Radon peak covariance
-1.9 µs per peak. Frame time, ChESS single scale (`testimages/` small / mid
-/ large): 1.5.0 3.98 / 4.22 / 23.29 ms; Off 3.98 / 4.23 / 23.23 ms;
-Propagated 4.35 / 4.36 / 23.82 ms (+9.2 / +3.3 / +2.3%). Multiscale
-Propagated +21 / +16 / +7% over 1.5.0. Radon single scale: Off +3.4–3.6%
-over 1.5.0 in the default build, but the untouched response kernel alone
-moves by the same amount (+2.6%) and reverses (−1.5%) with
-`codegen-units = 1`: code layout, not work; Propagated +0.8–1.7% over Off.
+Per corner, 512² board (Off → Propagated): CoM 19 → 675 ns, Förstner 58 →
+569 ns, SaddlePoint 228 → 625 ns; the shared edge width is ~350 ns of each.
+Radon peak covariance 2.7 µs per peak, only for peaks that keep the peak
+fit. (Before this pass: CoM 580, Förstner 352, SaddlePoint 382 ns with a
+non-robust width; the tile removed per-pixel clamped sampling from the CoM
+Jacobian, the robust width added the rest.)
+
+Frame time, `testimages/` small / mid / large, default build, mean:
+
+| config | Off | Propagated | default-on cost |
+|---|---|---|---|
+| ChESS single scale | 4.00 / 4.26 / 23.47 ms | 4.38 / 4.41 / 24.12 ms | +9.4 / +3.5 / +2.8% |
+| ChESS multiscale | 0.81 / 0.83 / 5.85 ms | 0.99 / 0.97 / 6.25 ms | +21.6 / +16.7 / +6.8% |
+| Radon single scale | 13.59 / 29.09 / 151.3 ms | 13.93 / 29.30 / 152.0 ms | +2.5 / +0.7 / +0.4% |
+
+Off vs 1.5.0, p95, `codegen-units = 1` (both trees): ChESS +0.8 / +0.8 /
++0.2%; Radon −2.0 / −4.4 / −2.0%. In the default build the Radon kernel
+alone moves by ±2.6% with code layout (it reverses with one codegen unit).
 
 ## Limits
 
