@@ -234,12 +234,20 @@ impl DetectorConfig {
         }
     }
 
-    /// Coarse-to-fine Radon preset. Measure against [`Self::radon`] on
-    /// your target frame sizes; this preset trades more configuration
-    /// machinery for less full-resolution detector work on large frames.
+    /// Two-level coarse-to-fine Radon preset. Measure against
+    /// [`Self::radon`] on your target frame sizes; this preset trades more
+    /// configuration machinery for less full-resolution detector work on
+    /// large frames.
+    ///
+    /// It seeds at half resolution, one level less than
+    /// [`Self::chess_multiscale`]: a Radon peak on the coarse level can sit
+    /// up to its ray length off the corner, and that ray covers twice as
+    /// many input pixels per extra level. At quarter resolution the
+    /// offset outgrows the refinement window, and boards whose cells hold
+    /// fine detail (ChArUco markers) no longer show their corners at all.
     pub fn radon_multiscale() -> Self {
         Self {
-            multiscale: MultiscaleConfig::pyramid_default(),
+            multiscale: MultiscaleConfig::pyramid(2, 128, 3),
             ..Self::radon()
         }
     }

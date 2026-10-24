@@ -45,12 +45,6 @@ use crate::{
 /// refiner tag not valid for the strategy, and [`cc_status::CC_ERR_UPSCALE`]
 /// on an invalid `upscale_factor`.
 pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_status> {
-    let multiscale = if cfg.multiscale != 0 {
-        MultiscaleConfig::pyramid_default()
-    } else {
-        MultiscaleConfig::SingleScale
-    };
-
     let orientation_method: Option<OrientationMethod> = match cfg.orientation_method {
         CC_ORIENTATION_RING_FIT => Some(OrientationMethod::RingFit),
         CC_ORIENTATION_DISK_FIT => Some(OrientationMethod::DiskFit),
@@ -111,6 +105,12 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
     };
 
+    // `multiscale` switches on the strategy's preset pyramid.
+    let multiscale = match (cfg.multiscale != 0, &base.strategy) {
+        (false, _) => MultiscaleConfig::SingleScale,
+        (true, DetectionStrategy::Radon(_)) => DetectorConfig::radon_multiscale().multiscale,
+        (true, _) => DetectorConfig::chess_multiscale().multiscale,
+    };
     let mut base = base
         .with_threshold(cfg.threshold)
         .with_multiscale(multiscale)
