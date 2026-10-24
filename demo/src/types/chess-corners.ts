@@ -23,6 +23,15 @@ export interface DetectedCorner {
   response: number;
   /** The two estimated orientation axes. */
   axes: [Axis, Axis];
+  /** Position covariance in px², or `null` when the refiner reports none. */
+  covariance: PositionCovariance | null;
+}
+
+/** Symmetric 2×2 position covariance `[[xx, xy], [xy, yy]]`, in px². */
+export interface PositionCovariance {
+  xx: number;
+  xy: number;
+  yy: number;
 }
 
 /** Dense detector response/heatmap at working resolution (row-major). */

@@ -1,0 +1,5 @@
+@import "tailwindcss";
+@import "@vitavision/ui/fonts.css";
+@import "@vitavision/ui/styles.css";
+@import "@vitavision/stage2d/styles.css";
+@import "@vitavision/workbench/styles.css";

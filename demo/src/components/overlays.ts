@@ -1,9 +1,7 @@
-// Overlay-layer builders: turn parsed detector output into draw callbacks for
-// CanvasViewport. Each layer's `draw` receives a ctx already in image
-// coordinates, plus the current zoom `scale` so marker sizes stay roughly
-// constant on screen.
+// Overlay data builders: turn parsed detector output into the items the
+// stage2d layers draw, and the pixel buffer behind the heatmap.
 
-import type { OverlayLayer } from "./CanvasViewport";
+import type { MarkerShape, PointSetItem } from "@vitavision/stage2d";
 import type { DetectedCorner, HeatmapData } from "../types/chess-corners";
 
 export const OVERLAY_COLORS = {
@@ -13,7 +11,7 @@ export const OVERLAY_COLORS = {
 } as const;
 
 /** Google "Turbo" colormap, polynomial approximation. `t` in [0, 1]. */
-function turbo(t: number): [number, number, number] {
+export function turbo(t: number): [number, number, number] {
   const x = Math.min(1, Math.max(0, t));
   const r =
     0.13572138 +
@@ -24,158 +22,80 @@ function turbo(t: number): [number, number, number] {
   const b =
     0.1066733 +
     x * (12.64194608 + x * (-60.58204836 + x * (110.36276771 + x * (-89.90310912 + x * 27.34824973))));
-  return [
-    Math.round(255 * Math.min(1, Math.max(0, r))),
-    Math.round(255 * Math.min(1, Math.max(0, g))),
-    Math.round(255 * Math.min(1, Math.max(0, b))),
-  ];
+  const byte = (v: number) => Math.round(255 * Math.min(1, Math.max(0, v)));
+  return [byte(r), byte(g), byte(b)];
 }
 
-/** Filled dots on every corner, colored by normalized response (Turbo). */
-export function cornersLayer(
-  corners: DetectedCorner[],
-  visible: boolean,
-): OverlayLayer {
-  let max = 0;
-  for (const c of corners) {
-    const a = Math.abs(c.response);
-    if (a > max) max = a;
-  }
-  const inv = max > 0 ? 1 / max : 0;
-  return {
-    id: "corners",
-    visible,
-    draw: (ctx, scale) => {
-      const r = 2.6 / Math.sqrt(scale);
-      ctx.lineWidth = Math.max(0.6 / scale, 0.25);
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
-      for (const c of corners) {
-        const [rr, gg, bb] = turbo(Math.min(1, Math.abs(c.response) * inv));
-        ctx.fillStyle = `rgb(${rr}, ${gg}, ${bb})`;
-        ctx.beginPath();
-        ctx.arc(c.x + 0.5, c.y + 0.5, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-    },
-  };
+export function turboCss(t: number): string {
+  const [r, g, b] = turbo(t);
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
-/** Two short segments per corner — one per orientation axis (undirected). */
-export function axesLayer(
-  corners: DetectedCorner[],
-  visible: boolean,
-): OverlayLayer {
-  return {
-    id: "axes",
-    visible,
-    draw: (ctx, scale) => {
-      const L = 9 / Math.sqrt(scale);
-      ctx.lineWidth = Math.max(1.2 / scale, 0.4);
-      ctx.lineCap = "round";
-      for (const c of corners) {
-        for (let k = 0; k < 2; k++) {
-          const axis = c.axes[k]!;
-          const dx = Math.cos(axis.angle) * L;
-          const dy = Math.sin(axis.angle) * L;
-          ctx.strokeStyle = k === 0 ? OVERLAY_COLORS.axis0 : OVERLAY_COLORS.axis1;
-          ctx.beginPath();
-          ctx.moveTo(c.x + 0.5 - dx, c.y + 0.5 - dy);
-          ctx.lineTo(c.x + 0.5 + dx, c.y + 0.5 + dy);
-          ctx.stroke();
-        }
-      }
-    },
-  };
-}
+// --- Orientation markers --------------------------------------------------
+// stage2d markers are sized in screen pixels. Both read the item's `angle`
+// (radians, clockwise from +x); the wedge reads its σ from `angle2`.
 
-/** Faint angular wedges showing each axis's ±1σ orientation uncertainty. */
-export function sigmaLayer(
-  corners: DetectedCorner[],
-  visible: boolean,
-): OverlayLayer {
-  return {
-    id: "sigma",
-    visible,
-    draw: (ctx, scale) => {
-      const L = 9 / Math.sqrt(scale);
-      for (const c of corners) {
-        for (let k = 0; k < 2; k++) {
-          const axis = c.axes[k]!;
-          // Clamp the displayed half-angle so a low-confidence corner does not
-          // flood the view; the wedge stays a legible uncertainty cue.
-          const s = Math.min(0.6, Math.max(0, axis.sigma));
-          if (s <= 1e-4) continue;
-          ctx.fillStyle =
-            k === 0 ? "rgba(80, 200, 255, 0.16)" : "rgba(255, 150, 60, 0.16)";
-          // Undirected axis: mirror the wedge to both ends.
-          for (const base of [axis.angle, axis.angle + Math.PI]) {
-            ctx.beginPath();
-            ctx.moveTo(c.x + 0.5, c.y + 0.5);
-            ctx.arc(c.x + 0.5, c.y + 0.5, L, base - s, base + s);
-            ctx.closePath();
-            ctx.fill();
-          }
-        }
-      }
-    },
-  };
+const AXIS_HALF = 9;
+
+/** An undirected axis: a line through the corner, `AXIS_HALF` px each way. */
+export const AXIS_MARKER: MarkerShape = {
+  paint: "line",
+  size: AXIS_HALF,
+  path: (x, y, u, angle) => {
+    const dx = Math.cos(angle) * AXIS_HALF * u;
+    const dy = Math.sin(angle) * AXIS_HALF * u;
+    return `M${x - dx} ${y - dy}L${x + dx} ${y + dy}`;
+  },
+};
+
+/** Both ±1σ wedges of an undirected axis (σ = `angle2`, clamped so a weak corner stays legible). */
+export const WEDGE_MARKER: MarkerShape = {
+  paint: "line",
+  size: AXIS_HALF,
+  path: (x, y, u, angle, sigma = 0) => {
+    const s = Math.min(0.6, Math.max(0, sigma));
+    const r = AXIS_HALF * u;
+    let d = "";
+    for (const base of [angle, angle + Math.PI]) {
+      const x1 = x + Math.cos(base - s) * r;
+      const y1 = y + Math.sin(base - s) * r;
+      const x2 = x + Math.cos(base + s) * r;
+      const y2 = y + Math.sin(base + s) * r;
+      d += `M${x} ${y}L${x1} ${y1}A${r} ${r} 0 0 1 ${x2} ${y2}Z`;
+    }
+    return d;
+  },
+};
+
+/** Two items per corner, one per axis, in the axis colours; a `wedge` item carries σ instead of drawing the axis. */
+export function axisItems(corners: readonly DetectedCorner[], wedge: boolean): PointSetItem[] {
+  return corners.flatMap((c, i) =>
+    c.axes.map((axis, k) => ({
+      id: `${i}:${k}`,
+      x: c.x,
+      y: c.y,
+      kind: wedge ? "wedge" : "axis",
+      angle: axis.angle,
+      ...(wedge ? { angle2: axis.sigma } : {}),
+      color: k === 0 ? OVERLAY_COLORS.axis0 : OVERLAY_COLORS.axis1,
+    })),
+  );
 }
 
 /**
- * Semi-transparent dense response/heatmap, colormapped (Turbo) and scaled to
- * fill the base image. The colormapped canvas is built once when the layer is
- * constructed (i.e. once per detection), not on every animation frame.
+ * The dense response colormapped (Turbo) to RGBA. Detector responses are
+ * sharply peaked at corners, so a perceptual gamma lift surfaces weaker
+ * structure while true zero (flat regions) stays transparent.
  */
-export function responseHeatmapLayer(
-  heatmap: HeatmapData | null,
-  imgW: number,
-  imgH: number,
-  visible: boolean,
-): OverlayLayer {
-  let cached: HTMLCanvasElement | null = null;
-  if (heatmap && heatmap.width > 0 && heatmap.height > 0 && imgW > 0 && imgH > 0) {
-    const { data, width, height } = heatmap;
-    let max = 0;
-    for (let i = 0; i < data.length; i++) {
-      const v = data[i]!;
-      if (v > max) max = v;
-    }
-    const inv = max > 0 ? 1 / max : 0;
-    const cv = document.createElement("canvas");
-    cv.width = width;
-    cv.height = height;
-    const ctx = cv.getContext("2d");
-    if (ctx) {
-      const img = ctx.createImageData(width, height);
-      const px = img.data;
-      for (let i = 0; i < data.length; i++) {
-        const t = Math.min(1, Math.max(0, data[i]! * inv));
-        // Detector responses are sharply peaked at corners, so a linear ramp
-        // leaves the field almost entirely transparent. A perceptual gamma
-        // lift surfaces the weaker-but-nonzero structure while keeping true
-        // zero (flat regions) transparent.
-        const tl = Math.pow(t, 0.55);
-        const [r, g, b] = turbo(tl);
-        const o = i * 4;
-        px[o] = r;
-        px[o + 1] = g;
-        px[o + 2] = b;
-        px[o + 3] = Math.round(210 * tl);
-      }
-      ctx.putImageData(img, 0, 0);
-      cached = cv;
-    }
+export function heatmapRgba({ data }: HeatmapData): Uint8ClampedArray {
+  let max = 0;
+  for (let i = 0; i < data.length; i++) max = Math.max(max, data[i]!);
+  const inv = max > 0 ? 1 / max : 0;
+  const px = new Uint8ClampedArray(data.length * 4);
+  for (let i = 0; i < data.length; i++) {
+    const tl = Math.pow(Math.min(1, Math.max(0, data[i]! * inv)), 0.55);
+    const [r, g, b] = turbo(tl);
+    px.set([r, g, b, Math.round(210 * tl)], i * 4);
   }
-  return {
-    id: "heatmap",
-    visible,
-    draw: (ctx) => {
-      if (!cached) return;
-      const prev = ctx.imageSmoothingEnabled;
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(cached, 0, 0, cached.width, cached.height, 0, 0, imgW, imgH);
-      ctx.imageSmoothingEnabled = prev;
-    },
-  };
+  return px;
 }
