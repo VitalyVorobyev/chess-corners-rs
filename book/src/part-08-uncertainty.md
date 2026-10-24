@@ -32,7 +32,7 @@ from `+` is the bias. The spread of the cloud is the precision.
 - **CenterOfMass** has a smaller bias here, but it is still about
   twice its scatter.
 - **SaddlePoint** lands on the truth. Its predicted 1σ and 2σ ellipses
-  (zoomed in the last panel) are centred on the true corner and contain
+  (magnified in the inset) are centred on the true corner and contain
   close to the expected fractions of the cloud (38% and 88%, against 39%
   and 86% for a normal distribution).
 
