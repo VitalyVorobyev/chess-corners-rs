@@ -16,8 +16,8 @@ import {
   type PointSetItem,
   type StageView,
 } from "@vitavision/stage2d";
-import { AXIS_MARKER, axisItems, heatmapRgba, OVERLAY_COLORS, turboCss, WEDGE_MARKER } from "./overlays";
-import { covarianceEllipse, formatSigma, predictedSigma, type UncertaintySummary } from "../lib/uncertainty";
+import { AXIS_MARKER, axisItems, heatmapRgba, OVERLAY_COLORS, rampCss, WEDGE_MARKER } from "./overlays";
+import { covarianceEllipse, formatSigma, predictedSigma, sigmaFraction, type UncertaintySummary } from "../lib/uncertainty";
 import type { DetectedCorner, HeatmapData } from "../types/chess-corners";
 
 export type LayerId = "heatmap" | "corners" | "axes" | "wedges" | "ellipses";
@@ -51,16 +51,14 @@ export function Viewer({ image, corners, heatmap, visible, coloring, exaggeratio
 
   const cornerItems = useMemo<PointSetItem[]>(() => {
     const maxResponse = Math.max(0, ...corners.map((c) => Math.abs(c.response)));
-    const [lo, hi] = summary.sigmaRange ?? [0, 1];
     return corners.map((c, i) => {
       if (coloring === "response") {
         const t = maxResponse > 0 ? Math.abs(c.response) / maxResponse : 0;
-        return { id: i, x: c.x, y: c.y, kind: "dot", color: turboCss(t) };
+        return { id: i, x: c.x, y: c.y, kind: "dot", color: rampCss(t) };
       }
       // No covariance: a cross in the label colour, distinct from the σ ramp.
       if (!c.covariance) return { id: i, x: c.x, y: c.y, kind: "cross", color: "var(--stage-label)" };
-      const t = hi > lo ? (predictedSigma(c.covariance) - lo) / (hi - lo) : 0;
-      return { id: i, x: c.x, y: c.y, kind: "dot", color: turboCss(t) };
+      return { id: i, x: c.x, y: c.y, kind: "dot", color: rampCss(sigmaFraction(predictedSigma(c.covariance), summary.sigmaRange)) };
     });
   }, [corners, coloring, summary.sigmaRange]);
 
@@ -69,9 +67,19 @@ export function Viewer({ image, corners, heatmap, visible, coloring, exaggeratio
       corners.flatMap((c, i) => {
         if (!c.covariance) return [];
         const e = covarianceEllipse(c.covariance);
-        return [{ id: i, x: c.x, y: c.y, rx: e.sigmaMajor * exaggeration, ry: e.sigmaMinor * exaggeration, angle: e.angle }];
+        return [
+          {
+            id: i,
+            x: c.x,
+            y: c.y,
+            rx: e.sigmaMajor * exaggeration,
+            ry: e.sigmaMinor * exaggeration,
+            angle: e.angle,
+            color: rampCss(sigmaFraction(predictedSigma(c.covariance), summary.sigmaRange)),
+          },
+        ];
       }),
-    [corners, exaggeration],
+    [corners, exaggeration, summary.sigmaRange],
   );
   const axes = useMemo(() => axisItems(corners, false), [corners]);
   const wedges = useMemo(() => axisItems(corners, true), [corners]);
@@ -94,7 +102,7 @@ export function Viewer({ image, corners, heatmap, visible, coloring, exaggeratio
       onHover={setCursor}
       banner={
         <div className="flex flex-col items-start gap-1.5">
-          {visible.ellipses && (
+          {visible.ellipses && ellipseItems.length > 0 && (
             <div className="rounded-control border border-line bg-overlay/85 px-2 py-1 text-xs text-fg-muted backdrop-blur">
               1σ position ellipses, enlarged {Math.round(exaggeration)}×
             </div>
@@ -139,9 +147,9 @@ export function Viewer({ image, corners, heatmap, visible, coloring, exaggeratio
       {visible.heatmap && heatmap && heatmapPixels && (
         <HeatmapLayer rgba={heatmapPixels} width={heatmap.width} height={heatmap.height} alt="Dense detector response" />
       )}
-      {visible.wedges && <PointSet items={wedges} markers={MARKERS} priority={240} halo={false} label="Axis uncertainty wedges" />}
-      {visible.axes && <PointSet items={axes} markers={MARKERS} priority={250} label="Orientation axes" />}
-      {visible.ellipses && (
+      {visible.wedges && <PointSet items={wedges} markers={MARKERS} pickable={false} halo={false} label="Axis uncertainty wedges" />}
+      {visible.axes && <PointSet items={axes} markers={MARKERS} pickable={false} label="Orientation axes" />}
+      {visible.ellipses && ellipseItems.length > 0 && (
         <EllipseSet items={ellipseItems} role="model" pickable={false} hoveredId={hovered} minRadius={1.5} label="Position uncertainty ellipses" />
       )}
       {visible.corners && (

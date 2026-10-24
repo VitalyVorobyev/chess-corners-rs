@@ -7,7 +7,7 @@ import { AppShell } from "@vitavision/workbench";
 import { Inspector, SAMPLES, type ViewMode } from "../components/Inspector";
 import { Viewer, type CornerColoring, type LayerId, type ViewerImage } from "../components/Viewer";
 import { useDebounced } from "../hooks/useDebounced";
-import { defaultSettings, detect, type DetectResult } from "../lib/detector";
+import { defaultSettings, detect, estimateNoise, type DetectResult } from "../lib/detector";
 import { decodeRgba, type ImageData as ImgData } from "../lib/image-utils";
 import { summarize } from "../lib/uncertainty";
 import type { DetectorSettings } from "../types/chess-corners";
@@ -94,6 +94,11 @@ export function Workspace({ header }: { header: ReactNode }) {
   }, [source, debouncedSettings, showHeatmap]);
 
   const corners = useMemo(() => result?.corners ?? [], [result]);
+  // Same gray image the detector sees; skipped under Off, which makes no estimate.
+  const noiseEstimate = useMemo(
+    () => (source && settings.uncertainty === "propagated" ? estimateNoise(source.rgba, source.width, source.height) : null),
+    [source, settings.uncertainty],
+  );
   const summary = useMemo(() => summarize(corners), [corners]);
 
   return (
@@ -132,6 +137,7 @@ export function Workspace({ header }: { header: ReactNode }) {
           exaggerationLog={exaggerationLog}
           onExaggerationLog={setExaggerationLog}
           summary={summary}
+          noiseEstimate={noiseEstimate}
         />
       }
     />

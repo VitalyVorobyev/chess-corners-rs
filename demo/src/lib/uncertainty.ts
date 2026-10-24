@@ -63,3 +63,9 @@ export function summarize(corners: readonly DetectedCorner[]): UncertaintySummar
 export function formatSigma(sigma: number): string {
   return sigma >= 1 ? sigma.toFixed(2) : sigma.toPrecision(2);
 }
+
+/** Position of `sigma` on the colour scale, 0 at the smallest σ and 1 at the 95th percentile. */
+export function sigmaFraction(sigma: number, range: [number, number] | null): number {
+  if (!range || range[1] <= range[0]) return 0;
+  return (sigma - range[0]) / (range[1] - range[0]);
+}

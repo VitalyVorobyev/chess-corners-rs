@@ -10,24 +10,37 @@ export const OVERLAY_COLORS = {
   heatmap: "rgb(120, 200, 90)",
 } as const;
 
-/** Google "Turbo" colormap, polynomial approximation. `t` in [0, 1]. */
-export function turbo(t: number): [number, number, number] {
-  const x = Math.min(1, Math.max(0, t));
-  const r =
-    0.13572138 +
-    x * (4.6153926 + x * (-42.66032258 + x * (132.13108234 + x * (-152.94239396 + x * 59.28637943))));
-  const g =
-    0.09140261 +
-    x * (2.19418839 + x * (4.84296658 + x * (-14.18503333 + x * (4.27729857 + x * 2.82956604))));
-  const b =
-    0.1066733 +
-    x * (12.64194608 + x * (-60.58204836 + x * (110.36276771 + x * (-89.90310912 + x * 27.34824973))));
-  const byte = (v: number) => Math.round(255 * Math.min(1, Math.max(0, v)));
-  return [byte(r), byte(g), byte(b)];
+// Viridis (polynomial approximation): perceptually uniform, monotone in
+// lightness, and legible over both light and dark image content. The two
+// extremes are trimmed so the darkest step does not vanish on a black pixel
+// and the lightest does not wash out on a white one.
+const VIRIDIS = [
+  [0.2777273272234177, 0.005407344544966578, 0.3340998053353061],
+  [0.1050930431085774, 1.404613529898575, 1.384590162594685],
+  [-0.3308618287255563, 0.214847559468213, 0.09509516302823659],
+  [-4.634230498983486, -5.799100973351585, -19.33244095627987],
+  [6.228269936347081, 14.17993336680509, 56.69055260068105],
+  [4.776384997670288, -13.74514537774601, -65.35303263337234],
+  [-5.435455855934631, 4.645852612178535, 26.3124352495832],
+] as const;
+const RAMP_RANGE = [0.12, 0.92] as const;
+/** Ellipses of one colour share a stage2d path, so the continuous ramp is quantised to this many steps. */
+export const RAMP_STEPS = 24;
+
+/** Sequential ramp, `t` in [0, 1]: low values dark blue-purple, high values yellow. */
+export function ramp(t: number): [number, number, number] {
+  const x = RAMP_RANGE[0] + Math.min(1, Math.max(0, t)) * (RAMP_RANGE[1] - RAMP_RANGE[0]);
+  return [0, 1, 2].map((ch) => {
+    let v = 0;
+    for (let k = VIRIDIS.length - 1; k >= 0; k--) v = v * x + VIRIDIS[k]![ch]!;
+    return Math.round(255 * Math.min(1, Math.max(0, v)));
+  }) as [number, number, number];
 }
 
-export function turboCss(t: number): string {
-  const [r, g, b] = turbo(t);
+/** CSS colour of `t`, snapped to one of `RAMP_STEPS` levels. */
+export function rampCss(t: number): string {
+  const q = Math.round(Math.min(1, Math.max(0, t)) * (RAMP_STEPS - 1)) / (RAMP_STEPS - 1);
+  const [r, g, b] = ramp(q);
   return `rgb(${r}, ${g}, ${b})`;
 }
 
@@ -83,7 +96,7 @@ export function axisItems(corners: readonly DetectedCorner[], wedge: boolean): P
 }
 
 /**
- * The dense response colormapped (Turbo) to RGBA. Detector responses are
+ * The dense response colormapped (ramp) to RGBA. Detector responses are
  * sharply peaked at corners, so a perceptual gamma lift surfaces weaker
  * structure while true zero (flat regions) stays transparent.
  */
@@ -94,7 +107,7 @@ export function heatmapRgba({ data }: HeatmapData): Uint8ClampedArray {
   const px = new Uint8ClampedArray(data.length * 4);
   for (let i = 0; i < data.length; i++) {
     const tl = Math.pow(Math.min(1, Math.max(0, data[i]! * inv)), 0.55);
-    const [r, g, b] = turbo(tl);
+    const [r, g, b] = ramp(tl);
     px.set([r, g, b, Math.round(210 * tl)], i * 4);
   }
   return px;

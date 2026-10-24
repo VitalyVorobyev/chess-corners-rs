@@ -13,6 +13,9 @@ import init, {
   CenterOfMassConfig,
   ForstnerConfig,
   SaddlePointConfig,
+  RadonRefiner,
+  Uncertainty,
+  estimateNoiseSigmaRgba,
 } from "@vitavision/chess-corners";
 
 import type {
@@ -20,6 +23,7 @@ import type {
   DetectorSettings,
   HeatmapData,
   ChessRefinerKind,
+  RadonRefinerKind,
   Strategy,
 } from "../types/chess-corners";
 
@@ -74,6 +78,9 @@ export function defaultSettings(): DetectorSettings {
     threshold: chess.threshold,
     orientation: "ringFit",
     chessRefiner: mapChessRefiner(chess.strategy.chess.refiner.kind),
+    radonRefiner: "peakFit",
+    uncertainty: "propagated",
+    noiseSigma: null,
     nmsRadius: chess.detection.nmsRadius,
     minClusterSize: chess.detection.minClusterSize,
   };
@@ -95,6 +102,15 @@ function buildChessRefiner(kind: ChessRefinerKind): ChessRefiner {
   }
 }
 
+function buildRadonRefiner(kind: RadonRefinerKind): RadonRefiner {
+  return kind === "saddlePoint" ? RadonRefiner.withSaddlePoint(new SaddlePointConfig()) : RadonRefiner.withPeakFit();
+}
+
+/** The per-image noise σ (gray levels) the detector derives when none is supplied; `null` when it declines. */
+export function estimateNoise(rgba: Uint8Array, width: number, height: number): number | null {
+  return estimateNoiseSigmaRgba(rgba, width, height) ?? null;
+}
+
 function buildConfig(s: DetectorSettings): DetectorConfig {
   let cfg =
     s.strategy === "radon"
@@ -111,9 +127,12 @@ function buildConfig(s: DetectorSettings): DetectorConfig {
       ? OrientationMethod.DiskFit
       : OrientationMethod.RingFit,
   );
-  if (s.strategy !== "radon") {
-    cfg = cfg.withChessRefiner(buildChessRefiner(s.chessRefiner));
-  }
+  cfg =
+    s.strategy === "radon"
+      ? cfg.withRadonRefiner(buildRadonRefiner(s.radonRefiner))
+      : cfg.withChessRefiner(buildChessRefiner(s.chessRefiner));
+  cfg = cfg.withUncertainty(s.uncertainty === "off" ? Uncertainty.Off : Uncertainty.Propagated);
+  if (s.noiseSigma !== null) cfg = cfg.withNoiseSigma(s.noiseSigma);
   cfg = cfg.withDetection({
     nmsRadius: s.nmsRadius,
     minClusterSize: s.minClusterSize,

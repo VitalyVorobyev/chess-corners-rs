@@ -4,11 +4,11 @@
 import type { ReactNode } from "react";
 import { Badge, Button, Checkbox, DensityProvider, Disclosure, Field, InfoHint, NumberInput, SegmentedControl, Section, Select, Slider, Switch } from "@vitavision/ui";
 import { FileDrop } from "@vitavision/workbench";
-import { OVERLAY_COLORS, turboCss } from "./overlays";
+import { OVERLAY_COLORS, RAMP_STEPS, rampCss } from "./overlays";
 import type { CornerColoring, LayerId } from "./Viewer";
 import { formatSigma, type UncertaintySummary } from "../lib/uncertainty";
 import { defaultThreshold, type DetectResult } from "../lib/detector";
-import type { ChessRefinerKind, DetectorSettings, OrientationKind, Strategy } from "../types/chess-corners";
+import type { ChessRefinerKind, DetectorSettings, OrientationKind, RadonRefinerKind, Strategy, UncertaintyKind } from "../types/chess-corners";
 
 export const SAMPLES = [
   { label: "Small", url: "./samples/small.png" },
@@ -39,14 +39,18 @@ interface InspectorProps {
   exaggerationLog: number;
   onExaggerationLog: (v: number) => void;
   summary: UncertaintySummary;
+  /** Per-image noise σ the detector would estimate (gray levels); `null` when it declines or the stage is off. */
+  noiseEstimate: number | null;
 }
 
-const COVARIANCE_SOURCE = "Only the ChESS detector with the Saddle point refiner reports a position covariance.";
+const COVARIANCE_GAPS =
+  "A corner has no covariance when Uncertainty is Off, when the refiner is the ML refiner, when the image is upscaled, or when the noise estimate declines and no σ is supplied.";
 
 export function Inspector(p: InspectorProps) {
   const s = p.settings;
   const chess = s?.strategy === "chess";
-  const hasCovariance = p.summary.withCovariance > 0;
+  const propagated = s.uncertainty === "propagated";
+  const noiseDeclined = propagated && s.noiseSigma === null && p.noiseEstimate === null;
 
   return (
     <DensityProvider value="compact">
@@ -112,7 +116,19 @@ export function Inspector(p: InspectorProps) {
                     options={[
                       { value: "centerOfMass", label: "Center of mass" },
                       { value: "forstner", label: "Förstner" },
-                      { value: "saddlePoint", label: "Saddle point", note: "reports covariance" },
+                      { value: "saddlePoint", label: "Saddle point" },
+                    ]}
+                  />
+                </Field>
+              )}
+              {!chess && (
+                <Field label="Refiner">
+                  <Select
+                    value={s.radonRefiner}
+                    onValueChange={(v) => p.onSettings({ radonRefiner: v as RadonRefinerKind })}
+                    options={[
+                      { value: "peakFit", label: "Peak fit" },
+                      { value: "saddlePoint", label: "Saddle point" },
                     ]}
                   />
                 </Field>
@@ -179,22 +195,48 @@ export function Inspector(p: InspectorProps) {
               </div>
             </Section>
 
-            <Section
-              title="Position uncertainty"
-              actions={<InfoHint>{COVARIANCE_SOURCE}</InfoHint>}
-            >
-              {p.result && !hasCovariance && p.result.corners.length > 0 && (
-                <div className="flex flex-col items-start gap-1.5 text-xs text-fg-muted">
-                  <p>No corner has a covariance. {COVARIANCE_SOURCE}</p>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() =>
-                      p.onSettings({ strategy: "chess", chessRefiner: "saddlePoint", threshold: defaultThreshold("chess") })
-                    }
-                  >
-                    Use ChESS + Saddle point
-                  </Button>
+            <Section title="Position uncertainty" actions={<InfoHint>{COVARIANCE_GAPS}</InfoHint>}>
+              <Field label="Uncertainty">
+                <SegmentedControl
+                  aria-label="Uncertainty"
+                  value={s.uncertainty}
+                  onValueChange={(v) => p.onSettings({ uncertainty: v as UncertaintyKind })}
+                  options={[
+                    { value: "off", label: "Off" },
+                    { value: "propagated", label: "Propagated" },
+                  ]}
+                />
+              </Field>
+              {propagated && (
+                <Field
+                  label="Noise σ"
+                  annotation={
+                    <InfoHint>
+                      Pixel noise in gray levels. Empty: estimated from the image. The estimate is unreliable on demosaiced or JPEG input; enter σ if you know it.
+                    </InfoHint>
+                  }
+                >
+                  <NumberInput
+                    unit="gray"
+                    precision={2}
+                    min={0.01}
+                    placeholder={p.noiseEstimate === null ? "estimate declined" : `${p.noiseEstimate.toFixed(2)} (estimated)`}
+                    value={s.noiseSigma}
+                    onValueChange={(v) => p.onSettings({ noiseSigma: v })}
+                    onClear={() => p.onSettings({ noiseSigma: null })}
+                  />
+                </Field>
+              )}
+              {propagated && (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-muted" aria-live="polite">
+                  {s.noiseSigma !== null ? (
+                    <Badge>supplied σ {s.noiseSigma.toFixed(2)}</Badge>
+                  ) : p.noiseEstimate !== null ? (
+                    <Badge>estimated σ {p.noiseEstimate.toFixed(2)}</Badge>
+                  ) : (
+                    <Badge tone="warning">noise estimate declined</Badge>
+                  )}
+                  {noiseDeclined && <span>Enter σ to get covariances.</span>}
                 </div>
               )}
               <Field
@@ -212,7 +254,7 @@ export function Inspector(p: InspectorProps) {
                   onValueChange={p.onExaggerationLog}
                 />
               </Field>
-              {hasCovariance && p.summary.sigmaRange && <SigmaLegend range={p.summary.sigmaRange} />}
+              {p.summary.sigmaRange && <SigmaLegend range={p.summary.sigmaRange} />}
               <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-xs">
                 <Row label="with covariance" value={p.summary.withCovariance} />
                 <Row label="without covariance" value={p.summary.withoutCovariance} marker />
@@ -259,7 +301,7 @@ function Row({ label, value, marker }: { label: string; value: ReactNode; marker
 
 /** Colour ramp for predicted σ, in px, matching the corner colours. */
 function SigmaLegend({ range: [lo, hi] }: { range: [number, number] }) {
-  const stops = Array.from({ length: 9 }, (_, i) => turboCss(i / 8)).join(", ");
+  const stops = Array.from({ length: RAMP_STEPS }, (_, i) => rampCss(i / (RAMP_STEPS - 1))).join(", ");
   return (
     <figure className="flex flex-col gap-1" aria-label="Predicted σ colour scale">
       <div className="h-2.5 rounded-[2px] border border-line" style={{ background: `linear-gradient(to right, ${stops})` }} />
