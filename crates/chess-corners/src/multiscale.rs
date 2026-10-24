@@ -271,6 +271,10 @@ trait TraversalStep {
     /// (origin at the ROI's top-left); [`traverse`] shifts them back
     /// into base-image coordinates.
     fn refine_roi(&mut self, base: ImageView<'_>, roi: (i32, i32, i32, i32)) -> Vec<Corner>;
+
+    /// Apply the frame-level acceptance test to the corners gathered from
+    /// every ROI of one frame (see [`DenseDetector::retain_frame_peaks`]).
+    fn retain_frame_peaks(&self, corners: &mut Vec<Corner>);
 }
 
 /// Post-detection shaping shared by every traversal branch: the ROI
@@ -382,6 +386,10 @@ fn traverse<S: TraversalStep>(
         refined.extend(patch);
     }
 
+    // Each ROI judged its peaks against itself; apply the frame-level
+    // acceptance test to the union.
+    step.retain_frame_peaks(&mut refined);
+
     #[cfg(feature = "tracing")]
     drop(refine_span);
 
@@ -466,6 +474,10 @@ impl<D: DenseDetector> TraversalStep for DetectorStep<'_, D> {
             &resp,
             self.refiner.as_mut(),
         )
+    }
+
+    fn retain_frame_peaks(&self, corners: &mut Vec<Corner>) {
+        self.detector.retain_frame_peaks(corners, self.params);
     }
 }
 
@@ -914,6 +926,10 @@ where
             ImageView::with_origin(base.width(), base.height(), base.data(), [x0, y0])
                 .expect("base image dimensions must match buffer length");
         (self.detect_fn)(resp, self.params, Some(refine_view))
+    }
+
+    fn retain_frame_peaks(&self, corners: &mut Vec<Corner>) {
+        ChessDetector.retain_frame_peaks(corners, self.params);
     }
 }
 

@@ -52,7 +52,7 @@ re-allocate.
 | `DetectorConfig::chess()`              | ChESS    | Single-scale    |
 | `DetectorConfig::chess_multiscale()`   | ChESS    | 3-level pyramid |
 | `DetectorConfig::radon()`              | Radon    | Single-scale    |
-| `DetectorConfig::radon_multiscale()`   | Radon    | 3-level pyramid |
+| `DetectorConfig::radon_multiscale()`   | Radon    | 2-level pyramid |
 
 Use `chess()` and `chess_multiscale()` for single-scale and multiscale
 ChESS detection respectively.

@@ -87,7 +87,7 @@ Presets:
 | `DetectorConfig::chess()` | ChESS | Single-scale |
 | `DetectorConfig::chess_multiscale()` | ChESS | 3-level pyramid |
 | `DetectorConfig::radon()` | Radon | Single-scale |
-| `DetectorConfig::radon_multiscale()` | Radon | 3-level pyramid |
+| `DetectorConfig::radon_multiscale()` | Radon | 2-level pyramid |
 
 Switching detector families is a config change:
 
@@ -160,10 +160,10 @@ false positives on this image. The median over 50 runs after a
 
 | Config | Corners | Median |
 |--------|--------:|-------:|
-| `DetectorConfig::chess()` | 77 | 4.5 ms |
+| `DetectorConfig::chess()` | 77 | 4.3 ms |
 | `DetectorConfig::chess_multiscale()` | 77 | 0.8 ms |
-| `DetectorConfig::radon()` | 77 | 28 ms |
-| `DetectorConfig::radon_multiscale()` | 77 | 3.0 ms |
+| `DetectorConfig::radon()` | 77 | 32 ms |
+| `DetectorConfig::radon_multiscale()` | 77 | 9.9 ms |
 
 This table is a narrow snapshot, not a cross-dataset ranking. It is
 useful for understanding the cost of each preset on one clean test

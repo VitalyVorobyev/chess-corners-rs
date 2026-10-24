@@ -56,13 +56,10 @@ class Case:
 #   they spike sharply at true X-junctions (~600+ here) and stay near
 #   single-digit at background noise. A threshold of 100.0 (absolute floor)
 #   splits cleanly on both single-scale and multiscale.
-# - Radon's heatmap is broader because rays integrate through the corner.
-#   The multiscale pipeline's cross-level merge shifts the operating point
-#   relative to single-scale, so each variant needs its own relative value
-#   to land at precision = recall = 1.
+# - Radon reads the threshold relative to the frame's strongest response;
+#   the default 0.28 splits cleanly on both single-scale and multiscale.
 CHESS_ABS_THRESHOLD = 100.0
-RADON_SINGLE_RELATIVE = 0.28
-RADON_MULTI_RELATIVE = 0.34
+RADON_RELATIVE = 0.28
 
 
 def _abs(factory: Callable[[], cc.DetectorConfig], v: float) -> Callable[[], cc.DetectorConfig]:
@@ -84,8 +81,8 @@ def _rel(factory: Callable[[], cc.DetectorConfig], v: float) -> Callable[[], cc.
 CASES = [
     Case("ChESS — single-scale",     _abs(cc.DetectorConfig.chess,            CHESS_ABS_THRESHOLD)),
     Case("ChESS — 3-level pyramid",  _abs(cc.DetectorConfig.chess_multiscale, CHESS_ABS_THRESHOLD)),
-    Case("Radon — single-scale",     _rel(cc.DetectorConfig.radon,            RADON_SINGLE_RELATIVE)),
-    Case("Radon — 3-level pyramid",  _rel(cc.DetectorConfig.radon_multiscale, RADON_MULTI_RELATIVE)),
+    Case("Radon — single-scale",     _rel(cc.DetectorConfig.radon,            RADON_RELATIVE)),
+    Case("Radon — 2-level pyramid",  _rel(cc.DetectorConfig.radon_multiscale, RADON_RELATIVE)),
 ]
 
 
@@ -108,7 +105,7 @@ def measure(case: Case, img: np.ndarray) -> tuple[int, float, float]:
         detector.detect(img)
     samples = np.array([time_one(detector, img) for _ in range(RUNS)])
     corners = detector.detect(img)
-    return int(corners.shape[0]), float(np.median(samples)), float(np.percentile(samples, 95))
+    return len(corners), float(np.median(samples)), float(np.percentile(samples, 95))
 
 
 def main() -> None:

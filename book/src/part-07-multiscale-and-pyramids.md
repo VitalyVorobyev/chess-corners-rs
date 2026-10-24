@@ -473,7 +473,7 @@ Some example presets:
 
 - **Coarse-to-fine Radon** (blurry / low-contrast large frames):
 
-  - `DetectorConfig::radon_multiscale()` — same pyramid shape,
+  - `DetectorConfig::radon_multiscale()` — a 2-level pyramid with the
     Radon response kernel.
   - See [Part IV §4.7](part-04-radon-detector.md#47-coarse-to-fine-radon).
 

@@ -179,7 +179,7 @@ struct Config {
     static Config chess_multiscale() noexcept { return from_c(cc_config_chess_multiscale()); }
     /// Single-scale Radon preset.
     static Config radon() noexcept { return from_c(cc_config_radon()); }
-    /// Three-level coarse-to-fine Radon preset.
+    /// Two-level coarse-to-fine Radon preset.
     static Config radon_multiscale() noexcept { return from_c(cc_config_radon_multiscale()); }
 
 private:

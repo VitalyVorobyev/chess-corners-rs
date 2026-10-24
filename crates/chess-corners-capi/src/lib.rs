@@ -205,7 +205,8 @@ pub struct cc_config {
     /// One of the `CC_ORIENTATION_*` constants.
     pub orientation_method: cc_orientation_method_t,
     /// `0` runs single-scale detection; any non-zero value enables the
-    /// default three-level coarse-to-fine pyramid.
+    /// strategy's preset coarse-to-fine pyramid (three levels for ChESS,
+    /// two for Radon).
     pub multiscale: u32,
     /// Cross-level duplicate-suppression radius in base-image pixels.
     /// After coarse-level seeds are refined into the base image, refined
@@ -296,7 +297,7 @@ pub extern "C" fn cc_config_radon() -> cc_config {
     config_preset(DetectorConfig::radon)
 }
 
-/// Three-level coarse-to-fine Radon preset.
+/// Two-level coarse-to-fine Radon preset.
 #[no_mangle]
 pub extern "C" fn cc_config_radon_multiscale() -> cc_config {
     config_preset(DetectorConfig::radon_multiscale)

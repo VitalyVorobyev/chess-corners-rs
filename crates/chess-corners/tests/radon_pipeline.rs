@@ -177,3 +177,91 @@ fn radon_mode_corners_are_subpixel_accurate() {
         snap_rate * 100.0,
     );
 }
+
+/// Every coarse-to-fine corner is a single-scale corner: same position,
+/// same response.
+fn assert_multiscale_subset(
+    label: &str,
+    single: &[chess_corners::CornerDescriptor],
+    multi: &[chess_corners::CornerDescriptor],
+) {
+    for m in multi {
+        assert!(
+            single
+                .iter()
+                .any(|s| (s.x - m.x).hypot(s.y - m.y) < 1e-3 && s.response == m.response),
+            "{label}: multiscale corner ({}, {}) response {} is not a single-scale corner",
+            m.x,
+            m.y,
+            m.response
+        );
+    }
+}
+
+/// The coarse-to-fine Radon preset applies the relative threshold against
+/// the frame, not against each refinement window, and seeds every board
+/// corner: on the test images it returns single-scale corners only, at
+/// the same positions, and on `mid` and `large` all of them. On `small` (a
+/// ChArUco board) the single-scale pass also reports X-junctions between
+/// marker bits, which the half-resolution level does not resolve.
+#[test]
+fn radon_multiscale_returns_single_scale_corners_on_test_images() {
+    for (name, min_fraction) in [("small", 0.8), ("mid", 1.0), ("large", 1.0)] {
+        let path = format!("{}/../../testimages/{name}.png", env!("CARGO_MANIFEST_DIR"));
+        let img = image::open(&path).expect("test image").to_luma8();
+        let single = Detector::new(DetectorConfig::radon())
+            .unwrap()
+            .detect(&img)
+            .unwrap();
+        let multi = Detector::new(DetectorConfig::radon_multiscale())
+            .unwrap()
+            .detect(&img)
+            .unwrap();
+        eprintln!(
+            "{name}: single-scale {} corners, multiscale {}",
+            single.len(),
+            multi.len()
+        );
+        assert!(!single.is_empty());
+        assert_multiscale_subset(name, &single, &multi);
+        assert!(
+            multi.len() as f32 >= min_fraction * single.len() as f32,
+            "{name}: multiscale {} of {} single-scale corners",
+            multi.len(),
+            single.len()
+        );
+    }
+}
+
+/// A board whose contrast fades across the frame: the faint corners fall
+/// below the relative threshold of the full frame but would top every
+/// refinement window that holds no bright corner. Multiscale and
+/// single-scale Radon agree corner for corner.
+#[test]
+fn radon_multiscale_matches_single_scale_on_fading_board() {
+    const SIZE: usize = 480;
+    const CELL: usize = 24;
+    let offset = (11.3, 13.7);
+    let mut img = aa_chessboard(SIZE, CELL, offset, 40, 220);
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            // Contrast falls linearly from 1 at the left edge to 0.15 at
+            // the right edge, about a mid-gray of 130.
+            let gain = 1.0 - 0.85 * x as f32 / (SIZE - 1) as f32;
+            let v = &mut img[y * SIZE + x];
+            *v = (130.0 + gain * (f32::from(*v) - 130.0)).round() as u8;
+        }
+    }
+    let single = detect_u8(&img, SIZE, SIZE, &DetectorConfig::radon());
+    let multi = detect_u8(&img, SIZE, SIZE, &DetectorConfig::radon_multiscale());
+    let expected = expected_corner_count(SIZE, CELL, offset, 20);
+    eprintln!(
+        "fading board: {expected} corners, single-scale {}, multiscale {}",
+        single.len(),
+        multi.len()
+    );
+    // The relative threshold keeps only the high-contrast part of the board.
+    assert!(single.len() > expected / 4 && single.len() < expected);
+    assert_multiscale_subset("fading board", &single, &multi);
+    assert_eq!(multi.len(), single.len());
+}

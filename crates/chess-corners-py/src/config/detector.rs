@@ -97,7 +97,7 @@ impl DetectorConfig {
         Self::from_rs(py, RsDetectorConfig::radon())
     }
 
-    /// Coarse-to-fine Radon preset.
+    /// Two-level coarse-to-fine Radon preset.
     #[classmethod]
     fn radon_multiscale(_cls: &Bound<'_, PyType>, py: Python<'_>) -> PyResult<Self> {
         Self::from_rs(py, RsDetectorConfig::radon_multiscale())

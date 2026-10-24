@@ -2,10 +2,10 @@
 //!
 //! Applies threshold / NMS / min-cluster rejection on the
 //! working-resolution response from
-//! [`super::response::radon_response_u8`], then a 3-point peak fit on
-//! the blurred response to get subpixel offsets. Output coordinates
-//! are divided by `image_upsample` so they sit in the **input pixel
-//! frame**.
+//! [`super::response::radon_response_u8`], keeps the peaks where the
+//! image is a saddle, then a 3-point peak fit on the blurred response
+//! to get subpixel offsets. Output coordinates are divided by
+//! `image_upsample` so they sit in the **input pixel frame**.
 
 use super::primitives::fit_peak_frac;
 use super::response::{RadonDetectorParams, RadonResponseView};
@@ -14,7 +14,18 @@ use crate::detect::{count_positive_neighbors, is_local_max, Corner};
 use rayon::prelude::*;
 
 /// Stage 1 of Radon detection: threshold + NMS + cluster-filter +
-/// 3-point Gaussian peak-fit on the response map.
+/// saddle test + 3-point Gaussian peak-fit on the response map.
+///
+/// The saddle test drops peaks where the image around the peak is not
+/// a chessboard X-junction. The `(max − min)²` ray response also peaks,
+/// at about a third of a corner's response, beside straight edges that
+/// run along a ray direction (0°, 45°, 90°, 135°) — on boards rotated
+/// near 45° in particular. Around an X-junction the image is a saddle:
+/// its curvature has opposite signs along the two diagonals between the
+/// grid axes. Beside an edge it bends across the edge only. The test
+/// fits a quadratic to the working image over the ray support and keeps
+/// the peak when the smaller principal curvature is at least
+/// `MIN_SADDLE_RATIO` of the larger one and of the opposite sign.
 ///
 /// The 3-point Gaussian peak-fit is a **response-map** subpixel
 /// operation (not image-domain refinement), so it stays inside this
@@ -44,7 +55,7 @@ pub fn detect_peaks_from_radon(
         return Vec::new();
     }
 
-    let thr = (params.threshold_rel * max_r).max(0.0);
+    let thr = relative_floor(params.threshold_rel, max_r);
 
     let nms_r = params.nms_radius as i32;
     let ray_r = params.ray_radius_clamped() as i32;
@@ -58,6 +69,9 @@ pub fn detect_peaks_from_radon(
     let inv_up = 1.0 / (params.image_upsample_clamped() as f32);
     let min_cluster = params.min_cluster_size;
     let peak_fit = params.peak_fit;
+    // The saddle fit covers the ray support, which `border` keeps inside
+    // the map.
+    let saddle = SaddleTest::new(ray_r as usize);
 
     #[inline(always)]
     fn at(data: &[f32], w: usize, x: usize, y: usize) -> f32 {
@@ -74,6 +88,9 @@ pub fn detect_peaks_from_radon(
                 continue;
             }
             if count_positive_neighbors(data, w, h, x, y, nms_r) < min_cluster {
+                continue;
+            }
+            if !saddle.accepts(resp.image, w, x, y) {
                 continue;
             }
 
@@ -115,6 +132,125 @@ pub fn detect_peaks_from_radon(
             process_row(y, &mut out);
         }
         out
+    }
+}
+
+/// Acceptance floor of a Radon peak: `threshold_rel` of the frame's
+/// strongest response `max_r`, never negative. A peak is kept when its
+/// response exceeds the floor.
+#[inline]
+fn relative_floor(threshold_rel: f32, max_r: f32) -> f32 {
+    (threshold_rel * max_r).max(0.0)
+}
+
+/// Keep the corners whose strength exceeds `threshold_rel` of the
+/// strongest one: the frame threshold of [`detect_peaks_from_radon`],
+/// applied to peaks gathered from several response patches of one frame.
+pub(crate) fn retain_above_relative_threshold(corners: &mut Vec<Corner>, threshold_rel: f32) {
+    let max_r = corners
+        .iter()
+        .map(|c| c.strength)
+        .fold(f32::NEG_INFINITY, f32::max);
+    if !max_r.is_finite() {
+        return;
+    }
+    let thr = relative_floor(threshold_rel, max_r);
+    corners.retain(|c| c.strength > thr);
+}
+
+/// Smallest ratio of the two principal curvatures (smaller / larger
+/// magnitude, opposite signs) for which [`SaddleTest`] accepts a peak.
+///
+/// A saddle `(n₁·p)(n₂·p)` whose zero lines are `θ` apart has ratio
+/// `(1 − |cos θ|) / (1 + |cos θ|)`: 1 for a square board, 0.33 at 60°.
+const MIN_SADDLE_RATIO: f32 = 0.2;
+
+/// Smallest difference of the two principal curvatures, times the
+/// squared window radius, for which [`SaddleTest`] takes the curvature
+/// as resolved: one gray level. Below it the ratio is quantization noise
+/// (a straight edge through the window centre fits no curvature at all).
+const MIN_SADDLE_SPREAD: f32 = 1.0;
+
+/// Saddle test on the working image: fits `c + a·x² + b·xy + c'·y²`
+/// (plus linear terms, which drop out) by least squares over the disk of
+/// radius `k` around a pixel and accepts it when the fitted Hessian
+/// `[2a b; b 2c']` has eigenvalues of opposite signs whose magnitudes
+/// are within [`MIN_SADDLE_RATIO`] of each other.
+///
+/// A disk, not a square, keeps the fit rotation invariant: on a square
+/// window a thin line along a diagonal projects onto the `xy` term alone
+/// and would pass as a saddle.
+struct SaddleTest {
+    k: usize,
+    /// Mean `r²` over the disk.
+    mean_r2: f32,
+    /// `1 / Σ (r² − mean_r2)²`, `1 / Σ (x² − y²)²`, `1 / Σ x²y²`.
+    inv_norms: [f32; 3],
+}
+
+impl SaddleTest {
+    fn new(k: usize) -> Self {
+        let disk = || Self::offsets(k).map(|(x, y)| (x as f32, y as f32));
+        let n = disk().count() as f32;
+        let mean_r2 = disk().map(|(x, y)| x * x + y * y).sum::<f32>() / n;
+        let mut norms = [0.0f32; 3];
+        for (x, y) in disk() {
+            let u = x * x + y * y - mean_r2;
+            let v = x * x - y * y;
+            norms[0] += u * u;
+            norms[1] += v * v;
+            norms[2] += x * x * y * y;
+        }
+        Self {
+            k,
+            mean_r2,
+            inv_norms: norms.map(|v| 1.0 / v),
+        }
+    }
+
+    /// Offsets `(dx, dy)` of the disk `dx² + dy² ≤ k²`, widened to the
+    /// 3×3 block at `k = 1`, whose disk has no diagonal pixel to determine
+    /// the `xy` term.
+    fn offsets(k: usize) -> impl Iterator<Item = (isize, isize)> {
+        let ki = k as isize;
+        let r2 = (ki * ki).max(2);
+        (-ki..=ki).flat_map(move |dy| {
+            (-ki..=ki)
+                .filter(move |dx| dx * dx + dy * dy <= r2)
+                .map(move |dx| (dx, dy))
+        })
+    }
+
+    /// Whether `image` (row stride `w`) is a saddle around `(x, y)`; the
+    /// disk must lie inside the image.
+    fn accepts(&self, image: &[u8], w: usize, x: usize, y: usize) -> bool {
+        let k = self.k;
+        // On the 4-fold symmetric disk, `1`, `r² − mean_r2`, `x² − y²`
+        // and `xy` are mutually orthogonal (and orthogonal to `x`, `y`),
+        // so each coefficient is one projection.
+        let (mut su, mut sv, mut sxy) = (0.0f32, 0.0f32, 0.0f32);
+        for (ox, oy) in Self::offsets(k) {
+            let px = x.wrapping_add_signed(ox);
+            let py = y.wrapping_add_signed(oy);
+            let i = f32::from(image[py * w + px]);
+            let (dx, dy) = (ox as f32, oy as f32);
+            su += (dx * dx + dy * dy - self.mean_r2) * i;
+            sv += (dx * dx - dy * dy) * i;
+            sxy += dx * dy * i;
+        }
+        // I ≈ p·(x² + y²) + q·(x² − y²) + b·xy: Hxx = 2(p + q),
+        // Hyy = 2(p − q), Hxy = b.
+        let p = su * self.inv_norms[0];
+        let q = sv * self.inv_norms[1];
+        let b = sxy * self.inv_norms[2];
+        // Eigenvalues (tr ± spread)/2 with tr = 4p and
+        // spread = √((Hxx − Hyy)² + 4Hxy²). Opposite signs with
+        // min(|λ|)/max(|λ|) ≥ ρ  ⇔  |tr| ≤ spread·(1 − ρ)/(1 + ρ).
+        let tr = 4.0 * p;
+        let spread = (16.0 * q * q + 4.0 * b * b).sqrt();
+        let kk = (k * k) as f32;
+        spread * kk >= MIN_SADDLE_SPREAD
+            && tr.abs() * (1.0 + MIN_SADDLE_RATIO) <= spread * (1.0 - MIN_SADDLE_RATIO)
     }
 }
 
@@ -168,6 +304,155 @@ mod tests {
             expected_y,
             corners.len(),
         );
+    }
+
+    /// `size × size` image of the half-plane `n·(p − c) > 0` (bright) with
+    /// unit normal `n` at angle `deg`, each pixel the mean of 8×8
+    /// sub-samples.
+    fn half_plane(size: usize, deg: f32, c: (f32, f32)) -> Vec<u8> {
+        let (s, co) = deg.to_radians().sin_cos();
+        let mut img = vec![0u8; size * size];
+        for y in 0..size {
+            for x in 0..size {
+                let mut acc = 0.0f32;
+                for sy in 0..8 {
+                    for sx in 0..8 {
+                        let px = x as f32 + (sx as f32 + 0.5) / 8.0 - 0.5 - c.0;
+                        let py = y as f32 + (sy as f32 + 0.5) / 8.0 - 0.5 - c.1;
+                        acc += if co * px + s * py > 0.0 { 200.0 } else { 40.0 };
+                    }
+                }
+                img[y * size + x] = (acc / 64.0).round() as u8;
+            }
+        }
+        img
+    }
+
+    /// Whether the saddle test accepts the centre of `img` (`size × size`,
+    /// odd) on the working image the detector would see.
+    fn centre_is_saddle(img: &[u8], size: usize) -> bool {
+        let params = RadonDetectorParams::default();
+        let mut buffers = RadonBuffers::new();
+        let resp = radon_response_u8(img, size, size, &params, &mut buffers);
+        let saddle = SaddleTest::new(params.ray_radius_clamped() as usize);
+        let c = size - 1; // working-resolution centre at upsample 2
+        saddle.accepts(resp.image, resp.width(), c, c)
+    }
+
+    /// The saddle test accepts an X-junction at any rotation and at a 60°
+    /// shear, and rejects a straight edge beside the centre and a thin
+    /// line through it, along and between the ray directions.
+    #[test]
+    fn saddle_test_separates_junctions_from_edges() {
+        use chess_corners_testutil::{optical_chessboard, Lattice};
+        const SIZE: usize = 21;
+        let c = (SIZE / 2) as f32;
+        for deg in [0.0f32, 10.0, 22.5, 30.0, 45.0] {
+            for axes in [90.0f32, 60.0] {
+                let lattice = Lattice::new(12.0, (c, c))
+                    .rotated(deg.to_radians())
+                    .with_axis_angle(axes.to_radians());
+                let img = optical_chessboard(SIZE, &lattice, 0.7, 40, 200);
+                assert!(
+                    centre_is_saddle(&img, SIZE),
+                    "X-junction at {deg}°, axes {axes}°"
+                );
+            }
+        }
+        for deg in [0.0f32, 22.5, 45.0, 67.5, 90.0, 135.0] {
+            let (s, co) = deg.to_radians().sin_cos();
+            for offset in [0.25f32, 0.5, 1.0, 1.5, 2.0] {
+                let img = half_plane(SIZE, deg, (c - offset * co, c - offset * s));
+                assert!(
+                    !centre_is_saddle(&img, SIZE),
+                    "edge with normal {deg}° at {offset} px"
+                );
+            }
+        }
+        // A thin dark line through the centre along each ray direction.
+        for (dx, dy) in [(1i32, 0i32), (0, 1), (1, 1), (1, -1)] {
+            let mut img = vec![180u8; SIZE * SIZE];
+            for t in -(SIZE as i32)..SIZE as i32 {
+                let (x, y) = (c as i32 + t * dx, c as i32 + t * dy);
+                if (0..SIZE as i32).contains(&x) && (0..SIZE as i32).contains(&y) {
+                    img[y as usize * SIZE + x as usize] = 60;
+                }
+            }
+            assert!(!centre_is_saddle(&img, SIZE), "line along ({dx}, {dy})");
+        }
+    }
+
+    /// Every ray radius gives a determined fit, down to `ray_radius = 1`.
+    #[test]
+    fn saddle_fit_is_determined_at_every_radius() {
+        for k in 1..=8 {
+            let t = SaddleTest::new(k);
+            assert!(
+                t.inv_norms.iter().all(|v| v.is_finite() && *v > 0.0),
+                "k = {k}"
+            );
+        }
+    }
+
+    /// A sharp board rotated 45°: the edges between the corners run along
+    /// the diagonal rays, where the ray response forms ridges at about a
+    /// third of the corner response. Every detected peak is a corner, and
+    /// every interior corner is detected.
+    #[test]
+    fn no_edge_peaks_on_sharp_45_degree_board() {
+        use chess_corners_testutil::{optical_chessboard, Lattice};
+        const SIZE: usize = 120;
+        let lattice = Lattice::new(12.0, (60.3, 60.6)).rotated(45f32.to_radians());
+        let img = optical_chessboard(SIZE, &lattice, 0.5, 40, 200);
+        let params = RadonDetectorParams::default();
+        let mut buffers = RadonBuffers::new();
+        let resp = radon_response_u8(&img, SIZE, SIZE, &params, &mut buffers);
+        let corners = detect_peaks_from_radon(&resp, &params);
+        assert!(!corners.is_empty());
+        for c in &corners {
+            let (x, y) = lattice.nearest_corner(c.x, c.y);
+            let err = (x - c.x).hypot(y - c.y);
+            assert!(
+                err < 0.5,
+                "peak ({}, {}) is {err} px from a corner",
+                c.x,
+                c.y
+            );
+        }
+        // Interior corners: lattice points at least 8 px inside the frame.
+        let mut expected = 0;
+        for k in -10i32..=10 {
+            for m in -10i32..=10 {
+                let (s, co) = 45f32.to_radians().sin_cos();
+                let x = 60.3 + 12.0 * (k as f32 * co - m as f32 * s);
+                let y = 60.6 + 12.0 * (k as f32 * s + m as f32 * co);
+                if (8.0..SIZE as f32 - 9.0).contains(&x) && (8.0..SIZE as f32 - 9.0).contains(&y) {
+                    expected += 1;
+                    assert!(
+                        corners.iter().any(|c| (c.x - x).hypot(c.y - y) < 0.5),
+                        "corner ({x}, {y}) missed"
+                    );
+                }
+            }
+        }
+        assert!(expected > 40, "{expected}");
+    }
+
+    /// The frame threshold over gathered peaks keeps exactly the peaks
+    /// above `threshold_rel` of the strongest one.
+    #[test]
+    fn frame_threshold_is_relative_to_the_strongest_peak() {
+        let mut corners: Vec<Corner> = [100.0f32, 29.0, 31.0, 5.0, 60.0]
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| Corner::new(i as f32, 0.0, s))
+            .collect();
+        retain_above_relative_threshold(&mut corners, 0.3);
+        let kept: Vec<f32> = corners.iter().map(|c| c.strength).collect();
+        assert_eq!(kept, vec![100.0, 31.0, 60.0]);
+        let mut none: Vec<Corner> = Vec::new();
+        retain_above_relative_threshold(&mut none, 0.3);
+        assert!(none.is_empty());
     }
 
     #[test]

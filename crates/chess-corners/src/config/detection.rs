@@ -132,7 +132,9 @@ pub struct DetectorConfig {
     /// well-formed corners.
     /// Radon reads it as a fraction in `[0.0, 1.0]` of the per-frame
     /// maximum response, because Radon's `(max − min)²` score scales
-    /// with image size and has no portable absolute scale.
+    /// with image size and has no portable absolute scale. On the
+    /// coarse-to-fine path the maximum is that of the strongest corner
+    /// found across the refinement windows.
     #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub threshold: f32,
     /// Shared non-maximum-suppression and peak-clustering thresholds.
@@ -232,12 +234,20 @@ impl DetectorConfig {
         }
     }
 
-    /// Coarse-to-fine Radon preset. Measure against [`Self::radon`] on
-    /// your target frame sizes; this preset trades more configuration
-    /// machinery for less full-resolution detector work on large frames.
+    /// Two-level coarse-to-fine Radon preset. Measure against
+    /// [`Self::radon`] on your target frame sizes; this preset trades more
+    /// configuration machinery for less full-resolution detector work on
+    /// large frames.
+    ///
+    /// It seeds at half resolution, one level less than
+    /// [`Self::chess_multiscale`]: a Radon peak on the coarse level can sit
+    /// up to its ray length off the corner, and that ray covers twice as
+    /// many input pixels per extra level. At quarter resolution the
+    /// offset outgrows the refinement window, and boards whose cells hold
+    /// fine detail (ChArUco markers) no longer show their corners at all.
     pub fn radon_multiscale() -> Self {
         Self {
-            multiscale: MultiscaleConfig::pyramid_default(),
+            multiscale: MultiscaleConfig::pyramid(2, 128, 3),
             ..Self::radon()
         }
     }

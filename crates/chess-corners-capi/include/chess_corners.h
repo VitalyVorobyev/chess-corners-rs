@@ -127,7 +127,8 @@ typedef struct cc_config {
   cc_orientation_method_t orientation_method;
   /**
    * `0` runs single-scale detection; any non-zero value enables the
-   * default three-level coarse-to-fine pyramid.
+   * strategy's preset coarse-to-fine pyramid (three levels for ChESS,
+   * two for Radon).
    */
   uint32_t multiscale;
   /**
@@ -376,7 +377,7 @@ struct cc_config cc_config_chess_multiscale(void);
 struct cc_config cc_config_radon(void);
 
 /**
- * Three-level coarse-to-fine Radon preset.
+ * Two-level coarse-to-fine Radon preset.
  */
 struct cc_config cc_config_radon_multiscale(void);
 

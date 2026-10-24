@@ -134,14 +134,14 @@ fn radon_multiscale_preset_carries_pyramid_params() {
     else {
         panic!("radon_multiscale preset must carry Pyramid params");
     };
-    assert_eq!(levels, 3);
+    assert_eq!(levels, 2);
     assert_eq!(min_size, 128);
     assert_eq!(refinement_radius, 3);
 
     let cf = cfg
         .coarse_to_fine_params()
         .expect("radon_multiscale config must produce CoarseToFineParams");
-    assert_eq!(cf.pyramid.num_levels, 3);
+    assert_eq!(cf.pyramid.num_levels, 2);
     assert_eq!(cf.pyramid.min_size, 128);
     assert_eq!(cf.refinement_radius, 3);
     assert_eq!(cf.merge_radius, 3.0);
