@@ -73,12 +73,20 @@ Two sources, each with a per-corner observable:
    Where \(G\) is far from 0 the bias can be removed rather than reported;
    where it approaches 0 (Förstner at blur ≥ 1.5) the localizer carries no
    information about the offset and the term says so.
-2. **Asymmetry of the corner** (illumination gradient, decentred PSF), for
-   every localizer. At the estimate, the patch's antisymmetric part is
-   fitted with two components of different spatial form: a mislocation
-   \(\delta\cdot\nabla S\) and an illumination ramp \((g\cdot d)\,(S - m)\),
-   where \(S\) is the symmetric part. \(\delta\) is a per-corner bias
-   estimate; its noise covariance follows from the same Jacobian machinery.
+2. **Asymmetry of the corner** (illumination gradient, decentred PSF), at
+   the converged SaddlePoint estimate. On a 9×9 window, the patch's
+   antisymmetric part is fitted with a mislocation \(\delta\cdot\nabla S\)
+   and a multiplicative illumination ramp \((g\cdot d)\,S\), where \(S\)
+   is the symmetric part; \(\beta = G^{-1}\delta\) with the fit's gain
+   \(G\) is a per-corner bias estimate with a known noise map, and
+   \(\Sigma \mathrel{+}= (\beta\beta^\top - \sigma_n^2 L_\beta L_\beta^\top)_+\).
+   Prototype and evidence: [`reference/asymmetry-term.md`](../reference/asymmetry-term.md)
+   (`UQ-26`). It calibrates shading, ramps and vignetting on synthetic
+   boards (σ̂₀² 0.94–1.43 from 1.48–21), leaves symmetric conditions about
+   20% conservative, covers asymmetric PSFs only partly, and costs about
+   3× the SaddlePoint refinement. Using β as a correction was rejected: it
+   raises error on blur, coma and perspective, and on three of four real
+   sets. A multi-radius spread was rejected: the radii share the bias.
 
 Which of these ship as correction versus as covariance, and in which tier,
 is decided by the `UQ-26` gate (§8).
@@ -137,11 +145,13 @@ The per-corner output stays one total `position_covariance`.
 
 ## 8. Decision gates
 
-- **UQ-26 (asymmetry):** ships if, on shading / ramp / vignetting /
-  decentred-PSF conditions, σ̂₀² moves into 0.7–1.5 (from 1.5–22) without
-  pushing symmetric conditions below 0.7, and on real data weighting by Σ
-  is not worse than uniform on the held-out residual. Correction ships
-  only if it lowers held-out error on real data.
+- **UQ-26 (asymmetry):** synthetic part passed (§4.2); correction and
+  multi-radius spread rejected. On the real sets the board and model error
+  (0.12–0.31 px per axis) hides any localization term: weighting by Σ with
+  that error added as \(s^2 I\) is neutral within 0.0003 px for every Σ.
+  The tier ships (`UQ-27`) only if the residual decomposition of `UQ-30`,
+  which removes the field and board components, shows the asymmetry term
+  tracking the per-corner remainder better than `Propagated`.
 - **Radon default localizer (`UQ-22`):** decided on the real sets with
   Radon + SaddlePoint included.
 
