@@ -25,7 +25,7 @@ use chess_corners_core::{ChessBuffers, ChessDetector, CornerDescriptor, DenseDet
 use chess_corners_core::{ChessParams, ResponseMap};
 use chess_corners_core::{
     CornerRefiner, ImageView, OrientationMethod, RadonBuffers, RadonDetector, Refiner, RefinerKind,
-    Roi,
+    Roi, Uncertainty,
 };
 
 /// Bridge from `chess_corners_core::ImageView` to `box_image_pyramid::ImageView`.
@@ -89,15 +89,22 @@ fn refiner_radius(refiner: Option<&Refiner>) -> i32 {
     refiner.map_or(0, |r| r.radius())
 }
 
-/// Refine `peaks` on `image` with `refiner`, or return them unchanged
-/// when no image refiner is configured.
+/// Localize `peaks` on `image`: attach the detector's own peak-fit
+/// covariance when `tier` reports one, then refine with `refiner` (which
+/// carries the same tier), or keep the peaks when no image refiner is
+/// configured.
 fn refine_peaks<D: DenseDetector>(
     detector: &D,
-    peaks: Vec<Corner>,
+    mut peaks: Vec<Corner>,
     image: ImageView<'_>,
     response: &D::Response<'_>,
+    params: &D::Params,
+    tier: Uncertainty,
     refiner: Option<&mut Refiner>,
 ) -> Vec<Corner> {
+    if tier != Uncertainty::Off {
+        detector.attach_peak_covariance(&mut peaks, image, params);
+    }
     match refiner {
         Some(refiner) => detector.refine_peaks_on_image(peaks, image, response, refiner),
         None => peaks,
@@ -108,15 +115,37 @@ fn refine_peaks<D: DenseDetector>(
 // Descriptors and position covariance
 // ---------------------------------------------------------------------------
 
+/// How this frame's corners get a position covariance.
+/// [`DetectorConfig::covariance_stage`] lowers
+/// [`DetectorConfig::uncertainty`] and [`DetectorConfig::noise_sigma`]; the
+/// detector uses `Off` for upscaled input.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CovarianceStage {
+    /// No covariance: the tier is [`Uncertainty::Off`], or corners are
+    /// refined on a resampled copy of the input (upscaling) whose noise is
+    /// spatially correlated. Localizers skip the covariance work.
+    Off,
+    /// Localizers run at `tier` (never `Off`); `noise` turns their
+    /// covariance into px².
+    Reported {
+        tier: Uncertainty,
+        noise: NoiseLevel,
+    },
+}
+
+impl CovarianceStage {
+    /// The tier the localizers run at.
+    pub(crate) fn tier(self) -> Uncertainty {
+        match self {
+            Self::Off => Uncertainty::Off,
+            Self::Reported { tier, .. } => tier,
+        }
+    }
+}
+
 /// The image noise level that turns refined-corner covariances into px².
-/// [`DetectorConfig::noise_level`] lowers [`DetectorConfig::noise_sigma`]
-/// into `Estimate` / `Known`; the detector uses `Unavailable` for upscaled
-/// input.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum NoiseLevel {
-    /// Corners are refined on a resampled copy of the input (upscaling),
-    /// whose noise is spatially correlated: no covariance is reported.
-    Unavailable,
     /// Estimate σ from the refinement image, once per frame and only when
     /// a refined corner carries a covariance.
     Estimate,
@@ -131,17 +160,21 @@ fn describe(
     view: ImageView<'_>,
     ring_radius: u32,
     orientation_method: Option<OrientationMethod>,
-    noise: NoiseLevel,
+    covariance: CovarianceStage,
     corners: Vec<Corner>,
 ) -> Vec<CornerDescriptor> {
     let has_covariance = corners
         .iter()
         .any(|c| c.covariance_per_noise_variance.is_some());
-    let sigma = match noise {
+    let sigma = match covariance {
         _ if !has_covariance => None,
-        NoiseLevel::Unavailable => None,
-        NoiseLevel::Known(sigma) => Some(sigma),
-        NoiseLevel::Estimate => estimate_noise_sigma_u8(view.data(), view.width(), view.height()),
+        CovarianceStage::Off => None,
+        CovarianceStage::Reported { noise, .. } => match noise {
+            NoiseLevel::Known(sigma) => Some(sigma),
+            NoiseLevel::Estimate => {
+                estimate_noise_sigma_u8(view.data(), view.width(), view.height())
+            }
+        },
     };
     // `describe_corners` keeps one descriptor per corner, in order.
     let covariances: Option<Vec<_>> =
@@ -285,7 +318,7 @@ struct TraversalShape {
     refine_border: i32,
     descriptor_ring_radius: u32,
     orientation_method: Option<OrientationMethod>,
-    noise: NoiseLevel,
+    covariance: CovarianceStage,
     /// Merge radius for the single-scale (no-pyramid) branch. The
     /// pyramid branches read [`CoarseToFineParams::merge_radius`], which
     /// the config lowering keeps equal to this value.
@@ -413,7 +446,7 @@ impl TraversalShape {
             view,
             self.descriptor_ring_radius,
             self.orientation_method,
-            self.noise,
+            self.covariance,
             corners,
         )
     }
@@ -431,23 +464,47 @@ struct DetectorStep<'a, D: DenseDetector> {
     buffers: &'a mut D::Buffers,
     refiner: Option<Refiner>,
     refine_border: i32,
+    /// The tier the localizers run at for final corners.
+    tier: Uncertainty,
 }
 
-impl<D: DenseDetector> TraversalStep for DetectorStep<'_, D> {
-    fn detect_full(&mut self, view: ImageView<'_>) -> Vec<Corner> {
+impl<D: DenseDetector> DetectorStep<'_, D> {
+    /// Response → peaks → localization over a full view at `tier`.
+    fn detect_at(&mut self, view: ImageView<'_>, tier: Uncertainty) -> Vec<Corner> {
         let resp = self
             .detector
             .compute_response(view, self.params, self.buffers);
         let peaks = self
             .detector
             .detect_corners(&resp, self.params, self.refine_border);
-        refine_peaks(self.detector, peaks, view, &resp, self.refiner.as_mut())
+        refine_peaks(
+            self.detector,
+            peaks,
+            view,
+            &resp,
+            self.params,
+            tier,
+            self.refiner.as_mut(),
+        )
+    }
+}
+
+impl<D: DenseDetector> TraversalStep for DetectorStep<'_, D> {
+    fn detect_full(&mut self, view: ImageView<'_>) -> Vec<Corner> {
+        self.detect_at(view, self.tier)
     }
 
     fn detect_seeds(&mut self, view: ImageView<'_>) -> Vec<Corner> {
-        // Identical to `detect_full` for the generic path: coarse seeds
-        // use the same detector and image-domain refiner.
-        self.detect_full(view)
+        // The same detector and image-domain refiner as `detect_full`;
+        // coarse seeds only carve ROIs, so no covariance is computed.
+        let tier = self.tier;
+        self.refiner = self
+            .refiner
+            .take()
+            .map(|r| r.with_uncertainty(Uncertainty::Off));
+        let seeds = self.detect_at(view, Uncertainty::Off);
+        self.refiner = self.refiner.take().map(|r| r.with_uncertainty(tier));
+        seeds
     }
 
     fn refine_roi(&mut self, base: ImageView<'_>, roi: (i32, i32, i32, i32)) -> Vec<Corner> {
@@ -472,6 +529,8 @@ impl<D: DenseDetector> TraversalStep for DetectorStep<'_, D> {
             peaks,
             patch_image,
             &resp,
+            self.params,
+            self.tier,
             self.refiner.as_mut(),
         )
     }
@@ -494,8 +553,17 @@ struct DetectorShape {
     image_refiner: Option<RefinerKind>,
     descriptor_ring_radius: u32,
     orientation_method: Option<OrientationMethod>,
-    noise: NoiseLevel,
+    covariance: CovarianceStage,
     merge_radius: f32,
+}
+
+impl DetectorShape {
+    /// The image-domain refiner, running at the frame's tier.
+    fn refiner(&self) -> Option<Refiner> {
+        self.image_refiner
+            .clone()
+            .map(|kind| Refiner::from_kind(kind).with_uncertainty(self.covariance.tier()))
+    }
 }
 
 /// Generic multiscale corner detection driver.
@@ -530,7 +598,8 @@ fn detect_multiscale<D: DenseDetector>(
 ) -> Vec<CornerDescriptor> {
     // The refiner widens the ROI margin only when one runs, so the
     // peak-fit-only Radon path keeps its full seed area near the border.
-    let refiner = shape.image_refiner.clone().map(Refiner::from_kind);
+    let tier = shape.covariance.tier();
+    let refiner = shape.refiner();
     let refine_border = refiner_radius(refiner.as_ref());
 
     let traversal = TraversalShape {
@@ -538,7 +607,7 @@ fn detect_multiscale<D: DenseDetector>(
         refine_border,
         descriptor_ring_radius: shape.descriptor_ring_radius,
         orientation_method: shape.orientation_method,
-        noise: shape.noise,
+        covariance: shape.covariance,
         single_scale_merge_radius: shape.merge_radius,
     };
     let mut step = DetectorStep {
@@ -547,6 +616,7 @@ fn detect_multiscale<D: DenseDetector>(
         buffers: detector_buffers,
         refiner,
         refine_border,
+        tier,
     };
     traverse(base, multiscale, pyramid_buffers, &traversal, &mut step)
 }
@@ -580,7 +650,7 @@ trait StrategyPipeline {
 fn dispatch_strategy(
     base: ImageView<'_>,
     cfg: &DetectorConfig,
-    noise: NoiseLevel,
+    covariance: CovarianceStage,
     chess_buffers: &mut ChessBuffers,
     radon_buffers: &mut RadonBuffers,
     pipeline: impl StrategyPipeline,
@@ -592,7 +662,7 @@ fn dispatch_strategy(
                 image_refiner: Some(chess_params.refiner.clone()),
                 descriptor_ring_radius: chess_params.ring_radius(),
                 orientation_method: chess_params.orientation_method,
-                noise,
+                covariance,
                 merge_radius: cfg.merge_radius,
             };
             pipeline.run(base, &ChessDetector, &chess_params, chess_buffers, &shape)
@@ -606,7 +676,7 @@ fn dispatch_strategy(
                 // Orientation method is top-level on DetectorConfig.
                 descriptor_ring_radius: chess_corners_core::ChessParams::default().ring_radius(),
                 orientation_method: cfg.orientation_method,
-                noise,
+                covariance,
                 merge_radius: cfg.merge_radius,
             };
             pipeline.run(base, &RadonDetector, &radon_params, radon_buffers, &shape)
@@ -661,12 +731,12 @@ impl StrategyPipeline for RoiRun {
 
 /// Detect corners through the generic orchestrator. The `cfg.strategy`
 /// selects between [`ChessDetector`] and [`RadonDetector`]; both
-/// flow through the same control flow. `noise` turns refined-corner
-/// covariances into px² for this frame.
+/// flow through the same control flow. `covariance` selects the frame's
+/// position-covariance work and turns it into px².
 pub(crate) fn detect_with_buffers(
     base: ImageView<'_>,
     cfg: &DetectorConfig,
-    noise: NoiseLevel,
+    covariance: CovarianceStage,
     pyramid_buffers: &mut PyramidBuffers,
     chess_buffers: &mut ChessBuffers,
     radon_buffers: &mut RadonBuffers,
@@ -675,7 +745,7 @@ pub(crate) fn detect_with_buffers(
     dispatch_strategy(
         base,
         cfg,
-        noise,
+        covariance,
         chess_buffers,
         radon_buffers,
         MultiscaleRun {
@@ -700,7 +770,7 @@ pub(crate) fn detect_roi_with_buffers(
     dispatch_strategy(
         base,
         cfg,
-        cfg.noise_level(),
+        cfg.covariance_stage(),
         chess_buffers,
         radon_buffers,
         RoiRun { roi },
@@ -743,7 +813,7 @@ fn detect_roi_generic<D: DenseDetector>(
 
     // The image-domain refiner widens the required margin only when one
     // runs.
-    let mut refiner = shape.image_refiner.clone().map(Refiner::from_kind);
+    let mut refiner = shape.refiner();
     let refine_border = refiner_radius(refiner.as_ref());
     // Inflate by the full peak-detection margin so a corner on the ROI
     // edge keeps `roi_border + refine_border` pixels of support inside the
@@ -784,7 +854,15 @@ fn detect_roi_generic<D: DenseDetector>(
     // refiner.
     let patch_image = ImageView::with_origin(base.width(), base.height(), base.data(), [ix0, iy0])
         .expect("base image dimensions must match buffer length");
-    let mut refined = refine_peaks(detector, kept, patch_image, &resp, refiner.as_mut());
+    let mut refined = refine_peaks(
+        detector,
+        kept,
+        patch_image,
+        &resp,
+        params,
+        shape.covariance.tier(),
+        refiner.as_mut(),
+    );
     // Shift patch-local refined positions back into the base frame.
     for c in &mut refined {
         c.x += ix0 as f32;
@@ -798,7 +876,7 @@ fn detect_roi_generic<D: DenseDetector>(
         base,
         shape.descriptor_ring_radius,
         shape.orientation_method,
-        shape.noise,
+        shape.covariance,
         merged,
     )
 }
@@ -861,7 +939,10 @@ fn coarse_to_fine_with_ml<R>(
 where
     R: FnMut(&ResponseMap, &ChessParams, Option<ImageView<'_>>) -> Vec<Corner>,
 {
-    let seed_refiner = Refiner::from_kind(params.refiner.clone());
+    // Coarse seeds only carve ROIs, and the ML refiner reports no
+    // covariance: no covariance work on this path.
+    let seed_refiner =
+        Refiner::from_kind(params.refiner.clone()).with_uncertainty(Uncertainty::Off);
     let seed_refine_border = seed_refiner.radius();
     let traversal = TraversalShape {
         detector_border: ChessDetector.roi_border(params),
@@ -869,7 +950,7 @@ where
         descriptor_ring_radius: params.ring_radius(),
         orientation_method: params.orientation_method,
         // The ML refiner reports no covariance; its corners carry none.
-        noise: NoiseLevel::Unavailable,
+        covariance: CovarianceStage::Off,
         single_scale_merge_radius: cfg.merge_radius,
     };
     let mut step = MlStep {
@@ -971,7 +1052,7 @@ mod tests {
         let corners = detect_with_buffers(
             view,
             &cfg,
-            cfg.noise_level(),
+            cfg.covariance_stage(),
             &mut pyramid,
             &mut chess_buffers,
             &mut radon_buffers,

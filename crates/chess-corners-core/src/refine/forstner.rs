@@ -10,8 +10,35 @@
 //! detection and precise location of distinct points, corners and
 //! centres of circular features."
 
-use super::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
+use super::{CornerRefiner, PositionCovariance, RefineContext, RefineResult, RefineStatus};
+use crate::imageview::ImageView;
+use crate::uncertainty::{edge_width, knot, PixelGradients, SystematicModel, Uncertainty};
 use serde::{Deserialize, Serialize};
+
+/// Systematic error of the single-shot Förstner estimate by edge width
+/// (see [`SystematicModel`]). The estimate is pulled toward the window
+/// centre with a gain that falls from about 0.78 on sharp edges through 0
+/// near an edge width of 1.75 px (there it says nothing about where in the
+/// pixel the corner is) to −0.3, an overshoot, on heavily blurred ones.
+/// Fitted on camera-formed synthetic boards from two generators (cells
+/// 6–12, rotations 0–45°, shear, lens blur σ 0.3–3) by
+/// `tools/refiner_robustness/fit_systematic.py`.
+const SYSTEMATIC: SystematicModel = SystematicModel {
+    knots: &[
+        knot(0.70, 0.776, 0.0251),  // rms 0.0729, n 5076
+        knot(0.80, 0.787, 0.0172),  // rms 0.0659, n 7596
+        knot(0.90, 0.750, 0.0073),  // rms 0.0722, n 4969
+        knot(1.00, 0.649, 0.0161),  // rms 0.1073, n 8194
+        knot(1.15, 0.571, 0.0562),  // rms 0.1501, n 2079
+        knot(1.30, 0.494, 0.0224),  // rms 0.1570, n 7977
+        knot(1.50, 0.260, 0.0690),  // rms 0.2237, n 15623
+        knot(1.70, 0.114, 0.0327),  // rms 0.2614, n 5231
+        knot(1.90, -0.141, 0.0452), // rms 0.3230, n 9248
+        knot(2.10, -0.284, 0.0518), // rms 0.3693, n 4059
+    ],
+    // Real stereo calibration set: `tools/refiner_robustness/real_validation/fit_floor.py`.
+    floor: 0.150,
+};
 
 /// Configuration for the [`ForstnerRefiner`].
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -72,12 +99,74 @@ impl Default for ForstnerConfig {
 #[derive(Debug)]
 pub struct ForstnerRefiner {
     cfg: ForstnerConfig,
+    pub(crate) uncertainty: Uncertainty,
+    grads: PixelGradients,
 }
 
 impl ForstnerRefiner {
     /// Construct a refiner with the given configuration.
     pub fn new(cfg: ForstnerConfig) -> Self {
-        Self { cfg }
+        Self {
+            cfg,
+            uncertainty: Uncertainty::default(),
+            grads: PixelGradients::default(),
+        }
+    }
+
+    /// Noise covariance per unit variance and systematic covariance of the
+    /// estimate `seed + u` on the window centred on pixel `centre`, with
+    /// `a_inv = A⁻¹` of the structure tensor `A`.
+    ///
+    /// `u = A⁻¹b` with `A = Σ w g gᵀ` and `b = Σ w g gᵀ p` (`p` the pixel
+    /// position relative to the seed), so `du = A⁻¹ Σ w (dg gᵀ + g dgᵀ)(p − u)`,
+    /// and each central-difference gradient `g` is linear in two pairs of
+    /// pixels.
+    fn covariance(
+        &mut self,
+        img: &ImageView<'_>,
+        centre: [i32; 2],
+        seed: [f32; 2],
+        u: [f32; 2],
+        a_inv: [[f32; 2]; 2],
+    ) -> Option<(PositionCovariance, PositionCovariance)> {
+        let r = self.cfg.radius;
+        let side = (2 * r + 3) as usize;
+        self.grads
+            .reset([centre[0] - r - 1, centre[1] - r - 1], side);
+        let mul = |v: [f32; 2]| {
+            [
+                a_inv[0][0] * v[0] + a_inv[0][1] * v[1],
+                a_inv[1][0] * v[0] + a_inv[1][1] * v[1],
+            ]
+        };
+        for dy in -r..=r {
+            let gy = centre[1] + dy;
+            for dx in -r..=r {
+                let gx = centre[0] + dx;
+                let g = [
+                    0.5 * (img.sample(gx + 1, gy) - img.sample(gx - 1, gy)),
+                    0.5 * (img.sample(gx, gy + 1) - img.sample(gx, gy - 1)),
+                ];
+                let p = [gx as f32 - seed[0], gy as f32 - seed[1]];
+                let w = 1.0 / (1.0 + 0.5 * (p[0] * p[0] + p[1] * p[1]));
+                let q = [p[0] - u[0], p[1] - u[1]];
+                let gq = g[0] * q[0] + g[1] * q[1];
+                // ∂u/∂gₓ = A⁻¹·w·(eₓ (g·q) + g qₓ), ∂gₓ/∂I(x ± 1) = ±½.
+                let vx = mul([w * (gq + g[0] * q[0]), w * g[1] * q[0]]).map(|v| 0.5 * v);
+                let vy = mul([w * g[0] * q[1], w * (gq + g[1] * q[1])]).map(|v| 0.5 * v);
+                self.grads.add(gx + 1, gy, vx);
+                self.grads.add(gx - 1, gy, vx.map(|v| -v));
+                self.grads.add(gx, gy + 1, vy);
+                self.grads.add(gx, gy - 1, vy.map(|v| -v));
+            }
+        }
+        let noise = self.grads.covariance()?;
+        let offset = [
+            seed[0] + u[0] - centre[0] as f32,
+            seed[1] + u[1] - centre[1] as f32,
+        ];
+        let systematic = SYSTEMATIC.covariance(offset, edge_width(img, centre), 1.0);
+        Some((noise, systematic))
     }
 }
 
@@ -91,15 +180,7 @@ impl CornerRefiner for ForstnerRefiner {
     fn refine(&mut self, seed_xy: [f32; 2], ctx: RefineContext<'_>) -> RefineResult {
         let img = match ctx.image {
             Some(view) => view,
-            None => {
-                return RefineResult {
-                    x: seed_xy[0],
-                    y: seed_xy[1],
-                    score: 0.0,
-                    status: RefineStatus::Rejected,
-                    covariance_per_noise_variance: None,
-                }
-            }
+            None => return RefineResult::unmoved(seed_xy, 0.0, RefineStatus::Rejected),
         };
 
         let cx = seed_xy[0].round() as i32;
@@ -107,13 +188,7 @@ impl CornerRefiner for ForstnerRefiner {
         let patch_r = self.cfg.radius;
 
         if !img.supports_patch(cx, cy, patch_r + 1) {
-            return RefineResult {
-                x: seed_xy[0],
-                y: seed_xy[1],
-                score: 0.0,
-                status: RefineStatus::OutOfBounds,
-                covariance_per_noise_variance: None,
-            };
+            return RefineResult::unmoved(seed_xy, 0.0, RefineStatus::OutOfBounds);
         }
 
         let mut a00 = 0.0;
@@ -156,13 +231,7 @@ impl CornerRefiner for ForstnerRefiner {
         let trace = a00 + a11;
         let det = a00 * a11 - a01 * a01;
         if trace < self.cfg.min_trace || det <= self.cfg.min_det {
-            return RefineResult {
-                x: seed_xy[0],
-                y: seed_xy[1],
-                score: det,
-                status: RefineStatus::IllConditioned,
-                covariance_per_noise_variance: None,
-            };
+            return RefineResult::unmoved(seed_xy, det, RefineStatus::IllConditioned);
         }
 
         let discr = (trace * trace - 4.0 * det).max(0.0).sqrt();
@@ -170,24 +239,12 @@ impl CornerRefiner for ForstnerRefiner {
         let lambda_max = 0.5 * (trace + discr);
 
         if lambda_min <= 0.0 {
-            return RefineResult {
-                x: seed_xy[0],
-                y: seed_xy[1],
-                score: det,
-                status: RefineStatus::IllConditioned,
-                covariance_per_noise_variance: None,
-            };
+            return RefineResult::unmoved(seed_xy, det, RefineStatus::IllConditioned);
         }
 
         let cond = lambda_max / lambda_min;
         if !cond.is_finite() || cond > self.cfg.max_condition_number {
-            return RefineResult {
-                x: seed_xy[0],
-                y: seed_xy[1],
-                score: det,
-                status: RefineStatus::IllConditioned,
-                covariance_per_noise_variance: None,
-            };
+            return RefineResult::unmoved(seed_xy, det, RefineStatus::IllConditioned);
         }
 
         let inv_det = 1.0 / det;
@@ -196,25 +253,88 @@ impl CornerRefiner for ForstnerRefiner {
 
         let max_off = self.cfg.max_offset.min(self.cfg.radius as f32 + 0.5);
         if ux.abs() > max_off || uy.abs() > max_off {
-            return RefineResult {
-                x: seed_xy[0],
-                y: seed_xy[1],
-                score: det,
-                status: RefineStatus::Rejected,
-                covariance_per_noise_variance: None,
-            };
+            return RefineResult::unmoved(seed_xy, det, RefineStatus::Rejected);
         }
 
         let score = det / (trace * trace + 1e-6);
-        RefineResult::accepted([seed_xy[0] + ux, seed_xy[1] + uy], score)
+        let mut res = RefineResult::accepted([seed_xy[0] + ux, seed_xy[1] + uy], score);
+        if self.uncertainty.reports() {
+            let a_inv = [
+                [a11 * inv_det, -a01 * inv_det],
+                [-a01 * inv_det, a00 * inv_det],
+            ];
+            if let Some((noise, systematic)) =
+                self.covariance(&img, [cx, cy], seed_xy, [ux, uy], a_inv)
+            {
+                res.covariance_per_noise_variance = Some(noise);
+                res.systematic = systematic;
+            }
+        }
+        res
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_fixtures::synthetic_checkerboard;
+    use super::super::test_fixtures::{synthetic_checkerboard, tanh_saddle};
     use super::*;
     use crate::imageview::ImageView;
+
+    /// `covariance_per_noise_variance` is `Σₚ (∂x̂/∂Iₚ)(∂x̂/∂Iₚ)ᵀ`: central
+    /// differences of the full estimate over every pixel (±1 gray level;
+    /// the estimate is smooth in the pixels) on skewed saddles off the
+    /// window centre.
+    #[test]
+    fn covariance_matches_finite_differences() {
+        const SIDE: usize = 15;
+        let seed = [7.0f32, 7.0];
+        for (angles, offset, width) in [
+            ([0.3f32, 1.4f32], [0.3f32, -0.2f32], 1.0f32),
+            ([-0.2, 1.05], [-0.35, 0.15], 1.6),
+        ] {
+            let mut img: Vec<u8> = tanh_saddle(SIDE, [7, 7], offset, angles, width, 2.0)
+                .iter()
+                .map(|v| v.round() as u8)
+                .collect();
+            let mut refiner = ForstnerRefiner::new(ForstnerConfig::default());
+            let mut refine = |img: &[u8]| {
+                let view = ImageView::from_u8_slice(SIDE, SIDE, img).unwrap();
+                refiner.refine(seed, RefineContext::new(Some(view), None))
+            };
+            let base = refine(&img);
+            assert_eq!(base.status, RefineStatus::Accepted);
+            let cov = base.covariance_per_noise_variance.unwrap();
+            let mut fd = [0.0f64; 3];
+            for k in 0..img.len() {
+                let v = img[k];
+                img[k] = v + 1;
+                let plus = refine(&img);
+                img[k] = v - 1;
+                let minus = refine(&img);
+                img[k] = v;
+                let gx = f64::from(plus.x - minus.x) / 2.0;
+                let gy = f64::from(plus.y - minus.y) / 2.0;
+                fd[0] += gx * gx;
+                fd[1] += gx * gy;
+                fd[2] += gy * gy;
+            }
+            let scale = (fd[0] * fd[2]).sqrt();
+            assert!(
+                fd[1].abs() > 0.03 * scale,
+                "fixture must have xy ≠ 0: {fd:?}"
+            );
+            for (name, g, f) in [
+                ("xx", cov.xx, fd[0]),
+                ("xy", cov.xy, fd[1]),
+                ("yy", cov.yy, fd[2]),
+            ] {
+                assert!(
+                    (f64::from(g) - f).abs() <= 2e-3 * scale,
+                    "{angles:?} {name}: analytic {g:e} vs finite-difference {f:e}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn forstner_refines_toward_true_offset() {

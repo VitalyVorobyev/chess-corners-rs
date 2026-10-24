@@ -197,12 +197,9 @@ pub fn refine_corners_on_image(
         let seed_xy = [c.x, c.y];
         let res = refiner.refine(seed_xy, ctx);
         if matches!(res.status, RefineStatus::Accepted) {
-            out.push(Corner {
-                x: res.x,
-                y: res.y,
-                strength: c.strength,
-                covariance_per_noise_variance: res.covariance_per_noise_variance,
-            });
+            let mut refined = Corner::new(res.x, res.y, c.strength);
+            refined.set_covariance(&res);
+            out.push(refined);
         }
     }
     out
@@ -310,11 +307,7 @@ mod tests {
 
     #[test]
     fn default_refiner_matches_center_of_mass() {
-        let mut resp = ResponseMap {
-            w: 32,
-            h: 32,
-            data: vec![0.0; 32 * 32],
-        };
+        let mut resp = ResponseMap::new(32, 32, vec![0.0; 32 * 32]);
 
         let cx = 16usize;
         let cy = 16usize;
@@ -344,11 +337,7 @@ mod tests {
 
     #[test]
     fn params_refiner_controls_margin() {
-        let mut resp = ResponseMap {
-            w: 30,
-            h: 30,
-            data: vec![0.0; 30 * 30],
-        };
+        let mut resp = ResponseMap::new(30, 30, vec![0.0; 30 * 30]);
 
         let cx = 10usize;
         let cy = 10usize;

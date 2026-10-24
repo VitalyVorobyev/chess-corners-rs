@@ -7,9 +7,12 @@
 //! to get subpixel offsets. Output coordinates are divided by
 //! `image_upsample` so they sit in the **input pixel frame**.
 
-use super::primitives::fit_peak_frac;
+use super::primitives::{fit_peak_frac, fit_peak_frac_grad};
 use super::response::{RadonDetectorParams, RadonResponseView};
 use crate::detect::{count_positive_neighbors, is_local_max, Corner};
+use crate::imageview::ImageView;
+use crate::refine::PositionCovariance;
+use crate::uncertainty::{edge_width, knot, PixelGradients, SystematicModel};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
@@ -254,11 +257,385 @@ impl SaddleTest {
     }
 }
 
+/// Systematic error of the response-map peak fit by edge width (see
+/// [`SystematicModel`]); the fit window is one working-resolution pixel.
+/// The pull toward the peak pixel grows with blur (gain 0.9–1 on sharp
+/// edges, about 0.55 at an edge width of 2 px), most on boards rotated
+/// near 45°. Fitted on camera-formed synthetic boards from two generators
+/// (cells 6–12, rotations 0–45°, shear, lens blur σ 0.3–3) by
+/// `tools/refiner_robustness/fit_systematic.py`.
+const SYSTEMATIC: SystematicModel = SystematicModel {
+    knots: &[
+        knot(0.70, 0.907, 0.0393), // rms 0.0415, n 5760
+        knot(0.80, 0.956, 0.0287), // rms 0.0294, n 8280
+        knot(0.90, 0.996, 0.0041), // rms 0.0042, n 4968
+        knot(1.00, 0.924, 0.0321), // rms 0.0340, n 8863
+        knot(1.15, 0.806, 0.0389), // rms 0.0509, n 2108
+        knot(1.30, 0.844, 0.0522), // rms 0.0568, n 9234
+        knot(1.50, 0.838, 0.0477), // rms 0.0532, n 17780
+        knot(1.70, 0.704, 0.0699), // rms 0.0821, n 5851
+        knot(1.90, 0.762, 0.0606), // rms 0.0696, n 10050
+        knot(2.10, 0.541, 0.0995), // rms 0.1243, n 4637
+    ],
+    // Real stereo calibration set: `tools/refiner_robustness/real_validation/fit_floor.py`.
+    floor: 0.050,
+};
+
+/// Ray directions in the order the response kernel scans them
+/// (horizontal, vertical, the two diagonals); ties go to the first.
+const RAYS: [[i32; 2]; 4] = [[1, 0], [0, 1], [1, 1], [1, -1]];
+
+/// Scratch for [`peak_fit_covariance`], reused across the peaks of a frame.
+#[derive(Debug, Default)]
+pub(crate) struct PeakFitScratch {
+    /// Working-resolution samples around the peak, row-major.
+    work: Vec<f32>,
+    /// `∂x̂/∂U` per working sample.
+    work_grad: Vec<[f32; 2]>,
+    /// `(max − min, argmax, argmin)` of the ray sums per response sample.
+    rays: Vec<(f32, u8, u8)>,
+    /// Unblurred response per response sample.
+    response: Vec<f32>,
+    grads: PixelGradients,
+}
+
+/// Noise covariance per unit variance and systematic covariance of a Radon
+/// peak at `xy` (input pixels, as [`detect_peaks_from_radon`] returns it for
+/// `image`), or `None` when the 3-point fit does not respond to the response
+/// (a flat or clamped fit on either axis).
+///
+/// The peak is `(X + f)/up` with the 3-point fit `f` of the blurred response
+/// `R̄` at the working-resolution pixel `X`. Every stage is differentiated:
+/// the fit with respect to its samples, the box blur, the response
+/// `R = (S_max − S_min)²` with the arg-max and arg-min rays held fixed, the
+/// ray sums, and the bilinear 2× upsampling of the input (its rounding to
+/// 8 bits is treated as the identity), so the gradient is accumulated over
+/// the input pixels.
+pub(crate) fn peak_fit_covariance(
+    image: &ImageView<'_>,
+    xy: [f32; 2],
+    params: &RadonDetectorParams,
+    scratch: &mut PeakFitScratch,
+) -> Option<(PositionCovariance, PositionCovariance)> {
+    let up = params.image_upsample_clamped() as i32;
+    let upf = up as f32;
+    let ray_r = params.ray_radius_clamped() as i32;
+    let blur_r = params.response_blur_radius as i32;
+    // Working-resolution peak pixel; the fit offset is in (−½, ½).
+    let peak = xy.map(|v| (v * upf).round());
+    let frac = [xy[0] * upf - peak[0], xy[1] * upf - peak[1]];
+    if !(frac[0].abs() < 0.5 && frac[1].abs() < 0.5) {
+        return None;
+    }
+    let peak = peak.map(|v| v as i32);
+
+    // Response samples q within `resp_k` of the peak; working samples within
+    // `work_k`.
+    let resp_k = 1 + blur_r;
+    let work_k = resp_k + ray_r;
+    let rs = (2 * resp_k + 1) as usize;
+    let ws = (2 * work_k + 1) as usize;
+    let PeakFitScratch {
+        work,
+        work_grad,
+        rays,
+        response,
+        grads,
+    } = scratch;
+    work.clear();
+    for j in -work_k..=work_k {
+        for i in -work_k..=work_k {
+            let (wx, wy) = (peak[0] + i, peak[1] + j);
+            let v = if up == 1 {
+                image.sample(wx, wy)
+            } else {
+                image
+                    .sample_bilinear(wx as f32 / upf, wy as f32 / upf)
+                    .round()
+                    .clamp(0.0, 255.0)
+            };
+            work.push(v);
+        }
+    }
+    let w_at =
+        |work: &[f32], dx: i32, dy: i32| work[(dy + work_k) as usize * ws + (dx + work_k) as usize];
+
+    rays.clear();
+    response.clear();
+    for qy in -resp_k..=resp_k {
+        for qx in -resp_k..=resp_k {
+            let mut sums = [0.0f32; 4];
+            for (s, d) in sums.iter_mut().zip(RAYS) {
+                for k in -ray_r..=ray_r {
+                    *s += w_at(work, qx + k * d[0], qy + k * d[1]);
+                }
+            }
+            let (mut imax, mut imin) = (0usize, 0usize);
+            for a in 1..4 {
+                if sums[a] > sums[imax] {
+                    imax = a;
+                }
+                if sums[a] < sums[imin] {
+                    imin = a;
+                }
+            }
+            let d = sums[imax] - sums[imin];
+            rays.push((d, imax as u8, imin as u8));
+            response.push(d * d);
+        }
+    }
+    let r_at = |dx: i32, dy: i32| response[(dy + resp_k) as usize * rs + (dx + resp_k) as usize];
+    let blur_n = ((2 * blur_r + 1) * (2 * blur_r + 1)) as f32;
+    let blurred = |cx: i32, cy: i32| {
+        let mut acc = 0.0f32;
+        for dy in -blur_r..=blur_r {
+            for dx in -blur_r..=blur_r {
+                acc += r_at(cx + dx, cy + dy);
+            }
+        }
+        acc / blur_n
+    };
+    let (bc, bxm, bxp, bym, byp) = (
+        blurred(0, 0),
+        blurred(-1, 0),
+        blurred(1, 0),
+        blurred(0, -1),
+        blurred(0, 1),
+    );
+    let gx = fit_peak_frac_grad(bxm, bc, bxp, params.peak_fit)?;
+    let gy = fit_peak_frac_grad(bym, bc, byp, params.peak_fit)?;
+
+    // ∂x̂/∂R̄ at the five fit samples, then ∂x̂/∂R over each blur box.
+    let inv = 1.0 / (upf * blur_n);
+    let fit_samples = [
+        ([-1, 0], [gx[0], 0.0]),
+        ([1, 0], [gx[2], 0.0]),
+        ([0, -1], [0.0, gy[0]]),
+        ([0, 1], [0.0, gy[2]]),
+        ([0, 0], [gx[1], gy[1]]),
+    ];
+    work_grad.clear();
+    work_grad.resize(ws * ws, [0.0; 2]);
+    for (c, d) in fit_samples {
+        let d = d.map(|v| v * inv);
+        for by in -blur_r..=blur_r {
+            for bx in -blur_r..=blur_r {
+                let (qx, qy) = (c[0] + bx, c[1] + by);
+                let (diff, imax, imin) = rays[(qy + resp_k) as usize * rs + (qx + resp_k) as usize];
+                // ∂R/∂U = 2(S_max − S_min) on the max ray, minus on the min ray.
+                let f = [2.0 * diff * d[0], 2.0 * diff * d[1]];
+                if f == [0.0, 0.0] {
+                    continue;
+                }
+                for (ray, sign) in [(imax, 1.0f32), (imin, -1.0)] {
+                    let dir = RAYS[ray as usize];
+                    for k in -ray_r..=ray_r {
+                        let (sx, sy) = (qx + k * dir[0], qy + k * dir[1]);
+                        let g =
+                            &mut work_grad[(sy + work_k) as usize * ws + (sx + work_k) as usize];
+                        g[0] += sign * f[0];
+                        g[1] += sign * f[1];
+                    }
+                }
+            }
+        }
+    }
+
+    // Back through the upsampling onto input pixels.
+    let lo = [peak[0] - work_k, peak[1] - work_k].map(|v| v.div_euclid(up));
+    let side = ((2 * work_k) / up + 2) as usize;
+    grads.reset(lo, side);
+    for j in 0..ws as i32 {
+        for i in 0..ws as i32 {
+            let g = work_grad[j as usize * ws + i as usize];
+            if g == [0.0, 0.0] {
+                continue;
+            }
+            let (wx, wy) = (peak[0] - work_k + i, peak[1] - work_k + j);
+            if up == 1 {
+                grads.add(wx, wy, g);
+                continue;
+            }
+            let (x0, y0) = (wx.div_euclid(2), wy.div_euclid(2));
+            let tx = if wx.rem_euclid(2) == 1 { 0.5 } else { 0.0 };
+            let ty = if wy.rem_euclid(2) == 1 { 0.5 } else { 0.0 };
+            for (px, py, wgt) in [
+                (x0, y0, (1.0 - tx) * (1.0 - ty)),
+                (x0 + 1, y0, tx * (1.0 - ty)),
+                (x0, y0 + 1, (1.0 - tx) * ty),
+                (x0 + 1, y0 + 1, tx * ty),
+            ] {
+                if wgt != 0.0 {
+                    grads.add(px, py, [wgt * g[0], wgt * g[1]]);
+                }
+            }
+        }
+    }
+    let noise = grads.covariance()?;
+    let offset = frac.map(|f| f / upf);
+    let centre = xy.map(|v| v.round() as i32);
+    let systematic = SYSTEMATIC.covariance(offset, edge_width(image, centre), 1.0 / upf);
+    Some((noise, systematic))
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::primitives::PeakFitMode;
     use super::super::response::{radon_response_u8, RadonBuffers, RadonDetectorParams};
     use super::super::test_fixtures::synthetic_chessboard_aa;
     use super::*;
+    use crate::refine::test_fixtures::tanh_saddle;
+
+    /// The Radon peak position for working-resolution peak pixel `peak` of a
+    /// float image: bilinear upsampling (unrounded), ray sums, `(max −
+    /// min)²`, box blur, 3-point fit. The reference for the analytic
+    /// gradient.
+    fn peak_f64(
+        img: &[f64],
+        side: usize,
+        params: &RadonDetectorParams,
+        peak: [i32; 2],
+    ) -> [f64; 2] {
+        let up = params.image_upsample_clamped() as i32;
+        let ray_r = params.ray_radius_clamped() as i32;
+        let br = params.response_blur_radius as i32;
+        let px = |x: i32, y: i32| img[y as usize * side + x as usize];
+        let work = |wx: i32, wy: i32| {
+            if up == 1 {
+                return px(wx, wy);
+            }
+            let (x0, y0) = (wx.div_euclid(2), wy.div_euclid(2));
+            let (tx, ty) = (
+                0.5 * f64::from(wx.rem_euclid(2)),
+                0.5 * f64::from(wy.rem_euclid(2)),
+            );
+            let a = px(x0, y0) * (1.0 - tx) + px(x0 + 1, y0) * tx;
+            let b = px(x0, y0 + 1) * (1.0 - tx) + px(x0 + 1, y0 + 1) * tx;
+            a * (1.0 - ty) + b * ty
+        };
+        let resp = |qx: i32, qy: i32| {
+            let sums = RAYS.map(|d| {
+                (-ray_r..=ray_r)
+                    .map(|k| work(qx + k * d[0], qy + k * d[1]))
+                    .sum::<f64>()
+            });
+            let mx = sums.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let mn = sums.iter().copied().fold(f64::INFINITY, f64::min);
+            (mx - mn) * (mx - mn)
+        };
+        let blurred = |cx: i32, cy: i32| {
+            let mut acc = 0.0;
+            for dy in -br..=br {
+                for dx in -br..=br {
+                    acc += resp(cx + dx, cy + dy);
+                }
+            }
+            acc / f64::from((2 * br + 1) * (2 * br + 1))
+        };
+        let fit = |m: f64, c: f64, p: f64| {
+            let (m, c, p) = match params.peak_fit {
+                PeakFitMode::Gaussian => (m.ln(), c.ln(), p.ln()),
+                _ => (m, c, p),
+            };
+            0.5 * (m - p) / (m - 2.0 * c + p)
+        };
+        let (x, y) = (peak[0], peak[1]);
+        let c = blurred(x, y);
+        let fx = fit(blurred(x - 1, y), c, blurred(x + 1, y));
+        let fy = fit(blurred(x, y - 1), c, blurred(x, y + 1));
+        [
+            (f64::from(x) + fx) / f64::from(up),
+            (f64::from(y) + fy) / f64::from(up),
+        ]
+    }
+
+    /// `peak_fit_covariance` is `Σₚ (∂x̂/∂Iₚ)(∂x̂/∂Iₚ)ᵀ` over the input
+    /// pixels: central differences (±0.01 gray level) of a float
+    /// re-implementation of the peak position, for both peak-fit modes and
+    /// both upsampling factors. Input pixels are multiples of 4, so the 2×
+    /// upsampled samples are integers and the detector's rounding is exact
+    /// at the base image.
+    #[test]
+    fn peak_covariance_matches_finite_differences() {
+        const SIDE: usize = 29;
+        for (up, mode, angles, offset) in [
+            (
+                2u32,
+                PeakFitMode::Gaussian,
+                [0.3f32, 1.4f32],
+                [0.3f32, -0.2f32],
+            ),
+            (2, PeakFitMode::Parabolic, [-0.2, 1.05], [-0.35, 0.15]),
+            (1, PeakFitMode::Gaussian, [0.1, 1.6], [0.2, 0.4]),
+        ] {
+            let params = RadonDetectorParams {
+                image_upsample: up,
+                peak_fit: mode,
+                ..RadonDetectorParams::default()
+            };
+            let img: Vec<u8> = tanh_saddle(SIDE, [14, 14], offset, angles, 1.2, 6.0)
+                .iter()
+                .map(|v| (4.0 * (v / 4.0).round()) as u8)
+                .collect();
+            let mut buffers = RadonBuffers::new();
+            let resp = radon_response_u8(&img, SIDE, SIDE, &params, &mut buffers);
+            let corner = detect_peaks_from_radon(&resp, &params)
+                .into_iter()
+                .min_by(|a, b| {
+                    let d = |c: &Corner| (c.x - 14.0 - offset[0]).hypot(c.y - 14.0 - offset[1]);
+                    d(a).total_cmp(&d(b))
+                })
+                .expect("a peak near the saddle");
+            let view = ImageView::from_u8_slice(SIDE, SIDE, &img).unwrap();
+            let (cov, _) = peak_fit_covariance(
+                &view,
+                [corner.x, corner.y],
+                &params,
+                &mut PeakFitScratch::default(),
+            )
+            .expect("the fit responds");
+
+            let peak = [corner.x, corner.y].map(|v| (v * up as f32).round() as i32);
+            let mut f: Vec<f64> = img.iter().map(|&v| f64::from(v)).collect();
+            let base = peak_f64(&f, SIDE, &params, peak);
+            assert!(
+                (base[0] - f64::from(corner.x)).abs() < 1e-4
+                    && (base[1] - f64::from(corner.y)).abs() < 1e-4,
+                "reference {base:?} vs detector ({}, {})",
+                corner.x,
+                corner.y
+            );
+            let eps = 0.01f64;
+            let mut fd = [0.0f64; 3];
+            for k in 0..f.len() {
+                let v = f[k];
+                f[k] = v + eps;
+                let plus = peak_f64(&f, SIDE, &params, peak);
+                f[k] = v - eps;
+                let minus = peak_f64(&f, SIDE, &params, peak);
+                f[k] = v;
+                let g = [0, 1].map(|a| (plus[a] - minus[a]) / (2.0 * eps));
+                fd[0] += g[0] * g[0];
+                fd[1] += g[0] * g[1];
+                fd[2] += g[1] * g[1];
+            }
+            let scale = (fd[0] * fd[2]).sqrt();
+            assert!(
+                fd[1].abs() > 0.01 * scale,
+                "fixture must have xy ≠ 0: {fd:?}"
+            );
+            for (name, g, f) in [
+                ("xx", cov.xx, fd[0]),
+                ("xy", cov.xy, fd[1]),
+                ("yy", cov.yy, fd[2]),
+            ] {
+                assert!(
+                    (f64::from(g) - f).abs() <= 1e-3 * scale,
+                    "up {up} {mode:?} {name}: analytic {g:e} vs finite-difference {f:e}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn detector_recovers_interior_corner_without_seed() {

@@ -14,7 +14,33 @@
 
 use super::{CornerRefiner, PositionCovariance, RefineContext, RefineResult, RefineStatus};
 use crate::imageview::ImageView;
+use crate::uncertainty::{edge_width, knot, SystematicModel, Uncertainty};
 use serde::{Deserialize, Serialize};
+
+/// Systematic error of the converged, re-centred estimate by edge width
+/// (see [`SystematicModel`]): the window is centred on the estimate, so the
+/// gain is 1 and only the residual remains — the error the fit keeps where
+/// the corner sits between pixels (largest on sharp, rotated edges, which
+/// alias) and on small, blurred cells. RMS per axis on camera-formed
+/// synthetic boards from two generators (cells 6–12, rotations 0–45°,
+/// shear, lens blur σ 0.3–3), fitted by
+/// `tools/refiner_robustness/fit_systematic.py`.
+const SYSTEMATIC: SystematicModel = SystematicModel {
+    knots: &[
+        knot(0.70, 1.000, 0.0075), // rms 0.0075, n 5077
+        knot(0.80, 1.000, 0.0028), // rms 0.0028, n 7597
+        knot(0.90, 1.000, 0.0021), // rms 0.0021, n 4970
+        knot(1.00, 1.000, 0.0048), // rms 0.0048, n 8193
+        knot(1.15, 1.000, 0.0058), // rms 0.0058, n 2095
+        knot(1.30, 1.000, 0.0043), // rms 0.0043, n 7970
+        knot(1.50, 1.000, 0.0092), // rms 0.0092, n 15632
+        knot(1.70, 1.000, 0.0115), // rms 0.0115, n 5235
+        knot(1.90, 1.000, 0.0064), // rms 0.0064, n 9733
+        knot(2.10, 1.000, 0.0080), // rms 0.0080, n 4614
+    ],
+    // Real stereo calibration set: `tools/refiner_robustness/real_validation/fit_floor.py`.
+    floor: 0.053,
+};
 
 /// Most re-centring steps per corner after the integer-grid fit.
 const MAX_STEPS: usize = 16;
@@ -124,6 +150,7 @@ impl Default for SaddlePointConfig {
 #[derive(Debug)]
 pub struct SaddlePointRefiner {
     cfg: SaddlePointConfig,
+    pub(crate) uncertainty: Uncertainty,
     /// The least-squares operator `R = (ΦᵀΦ)⁻¹Φᵀ` of the
     /// [`quadratic_basis`] over the `(2·radius+1)²` samples: the
     /// coefficients are `Σₖ Rₖ·zₖ`. `None` when `ΦᵀΦ` is singular
@@ -158,6 +185,7 @@ impl SaddlePointRefiner {
         let side = (2 * cfg.radius.max(0) + 1) as usize;
         Self {
             cfg,
+            uncertainty: Uncertainty::default(),
             fit_op: fit_operator(cfg.radius),
             scratch: Scratch {
                 patch: vec![0.0; side * side],
@@ -173,13 +201,8 @@ impl CornerRefiner for SaddlePointRefiner {
     }
 
     fn refine(&mut self, seed_xy: [f32; 2], ctx: RefineContext<'_>) -> RefineResult {
-        let unmoved = |score: f32, status: RefineStatus| RefineResult {
-            x: seed_xy[0],
-            y: seed_xy[1],
-            score,
-            status,
-            covariance_per_noise_variance: None,
-        };
+        let unmoved =
+            |score: f32, status: RefineStatus| RefineResult::unmoved(seed_xy, score, status);
 
         let Some(img) = ctx.image else {
             return unmoved(0.0, RefineStatus::Rejected);
@@ -191,10 +214,18 @@ impl CornerRefiner for SaddlePointRefiner {
         }
 
         match self.estimate(&img, centre, seed_xy, MAX_STEPS, STEP_TOL) {
-            Ok(est) => RefineResult {
-                covariance_per_noise_variance: est.covariance,
-                ..RefineResult::accepted(est.xy, est.score)
-            },
+            Ok(est) => {
+                let mut res = RefineResult {
+                    covariance_per_noise_variance: est.covariance,
+                    converged: est.converged,
+                    ..RefineResult::accepted(est.xy, est.score)
+                };
+                if est.covariance.is_some() {
+                    let at = est.xy.map(|v| v.round() as i32);
+                    res.systematic = SYSTEMATIC.covariance([0.0; 2], edge_width(&img, at), 1.0);
+                }
+                res
+            }
             Err((score, status)) => unmoved(score, status),
         }
     }
@@ -408,6 +439,9 @@ struct Estimate {
     xy: [f32; 2],
     score: f32,
     covariance: Option<PositionCovariance>,
+    /// Re-centring converged to a fixed point with a regular window
+    /// sensitivity; `false` for the integer-grid fallback.
+    converged: bool,
 }
 
 impl SaddlePointRefiner {
@@ -428,6 +462,7 @@ impl SaddlePointRefiner {
     ) -> Result<Estimate, (f32, RefineStatus)> {
         let Self {
             cfg,
+            uncertainty,
             fit_op,
             scratch,
         } = self;
@@ -451,6 +486,7 @@ impl SaddlePointRefiner {
             xy: [centre[0] as f32 + fit.u[0], centre[1] as f32 + fit.u[1]],
             score: (-fit.det_h).sqrt(),
             covariance: None,
+            converged: false,
         };
 
         // Damped Newton on F(o) = u(o) = 0, with `o` the window offset from
@@ -495,10 +531,23 @@ impl SaddlePointRefiner {
             Some(slope) => Some(slope),
             None => fits.slope(&window),
         };
-        let covariance = slope.and_then(|slope| {
-            let (jac, m) = sensitivity(&fit, &slope);
-            covariance(fit_op, &window, &jac, m)
-        });
+        // The fixed point is regular when the window sensitivity `M` is
+        // invertible; its covariance needs that too. Under `Off` only the
+        // regularity is checked, so the converged set does not depend on
+        // the tier.
+        let (covariance, converged) = match slope {
+            None => (None, false),
+            Some(slope) => {
+                let (jac, m) = sensitivity(&fit, &slope);
+                if uncertainty.reports() {
+                    let cov = covariance(fit_op, &window, &jac, m);
+                    (cov, cov.is_some())
+                } else {
+                    let det = m[0][0] * m[1][1] - m[0][1] * m[1][0];
+                    (None, det.is_finite() && det != 0.0)
+                }
+            }
+        };
         Ok(Estimate {
             xy: [
                 centre[0] as f32 + o[0] + fit.u[0],
@@ -506,6 +555,7 @@ impl SaddlePointRefiner {
             ],
             score: (-fit.det_h).sqrt(),
             covariance,
+            converged,
         })
     }
 }

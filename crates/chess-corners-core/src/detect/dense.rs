@@ -34,8 +34,9 @@ use super::{
         response::{chess_response_u8, chess_response_u8_patch, Roi},
     },
     radon::{
-        detect::retain_above_relative_threshold, detect_peaks_from_radon, radon_response_u8,
-        RadonBuffers, RadonDetectorParams, RadonResponseView,
+        detect::{peak_fit_covariance, retain_above_relative_threshold, PeakFitScratch},
+        detect_peaks_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
+        RadonResponseView,
     },
     Corner,
 };
@@ -180,9 +181,10 @@ pub trait DenseDetector: private::Sealed {
     /// peak positions' frame, so the refiner sees only the image (the
     /// center-of-mass refiner, which reads the response map, rejects
     /// every seed). Radon peaks are already subpixel, so a corner keeps
-    /// its peak-fit position unless the refiner accepts it **with** a
-    /// position covariance — the saddle-point refiner does so exactly
-    /// when its re-centred fit converged — and is never dropped.
+    /// its peak-fit position (and the covariance
+    /// [`Self::attach_peak_covariance`] gave it) unless the refiner
+    /// converges on it — the saddle-point refiner does so when its
+    /// re-centred fit converged — and is never dropped.
     fn refine_peaks_on_image(
         &self,
         corners: Vec<Corner>,
@@ -190,6 +192,25 @@ pub trait DenseDetector: private::Sealed {
         response: &Self::Response<'_>,
         refiner: &mut dyn CornerRefiner,
     ) -> Vec<Corner>;
+
+    /// Attach the position covariance of the detector's own subpixel peak
+    /// fit to `corners`, the peaks [`Self::detect_corners`] returned for the
+    /// response of `image` (a [`Corner::position_covariance`] input; noise
+    /// propagated through the whole response pipeline plus the peak fit's
+    /// systematic model). Run it before [`Self::refine_peaks_on_image`],
+    /// which replaces it on the corners the refiner moves.
+    ///
+    /// ChESS peaks are integer pixels, not subpixel estimates: the default
+    /// leaves them without a covariance. Radon attaches one to every peak
+    /// whose 3-point fit responds to the response on both axes.
+    fn attach_peak_covariance(
+        &self,
+        corners: &mut [Corner],
+        image: ImageView<'_>,
+        params: &Self::Params,
+    ) {
+        let _ = (corners, image, params);
+    }
 
     /// Whether [`Self::refine_peaks_on_image`] consumes the refiner:
     /// `true` for both built-in detectors.
@@ -412,22 +433,37 @@ impl DenseDetector for RadonDetector {
     ) -> Vec<Corner> {
         // The working-resolution Radon response is not a `ResponseMap`
         // in the peaks' frame, so the refiner sees the image only. A
-        // refined position replaces the peak fit only together with its
-        // covariance: the saddle-point refiner's integer-grid fallback
+        // refined position replaces the peak fit only when the refiner
+        // converged: the saddle-point refiner's integer-grid fallback
         // (re-centring did not converge) is less accurate than the peak
         // fit it would replace.
         let ctx = RefineContext::new(Some(image), None);
         for c in &mut corners {
             let res = refiner.refine([c.x, c.y], ctx);
-            if let (RefineStatus::Accepted, Some(cov)) =
-                (res.status, res.covariance_per_noise_variance)
-            {
+            if res.status == RefineStatus::Accepted && res.converged {
                 c.x = res.x;
                 c.y = res.y;
-                c.covariance_per_noise_variance = Some(cov);
+                c.set_covariance(&res);
             }
         }
         corners
+    }
+
+    fn attach_peak_covariance(
+        &self,
+        corners: &mut [Corner],
+        image: ImageView<'_>,
+        params: &Self::Params,
+    ) {
+        let mut scratch = PeakFitScratch::default();
+        for c in corners {
+            if let Some((noise, systematic)) =
+                peak_fit_covariance(&image, [c.x, c.y], params, &mut scratch)
+            {
+                c.covariance_per_noise_variance = Some(noise);
+                c.systematic = systematic;
+            }
+        }
     }
 }
 

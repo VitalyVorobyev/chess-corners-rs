@@ -116,10 +116,11 @@ Each detection is a `CornerDescriptor` with:
   disabled.
 - `position_covariance` — `Some` 2×2 covariance of `(x, y)` in px², for
   weighting the corner in a calibration: the scatter due to white pixel
-  noise plus a small model-error floor (see `Corner::position_covariance`
-  in `chess-corners-core`). Only the saddle-point
-  refiner reports it (`ChessRefiner::SaddlePoint` or
-  `RadonRefiner::SaddlePoint`). The noise level is estimated from each image
+  noise plus the localizer's systematic error (see
+  `Corner::position_covariance` in `chess-corners-core`). Every localizer
+  except the ML refiner reports it under the default
+  `DetectorConfig::uncertainty` (`Uncertainty::Propagated`); `Off` skips
+  it. The noise level is estimated from each image
   (`estimate_noise_sigma_u8` returns the same estimate), or set with
   `DetectorConfig::with_noise_sigma`; it is `None` on upscaled input.
 

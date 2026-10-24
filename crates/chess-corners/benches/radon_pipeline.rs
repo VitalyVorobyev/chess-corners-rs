@@ -15,7 +15,7 @@
 //!   the `image` dev-dependency loads them successfully. Skipped
 //!   silently (with a stderr note) if the file is missing.
 
-use chess_corners::{Detector, DetectorConfig};
+use chess_corners::{Detector, DetectorConfig, Uncertainty};
 use chess_corners_testutil::synth_chessboard;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use std::hint::black_box;
@@ -42,8 +42,6 @@ fn bench_radon_pipeline_synth(c: &mut Criterion) {
 }
 
 fn bench_radon_pipeline_real(c: &mut Criterion) {
-    let cfg = DetectorConfig::radon();
-    let mut detector = Detector::new(cfg).unwrap();
     let mut group = c.benchmark_group("radon_pipeline_real");
     for name in ["small.png", "mid.png", "large.png"] {
         let Some((data, w, h)) = load_test_image(name) else {
@@ -51,12 +49,19 @@ fn bench_radon_pipeline_real(c: &mut Criterion) {
             continue;
         };
         group.throughput(Throughput::Elements((w as u64) * (h as u64)));
-        group.bench_function(name, |b| {
-            b.iter(|| {
-                let corners = detector.detect_u8(&data, w, h).unwrap();
-                black_box(corners.len())
+        for (id, uncertainty) in [
+            (name.to_string(), Uncertainty::Propagated),
+            (format!("{name}/uncertainty_off"), Uncertainty::Off),
+        ] {
+            let cfg = DetectorConfig::radon().with_uncertainty(uncertainty);
+            let mut detector = Detector::new(cfg).unwrap();
+            group.bench_function(id, |b| {
+                b.iter(|| {
+                    let corners = detector.detect_u8(&data, w, h).unwrap();
+                    black_box(corners.len())
+                });
             });
-        });
+        }
     }
     group.finish();
 }

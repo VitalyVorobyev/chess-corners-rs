@@ -626,11 +626,7 @@ impl<'a> RadonResponseView<'a> {
 
     /// Copy this borrowed view into an owned [`ResponseMap`].
     pub fn to_response_map(&self) -> ResponseMap {
-        ResponseMap {
-            w: self.w,
-            h: self.h,
-            data: self.data.to_vec(),
-        }
+        ResponseMap::new(self.w, self.h, self.data.to_vec())
     }
 }
 

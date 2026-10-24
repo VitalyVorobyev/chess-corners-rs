@@ -1,8 +1,10 @@
 use box_image_pyramid::PyramidParams;
-use chess_corners_core::{ChessParams, OrientationMethod, RadonDetectorParams, RefinerKind};
+use chess_corners_core::{
+    ChessParams, OrientationMethod, RadonDetectorParams, RefinerKind, Uncertainty,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::multiscale::{CoarseToFineParams, NoiseLevel};
+use crate::multiscale::{CoarseToFineParams, CovarianceStage, NoiseLevel};
 use crate::upscale::UpscaleConfig;
 use crate::ChessError;
 
@@ -107,6 +109,8 @@ impl Default for DetectionStrategy {
 ///   of ring support. `Disabled` by default.
 /// - [`orientation_method`](DetectorConfig::orientation_method) — how corner
 ///   axis orientations are estimated when building descriptors.
+/// - [`uncertainty`](DetectorConfig::uncertainty) — whether each corner
+///   reports a position covariance.
 ///
 /// # Advanced tuning
 ///
@@ -175,16 +179,23 @@ pub struct DetectorConfig {
     /// 1 gray level). The covariance never uses a variance below that
     /// `1/12`.
     ///
-    /// Only the saddle-point refiner reports a position covariance (ChESS
-    /// with [`ChessRefiner::SaddlePoint`], Radon with
-    /// [`RadonRefiner::SaddlePoint`](crate::RadonRefiner::SaddlePoint)), so
-    /// with any other refiner this field has no effect and no
-    /// estimate is made.
-    /// No covariance is reported when [`upscale`](Self::upscale) is active:
-    /// interpolation correlates the noise of neighbouring pixels.
+    /// Ignored, and no estimate is made, when
+    /// [`uncertainty`](Self::uncertainty) is [`Uncertainty::Off`], when no
+    /// corner carries a covariance, and when [`upscale`](Self::upscale) is
+    /// active (no covariance is reported there: interpolation correlates the
+    /// noise of neighbouring pixels).
     #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "gray level")))]
     pub noise_sigma: Option<f32>,
+    /// Which position uncertainty each corner reports in
+    /// [`position_covariance`](crate::CornerDescriptor::position_covariance).
+    /// [`Uncertainty::Propagated`] (the default) gives every localizer —
+    /// each [`ChessRefiner`] except the ML refiner, the Radon peak fit, and
+    /// saddle-point refinement of Radon peaks — a covariance: image noise
+    /// propagated through the localizer plus its systematic-error model.
+    /// [`Uncertainty::Off`] skips that work and the noise estimate; corner
+    /// positions are the same under every tier.
+    pub uncertainty: Uncertainty,
 }
 
 impl Default for DetectorConfig {
@@ -207,6 +218,7 @@ impl DetectorConfig {
             orientation_method: Some(OrientationMethod::default()),
             merge_radius: 3.0,
             noise_sigma: None,
+            uncertainty: Uncertainty::default(),
         }
     }
 
@@ -321,6 +333,12 @@ impl DetectorConfig {
         self.noise_sigma = Some(sigma);
         self
     }
+    /// Select which position uncertainty each corner reports. See
+    /// [`DetectorConfig::uncertainty`].
+    pub fn with_uncertainty(mut self, uncertainty: Uncertainty) -> Self {
+        self.uncertainty = uncertainty;
+        self
+    }
 
     /// Apply `f` to the shared [`DetectionParams`] (NMS / clustering
     /// thresholds honoured by both strategies) and return the updated
@@ -403,12 +421,19 @@ impl DetectorConfig {
         }
     }
 
-    /// The noise level that turns refined-corner covariances into px², for
-    /// a frame refined on the input image itself.
-    pub(crate) fn noise_level(&self) -> NoiseLevel {
-        match self.noise_sigma {
-            Some(sigma) => NoiseLevel::Known(sigma),
-            None => NoiseLevel::Estimate,
+    /// The position-covariance work for a frame refined on the input image
+    /// itself: the single place [`Self::uncertainty`] and
+    /// [`Self::noise_sigma`] are lowered for the localizers.
+    pub(crate) fn covariance_stage(&self) -> CovarianceStage {
+        match self.uncertainty {
+            Uncertainty::Off => CovarianceStage::Off,
+            tier => CovarianceStage::Reported {
+                tier,
+                noise: match self.noise_sigma {
+                    Some(sigma) => NoiseLevel::Known(sigma),
+                    None => NoiseLevel::Estimate,
+                },
+            },
         }
     }
 

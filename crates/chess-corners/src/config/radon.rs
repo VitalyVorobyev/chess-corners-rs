@@ -6,21 +6,21 @@ use serde::{Deserialize, Serialize};
 /// The Radon detector always locates its peaks with a 3-point fit on the
 /// response map ([`RadonConfig::peak_fit`]); this selects whether that
 /// position is final or seeds a saddle-point refinement on the input
-/// image. Only the saddle-point refinement reports a
-/// [`position_covariance`](crate::CornerDescriptor::position_covariance).
+/// image. Either reports a
+/// [`position_covariance`](crate::CornerDescriptor::position_covariance)
+/// under the default [`Uncertainty`](crate::Uncertainty) tier.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum RadonRefiner {
-    /// Keep the response-map peak fit (the default); no position
-    /// covariance.
+    /// Keep the response-map peak fit (the default).
     #[default]
     PeakFit,
-    /// Refine each peak with the saddle-point fit on the input image and
-    /// report its position covariance. A corner whose saddle-point
-    /// refinement does not converge keeps its peak-fit position, without a
-    /// covariance. On synthetic boards it is several times more accurate
+    /// Refine each peak with the saddle-point fit on the input image. A
+    /// corner whose saddle-point refinement does not converge keeps its
+    /// peak-fit position and covariance. On synthetic boards it is several
+    /// times more accurate
     /// than the peak fit under lens blur and board rotation, except on
     /// cells of about 4 px, where the fit window spans the neighbouring
     /// corners.
@@ -60,8 +60,7 @@ impl RadonRefiner {
 ///   reproduces the paper's 2× supersampled detection; `1` is faster but
 ///   less accurate on low-resolution inputs.
 /// - [`refiner`](RadonConfig::refiner) — the response-map peak fit alone
-///   (the default) or saddle-point refinement on the input image, which
-///   reports a position covariance.
+///   (the default) or saddle-point refinement on the input image.
 ///
 /// # Advanced tuning
 ///

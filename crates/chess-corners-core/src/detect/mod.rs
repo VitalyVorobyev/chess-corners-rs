@@ -27,21 +27,7 @@ pub use merge::merge_corners_simple;
 pub(crate) use neighbors::{count_positive_neighbors, is_local_max};
 
 use crate::refine::PositionCovariance;
-
-/// Model-error floor of a refined position, in px per axis: added as `f²`
-/// to each diagonal entry of [`Corner::position_covariance`]. It covers the
-/// phase-dependent error the re-centred saddle-point fit keeps, largest on
-/// boards rotated 30–45° from the pixel grid. Chosen to minimise the worst
-/// |ln σ̂₀²| of the whitened error on synthetic camera-formed boards (lens
-/// blur σ 0.5–2.5 px before pixel integration; 8–12 px cells, rotated 0–45°
-/// or sheared; noise σ 1–8 gray levels): 0.56, against 1.40 at 0.002 px.
-/// Grid-aligned boards at the lowest noise are then conservative
-/// (σ̂₀² ≈ 0.6).
-pub(crate) const POSITION_FLOOR_PX: f32 = 0.006;
-
-/// Lower bound on the pixel-noise variance used for a covariance, in gray
-/// level²: the variance of rounding to 8 bits.
-pub(crate) const MIN_NOISE_VAR: f32 = 1.0 / 12.0;
+use crate::uncertainty::total_covariance;
 
 /// A detected corner candidate (subpixel position with raw response strength).
 #[derive(Clone, Debug)]
@@ -61,6 +47,9 @@ pub struct Corner {
     /// `None` when the refiner reports none.
     /// [`Corner::position_covariance`] turns it into px².
     pub covariance_per_noise_variance: Option<PositionCovariance>,
+    /// Systematic part of the position covariance (px²), copied with
+    /// `covariance_per_noise_variance`.
+    pub(crate) systematic: PositionCovariance,
 }
 
 impl Corner {
@@ -72,41 +61,56 @@ impl Corner {
             y,
             strength,
             covariance_per_noise_variance: None,
+            systematic: PositionCovariance::ZERO,
         }
+    }
+
+    /// Attach the covariance of `res` (noise and systematic parts).
+    #[inline]
+    pub(crate) fn set_covariance(&mut self, res: &crate::RefineResult) {
+        self.covariance_per_noise_variance = res.covariance_per_noise_variance;
+        self.systematic = res.systematic;
     }
 
     /// Position covariance in px² for an image whose pixels carry white
     /// noise of standard deviation `noise_sigma` gray levels (for example
     /// from [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8)):
-    /// `σₙ²·C + f²·I`, with `C` =
-    /// [`covariance_per_noise_variance`](Self::covariance_per_noise_variance)
-    /// and `f = 0.006` px per axis. `σₙ²` is at least `1/12` gray level²,
-    /// the variance of rounding to 8 bits, so a smoothed or compressed image
-    /// whose measured noise is lower does not get an overconfident
-    /// covariance.
     ///
-    /// `σₙ²·C` is the first-order noise scatter; `f` is a model-error floor
-    /// for the small error the refiner keeps where the corner sits between
-    /// pixels. On synthetic boards formed with a lens blur of σ ≥ 0.5 px,
-    /// 8–12 px cells and any rotation, whitened errors have variance
-    /// 0.6–1.75 at noise σ 1 and 0.7–1.15 at σ ≥ 4 (conservative on
-    /// grid-aligned boards, overconfident at 30–45° rotations when the noise
-    /// is lowest). Ideally sharp optics (blur σ below about 0.5 px) leave up
-    /// to 0.02 px of phase-dependent error on boards rotated 2–15° or 45°,
-    /// and smaller, sheared or strongly blurred cells more, which this floor
-    /// does not cover. Valid only for the image the corner was refined on. With spatially correlated noise
-    /// (demosaiced, compressed or resampled images) `σₙ` from
+    /// `Σ = max(σₙ², 1/12)·C + Σ_sys`
+    ///
+    /// - `C` = [`covariance_per_noise_variance`](Self::covariance_per_noise_variance)
+    ///   is the first-order scatter that white pixel noise causes, per unit
+    ///   noise variance. `σₙ²` is at least `1/12` gray level², the variance
+    ///   of rounding to 8 bits, so a smoothed or compressed image whose
+    ///   measured noise is lower does not get an overconfident covariance.
+    /// - `Σ_sys` is the localizer's systematic error. A single-shot
+    ///   localizer (center of mass, Förstner, the Radon peak fit) is pulled
+    ///   toward the centre of its fit window by an amount set by the
+    ///   corner's offset from it and by the width of the corner's edges;
+    ///   `Σ_sys` holds that expected pull and the spread around it, as
+    ///   calibrated per localizer on synthetic camera-formed boards. The
+    ///   re-centred saddle-point fit has no such pull; its `Σ_sys` keeps the
+    ///   small error it has where the corner sits between pixels. Every
+    ///   localizer's `Σ_sys` also carries a floor measured on real
+    ///   calibration images, for the error real optics and targets add
+    ///   (about 0.05 px per axis for the saddle-point fit and the Radon peak
+    ///   fit, 0.07 for the center of mass, 0.15 for Förstner); on ideal
+    ///   synthetic corners the covariance is therefore conservative.
+    ///
+    /// Error that every corner of an image shares (defocus, depth,
+    /// lens-model error) is outside any single-corner covariance; it shows
+    /// up in a downstream calibration's variance factor. Valid only for the
+    /// image the corner was refined on. With
+    /// spatially correlated noise (demosaiced, compressed or resampled
+    /// images) `σₙ` from
     /// [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8) is the
     /// noise as that estimator's operator sees it, and the absolute scale of
-    /// the covariance is approximate; covariances of corners in the same
-    /// image remain meaningful relative to each other. `None` when the
-    /// corner carries no covariance.
+    /// the noise term is approximate. `None` when the corner carries no
+    /// covariance.
     #[inline]
     pub fn position_covariance(&self, noise_sigma: f32) -> Option<PositionCovariance> {
-        let var = (noise_sigma * noise_sigma).max(MIN_NOISE_VAR);
-        let floor2 = POSITION_FLOOR_PX * POSITION_FLOOR_PX;
         self.covariance_per_noise_variance
-            .map(|c| PositionCovariance::new(var * c.xx + floor2, var * c.xy, var * c.yy + floor2))
+            .map(|c| total_covariance(c, self.systematic, noise_sigma))
     }
 }
 
@@ -173,10 +177,10 @@ impl AxisEstimate {
 ///
 /// [`position_covariance`](Self::position_covariance) is the 2×2 covariance
 /// of `(x, y)` in px², for whitening the corner's residuals in a
-/// calibration. Only the saddle-point refiner reports one; the
-/// `chess-corners` `Detector` fills it, and [`describe_corners`] leaves it
-/// `None` because it needs the image noise level (see
-/// [`Corner::position_covariance`]).
+/// calibration. The `chess-corners` `Detector` fills it for every localizer
+/// except the ML refiner (unless its uncertainty tier is off), and
+/// [`describe_corners`] leaves it `None` because it needs the image noise
+/// level (see [`Corner::position_covariance`]).
 ///
 /// [`describe_corners`]: crate::describe_corners
 #[derive(Clone, Copy, Debug)]
@@ -200,14 +204,15 @@ pub struct CornerDescriptor {
     pub axes: Option<[AxisEstimate; 2]>,
 
     /// Covariance of the position `(x, y)` in px² of this frame: the
-    /// first-order scatter due to white pixel noise plus a small model-error
-    /// floor ([`Corner::position_covariance`] gives the model).
+    /// first-order scatter due to white pixel noise plus the localizer's
+    /// systematic error ([`Corner::position_covariance`] gives the model).
     ///
-    /// `None` unless the corner was refined by the saddle-point refiner, its
-    /// re-centred refinement converged, the image noise level is known
-    /// (estimated or supplied), and the corner was refined on the input
-    /// image itself — not on an upscaled copy, whose interpolated noise is
-    /// spatially correlated.
+    /// `None` when the localizer reports none (the uncertainty tier is off,
+    /// the ML refiner, a saddle-point refinement on ChESS seeds that did not
+    /// converge), when the image noise level is unknown (the estimate
+    /// declined and none was supplied), and when the corner was refined on
+    /// an upscaled copy of the input, whose interpolated noise is spatially
+    /// correlated.
     pub position_covariance: Option<PositionCovariance>,
 }
 

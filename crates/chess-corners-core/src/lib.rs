@@ -63,6 +63,11 @@ mod noise;
 mod orientation;
 mod params;
 mod refine;
+mod uncertainty;
+#[cfg(test)]
+mod uncertainty_eval;
+
+use crate::detect::chess::ring::RingOffsets;
 
 /// Low-level ChESS detection parameters consumed by the response and
 /// detection stages. The `chess-corners` facade lowers its
@@ -91,6 +96,7 @@ pub use crate::refine::{
     PositionCovariance, RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind,
     SaddlePointConfig, SaddlePointRefiner,
 };
+pub use crate::uncertainty::Uncertainty;
 pub use imageview::ImageView;
 
 /// Dense response map in row-major layout.
@@ -99,6 +105,10 @@ pub struct ResponseMap {
     pub(crate) w: usize,
     pub(crate) h: usize,
     pub(crate) data: Vec<f32>,
+    /// The ChESS ring the map was computed with, when it is a ChESS
+    /// response; the center-of-mass refiner propagates image noise through
+    /// it.
+    pub(crate) chess_ring: Option<RingOffsets>,
 }
 
 impl ResponseMap {
@@ -109,7 +119,12 @@ impl ResponseMap {
     /// Panics if `data.len() != w * h`.
     pub fn new(w: usize, h: usize, data: Vec<f32>) -> Self {
         assert_eq!(data.len(), w * h, "ResponseMap data length mismatch");
-        Self { w, h, data }
+        Self {
+            w,
+            h,
+            data,
+            chess_ring: None,
+        }
     }
 
     /// Width of the response map.
