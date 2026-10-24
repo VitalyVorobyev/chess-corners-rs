@@ -20,7 +20,7 @@ use pyo3::types::{PyAny, PyModule};
 use crate::config::{
     CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, ConfigError, DetectionParams,
     DetectionStrategy, DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod,
-    PeakFitMode, RadonConfig, SaddlePointConfig, UpscaleConfig,
+    PeakFitMode, RadonConfig, RadonRefiner, SaddlePointConfig, UpscaleConfig,
 };
 
 fn extract_image<'py>(
@@ -360,6 +360,26 @@ impl Detector {
     }
 }
 
+/// Estimate the standard deviation of the pixel noise of `image`, in gray
+/// levels: the per-image estimate the detector uses to express position
+/// covariances when `DetectorConfig.noise_sigma` is `None`. `image` must
+/// be a C-contiguous `uint8` array of shape `(H, W)`. Returns `None` when
+/// the image is smaller than 4×4 or has too few structure-free areas.
+#[pyfunction]
+fn estimate_noise_sigma(py: Python<'_>, image: &Bound<'_, PyAny>) -> PyResult<Option<f32>> {
+    let (array, height, width) = extract_image(image)?;
+    let view = array.as_array();
+    let slice = view.as_slice().ok_or_else(|| {
+        PyValueError::new_err("image must be a C-contiguous uint8 array of shape (H, W)")
+    })?;
+    let width_u32 =
+        u32::try_from(width).map_err(|_| PyValueError::new_err("image width exceeds u32::MAX"))?;
+    let height_u32 = u32::try_from(height)
+        .map_err(|_| PyValueError::new_err("image height exceeds u32::MAX"))?;
+    py.detach(|| chess_corners_rs::estimate_noise_sigma_u8(slice, width_u32, height_u32))
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
 #[pymodule(name = "_native")]
 fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("ConfigError", py.get_type::<ConfigError>())?;
@@ -376,11 +396,13 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MultiscaleConfig>()?;
     m.add_class::<UpscaleConfig>()?;
     m.add_class::<ChessRefiner>()?;
+    m.add_class::<RadonRefiner>()?;
     m.add_class::<ChessConfig>()?;
     m.add_class::<RadonConfig>()?;
     m.add_class::<DetectionStrategy>()?;
     m.add_class::<DetectorConfig>()?;
     m.add_class::<Detector>()?;
+    m.add_function(wrap_pyfunction!(estimate_noise_sigma, m)?)?;
 
     Ok(())
 }

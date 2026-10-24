@@ -4,7 +4,8 @@ use std::rc::Rc;
 
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessRefiner as RsChessRefiner,
-    ForstnerConfig as RsForstnerConfig, SaddlePointConfig as RsSaddlePointConfig,
+    ForstnerConfig as RsForstnerConfig, RadonRefiner as RsRadonRefiner,
+    SaddlePointConfig as RsSaddlePointConfig,
 };
 use wasm_bindgen::prelude::*;
 
@@ -412,6 +413,111 @@ impl ChessRefiner {
             }
             #[cfg(feature = "ml-refiner")]
             ChessRefinerKind::Ml => RsChessRefiner::Ml,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RadonRefiner (tagged class)
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RadonRefinerKind {
+    PeakFit,
+    SaddlePoint,
+}
+
+/// Final subpixel position of a Radon corner. Mirrors
+/// [`chess_corners::RadonRefiner`].
+///
+/// `RadonRefiner.withPeakFit()` (the default) keeps the response-map peak
+/// fit, without a position covariance; `RadonRefiner.withSaddlePoint(cfg)`
+/// refines each peak with the saddle-point fit on the input image and
+/// reports one. The `saddlePoint` getter hands back the payload
+/// wrapper, sharing its cell.
+#[wasm_bindgen]
+#[derive(Clone, Debug)]
+pub struct RadonRefiner {
+    pub(crate) kind: Cell<RadonRefinerKind>,
+    pub(crate) saddle_point: Cell<RsSaddlePointConfig>,
+}
+
+#[wasm_bindgen]
+impl RadonRefiner {
+    /// Keep the response-map peak fit. JS: `RadonRefiner.withPeakFit()`.
+    #[wasm_bindgen(js_name = withPeakFit)]
+    pub fn peak_fit() -> Self {
+        Self {
+            kind: cell(RadonRefinerKind::PeakFit),
+            saddle_point: cell(RsSaddlePointConfig::default()),
+        }
+    }
+
+    /// Saddle-point refinement of each peak on the input image. JS:
+    /// `RadonRefiner.withSaddlePoint(cfg)`.
+    #[wasm_bindgen(js_name = withSaddlePoint)]
+    pub fn saddle_point(cfg: &SaddlePointConfig) -> Self {
+        Self {
+            kind: cell(RadonRefinerKind::SaddlePoint),
+            saddle_point: cfg.share_cell(),
+        }
+    }
+
+    /// Discriminant tag: `"peak_fit"` or `"saddle_point"`.
+    #[wasm_bindgen(getter)]
+    pub fn kind(&self) -> String {
+        match *self.kind.borrow() {
+            RadonRefinerKind::PeakFit => "peak_fit",
+            RadonRefinerKind::SaddlePoint => "saddle_point",
+        }
+        .into()
+    }
+
+    /// Saddle-point payload wrapper. Edits propagate even while the
+    /// active `kind` is `"peak_fit"`.
+    #[wasm_bindgen(getter, js_name = saddlePoint)]
+    pub fn get_saddle_point(&self) -> SaddlePointConfig {
+        SaddlePointConfig::from_cell(Rc::clone(&self.saddle_point))
+    }
+    #[wasm_bindgen(setter, js_name = saddlePoint)]
+    pub fn set_saddle_point(&mut self, v: &SaddlePointConfig) {
+        *self.saddle_point.borrow_mut() = *v.cell.borrow();
+        *self.kind.borrow_mut() = RadonRefinerKind::SaddlePoint;
+    }
+
+    /// Switch the discriminant to `"peak_fit"`, keeping the saddle-point
+    /// payload for a later switch back.
+    #[wasm_bindgen(js_name = usePeakFit)]
+    pub fn use_peak_fit(&mut self) {
+        *self.kind.borrow_mut() = RadonRefinerKind::PeakFit;
+    }
+}
+
+impl Default for RadonRefiner {
+    fn default() -> Self {
+        Self::from_value(RsRadonRefiner::default())
+    }
+}
+
+impl RadonRefiner {
+    pub(crate) fn from_value(value: RsRadonRefiner) -> Self {
+        match value {
+            RsRadonRefiner::PeakFit => Self::peak_fit(),
+            RsRadonRefiner::SaddlePoint(cfg) => Self {
+                kind: cell(RadonRefinerKind::SaddlePoint),
+                saddle_point: cell(cfg),
+            },
+            // Unknown future variants map to the documented default.
+            _ => Self::default(),
+        }
+    }
+
+    pub(crate) fn snapshot(&self) -> RsRadonRefiner {
+        match *self.kind.borrow() {
+            RadonRefinerKind::PeakFit => RsRadonRefiner::PeakFit,
+            RadonRefinerKind::SaddlePoint => {
+                RsRadonRefiner::SaddlePoint(*self.saddle_point.borrow())
+            }
         }
     }
 }

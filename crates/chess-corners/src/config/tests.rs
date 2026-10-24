@@ -7,7 +7,7 @@ use crate::upscale::UpscaleConfig;
 
 use super::{
     ChessConfig, ChessRefiner, ChessRing, DetectionStrategy, DetectorConfig, MultiscaleConfig,
-    RadonConfig,
+    RadonConfig, RadonRefiner,
 };
 
 fn assert_strategy_chess(cfg: &DetectorConfig) -> &ChessConfig {
@@ -182,6 +182,29 @@ fn chess_multiscale_preset_round_trips_through_serde() {
     let decoded: DetectorConfig =
         serde_json::from_str(&json).expect("deserialize chess_multiscale config");
     assert_eq!(decoded, cfg);
+}
+
+#[test]
+fn radon_refiner_defaults_to_the_peak_fit_and_round_trips() {
+    for preset in [DetectorConfig::radon(), DetectorConfig::radon_multiscale()] {
+        assert_eq!(
+            assert_strategy_radon(&preset).refiner,
+            RadonRefiner::PeakFit
+        );
+    }
+    // Configs written without the field keep the peak fit.
+    let old: RadonConfig = serde_json::from_str(r#"{"ray_radius": 4}"#).unwrap();
+    assert_eq!(old.refiner, RadonRefiner::PeakFit);
+
+    let cfg = DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point());
+    let json = serde_json::to_value(cfg).unwrap();
+    assert!(json["strategy"]["radon"]["refiner"]["saddle_point"].is_object());
+    let back: DetectorConfig = serde_json::from_value(json).unwrap();
+    assert_eq!(back, cfg);
+    assert_eq!(
+        serde_json::to_value(DetectorConfig::radon()).unwrap()["strategy"]["radon"]["refiner"],
+        "peak_fit"
+    );
 }
 
 #[test]

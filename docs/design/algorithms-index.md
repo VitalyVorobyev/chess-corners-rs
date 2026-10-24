@@ -18,7 +18,7 @@ by" lists the downstream stages. Paths are relative to the repo root.
 | **R2** | Radon SAT ray response | Response | `crates/chess-corners-core/src/detect/radon/response.rs` | IV | `radon-sat-u32` | `u8` image → Radon response view | D2 |
 | **H1** | Ring offsets / angles (radius 5, 10) | Response helper | `crates/chess-corners-core/src/detect/chess/ring.rs` | III | — | radius → coord table | R1, X1, O1 |
 | **D1** | ChESS detection: threshold → NMS → cluster filter | Detection | `crates/chess-corners-core/src/detect/chess/detect.rs` | III | — | `ResponseMap` → `Vec<Corner>` | F1–F3, X1 |
-| **D2** | Radon detection: threshold → NMS → cluster + 3-pt Gaussian fit | Detection | `crates/chess-corners-core/src/detect/radon/detect.rs` | IV | — | Radon view → `Vec<Corner>` | F4, X1 |
+| **D2** | Radon detection: threshold → NMS → cluster + 3-pt Gaussian fit | Detection | `crates/chess-corners-core/src/detect/radon/detect.rs` | IV | — | Radon view → `Vec<Corner>` | F3 (opt-in), X1 |
 | **T1** | `DenseDetector` trait (drives both detectors) | Detection abstraction | `crates/chess-corners-core/src/detect/dense.rs` | III–IV | — | image → response + peaks | S3 |
 | **F1** | CenterOfMass refiner | Refinement | `crates/chess-corners-core/src/refine/center_of_mass.rs` | V | — | response patch → subpixel `(x,y)` | X1 |
 | **F2** | Förstner refiner (structure tensor) | Refinement | `crates/chess-corners-core/src/refine/forstner.rs` | V | — | image patch → subpixel `(x,y)` | X1 |
@@ -49,7 +49,8 @@ u8 image
 [D1] detect: threshold→NMS→cluster   [D2] detect: …→Gaussian peak fit
         │                              │
         ▼                              ▼
-[F1/F2/F3] subpixel refine            │            (via T2; [M1] optional post-step)
+[F1/F2/F3] subpixel refine        [F3] refine (opt-in; non-converged
+        │                              keep the peak fit)   (via T2; [M1] optional post-step)
         └──────────────┬──────────────┘
                        ▼
         [O1] RingFit  /  [O2] DiskFit   (two-axis orientation; uses [U1] σ-LUT, [H1] ring tables)

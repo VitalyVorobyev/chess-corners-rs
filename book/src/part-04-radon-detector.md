@@ -106,8 +106,7 @@ the paper's benchmarks.
 ## 4.4 Peak fit pipeline
 
 Once the dense response `R(x, y)` has been computed, the detector
-turns it into subpixel corner positions with the same pipeline used
-by the Radon refiner (see Part V):
+turns it into subpixel corner positions:
 
 1. **Box blur.** A separable `(2·blur_radius + 1)²` box filter
    smooths the response map in place. `blur_radius = 1` (a 3×3 box)
@@ -140,6 +139,21 @@ The peak fit is a closed-form operation on three samples per axis —
 no iteration. Implementation: `radon::fit_peak_frac` in
 `chess-corners-core`.
 
+6. **Saddle-point refinement** (optional). With
+   `RadonConfig.refiner = RadonRefiner::SaddlePoint(_)`, each peak seeds
+   the `SaddlePoint` refiner of [Part V §5.4](part-05-refiners.md#54-saddlepoint)
+   on the input image, which re-centres a quadratic fit on the corner
+   and reports a position covariance
+   ([Part VIII](part-08-uncertainty.md)). A corner whose refinement does
+   not converge keeps its peak-fit position, without a covariance; no
+   peak is dropped. The default, `RadonRefiner::PeakFit`, stops at
+   step 5.
+
+The peak fit locates a maximum of a blurred, supersampled response
+map, so on synthetic boards its error grows with lens blur and with
+board rotation; the saddle-point fit on the pixels measures lower there
+(§4.5).
+
 ### Why these defaults
 
 | Parameter               | Default | Reason                                                                                                 |
@@ -151,6 +165,7 @@ no iteration. Implementation: `radon::fit_peak_frac` in
 | `nms_radius` (`detection`)      | 4       | Matches `ray_radius` — local maxima should be at least one ray length apart. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `min_cluster_size` (`detection`)| 2       | Requires at least one supporting positive neighbor inside the NMS window. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `peak_fit`              | Gaussian | Log-space 3-point fit used by the paper-style pipeline; parabolic fit is also available.              |
+| `refiner`               | PeakFit | The paper's pipeline; `SaddlePoint` is an opt-in refinement that reports a covariance (§4.5). |
 
 ## 4.5 When to pick ChESS vs Radon
 
@@ -161,11 +176,35 @@ values. The practical differences:
 |-----------------------------------|-----------------------------------|-------------------------------------------|
 | Support required                  | 16 samples at radius 5 or 10      | 4 rays of length `2·ray_radius + 1`       |
 | Minimum cell size in repo sweep   | Degrades when the ring crosses neighbouring cells | Tested down to ~4 px with `image_upsample = 2` |
-| Gaussian blur in repo sweep       | Degrades near σ ≈ 1.5 px          | Lower error through σ ≈ 2.5 px on that fixture |
+| Seeding small / blurred cells     | Misses most corners on 4–5 px cells, and on 60°-sheared 8 px cells at blur σ 2.5 | Seeds 5–12 px cells through blur σ 2.5 at noise σ ≤ 2 (4 px cells through σ 1.5) |
 | Defocus / blur mechanism          | Ring samples can smear across cells | Ray integral averages over a short support |
 | Cost per image                    | One ring sample per pixel (+SIMD) | 4 SATs + one dense map per pixel          |
 | Memory overhead                   | One `ResponseMap`                 | Four SATs + response + blur scratch       |
-| Subpixel refinement               | Needs a separate refiner stage    | Built into the detector's peak fit        |
+| Subpixel refinement               | A refiner stage (`ChessRefiner`)  | Peak fit; optional saddle-point refinement (`RadonRefiner`) |
+
+On synthetic boards, the saddle-point refinement localizes Radon's
+corners more precisely than the peak fit. RMS error per axis (px) on
+boards formed as a camera forms them (Gaussian lens blur, pixel
+integration, exact truth; corners matched within 0.5 px), Radon's peak
+fit → with `RadonRefiner::SaddlePoint`:
+
+| Board, cell 8 px           | blur σ 1.5, noise 0 | blur 2.5, noise 0 | blur 1.5, noise 2 | blur 2.5, noise 2 |
+|----------------------------|---------------------|-------------------|-------------------|-------------------|
+| grid-aligned               | 0.007 → 0.002       | 0.024 → 0.005     | 0.056 → 0.021     | 0.179 → 0.042     |
+| rotated 45°                | 0.097 → 0.006       | 0.168 → 0.007     | 0.130 → 0.019     | 0.233¹ → 0.040    |
+| sheared 60°                | 0.058 → 0.005       | 0.051 → 0.009     | 0.117 → 0.023     | 0.208 → 0.059     |
+
+¹ only 58% of the corners land within 0.5 px with the peak fit (100%
+refined). Refined positions match ChESS with the same refiner wherever
+both detect the corner. On synthetic 5–6 px cells the refinement is
+never worse than the peak fit; on **4 px cells** the refinement window
+spans the neighbouring corners and is no better — with a 60° shear it is
+worse (blur 1.5, noise 2: 0.12 px with the peak fit, 0.17 px refined,
+and 19% of the refined corners move more than 0.5 px off), so keep the
+peak fit there. These are synthetic-only measurements (straight edges,
+Gaussian blur, white noise); check the refinement on your own images
+before relying on it. It adds about 0.5 µs per corner (≤ 3% of a Radon
+frame on the test images).
 
 ChESS is faster on the measured clean test images. The Radon detector
 is useful when the ChESS ring response does not seed enough corners,
@@ -229,9 +268,18 @@ let corners = detector.detect(&gray_image)?;
 // corners: Vec<CornerDescriptor>
 ```
 
-The facade runs the Radon detector, feeds its output into
-`describe_corners` (the shared descriptor stage from Part III §3.4),
-and returns `CornerDescriptor` values in the input pixel frame. The
+The facade runs the Radon detector, refines its peaks per
+`RadonConfig.refiner` (§4.4), feeds them into `describe_corners` (the
+shared descriptor stage from Part III §3.4), and returns
+`CornerDescriptor` values in the input pixel frame. To refine the peaks
+with the saddle-point fit (and get a position covariance):
+
+```rust
+use chess_corners::{DetectorConfig, RadonRefiner};
+
+let cfg = DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point());
+```
+ The
 orientation method that fills `axes` and `sigma_theta*` is shared with
 the ChESS pipeline; see [Part VI: Orientation methods](part-06-orientation-methods.md).
 
@@ -282,7 +330,8 @@ every field in §4.4's defaults table. The most common tweaks:
 
 - Heavy blur or low contrast: try `ray_radius` in the 5–6 working-pixel range.
 - Small cells (3–4 physical pixels): keep `image_upsample = 2`;
-  reduce `ray_radius` to 2–3.
+  reduce `ray_radius` to 2–3, and keep the default peak fit rather than
+  the saddle-point refinement (§4.5).
 - Very clean data: try `response_blur_radius = 0` and a higher relative
   threshold (for example 0.05) to cut weak peaks.
 - Noise-heavy scenes: try `response_blur_radius = 2` and verify the
@@ -291,6 +340,5 @@ every field in §4.4's defaults table. The most common tweaks:
 ---
 
 Next we move from response maps to what happens after detection:
-[Part V](part-05-refiners.md) describes the subpixel refiners that
-can replace the Radon peak-fit when the ChESS detector is in use, and
-that can also refine Radon output when extra precision is needed.
+[Part V](part-05-refiners.md) describes the subpixel refiners, among
+them the saddle-point fit that can also refine Radon peaks.

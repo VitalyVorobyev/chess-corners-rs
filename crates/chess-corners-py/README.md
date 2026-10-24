@@ -34,7 +34,7 @@ arrays:
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.sigmas` — `(N, 2)` float32, 1σ uncertainty per axis in radians, or `None` when orientation is disabled
-- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (only the saddle-point refiner reports it)
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (only the saddle-point refiner reports it: `ChessRefiner.saddle_point()` or `RadonRefiner.saddle_point()`); `chess_corners.estimate_noise_sigma(img)` returns the noise level behind it
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` (by less than π)
 traverses a **dark** sector of the corner; the two grid axes are **not**
@@ -100,8 +100,9 @@ cfg = (
 
 Refiners are per-detector: `ChessRefiner` carries one of
 `center_of_mass`, `forstner`, `saddle_point`, or `ml` (with the
-`ml-refiner` feature). The Radon detector uses its built-in Gaussian
-peak fit (`PeakFitMode`); it does not expose a pluggable refiner.
+`ml-refiner` feature). `RadonRefiner` carries `peak_fit` (the default:
+keep the response-map peak fit) or `saddle_point` (refine each Radon peak
+on the image, with a position covariance).
 The active `ChessRefiner` variant's tuning is reachable via the
 `payload` property:
 
@@ -206,7 +207,8 @@ Switch to the Radon strategy by replacing the `strategy` object and setting the 
       "ray_radius": 4,
       "image_upsample": 2,
       "response_blur_radius": 1,
-      "peak_fit": "gaussian"
+      "peak_fit": "gaussian",
+      "refiner": "peak_fit"
     }
   },
   "detection": { "nms_radius": 4, "min_cluster_size": 2 }

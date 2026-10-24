@@ -171,6 +171,27 @@ class ChessRefiner:
     def pretty(self, *, indent: int = ..., sort_keys: bool = ...) -> str: ...
     def print(self, *, file: TextIO | None = ..., indent: int = ..., sort_keys: bool = ...) -> None: ...
 
+class RadonRefiner:
+    """Final subpixel position of a Radon corner: ``peak_fit`` (the default)
+    keeps the response-map peak fit, without a position covariance;
+    ``saddle_point`` refines each peak with the saddle-point fit on the input
+    image and reports one."""
+    kind: str
+    payload: Optional[SaddlePointConfig]
+    def __init__(self) -> None: ...
+    @classmethod
+    def peak_fit(cls) -> "RadonRefiner": ...
+    @classmethod
+    def saddle_point(cls, cfg: SaddlePointConfig | None = ...) -> "RadonRefiner": ...
+    def to_dict(self) -> dict[str, Any]: ...
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | str) -> "RadonRefiner": ...
+    def to_json(self, *, indent: int | None = ..., sort_keys: bool = ...) -> str: ...
+    @classmethod
+    def from_json(cls, text: str) -> "RadonRefiner": ...
+    def pretty(self, *, indent: int = ..., sort_keys: bool = ...) -> str: ...
+    def print(self, *, file: TextIO | None = ..., indent: int = ..., sort_keys: bool = ...) -> None: ...
+
 # ---------------------------------------------------------------------------
 # Per-strategy configs
 # ---------------------------------------------------------------------------
@@ -193,6 +214,7 @@ class RadonConfig:
     image_upsample: int
     response_blur_radius: int
     peak_fit: PeakFitMode
+    refiner: RadonRefiner
     def __init__(self) -> None: ...
     def to_dict(self) -> dict[str, Any]: ...
     @classmethod
@@ -303,7 +325,8 @@ class Detections:
     def position_covariance(self) -> np.ndarray:
         """``(N, 2, 2)`` float32 array of per-corner position covariance in px²
         (``[[xx, xy], [xy, yy]]``). Rows are ``NaN`` for corners without one:
-        only the saddle-point refiner reports it, and not on upscaled input."""
+        only the saddle-point refiner reports it (``ChessRefiner.saddle_point``
+        or ``RadonRefiner.saddle_point``), and not on upscaled input."""
         ...
 
     def __len__(self) -> int: ...
@@ -334,5 +357,12 @@ class Detector:
         the normal detection result returned by :meth:`detect`.
         """
         ...
+
+def estimate_noise_sigma(image: np.ndarray) -> Optional[float]:
+    """Standard deviation of the pixel noise of a ``(H, W)`` ``uint8`` image,
+    in gray levels: the per-image estimate the detector uses for position
+    covariances when ``DetectorConfig.noise_sigma`` is ``None``. ``None`` when
+    the image is smaller than 4×4 or has too few structure-free areas."""
+    ...
 
 __all__: list[str]

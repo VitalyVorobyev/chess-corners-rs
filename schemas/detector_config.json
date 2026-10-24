@@ -285,7 +285,7 @@
       "type": "string"
     },
     "RadonConfig": {
-      "description": "Configuration for the whole-image Radon detector branch of\n`crate::DetectionStrategy`.\n\nAll radii and counts are in **working-resolution** pixels (i.e.\nafter `image_upsample`). The shared NMS / clustering thresholds\n(`crate::DetectionParams`), multiscale, and upscale live at the top level\nof `crate::DetectorConfig` and apply to both strategies.\n\n# Common knobs\n\n- `image_upsample` — `2` (the default)\n  reproduces the paper's 2× supersampled detection; `1` is faster but\n  less accurate on low-resolution inputs.\n\n# Advanced tuning\n\nThe remaining fields control low-level detection behaviour. The\ndefaults reproduce the paper's recommended settings and work well\nfor typical camera images. Adjust them only when you have a specific\nreason (e.g. a non-standard image resolution or SNR budget).",
+      "description": "Configuration for the whole-image Radon detector branch of\n`crate::DetectionStrategy`.\n\nAll radii and counts are in **working-resolution** pixels (i.e.\nafter `image_upsample`). The shared NMS / clustering thresholds\n(`crate::DetectionParams`), multiscale, and upscale live at the top level\nof `crate::DetectorConfig` and apply to both strategies.\n\n# Common knobs\n\n- `image_upsample` — `2` (the default)\n  reproduces the paper's 2× supersampled detection; `1` is faster but\n  less accurate on low-resolution inputs.\n- `refiner` — the response-map peak fit alone\n  (the default) or saddle-point refinement on the input image, which\n  reports a position covariance.\n\n# Advanced tuning\n\nThe remaining fields control low-level detection behaviour. The\ndefaults reproduce the paper's recommended settings and work well\nfor typical camera images. Adjust them only when you have a specific\nreason (e.g. a non-standard image resolution or SNR budget).",
       "properties": {
         "image_upsample": {
           "default": 2,
@@ -308,6 +308,11 @@
           "type": "integer",
           "x-unit": "px"
         },
+        "refiner": {
+          "$ref": "#/$defs/RadonRefiner",
+          "default": "peak_fit",
+          "description": "Final subpixel position: the peak fit alone (the default), or\nsaddle-point refinement of each peak on the input image. See\n`RadonRefiner`."
+        },
         "response_blur_radius": {
           "default": 1,
           "description": "Advanced tuning. Half-size of the box blur applied to the Radon\nresponse map after integration, in working-resolution pixels\n(integer `>= 0`). `0` disables blurring; the default `1` yields a\n3×3 box that smooths quantisation noise.",
@@ -318,6 +323,29 @@
         }
       },
       "type": "object"
+    },
+    "RadonRefiner": {
+      "description": "Final subpixel position of a Radon corner.\n\nThe Radon detector always locates its peaks with a 3-point fit on the\nresponse map (`RadonConfig::peak_fit`); this selects whether that\nposition is final or seeds a saddle-point refinement on the input\nimage. Only the saddle-point refinement reports a\n`position_covariance`.",
+      "oneOf": [
+        {
+          "const": "peak_fit",
+          "description": "Keep the response-map peak fit (the default); no position\ncovariance.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Refine each peak with the saddle-point fit on the input image and\nreport its position covariance. A corner whose saddle-point\nrefinement does not converge keeps its peak-fit position, without a\ncovariance. On synthetic boards it is several times more accurate\nthan the peak fit under lens blur and board rotation, except on\ncells of about 4 px, where the fit window spans the neighbouring\ncorners.",
+          "properties": {
+            "saddle_point": {
+              "$ref": "#/$defs/SaddlePointConfig"
+            }
+          },
+          "required": [
+            "saddle_point"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "SaddlePointConfig": {
       "description": "Configuration for the `SaddlePointRefiner`.\n\nAll thresholds below are advanced tuning knobs. The defaults are\nappropriate for most scenes; adjust only if you observe excessive\nrejection or acceptance of clearly-wrong refinements.",
@@ -408,7 +436,7 @@
     },
     "noise_sigma": {
       "default": null,
-      "description": "Standard deviation of the image's pixel noise, in gray levels\n(`>= 0`), used to express each corner's\n`position_covariance`\nin px². `None` (the default) estimates it from each image with\n`chess_corners_core::estimate_noise_sigma_u8`; set it when the\nsensor noise is known, for example from a flat-field measurement.\nIt is the noise as it appears in the 8-bit image, rounding included\n(rounding adds `1/12` gray level², which matters only below about\n1 gray level). The covariance never uses a variance below that\n`1/12`.\n\nOnly the saddle-point refiner reports a position covariance, so with\nany other refiner this field has no effect and no estimate is made.\nNo covariance is reported when `upscale` is active:\ninterpolation correlates the noise of neighbouring pixels.",
+      "description": "Standard deviation of the image's pixel noise, in gray levels\n(`>= 0`), used to express each corner's\n`position_covariance`\nin px². `None` (the default) estimates it from each image with\n`estimate_noise_sigma_u8`; set it\nwhen the sensor noise is known, for example from a flat-field\nmeasurement.\nIt is the noise as it appears in the 8-bit image, rounding included\n(rounding adds `1/12` gray level², which matters only below about\n1 gray level). The covariance never uses a variance below that\n`1/12`.\n\nOnly the saddle-point refiner reports a position covariance (ChESS\nwith `ChessRefiner::SaddlePoint`, Radon with\n`RadonRefiner::SaddlePoint`), so\nwith any other refiner this field has no effect and no\nestimate is made.\nNo covariance is reported when `upscale` is active:\ninterpolation correlates the noise of neighbouring pixels.",
       "format": "float",
       "minimum": 0.0,
       "type": [

@@ -75,3 +75,33 @@ def test_noise_sigma_config_round_trip():
 def test_invalid_noise_sigma_is_rejected():
     with pytest.raises(ValueError, match="noise_sigma"):
         chess_corners.Detector(_saddle_config().with_noise_sigma(-1.0))
+
+
+def test_radon_saddle_point_reports_position_covariance():
+    img = _noisy_board()
+    cfg = chess_corners.DetectorConfig.radon()
+    assert cfg.strategy.radon.refiner.kind == "peak_fit"
+    saddle = cfg.with_radon(refiner=chess_corners.RadonRefiner.saddle_point())
+    det = chess_corners.Detector(saddle).detect(img)
+    assert len(det) > 0
+    present = ~np.isnan(det.position_covariance[:, 0, 0])
+    assert present.sum() > len(det) // 2
+
+    plain = chess_corners.Detector(cfg).detect(img)
+    assert len(plain) == len(det)
+    assert np.isnan(plain.position_covariance).all()
+    # Corners without a covariance keep their peak-fit position.
+    np.testing.assert_array_equal(det.xy[~present], plain.xy[~present])
+
+
+def test_estimate_noise_sigma_matches_the_detector():
+    img = _noisy_board(sigma=3.0)
+    sigma = chess_corners.estimate_noise_sigma(img)
+    assert sigma is not None and 2.5 < sigma < 3.5
+    # The detector's estimate: same covariances as with σ supplied.
+    est = chess_corners.Detector(_saddle_config()).detect(img)
+    known = chess_corners.Detector(_saddle_config().with_noise_sigma(sigma)).detect(img)
+    np.testing.assert_array_equal(est.position_covariance, known.position_covariance)
+    assert chess_corners.estimate_noise_sigma(np.full((3, 3), 9, np.uint8)) is None
+    with pytest.raises(TypeError):
+        chess_corners.estimate_noise_sigma(img.astype(np.float32))

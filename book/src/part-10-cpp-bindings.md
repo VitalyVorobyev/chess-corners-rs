@@ -214,12 +214,14 @@ The fields group by applicability:
 
 - **Both strategies:** `strategy`, `threshold`, `nms_radius`,
   `min_cluster_size`, `orientation_method`, `multiscale`, `merge_radius`,
-  `upscale_factor`, and the image noise level `has_noise_sigma` /
+  `upscale_factor`, the image noise level `has_noise_sigma` /
   `noise_sigma` (`std::optional<float> noise_sigma` in C++; unset
-  estimates it from each image).
-- **ChESS only:** `refiner` (a `CC_REFINER_*` tag) and `chess_ring`
-  (`CC_CHESS_RING_CANONICAL` for the paper's radius-5 ring, or
-  `CC_CHESS_RING_BROAD` for radius-10).
+  estimates it from each image), and `refiner` (a `CC_REFINER_*` tag
+  valid for the strategy: ChESS takes `CENTER_OF_MASS` — its default —,
+  `FORSTNER` or `SADDLE_POINT`; Radon takes `PEAK_FIT` — its default —
+  or `SADDLE_POINT`).
+- **ChESS only:** `chess_ring` (`CC_CHESS_RING_CANONICAL` for the
+  paper's radius-5 ring, or `CC_CHESS_RING_BROAD` for radius-10).
 - **Radon only:** `ray_radius`, `image_upsample`, `response_blur_radius`,
   and `peak_fit` (`CC_PEAK_FIT_GAUSSIAN` — the Radon default — or
   `CC_PEAK_FIT_PARABOLIC`).
@@ -231,8 +233,8 @@ safe to start from any preset and set only what you need.
 upscaling (the explicit off-state), or `2`/`3`/`4` to bilinearly upscale
 the input by that factor before detection; output coordinates are rescaled
 back to the input pixel frame. Any other value (including `1`) is rejected
-with `CC_ERR_UPSCALE`. An unknown enum tag in any field is rejected with
-`CC_ERR_INVALID_CONFIG`. In both cases `cc_detect_u8` returns the status
+with `CC_ERR_UPSCALE`. An unknown enum tag in any field, or a refiner tag
+not valid for the strategy, is rejected with `CC_ERR_INVALID_CONFIG`. In both cases `cc_detect_u8` returns the status
 without allocating a result — invalid configuration never panics or reads
 past the struct.
 
@@ -255,9 +257,12 @@ between them crossing a dark sector. The `axes` are valid only when
 skips the per-corner fit, sets `has_orientation` to `0`, and zeroes
 `axes`. `position_covariance` (`xx`, `xy`, `yy`, in px²) is valid when
 `has_position_covariance` is `1` (a `std::optional<Covariance>` in
-C++): only the saddle-point refiner (`CC_REFINER_SADDLE_POINT`) reports
-it, and not when `upscale_factor` is set ([Part VIII](part-08-uncertainty.md)
-covers its meaning and use). See
+C++): only the saddle-point refiner (`CC_REFINER_SADDLE_POINT`, either
+strategy) reports it, and not when `upscale_factor` is set
+([Part VIII](part-08-uncertainty.md) covers its meaning and use).
+`cc_estimate_noise_sigma_u8` (`chess_corners::estimate_noise_sigma`,
+returning `std::optional<float>`, in C++) returns the per-image noise
+estimate detection uses when `noise_sigma` is unset. See
 [Part I §1.4](part-01-orientation.md#14-the-cornerdescriptor-output)
 for the field semantics and
 [Part III §3.4](part-03-chess-detector.md#34-corner-descriptors) for

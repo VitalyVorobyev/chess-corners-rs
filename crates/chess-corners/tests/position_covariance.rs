@@ -11,7 +11,8 @@
 use std::sync::OnceLock;
 
 use chess_corners::{
-    ChessRefiner, CornerDescriptor, Detector, DetectorConfig, MultiscaleConfig, Roi, UpscaleConfig,
+    ChessRefiner, CornerDescriptor, Detector, DetectorConfig, MultiscaleConfig, RadonRefiner, Roi,
+    UpscaleConfig,
 };
 use chess_corners_core::estimate_noise_sigma_u8;
 use chess_corners_testutil::{add_gaussian_noise, optical_chessboard, Lattice};
@@ -97,6 +98,10 @@ fn standard_image() -> &'static [u8] {
 
 fn saddle() -> DetectorConfig {
     DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::saddle_point())
+}
+
+fn radon_saddle() -> DetectorConfig {
+    DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point())
 }
 
 /// Model-error floors (px per axis) compared by the measurement; the
@@ -296,23 +301,79 @@ fn covariance_is_reported_only_where_valid() {
             .count();
         (with, corners.len())
     };
-    // Saddle point on the input image, single scale or coarse-to-fine.
+    // Saddle point on the input image, single scale or coarse-to-fine,
+    // after either detector.
     for cfg in [
         saddle(),
         saddle().with_multiscale(MultiscaleConfig::pyramid_default()),
+        radon_saddle(),
+        radon_saddle().with_multiscale(MultiscaleConfig::pyramid_default()),
     ] {
         let (with, all) = count(cfg);
-        assert!(with * 10 >= all * 9, "{with} of {all}");
+        assert!(with * 10 >= all * 9, "{with} of {all}: {cfg:?}");
     }
-    // No covariance: other refiners, Radon, or an upscaled input.
+    // No covariance: other refiners, Radon's peak fit (its default), or an
+    // upscaled input.
     for cfg in [
         DetectorConfig::chess(),
         DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner()),
         DetectorConfig::radon(),
         saddle().with_upscale(UpscaleConfig::fixed(2)),
+        radon_saddle().with_upscale(UpscaleConfig::fixed(2)),
     ] {
         assert_eq!(count(cfg).0, 0, "{cfg:?}");
     }
+}
+
+/// Radon with saddle-point refinement keeps every peak: a corner whose
+/// refinement carries a covariance has moved off the peak fit, and every
+/// other corner keeps its peak-fit position exactly.
+#[test]
+fn radon_keeps_the_peak_fit_where_refinement_has_no_covariance() {
+    let img = standard_image();
+    let detect = |cfg: DetectorConfig| {
+        Detector::new(cfg)
+            .unwrap()
+            .detect_u8(img, SIZE as u32, SIZE as u32)
+            .unwrap()
+    };
+    let peaks = detect(DetectorConfig::radon());
+    let refined = detect(radon_saddle());
+    assert_eq!(peaks.len(), refined.len());
+    let (mut moved, mut kept) = (0, 0);
+    for (p, r) in peaks.iter().zip(&refined) {
+        assert!((p.x - r.x).abs() < 0.5 && (p.y - r.y).abs() < 0.5);
+        if r.position_covariance.is_some() {
+            moved += 1;
+        } else {
+            assert_eq!((p.x, p.y), (r.x, r.y));
+            kept += 1;
+        }
+    }
+    assert!(moved > 300, "{moved} refined, {kept} kept");
+}
+
+/// Radon's saddle-point refinement is calibrated like the ChESS one.
+#[test]
+fn radon_covariance_is_calibrated() {
+    let fx = Fixture::new(0.8, 2.0);
+    let mut w = Whitened::default();
+    for (k, (lattice, clean)) in clean_boards(fx, 2).iter().enumerate() {
+        let (img, _) = fx.noisy(clean, 2000 + k as u64);
+        let corners = Detector::new(radon_saddle())
+            .unwrap()
+            .detect_u8(&img, SIZE as u32, SIZE as u32)
+            .unwrap();
+        w.add(lattice, &corners);
+    }
+    assert!(w.n > 600, "too few corners with a covariance: {}", w.n);
+    assert_eq!(w.unmatched, 0);
+    let s0 = w.sigma0_sq();
+    assert!(
+        (0.75..1.25).contains(&s0),
+        "σ̂₀² = {s0:.3} over {} corners",
+        w.n
+    );
 }
 
 #[test]

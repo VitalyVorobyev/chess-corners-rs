@@ -337,14 +337,11 @@ impl Detector {
                 ml.state = Some(ml_refiner::MlRefinerState::new(&ml.params, &fallback));
             }
             let state = ml.state.as_mut().expect("ml state initialised above");
-            // The ML refiner reports no covariance, so the noise level is
-            // not needed on this path.
             return multiscale::detect_with_ml(
                 view,
                 cfg,
                 pyramid,
                 chess_buffers,
-                radon_buffers,
                 &ml.params,
                 state,
             );

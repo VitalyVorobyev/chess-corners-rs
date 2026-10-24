@@ -128,7 +128,7 @@ facade. Fields:
 | `x`, `y`        | `f32`                       | Subpixel position in input image pixels.                                |
 | `response`      | `f32`                       | Raw detector response at the peak. Scale is detector-specific.          |
 | `axes`          | `Option<[AxisEstimate; 2]>` | The two local grid axis directions, each with a 1σ angular uncertainty — or `None` when the orientation fit is disabled. |
-| `position_covariance` | `Option<PositionCovariance>` | 2×2 covariance of `(x, y)` in px² — or `None`; only the `SaddlePoint` refiner reports one ([Part VIII](part-08-uncertainty.md)). |
+| `position_covariance` | `Option<PositionCovariance>` | 2×2 covariance of `(x, y)` in px² — or `None`; only the `SaddlePoint` refiner reports one (`ChessRefiner::SaddlePoint` or `RadonRefiner::SaddlePoint`; [Part VIII](part-08-uncertainty.md)). |
 
 The two axes are **not** assumed orthogonal — projective warp or
 lens distortion tilts the sectors independently, and the fit

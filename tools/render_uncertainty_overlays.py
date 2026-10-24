@@ -18,7 +18,9 @@ bindings:
 - ``uncertainty_board_ellipses.png`` — predicted covariance ellipses
   (exaggerated) on a board whose lens blur grows from left to right.
 - ``uncertainty_calibration.png`` — predicted vs measured error per imaging
-  condition, and the whitened errors against a unit normal.
+  condition, and the whitened errors against a unit normal. With
+  ``--detector radon`` the same grid runs through the Radon detector with
+  saddle-point refinement and the figure goes to ``out/`` instead.
 
 Deterministic: fixed seeds. Takes about a minute.
 """
@@ -229,15 +231,15 @@ def match(xy: np.ndarray, truth: np.ndarray, radius: float = 0.5):
     return np.where(d[np.arange(len(truth)), j] <= radius, j, -1)
 
 
-def note(ax, text: str) -> None:
+def note(ax, text: str, y: float = 0.03, va: str = "bottom") -> None:
     ax.text(
         0.03,
-        0.03,
+        y,
         text,
         transform=ax.transAxes,
         fontsize=9,
         color=INK2,
-        va="bottom",
+        va=va,
         bbox=dict(facecolor=SURFACE, edgecolor="none", alpha=0.85, pad=2),
     )
 
@@ -248,9 +250,6 @@ def frame(ax, lim: float) -> None:
     ax.set_aspect("equal")
     ax.xaxis.set_major_locator(MaxNLocator(5, symmetric=True))
     ax.yaxis.set_major_locator(MaxNLocator(5, symmetric=True))
-    ax.set_xlabel("x error (px)")
-    ax.set_ylabel("y error (px)")
-    ax.legend(loc="upper right", fontsize=8, framealpha=0.9)
 
 
 def ellipse(ax, centre, cov, k, scale=1.0, **kw):
@@ -280,10 +279,10 @@ def fig_bias_precision(out: Path, draws: int) -> None:
     rng = np.random.default_rng(1)
     images = [quantize(clean, noise, rng) for _ in range(draws)]
 
-    fig, grid = plt.subplots(2, 2, figsize=(9.0, 9.0))
-    axes = [grid[0, 0], grid[0, 1], grid[1, 0]]
+    # Every refiner on the same axes, so cloud sizes and offsets compare
+    # directly; the saddle-point detail is an inset with its region marked.
+    fig, axes = plt.subplots(1, 3, figsize=(13.5, 5.3), sharex=True, sharey=True)
     lim = 0.42
-    sp_errs, sp_covs = None, None
     for ax, (name, refiner, color) in zip(axes, refiners):
         det = detector(refiner, noise_sigma=noise)
         errs, covs = [], []
@@ -299,39 +298,54 @@ def fig_bias_precision(out: Path, draws: int) -> None:
         mean = errs.mean(0)
         scatter_cov = np.cov(errs.T)
         sigma = np.sqrt(np.trace(scatter_cov) / 2)
+        stats = f"bias {np.linalg.norm(mean):.3f} px\nσ per axis {sigma:.3f} px"
         ax.scatter(errs[:, 0], errs[:, 1], s=6, color=color, alpha=0.35, lw=0)
-        ax.plot(0, 0, marker="+", color=INK, ms=14, mew=1.8, ls="none", label="true corner")
-        ax.plot(*mean, marker="x", color=INK, ms=8, mew=1.8, ls="none", label="cloud centre")
+        ax.plot(0, 0, marker="+", color=INK, ms=14, mew=1.8, ls="none")
+        ax.plot(*mean, marker="x", color=INK, ms=8, mew=1.8, ls="none")
         if covs:
-            sp_errs, sp_covs = errs, np.array(covs)
-            ellipse(ax, (0, 0), sp_covs.mean(0), 2, color=INK, lw=1.4, ls="--", label="predicted 2σ")
+            # Inset: the cloud with its predicted ellipses, magnified.
+            pred = np.array(covs).mean(0)
+            zoom = 5
+            ins = ax.inset_axes([0.62, 0.1, 0.35, 0.35])
+            ins.scatter(errs[:, 0], errs[:, 1], s=5, color=color, alpha=0.45, lw=0)
+            ins.plot(0, 0, marker="+", color=INK, ms=10, mew=1.5, ls="none")
+            ellipse(ins, (0, 0), pred, 1, color=INK, lw=1.2)
+            ellipse(ins, (0, 0), pred, 2, color=INK, lw=1.2, ls="--")
+            ins.set_xlim(-lim / zoom, lim / zoom)
+            ins.set_ylim(lim / zoom, -lim / zoom)
+            ins.set_aspect("equal")
+            ins.tick_params(labelsize=7)
+            ins.xaxis.set_major_locator(FixedLocator([-0.05, 0, 0.05]))
+            ins.yaxis.set_major_locator(FixedLocator([-0.05, 0, 0.05]))
+            ins.set_title(f"{zoom}× zoom", fontsize=8, color=INK2, pad=3)
+            ax.indicate_inset_zoom(ins, edgecolor=INK2, alpha=0.8)
+            r2 = np.sum(whiten(errs, np.array(covs)) ** 2, 1)
+            stats += (
+                f"\ninside predicted 1σ: {np.mean(r2 <= 1):.0%} (normal: 39%)"
+                f"\ninside predicted 2σ: {np.mean(r2 <= 4):.0%} (normal: 86%)"
+            )
         else:
-            ellipse(ax, mean, scatter_cov, 2, color=INK2, lw=1.2, ls=":", label="scatter 2σ (no prediction)")
+            ellipse(ax, mean, scatter_cov, 2, color=INK2, lw=1.2, ls=":")
         ax.set_title(name)
-        note(ax, f"bias {np.linalg.norm(mean):.3f} px\nσ per axis {sigma:.3f} px")
+        note(ax, stats, y=0.97, va="top")
         frame(ax, lim)
+        ax.set_xlabel("x error (px)")
+    axes[0].set_ylabel("y error (px)")
 
-    # Zoom on the saddle-point cloud: predicted ellipses about the truth.
-    ax = grid[1, 1]
-    pred = sp_covs.mean(0)
-    ax.scatter(sp_errs[:, 0], sp_errs[:, 1], s=8, color=BLUE, alpha=0.45, lw=0)
-    ax.plot(0, 0, marker="+", color=INK, ms=14, mew=1.8, ls="none", label="true corner")
-    ellipse(ax, (0, 0), pred, 1, color=INK, lw=1.4, label="predicted 1σ")
-    ellipse(ax, (0, 0), pred, 2, color=INK, lw=1.4, ls="--", label="predicted 2σ")
-    z = whiten(sp_errs, sp_covs)
-    r2 = np.sum(z**2, 1)
-    note(
-        ax,
-        f"inside 1σ: {np.mean(r2 <= 1):.0%} (expected 39%)\n"
-        f"inside 2σ: {np.mean(r2 <= 4):.0%} (expected 86%)",
-    )
-    ax.set_title("SaddlePoint, 5× zoom")
-    frame(ax, lim / 5)
+    handles = [
+        plt.Line2D([], [], marker="+", color=INK, ms=12, mew=1.8, ls="none", label="true corner"),
+        plt.Line2D([], [], marker="x", color=INK, ms=8, mew=1.8, ls="none", label="cloud centre"),
+        plt.Line2D([], [], color=INK2, lw=1.2, ls=":", label="scatter 2σ (no prediction)"),
+        plt.Line2D([], [], color=INK, lw=1.2, label="predicted 1σ"),
+        plt.Line2D([], [], color=INK, lw=1.2, ls="--", label="predicted 2σ"),
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=5, fontsize=9, frameon=False, bbox_to_anchor=(0.5, 0.0))
     fig.suptitle(
-        f"One corner, {len(images)} noise draws (8 px cells, lens blur σ {blur} px, noise σ {noise:g} gray levels)",
+        f"One corner, {len(images)} noise draws (8 px cells, lens blur σ {blur} px, noise σ {noise:g} gray levels), "
+        "same scale in every panel",
         fontsize=11,
     )
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
     fig.savefig(out, dpi=150)
     plt.close(fig)
     print(f"[ok] {out.relative_to(WORKSPACE)}")
@@ -410,12 +424,18 @@ def clean_boards(cell: float, axis_angle: float, rotation: float, psf: float, bo
     return out
 
 
-def run_condition(clean, noise: float, seed: int):
+def run_condition(clean, noise: float, seed: int, radon: bool = False):
     """Errors and covariances of matched corners that carry a covariance,
     and the fraction of true corners matched within 0.5 px, on noisy copies
     of the ``clean`` boards."""
     rng = np.random.default_rng(seed)
-    det = detector(cc.ChessRefiner.saddle_point())  # σ estimated per image
+    # σ estimated per image.
+    if radon:
+        cfg = cc.DetectorConfig.radon().without_orientation()
+        cfg = cfg.with_radon(refiner=cc.RadonRefiner.saddle_point())
+        det = cc.Detector(cfg)
+    else:
+        det = detector(cc.ChessRefiner.saddle_point())
     errs, covs, n_truth, n_match = [], [], 0, 0
     for board, img in clean:
         h, w = img.shape
@@ -437,7 +457,7 @@ def whiten(errs: np.ndarray, covs: np.ndarray) -> np.ndarray:
     return np.linalg.solve(chol, errs[..., None])[..., 0]
 
 
-def fig_calibration(out: Path, boards: int) -> None:
+def fig_calibration(out: Path, boards: int, radon: bool = False) -> None:
     blurs = [0.5, 0.8, 1.5, 2.5]
     noises = [1.0, 2.0, 4.0, 8.0]
     # (label, axis angle, rotation, colour, marker, grid-aligned)
@@ -457,7 +477,7 @@ def fig_calibration(out: Path, boards: int) -> None:
             clean = clean_boards(8.0, angle, rot, b, boards, seed)
             for n in noises:
                 seed += 1
-                errs, covs, rate = run_condition(clean, n, seed)
+                errs, covs, rate = run_condition(clean, n, seed, radon)
                 if len(errs) < 200 or rate < 0.99:
                     print(f"  skip {label} blur {b} noise {n}: {len(errs)} corners, match rate {rate:.2f}")
                     continue
@@ -510,6 +530,7 @@ def main() -> None:
     ap.add_argument("--draws", type=int, default=600, help="noise draws for the single-corner figure")
     ap.add_argument("--boards", type=int, default=6, help="boards per condition for the calibration figure")
     ap.add_argument("--only", choices=["bias", "board", "calibration"], help="render one figure")
+    ap.add_argument("--detector", choices=["chess", "radon"], default="chess", help="detector for the calibration figure")
     args = ap.parse_args()
     BOOK_IMG.mkdir(parents=True, exist_ok=True)
     if args.only in (None, "bias"):
@@ -517,7 +538,11 @@ def main() -> None:
     if args.only in (None, "board"):
         fig_board_ellipses(BOOK_IMG / "uncertainty_board_ellipses.png")
     if args.only in (None, "calibration"):
-        fig_calibration(BOOK_IMG / "uncertainty_calibration.png", args.boards)
+        if args.detector == "radon":
+            (WORKSPACE / "out").mkdir(exist_ok=True)
+            fig_calibration(WORKSPACE / "out" / "uncertainty_calibration_radon.png", args.boards, radon=True)
+        else:
+            fig_calibration(BOOK_IMG / "uncertainty_calibration.png", args.boards)
 
 
 if __name__ == "__main__":

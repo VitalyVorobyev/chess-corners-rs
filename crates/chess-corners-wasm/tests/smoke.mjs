@@ -13,7 +13,17 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkg = path.resolve(process.argv[2] ?? path.join(here, "..", "pkg"));
 const mod = await import(pathToFileURL(path.join(pkg, "chess_corners_wasm.js")).href);
-const { default: init, DetectorConfig, ChessDetector, default_detector_config_json, defaultDetectorConfigJson } = mod;
+const {
+  default: init,
+  DetectorConfig,
+  ChessDetector,
+  RadonRefiner,
+  SaddlePointConfig,
+  default_detector_config_json,
+  defaultDetectorConfigJson,
+  estimateNoiseSigma,
+  estimateNoiseSigmaRgba,
+} = mod;
 await init({ module_or_path: readFileSync(path.join(pkg, "chess_corners_wasm_bg.wasm")) });
 
 const throwsWith = (fn, needle) => {
@@ -114,5 +124,32 @@ saddle.detect(board, size, size);
 assert.ok(saddle.positionCovariance().length > 0);
 saddle.applyConfig(DetectorConfig.chess());
 assert.equal(saddle.positionCovariance().length, 0, "cleared by applyConfig");
+
+// Radon keeps its peak fit by default (no covariance); the saddle-point
+// refinement reports one.
+const radonCfg = DetectorConfig.radon();
+assert.equal(JSON.parse(radonCfg.toJson()).strategy.radon.refiner, "peak_fit");
+const peakFit = ChessDetector.withConfig(radonCfg);
+peakFit.detect(board, size, size);
+assert.ok(peakFit.positionCovariance().every((v) => Number.isNaN(v)));
+const saddleCfg = radonCfg.withRadonRefiner(RadonRefiner.withSaddlePoint(new SaddlePointConfig()));
+assert.equal(JSON.parse(saddleCfg.toJson()).strategy.radon.refiner.saddle_point.radius, 2);
+const radon = ChessDetector.withConfig(saddleCfg);
+radon.detect(board, size, size);
+assert.ok(radon.positionCovariance().some((v) => Number.isFinite(v) && v > 0));
+
+// Noise estimate: the board carries ±4 gray levels of uniform noise (σ ≈ 2.3).
+const sigma = estimateNoiseSigma(board, size, size);
+assert.ok(sigma > 1.5 && sigma < 3.5, `estimated σ ${sigma}`);
+const rgba = new Uint8Array(size * size * 4);
+for (let i = 0; i < size * size; i++) {
+  rgba.set([board[i], board[i], board[i], 255], 4 * i);
+}
+// Same grayscale conversion as `detectRgba`, which truncates to integers.
+const sigmaRgba = estimateNoiseSigmaRgba(rgba, size, size);
+assert.ok(Math.abs(sigmaRgba / sigma - 1) < 0.1, `RGBA σ ${sigmaRgba} vs gray σ ${sigma}`);
+assert.throws(() => estimateNoiseSigmaRgba(board, size, size));
+assert.equal(estimateNoiseSigma(new Uint8Array(4 * 4).fill(128), 4, 4), undefined);
+assert.throws(() => estimateNoiseSigma(board, size + 1, size));
 
 console.log("chess-corners-wasm JSON smoke test: ok");

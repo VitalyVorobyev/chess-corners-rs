@@ -14,7 +14,7 @@ use super::parse::{
     parse_chess_ring, parse_peak_fit_mode, peak_fit_mode_str, reject_unknown_keys, require_dict,
     ChessRing, PeakFitMode,
 };
-use super::refiners::ChessRefiner;
+use super::refiners::{ChessRefiner, RadonRefiner};
 
 // ---------------------------------------------------------------------------
 // ChessConfig
@@ -129,24 +129,27 @@ pub struct RadonConfig {
     pub(crate) image_upsample: u32,
     pub(crate) response_blur_radius: u32,
     pub(crate) peak_fit: RsPeakFitMode,
+    pub(crate) refiner: Py<RadonRefiner>,
 }
 
 impl RadonConfig {
-    pub(crate) fn from_rs(_py: Python<'_>, v: RsRadonConfig) -> PyResult<Self> {
+    pub(crate) fn from_rs(py: Python<'_>, v: RsRadonConfig) -> PyResult<Self> {
         Ok(Self {
             ray_radius: v.ray_radius,
             image_upsample: v.image_upsample,
             response_blur_radius: v.response_blur_radius,
             peak_fit: v.peak_fit,
+            refiner: Py::new(py, RadonRefiner::from_rs(v.refiner))?,
         })
     }
 
-    pub(crate) fn to_rs(&self, _py: Python<'_>) -> RsRadonConfig {
+    pub(crate) fn to_rs(&self, py: Python<'_>) -> RsRadonConfig {
         let mut cfg = RsRadonConfig::default();
         cfg.ray_radius = self.ray_radius;
         cfg.image_upsample = self.image_upsample;
         cfg.response_blur_radius = self.response_blur_radius;
         cfg.peak_fit = self.peak_fit;
+        cfg.refiner = self.refiner.borrow(py).to_rs();
         cfg
     }
 }
@@ -194,12 +197,22 @@ impl RadonConfig {
         self.peak_fit = v.into();
     }
 
+    #[getter]
+    fn refiner(&self, py: Python<'_>) -> Py<RadonRefiner> {
+        self.refiner.clone_ref(py)
+    }
+    #[setter]
+    fn set_refiner(&mut self, v: Py<RadonRefiner>) {
+        self.refiner = v;
+    }
+
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
         d.set_item("ray_radius", self.ray_radius)?;
         d.set_item("image_upsample", self.image_upsample)?;
         d.set_item("response_blur_radius", self.response_blur_radius)?;
         d.set_item("peak_fit", peak_fit_mode_str(self.peak_fit))?;
+        d.set_item("refiner", self.refiner.borrow(py).to_dict(py)?)?;
         Ok(d.unbind())
     }
 
@@ -233,6 +246,10 @@ impl RadonConfig {
         }
         if let Some(s) = extract_string(&dict, "peak_fit", "radon")? {
             cfg.peak_fit = parse_peak_fit_mode(&s, "radon.peak_fit")?;
+        }
+        if let Some(value) = dict.get_item("refiner")? {
+            let cls = py.get_type::<RadonRefiner>();
+            cfg.refiner = Py::new(py, RadonRefiner::from_dict(&cls, &value)?)?;
         }
         Ok(cfg)
     }

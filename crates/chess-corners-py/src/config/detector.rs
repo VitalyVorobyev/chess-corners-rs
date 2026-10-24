@@ -14,7 +14,7 @@ use super::parse::{
     parse_orientation_method, reject_unknown_keys, require_dict, ChessRing, OrientationMethod,
     PeakFitMode,
 };
-use super::refiners::ChessRefiner;
+use super::refiners::{ChessRefiner, RadonRefiner};
 use super::strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig, StrategyKind};
 use super::upscale::UpscaleConfig;
 
@@ -210,8 +210,8 @@ impl DetectorConfig {
     /// Top-level fields (threshold, multiscale, etc.) are preserved.
     ///
     /// Accepted kwargs: `ray_radius`, `image_upsample`,
-    /// `response_blur_radius`, `peak_fit`. The shared NMS / clustering
-    /// knobs moved to `with_detection`.
+    /// `response_blur_radius`, `peak_fit`, `refiner`. The shared NMS /
+    /// clustering knobs moved to `with_detection`.
     #[pyo3(signature = (**kwargs))]
     fn with_radon(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         const RADON_FIELDS: &[&str] = &[
@@ -219,6 +219,7 @@ impl DetectorConfig {
             "image_upsample",
             "response_blur_radius",
             "peak_fit",
+            "refiner",
         ];
 
         let mut cfg = self.clone_inner(py)?;
@@ -250,6 +251,9 @@ impl DetectorConfig {
             if let Some(v) = kw.get_item("peak_fit")? {
                 let pf: PeakFitMode = v.extract()?;
                 radon.peak_fit = pf.into();
+            }
+            if let Some(v) = kw.get_item("refiner")? {
+                radon.refiner = v.extract::<Py<RadonRefiner>>()?;
             }
         }
 

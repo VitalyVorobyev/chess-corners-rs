@@ -97,6 +97,7 @@ from a measured bias/precision split, not ahead of it.
 | next | Bias/precision benchmark per refiner; published noise-row numbers re-measured (the test noise helper produced 1.3× the stated σ before the fix) | `UQ-01..02` |
 | decision | `UQ-01` found SaddlePoint bias (~0.12 px on sharp corners) far above noise scatter, removable by re-centred refitting: reduce bias first, then expose the covariance | — |
 | `1.5.0` | SaddlePoint re-centred refit (default) with a validated covariance; per-image noise estimate (px² output); SaddlePoint covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; CenterOfMass non-refinement fix; a book Part on uncertainty; camera-formed (lens blur before pixel integration) evidence fixtures and the floor tuned on rotated boards | `UQ-03`, `UQ-05`, `UQ-07`, `UQ-09`, `UQ-15` |
+| `1.6.0` | Opt-in SaddlePoint refinement of Radon corners with its covariance (`RadonRefiner`; default stays the peak fit pending real-data evidence, `UQ-22`); per-image noise estimate public in every binding | `UQ-18` |
 | `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); Förstner and CenterOfMass covariance once their bias is addressed; cubic re-centring for SaddlePoint and a smaller floor | `UQ-04`, `UQ-06`, `UQ-16` |
 | ongoing | Realistic ground truth (calib-synth / etendue renders; end-to-end σ̂₀ check in calibration-rs) | `UQ-08`, `ML-01`, `ML-02` |
 
@@ -113,7 +114,8 @@ from a measured bias/precision split, not ahead of it.
 - Validation so far uses i.i.d. Gaussian noise. Real sensors add
   signal-dependent (shot) noise and spatially correlated noise (demosaicing,
   compression).
-- The default refiner (CenterOfMass) reports no covariance.
+- The default refiners (ChESS CenterOfMass, Radon peak fit) report no
+  covariance; SaddlePoint is opt-in on both (`UQ-18`, `UQ-22`).
 - Orientation σ mixes methods: RingFit scales a Gauss-Newton covariance by
   the fit residual plus a calibration factor; DiskFit is a heuristic that is
   overcautious on clean corners.

@@ -3,10 +3,8 @@
 //! [`DenseDetector`] is the contract the multiscale orchestrator drives
 //! over: each implementor computes a dense per-pixel response over an
 //! [`ImageView`] (stage 1) and extracts subpixel corner peaks from it
-//! (stage 2). Image-domain subpixel refinement (center-of-mass,
-//! Förstner, saddle-point, …) is **not** part of this trait — it runs
-//! detector-agnostically via
-//! [`crate::refine_corners_on_image`].
+//! (stage 2); [`DenseDetector::refine_peaks_on_image`] then refines the
+//! peaks on the input image with one of the built-in refiners.
 //!
 //! Two zero-sized implementors live alongside the trait:
 //!
@@ -17,7 +15,8 @@
 //! - [`RadonDetector`] — wraps the whole-image Duda-Frese Radon
 //!   response ([`crate::radon_response_u8`]) and the
 //!   threshold + NMS + 3-point Gaussian peak-fit stage
-//!   ([`crate::detect_peaks_from_radon`]).
+//!   ([`crate::detect_peaks_from_radon`]); image refinement keeps the
+//!   peak-fit position unless the refiner reports a covariance.
 //!
 //! The free functions named above remain public; the trait is an
 //! additive uniform interface, not a replacement.
@@ -41,7 +40,7 @@ use super::{
     Corner,
 };
 use crate::imageview::ImageView;
-use crate::refine::CornerRefiner;
+use crate::refine::{CornerRefiner, RefineContext, RefineStatus};
 use crate::{ChessParams, ResponseMap};
 
 /// Sealing supertrait for [`DenseDetector`]. Implemented only for the
@@ -59,11 +58,9 @@ mod private {
 /// reusable scratch through [`Self::Buffers`] so a multiscale
 /// orchestrator can amortise allocations across frames.
 ///
-/// Subpixel refinement on the *input image* (Förstner, saddle-point,
-/// center-of-mass, …) is NOT part of this trait — that runs as a
-/// post-detection stage via
-/// [`crate::refine_corners_on_image`], which is
-/// detector-agnostic.
+/// Subpixel refinement on the *input image* (center-of-mass,
+/// Förstner, saddle-point) runs on the detected peaks through
+/// [`Self::refine_peaks_on_image`].
 ///
 /// # Toolchain
 ///
@@ -153,20 +150,20 @@ pub trait DenseDetector: private::Sealed {
     /// return a non-trivial peak inside the ROI.
     fn roi_border(&self, params: &Self::Params) -> i32;
 
-    /// Apply a detector-appropriate image-domain refinement step to
-    /// the peaks produced by [`Self::detect_corners`].
+    /// Refine the peaks produced by [`Self::detect_corners`] on the
+    /// input image with `refiner`.
     ///
-    /// The default subpixel refiners ([`crate::Refiner`]
-    /// variants) expect a [`ResponseMap`] (center-of-mass,
-    /// Förstner) or an image patch (saddle-point, Radon-peak) keyed
-    /// to the detector's response. ChESS forwards its
-    /// [`ResponseMap`] straight through; Radon's
-    /// [`RadonResponseView`] does not fit the [`ResponseMap`]
-    /// contract (working-resolution layout, different coordinate
-    /// frame than the peak positions), so the Radon implementor
-    /// keeps the 3-point Gaussian peak fit from
-    /// [`Self::detect_corners`] as the subpixel position and skips
-    /// further refinement.
+    /// ChESS forwards its [`ResponseMap`] together with the image to
+    /// [`crate::refine_corners_on_image`], so every refiner applies, and
+    /// drops the corners the refiner does not accept.
+    ///
+    /// Radon's [`RadonResponseView`] is not a [`ResponseMap`] in the
+    /// peak positions' frame, so the refiner sees only the image (the
+    /// center-of-mass refiner, which reads the response map, rejects
+    /// every seed). Radon peaks are already subpixel, so a corner keeps
+    /// its peak-fit position unless the refiner accepts it **with** a
+    /// position covariance — the saddle-point refiner does so exactly
+    /// when its re-centred fit converged — and is never dropped.
     fn refine_peaks_on_image(
         &self,
         corners: Vec<Corner>,
@@ -175,16 +172,8 @@ pub trait DenseDetector: private::Sealed {
         refiner: &mut dyn CornerRefiner,
     ) -> Vec<Corner>;
 
-    /// Whether [`Self::refine_peaks_on_image`] actually consumes the
-    /// orchestrator-supplied refiner. When `false`, the orchestrator
-    /// must not include the refiner's patch radius in the per-seed
-    /// ROI margin — otherwise a no-op refiner choice would still
-    /// shrink the valid seed area near the image border (a tunable
-    /// silently coupling to an unused setting).
-    ///
-    /// Default `true` matches the ChESS-style "refine on image"
-    /// contract; the Radon impl returns `false` because its
-    /// [`Self::refine_peaks_on_image`] is a no-op.
+    /// Whether [`Self::refine_peaks_on_image`] consumes the refiner:
+    /// `true` for both built-in detectors.
     fn refines_on_image(&self) -> bool {
         true
     }
@@ -393,30 +382,29 @@ impl DenseDetector for RadonDetector {
 
     fn refine_peaks_on_image(
         &self,
-        corners: Vec<Corner>,
-        _image: ImageView<'_>,
+        mut corners: Vec<Corner>,
+        image: ImageView<'_>,
         _response: &Self::Response<'_>,
-        _refiner: &mut dyn CornerRefiner,
+        refiner: &mut dyn CornerRefiner,
     ) -> Vec<Corner> {
-        // Radon's `detect_corners` already runs a 3-point Gaussian
-        // peak fit on the response map, which IS the subpixel
-        // refinement step for this detector. The default
-        // `Refiner::CenterOfMass` consumes a `ResponseMap` keyed to
-        // the seed's coordinate frame; Radon's response is a
-        // `RadonResponseView` at working resolution (different
-        // coordinate frame and different element layout), so wiring
-        // the refiner here would either reject every corner (if we
-        // pass `None`) or silently sample the wrong frame. We keep
-        // the peaks as the detector emitted them.
+        // The working-resolution Radon response is not a `ResponseMap`
+        // in the peaks' frame, so the refiner sees the image only. A
+        // refined position replaces the peak fit only together with its
+        // covariance: the saddle-point refiner's integer-grid fallback
+        // (re-centring did not converge) is less accurate than the peak
+        // fit it would replace.
+        let ctx = RefineContext::new(Some(image), None);
+        for c in &mut corners {
+            let res = refiner.refine([c.x, c.y], ctx);
+            if let (RefineStatus::Accepted, Some(cov)) =
+                (res.status, res.covariance_per_noise_variance)
+            {
+                c.x = res.x;
+                c.y = res.y;
+                c.covariance_per_noise_variance = Some(cov);
+            }
+        }
         corners
-    }
-
-    fn refines_on_image(&self) -> bool {
-        // Paired with the no-op `refine_peaks_on_image` above: the
-        // orchestrator must not pad the per-seed ROI with the
-        // refiner's patch radius, since the refiner is never
-        // consulted on the Radon path.
-        false
     }
 }
 
@@ -461,6 +449,50 @@ mod tests {
             !radon_corners.is_empty(),
             "RadonDetector returned no corners on synthetic chessboard"
         );
+    }
+
+    /// Radon image refinement never drops a peak: the saddle-point refiner
+    /// moves the corners it refines to convergence (and attaches their
+    /// covariance), every other corner — and every corner under a refiner
+    /// that reports no covariance — keeps its peak-fit position.
+    #[test]
+    fn radon_refinement_keeps_peaks_without_a_covariance() {
+        use crate::refine::{CenterOfMassConfig, Refiner, RefinerKind, SaddlePointConfig};
+        const SIZE: usize = 65;
+        let img = synthetic_chessboard_aa(SIZE, 8, (32.35, 32.8), 30, 230);
+        let view = ImageView::from_u8_slice(SIZE, SIZE, &img).expect("view");
+        let params = RadonDetectorParams::default();
+        let mut buffers = RadonBuffers::default();
+        let resp = RadonDetector.compute_response(view, &params, &mut buffers);
+        let peaks = RadonDetector.detect_corners(&resp, &params, 0);
+        assert!(peaks.len() > 10);
+
+        let mut sp = Refiner::from_kind(RefinerKind::SaddlePoint(SaddlePointConfig::default()));
+        let refined = RadonDetector.refine_peaks_on_image(peaks.clone(), view, &resp, &mut sp);
+        assert_eq!(refined.len(), peaks.len());
+        let mut moved = 0;
+        for (p, r) in peaks.iter().zip(&refined) {
+            assert_eq!(p.strength, r.strength);
+            if r.covariance_per_noise_variance.is_some() {
+                moved += 1;
+                assert!((p.x - r.x).abs() < 0.5 && (p.y - r.y).abs() < 0.5);
+            } else {
+                assert_eq!((p.x, p.y), (r.x, r.y));
+            }
+        }
+        assert!(
+            moved * 2 > peaks.len(),
+            "{moved} of {} refined",
+            peaks.len()
+        );
+
+        let mut com = Refiner::from_kind(RefinerKind::CenterOfMass(CenterOfMassConfig::default()));
+        let kept = RadonDetector.refine_peaks_on_image(peaks.clone(), view, &resp, &mut com);
+        assert_eq!(kept.len(), peaks.len());
+        for (p, k) in peaks.iter().zip(&kept) {
+            assert_eq!((p.x, p.y), (k.x, k.y));
+            assert!(k.covariance_per_noise_variance.is_none());
+        }
     }
 
     /// A second smoke test that pins the buffer-reuse semantics: a

@@ -180,7 +180,9 @@ impl From<RsOrientationMethod> for OrientationMethod {
 pub(crate) use detector::config_to_json;
 pub use detector::DetectorConfig;
 pub use multiscale::MultiscaleConfig;
-pub use refiners::{CenterOfMassConfig, ChessRefiner, ForstnerConfig, SaddlePointConfig};
+pub use refiners::{
+    CenterOfMassConfig, ChessRefiner, ForstnerConfig, RadonRefiner, SaddlePointConfig,
+};
 pub use strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig};
 pub use upscale::UpscaleConfig;
 

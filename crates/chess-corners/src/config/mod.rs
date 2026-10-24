@@ -9,4 +9,4 @@ mod tests;
 pub use chess::{ChessConfig, ChessRefiner, ChessRing};
 pub use detection::{DetectionParams, DetectionStrategy, DetectorConfig};
 pub use multiscale::MultiscaleConfig;
-pub use radon::RadonConfig;
+pub use radon::{RadonConfig, RadonRefiner};

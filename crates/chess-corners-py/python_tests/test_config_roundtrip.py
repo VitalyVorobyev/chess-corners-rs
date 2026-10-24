@@ -174,3 +174,33 @@ def test_multiscale_unknown_bare_string_raises_clear_error():
     """An unrecognised bare string for MultiscaleConfig must raise ConfigError."""
     with pytest.raises(chess_corners.ConfigError):
         chess_corners.MultiscaleConfig.from_dict("bogus_variant")
+
+
+# ---------------------------------------------------------------------------
+# RadonRefiner
+# ---------------------------------------------------------------------------
+
+
+def test_radon_refiner_round_trips_and_accepts_serde_shapes():
+    cfg = chess_corners.DetectorConfig.radon()
+    assert chess_corners.RadonRefiner().kind == "peak_fit"
+    assert json.loads(cfg.to_json())["strategy"]["radon"]["refiner"] == {"peak_fit": None}
+
+    sp = chess_corners.SaddlePointConfig()
+    sp.max_offset = 0.75
+    cfg = cfg.with_radon(refiner=chess_corners.RadonRefiner.saddle_point(sp))
+    back = chess_corners.DetectorConfig.from_json(cfg.to_json())
+    assert back.strategy.radon.refiner.kind == "saddle_point"
+    assert back.strategy.radon.refiner.payload.max_offset == pytest.approx(0.75)
+
+    cfg.strategy.radon.refiner = chess_corners.RadonRefiner.peak_fit()
+    back = chess_corners.DetectorConfig.from_dict(cfg.to_dict())
+    assert back.strategy.radon.refiner.kind == "peak_fit"
+    assert back.strategy.radon.refiner.payload is None
+
+    # Serde's bare-string unit variant.
+    assert chess_corners.RadonRefiner.from_dict("peak_fit").kind == "peak_fit"
+    with pytest.raises(chess_corners.ConfigError):
+        chess_corners.RadonRefiner.from_dict("saddle_point")
+    with pytest.raises(chess_corners.ConfigError):
+        chess_corners.RadonRefiner.from_dict({"center_of_mass": {}})

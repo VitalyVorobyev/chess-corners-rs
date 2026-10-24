@@ -222,8 +222,13 @@ def test_with_radon_unknown_kwarg_raises_type_error():
         chess_corners.DetectorConfig.radon().with_radon(bad_key=1)
 
 
-def test_with_radon_refiner_kwarg_now_rejected():
-    with pytest.raises(TypeError, match="unexpected keyword argument: 'refiner'"):
+def test_with_radon_refiner_kwarg_takes_a_radon_refiner():
+    cfg = chess_corners.DetectorConfig.radon().with_radon(
+        refiner=chess_corners.RadonRefiner.peak_fit()
+    )
+    assert cfg.strategy.radon.refiner.kind == "peak_fit"
+    # A ChESS refiner is not a Radon refiner.
+    with pytest.raises(TypeError):
         chess_corners.DetectorConfig.radon().with_radon(
             refiner=chess_corners.ChessRefiner.forstner()
         )

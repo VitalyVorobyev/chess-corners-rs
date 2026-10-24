@@ -50,6 +50,15 @@ int main() {
         if (with_cov == 0) {
             return 1;
         }
+
+        // Radon keeps its peak fit by default; refining its peaks with the
+        // saddle point gives its corners a covariance too.
+        chess_corners::Config radon = chess_corners::Config::radon();
+        radon.refiner = CC_REFINER_SADDLE_POINT;
+        radon.noise_sigma = 1.0f;
+        const std::vector<chess_corners::Corner> radon_corners =
+            chess_corners::detect(image, width, height, radon);
+        std::printf("chess-corners: Radon detected %zu corners\n", radon_corners.size());
     } catch (const std::exception& error) {
         std::fprintf(stderr, "detection failed: %s\n", error.what());
         return 1;

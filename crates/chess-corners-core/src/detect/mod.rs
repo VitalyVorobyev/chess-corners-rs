@@ -56,7 +56,9 @@ pub struct Corner {
     /// The refiner's position covariance per unit image-noise variance (px²
     /// per gray-level²), copied from
     /// [`RefineResult::covariance_per_noise_variance`](crate::RefineResult::covariance_per_noise_variance)
-    /// by [`refine_corners_on_image`]; `None` when the refiner reports none.
+    /// by [`refine_corners_on_image`] and by the Radon detector's image
+    /// refinement ([`DenseDetector::refine_peaks_on_image`](crate::DenseDetector::refine_peaks_on_image));
+    /// `None` when the refiner reports none.
     /// [`Corner::position_covariance`] turns it into px².
     pub covariance_per_noise_variance: Option<PositionCovariance>,
 }
