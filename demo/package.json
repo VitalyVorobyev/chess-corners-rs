@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@vitavision/chess-corners": "file:./pkg",
-    "@vitavision/stage2d": "0.13.2",
+    "@vitavision/stage2d": "0.14.0",
     "@vitavision/ui": "0.14.0",
     "@vitavision/workbench": "0.3.2",
     "react": "^19.2.6",
