@@ -21,7 +21,8 @@ active strategy variant.
 | `upscale`             | `UpscaleConfig::Disabled` or `UpscaleConfig::Fixed(factor)` (`factor ∈ {2, 3, 4}`). Pre-pipeline bilinear upscaling for low-resolution inputs.    |
 | `orientation_method`  | `OrientationMethod::RingFit` (default) or `DiskFit`. Drives the two-axis descriptor fit on both detectors; `without_orientation()` skips the fit and leaves each descriptor's `axes` as `None`. |
 | `merge_radius`        | Duplicate-suppression distance (base-image pixels) for the final cross-scale merge step.                                                          |
-| `noise_sigma`         | `None` (estimate per image, default) or the image's pixel-noise σ in gray levels; turns the saddle-point refiner's covariance into each descriptor's `position_covariance` in px² ([Part VIII](part-08-uncertainty.md)). |
+| `noise_sigma`         | `None` (estimate per image, default) or the image's pixel-noise σ in gray levels; turns each corner's covariance into its descriptor's `position_covariance` in px² ([Part VIII](part-08-uncertainty.md)). |
+| `uncertainty`         | `Propagated` (default: every localizer reports a `position_covariance`) or `Off` (none, and no noise estimate; positions unchanged). |
 
 Inside `DetectionParams` (set via `DetectorConfig.detection`):
 
@@ -45,7 +46,7 @@ Inside `RadonConfig`:
 | `image_upsample`       | `1` (no supersample) or `2` (paper default). Values ≥ 3 are clamped to 2.                       |
 | `response_blur_radius` | Half-size of the box blur applied to the response map. `0` disables blurring.                  |
 | `peak_fit`             | `PeakFitMode::Parabolic` or `Gaussian` for the 3-point subpixel peak fit on the response map.  |
-| `refiner`              | `RadonRefiner::PeakFit` (default: keep the peak fit) or `SaddlePoint(_)` (refine each peak on the image, with a position covariance). |
+| `refiner`              | `RadonRefiner::PeakFit` (default: keep the peak fit) or `SaddlePoint(_)` (refine each peak on the image). |
 
 Four presets cover the common cases:
 
@@ -145,8 +146,7 @@ let refiner = ChessRefiner::Forstner(f);
 ```
 
 The Radon refiner is `RadonConfig.refiner`: the response-map peak fit
-alone (the default) or the saddle-point fit on the image, which also
-reports a position covariance:
+alone (the default) or the saddle-point fit on the image:
 
 ```rust
 use chess_corners::{DetectorConfig, RadonRefiner};
@@ -265,7 +265,7 @@ print(det.response.shape) # (N,)  float32
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.sigmas` — `(N, 2)` float32, 1σ uncertainty per axis in radians, or `None` when orientation is disabled
-- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (only the saddle-point refiner reports it)
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.OFF`, the ML refiner, or upscaling)
 
 When the orientation fit is skipped (`cfg.without_orientation()`),
 `det.angles` and `det.sigmas` are `None`.

@@ -1,9 +1,10 @@
 # Part VIII: Uncertainty
 
-With the `SaddlePoint` refiner — selected through `ChessRefiner` on
-the ChESS detector or `RadonRefiner` on the Radon detector — every
-refined corner carries a 2×2 covariance of its position, in px²,
-in the input image frame. A
+Under the default `DetectorConfig::uncertainty`
+(`Uncertainty::Propagated`), every refined corner carries a 2×2 covariance
+of its position, in px², in the input image frame, whichever localizer
+placed it (each `ChessRefiner` except the ML refiner, the Radon peak fit,
+and `RadonRefiner::SaddlePoint`). `Uncertainty::Off` skips it. A
 calibration or pose solver can use it to weight each corner by how well
 it is actually localised, instead of trusting every corner equally.
 
@@ -52,13 +53,11 @@ pixel grid, by the σ of the lens blur:
 At noise σ of 1–2 gray levels the scatter of every refiner is
 0.01–0.08 px, so the bias of CenterOfMass and Förstner is one to eight
 times their scatter. A covariance that describes only noise would make
-a calibration overconfident by that factor. This is why only
-`SaddlePoint` reports a covariance: once its bias is removed (§8.3),
-the noise is what remains, with the exceptions listed in §8.4.1. The
-Radon detector's own peak fit is biased the same way on these boards
-(noise-free, up to 0.17 px; [Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)),
-so Radon reports a covariance only when its peaks are refined with
-`SaddlePoint` (`RadonRefiner::SaddlePoint`).
+a calibration overconfident by that factor, so each localizer's
+covariance also carries a systematic term (§8.3.4). `SaddlePoint` removes
+most of its bias by re-centring (§8.3); the Radon detector's own peak fit
+is biased like CenterOfMass and Förstner on these boards (noise-free, up
+to 0.17 px; [Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)).
 
 ## 8.2 What the detector reports
 
@@ -199,25 +198,35 @@ to check a value you supply: `chess_corners::estimate_noise_sigma_u8`
 ### 8.3.4 The reported covariance
 
 \\[
-\Sigma = \max\bigl(\sigma_n^2, \tfrac{1}{12}\bigr)\, C + f^2\, I_2,
-\qquad f = 0.006 \text{ px} .
+\Sigma = \max\bigl(\sigma_n^2, \tfrac{1}{12}\bigr)\, C + \Sigma_{\text{sys}} .
 \\]
 
 - **The variance floor of 1/12 gray level²** is the variance of
   rounding to 8 bits. A smoothed or compressed image can measure lower:
   one of the repository's test images reads σ ≈ 0.2. The floor keeps
   such an image from getting an overconfident covariance.
-- **The position floor \\(f\\)** covers the small error the
-  re-centred fit keeps, which depends on where the corner sits between
-  pixels and on the board's rotation (§8.4.1). It was chosen to keep the
-  whitened error closest to unit variance over synthetic boards with
-  8–12 px cells, lens blur σ 0.5–2.5 px, rotated 0–45° or sheared, at
-  noise σ 1–8. At 0.006 px the extremes are 1.75× the predicted variance
-  (rotated 45°, blur 0.5, noise 1) and 0.61× (grid-aligned, noise 1). At
-  0.002 px the 45° boards read up to 4×; at 0.008 px grid-aligned boards
-  read 0.45×.
+- **The systematic term \\(\Sigma_{\text{sys}}\\)** is the localizer's
+  expected error beyond noise. A single-shot localizer (CenterOfMass,
+  Förstner, the Radon peak fit) is pulled toward the centre of its fit
+  window by an amount set by the corner's offset from that centre and by
+  the width of its edges; the term holds that pull and its spread, fitted
+  per localizer on synthetic camera-formed boards from two independent
+  generators. The re-centred `SaddlePoint` fit keeps only a small,
+  phase-dependent error. Each localizer's term also carries a floor
+  measured on real calibration images, where corners are not ideal:
+  about 0.05 px per axis for `SaddlePoint` and the Radon peak fit, 0.07
+  for CenterOfMass and 0.15 for Förstner. On ideal synthetic corners the
+  covariance is therefore conservative (§8.4).
+- Error shared by every corner of a view (defocus, depth, lens-model
+  error) is outside any single-corner covariance; it shows up in the
+  downstream \\(\hat\sigma_0^2\\).
 
 ## 8.4 How well it holds
+
+The figures in this section show the `SaddlePoint` noise term with the
+synthetic part of its systematic term. The real-data floor (§8.3.4) adds
+about 0.05 px per axis on top, which brings \\(\hat\sigma_0^2\\) on these
+ideal boards to between about 0.02 (sharp, low noise) and 1.
 
 The test is the **variance factor**. Whiten each error \\(e_i\\)
 (reported position minus true position) with its own covariance, and
@@ -426,8 +435,8 @@ these causes:
 
 | Cause | What to do |
 |-------|------------|
-| The refiner is not `SaddlePoint` (ChESS with another refiner, Radon with its default `RadonRefiner::PeakFit`) | Select `ChessRefiner::saddle_point()` or `RadonRefiner::saddle_point()`. |
-| Re-centring did not converge for this corner | The position is the single integer-grid fit (ChESS) or the peak fit (Radon), both biased. Leave the corner out, or give it a weight well below its neighbours'. |
+| `uncertainty` is `Off`, or the refiner is the ML refiner | Use `Uncertainty::Propagated` and a classic refiner. |
+| `SaddlePoint` re-centring did not converge for this corner (ChESS) | The position is the single integer-grid fit, which is biased. Leave the corner out, or give it a weight well below its neighbours'. (A Radon corner keeps its peak fit and its covariance.) |
 | The noise estimate declined (too few edge-free areas) | All corners of the frame lack a covariance. Supply `noise_sigma`. |
 | `upscale` is active | Interpolation correlates the noise of the upscaled pixels, so no covariance is reported. |
 

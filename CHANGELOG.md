@@ -9,12 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `DetectorConfig::uncertainty` (`Uncertainty`): which position uncertainty
+  each corner reports. `Propagated` (the default) gives every localizer a
+  `position_covariance` — the ChESS center-of-mass, Förstner and
+  saddle-point refiners, the Radon peak fit and saddle-point refinement of
+  Radon peaks (not the ML refiner): image noise propagated through the
+  localizer, plus a per-localizer systematic term from the corner's offset to
+  the localizer's fit window and the width of its edges, with a floor
+  measured on real calibration images (about 0.05 px per axis for the
+  saddle-point fit and the Radon peak fit, 0.07 for center of mass, 0.15
+  for Förstner). Error that every corner of an image shares (defocus,
+  depth, lens-model error) is outside any single-corner covariance and
+  shows up in a downstream calibration's variance factor. `Off` reports no
+  covariance and makes no noise estimate; positions are the same under
+  both. Also `Refiner::with_uncertainty` and
+  `DenseDetector::attach_peak_covariance` in `chess-corners-core`, Python
+  (`Uncertainty`, `DetectorConfig.uncertainty`, `with_uncertainty`), WASM
+  (`Uncertainty`, `cfg.uncertainty`, `withUncertainty`), the JSON schema,
+  and the C ABI (`cc_config::uncertainty`, `CC_UNCERTAINTY_OFF` /
+  `CC_UNCERTAINTY_PROPAGATED`).
 - `RadonConfig::refiner` (`RadonRefiner`): the final subpixel position of
   a Radon corner — `PeakFit` (the default, unchanged behaviour) keeps the
   response-map peak fit; `SaddlePoint(SaddlePointConfig)` refines each peak
-  with the saddle-point fit on the input image and reports its
-  `position_covariance`. A corner whose refinement does not converge keeps
-  its peak-fit position, without a covariance. On synthetic boards with
+  with the saddle-point fit on the input image. A corner whose refinement
+  does not converge keeps its peak-fit position. On synthetic boards with
   8 px cells the refinement lowers the RMS error per axis from
   0.02–0.17 px to under 0.01 px without noise (lens blur σ 1.5–2.5, any
   rotation) and by 2–6× at noise σ 2; on 4 px cells it is no better.
@@ -30,7 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- C ABI: `cc_abi_version` is 6. `cc_config::refiner` is validated per
+- Every localizer now reports a `position_covariance` by default, not only
+  the saddle-point refiner, and the saddle-point covariance's fixed
+  0.006 px floor is replaced by its systematic term (larger: the covariance
+  is conservative on ideal synthetic corners). Select `Uncertainty::Off`
+  for no covariance and no per-image noise estimate.
+- C ABI: `cc_abi_version` is 7 (`cc_config::uncertainty` appended; a
+  zero-initialised `cc_config` selects `CC_UNCERTAINTY_OFF`, the presets
+  `CC_UNCERTAINTY_PROPAGATED`). `cc_config::refiner` is validated per
   strategy: Radon takes `CC_REFINER_PEAK_FIT` (the `cc_config_radon*`
   presets' value) or `CC_REFINER_SADDLE_POINT`, and rejects the other tags
   with `CC_ERR_INVALID_CONFIG` (it ignored them before).
