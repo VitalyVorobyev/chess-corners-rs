@@ -198,16 +198,15 @@ fn assert_multiscale_subset(
     }
 }
 
-/// The coarse-to-fine Radon pass applies the relative threshold against
-/// the frame, not against each refinement window. Where the coarse level
-/// seeds the frame's corners (`mid`, `large`) it returns single-scale
-/// corners at the same positions. On `small` the coarse level seeds few
-/// of them, so the unseeded strongest corner no longer anchors the
-/// threshold; the pass must still not return more corners than the
-/// single-scale one.
+/// The coarse-to-fine Radon preset applies the relative threshold against
+/// the frame, not against each refinement window, and seeds every board
+/// corner: on the test images it returns single-scale corners only, at
+/// the same positions, and on `mid` and `large` all of them. On `small` (a
+/// ChArUco board) the single-scale pass also reports X-junctions between
+/// marker bits, which the half-resolution level does not resolve.
 #[test]
 fn radon_multiscale_returns_single_scale_corners_on_test_images() {
-    for (name, min_fraction) in [("small", 0.0), ("mid", 1.0), ("large", 0.95)] {
+    for (name, min_fraction) in [("small", 0.8), ("mid", 1.0), ("large", 1.0)] {
         let path = format!("{}/../../testimages/{name}.png", env!("CARGO_MANIFEST_DIR"));
         let img = image::open(&path).expect("test image").to_luma8();
         let single = Detector::new(DetectorConfig::radon())
@@ -224,10 +223,7 @@ fn radon_multiscale_returns_single_scale_corners_on_test_images() {
             multi.len()
         );
         assert!(!single.is_empty());
-        assert!(multi.len() <= single.len());
-        if name != "small" {
-            assert_multiscale_subset(name, &single, &multi);
-        }
+        assert_multiscale_subset(name, &single, &multi);
         assert!(
             multi.len() as f32 >= min_fraction * single.len() as f32,
             "{name}: multiscale {} of {} single-scale corners",
