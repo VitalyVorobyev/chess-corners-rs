@@ -428,8 +428,8 @@ impl PixelTile {
             nl[l] += u32::from(w);
         };
         for c in chunks {
-            for l in 0..4 {
-                tally(l, c[l]);
+            for (l, &v) in c.iter().enumerate() {
+                tally(l, v);
             }
         }
         for &v in rest {

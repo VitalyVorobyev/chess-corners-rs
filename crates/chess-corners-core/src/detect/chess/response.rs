@@ -541,8 +541,8 @@ impl ResponseStencil {
         }
         if sm != 0 {
             let c = 3.2 * sm as f32;
-            for k in 16..21 {
-                grads.add_at((at + self.grads[k]) as usize, [scale[0] * c, scale[1] * c]);
+            for &offset in &self.grads[16..] {
+                grads.add_at((at + offset) as usize, [scale[0] * c, scale[1] * c]);
             }
         }
     }
