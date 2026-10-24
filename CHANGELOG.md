@@ -34,14 +34,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   strategy: Radon takes `CC_REFINER_PEAK_FIT` (the `cc_config_radon*`
   presets' value) or `CC_REFINER_SADDLE_POINT`, and rejects the other tags
   with `CC_ERR_INVALID_CONFIG` (it ignored them before).
+- `DetectorConfig::radon_multiscale()` (and C `cc_config_radon_multiscale`
+  / `multiscale = 1` under Radon) uses a 2-level pyramid instead of 3: a
+  quarter-resolution Radon level seeds corners too far off, or not at all
+  on boards with fine cell detail. With the fix below, its output on the
+  test images is single-scale Radon corners at the same positions:
+  `small.png` 1087 → 61 corners (single-scale 72; the other 11 are
+  junctions inside ChArUco markers and line or blur peaks), `mid.png`
+  78 → 77 (all),
+  `large.png` 7004 → 279 (all). It costs about 2× the 3-level time
+  (`mid.png` 3.0 → 9.9 ms), still 3–4× faster than single-scale Radon.
 
 ### Fixed
 
 - `DetectorConfig::radon_multiscale()` no longer returns hundreds to
   thousands of weak non-corner peaks: the relative `threshold` now applies
-  against the strongest corner of the frame, not of each refinement window
-  (`testimages/large.png`: 7004 → 274 corners, all of them single-scale
-  Radon corners at the same positions).
+  against the strongest corner of the frame, not of each refinement window.
 - The Radon detector no longer reports peaks beside straight edges that
   run along one of its ray directions — on sharp boards rotated near 45°,
   hundreds per frame about half a cell from the corners. A peak is now
