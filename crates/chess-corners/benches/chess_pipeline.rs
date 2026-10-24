@@ -55,11 +55,19 @@ fn chess_without_uncertainty() -> DetectorConfig {
     DetectorConfig::chess().with_uncertainty(Uncertainty::Off)
 }
 
+fn chess_multiscale_without_uncertainty() -> DetectorConfig {
+    DetectorConfig::chess_multiscale().with_uncertainty(Uncertainty::Off)
+}
+
 fn bench_chess_pipeline_real(c: &mut Criterion) {
     let presets: &[(&str, ConfigCtor)] = &[
         ("multiscale", DetectorConfig::chess_multiscale),
         ("single", DetectorConfig::chess),
         ("single_uncertainty_off", chess_without_uncertainty),
+        (
+            "multiscale_uncertainty_off",
+            chess_multiscale_without_uncertainty,
+        ),
     ];
     let mut group = c.benchmark_group("chess_pipeline_real");
     for name in ["small.png", "mid.png", "large.png"] {

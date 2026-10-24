@@ -4,6 +4,7 @@ use crate::detect::{count_positive_neighbors, is_local_max, Corner, CornerDescri
 use crate::imageview::ImageView;
 use crate::orientation::describe_corners;
 use crate::refine::{CornerRefiner, RefineContext, RefineStatus, Refiner};
+use crate::uncertainty::Uncertainty;
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "tracing")]
@@ -32,7 +33,9 @@ pub fn find_corners_u8(
         img.len(),
         w * h,
     );
-    let mut refiner = Refiner::from_kind(params.refiner.clone());
+    // Descriptors from `describe_corners` carry no covariance (it needs the
+    // image noise level), so none is computed.
+    let mut refiner = Refiner::from_kind(params.refiner.clone()).with_uncertainty(Uncertainty::Off);
     find_corners_u8_with_refiner(img, w, h, params, &mut refiner)
 }
 
@@ -198,7 +201,7 @@ pub fn refine_corners_on_image(
         let res = refiner.refine(seed_xy, ctx);
         if matches!(res.status, RefineStatus::Accepted) {
             let mut refined = Corner::new(res.x, res.y, c.strength);
-            refined.set_covariance(&res);
+            refined.set_model(res.covariance_model());
             out.push(refined);
         }
     }

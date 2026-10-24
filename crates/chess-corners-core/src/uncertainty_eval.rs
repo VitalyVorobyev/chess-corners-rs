@@ -10,7 +10,7 @@
 //! directory (`UQ24_SYNTH_DIR`); tests that need them skip when it is unset.
 
 use crate::detect::radon::{detect_peaks_from_radon, radon_response_u8, RadonBuffers};
-use crate::uncertainty::edge_width;
+use crate::uncertainty::{edge_width, PixelTile};
 use crate::{
     chess_response_u8, detect_peaks_from_response_with_refine_radius, CenterOfMassConfig,
     ChessParams, Corner, CornerRefiner, DenseDetector, ForstnerConfig, ImageView,
@@ -98,19 +98,20 @@ pub(crate) fn localize(
         let peaks = detect_peaks_from_response_with_refine_radius(&resp, &params, refiner.radius());
         let ctx = RefineContext::new(Some(view), Some(&resp));
         let mut out = Vec::new();
+        let mut tile = PixelTile::default();
         for p in peaks {
             let res = refiner.refine([p.x, p.y], ctx);
             if res.status != RefineStatus::Accepted {
                 continue;
             }
             let mut corner = Corner::new(res.x, res.y, p.strength);
-            corner.set_covariance(&res);
+            corner.set_model(res.covariance_model());
             let centre = if loc == Localizer::SaddlePoint {
                 [res.x.round(), res.y.round()]
             } else {
                 [p.x.round(), p.y.round()]
             };
-            let width = edge_width(&view, centre.map(|v| v as i32));
+            let width = edge_width(&view, centre.map(|v| v as i32), &mut tile);
             out.push(Det {
                 corner,
                 centre,
@@ -123,15 +124,20 @@ pub(crate) fn localize(
     let mut buffers = RadonBuffers::new();
     let resp = radon_response_u8(img, w, h, &params, &mut buffers);
     let mut peaks = detect_peaks_from_radon(&resp, &params);
-    if unc.reports() {
-        RadonDetector.attach_peak_covariance(&mut peaks, view, &params);
-    }
     let fitted: Vec<[f32; 2]> = peaks.iter().map(|c| [c.x, c.y]).collect();
     if loc == Localizer::RadonSaddle {
         let mut sp = Refiner::from_kind(RefinerKind::SaddlePoint(SaddlePointConfig::default()))
             .with_uncertainty(unc);
         peaks = RadonDetector.refine_peaks_on_image(peaks, view, &resp, &mut sp);
     }
+    if unc.reports() {
+        for (c, fit) in peaks.iter_mut().zip(&fitted) {
+            if [c.x, c.y] == *fit {
+                crate::attach_radon_peak_covariance(c, view, &params, &mut buffers);
+            }
+        }
+    }
+    let mut tile = PixelTile::default();
     let up = params.image_upsample_clamped() as f32;
     peaks
         .into_iter()
@@ -142,7 +148,11 @@ pub(crate) fn localize(
             } else {
                 [corner.x.round(), corner.y.round()]
             };
-            let width = edge_width(&view, [corner.x.round() as i32, corner.y.round() as i32]);
+            let width = edge_width(
+                &view,
+                [corner.x.round() as i32, corner.y.round() as i32],
+                &mut tile,
+            );
             Det {
                 corner,
                 centre,
@@ -300,7 +310,8 @@ pub(crate) fn interior(xy: [f32; 2], size: (usize, usize), margin: f32) -> bool 
 
 /// Monte Carlo noise scatter of one scene and localizer: over `draws`
 /// noisy copies, each truth corner's estimates about their own mean,
-/// whitened by the predicted noise covariance `(σ² + 1/12)·C`. Returns the
+/// whitened by the predicted noise term at `σ² + 1/12` (with any
+/// second-order growth). Returns the
 /// std of the whitened components (1 when the noise term is right) and the
 /// number of corner-draws.
 ///
@@ -320,15 +331,17 @@ pub(crate) fn mc_z_std(
 ) -> (f64, usize) {
     use std::collections::HashMap;
     let (w, h) = scene.size();
-    let var = f64::from(sigma * sigma) + 1.0 / 12.0;
+
     // (truth corner, window centre) -> (estimates, predicted covariances)
     let mut per: HashMap<[u32; 4], Vec<([f64; 2], PositionCovariance)>> = HashMap::new();
     for d in 0..draws {
         let img = noisy(scene.image(), sigma, seed * 1_000 + d + 1);
         for det in localize(&img, w, h, loc, Uncertainty::Propagated) {
-            let Some(c) = det.corner.covariance_per_noise_variance else {
+            let Some(model) = det.corner.model else {
                 continue;
             };
+            // The noise term at the draw's noise (Gaussian plus rounding).
+            let c = model.noise_at((sigma * sigma + 1.0 / 12.0).sqrt());
             if !interior(det.xy(), (w, h), 12.0) {
                 continue;
             }
@@ -352,12 +365,7 @@ pub(crate) fn mc_z_std(
         let m = est.len() as f64;
         let mean = [0, 1].map(|a| est.iter().map(|e| e.0[a]).sum::<f64>() / m);
         for (xy, c) in est {
-            let c = PositionCovariance::new(
-                (var * f64::from(c.xx)) as f32,
-                (var * f64::from(c.xy)) as f32,
-                (var * f64::from(c.yy)) as f32,
-            );
-            q += mahalanobis([xy[0] - mean[0], xy[1] - mean[1]], c);
+            q += mahalanobis([xy[0] - mean[0], xy[1] - mean[1]], *c);
         }
         dof += 2.0 * (m - 1.0);
         n += est.len();
@@ -445,27 +453,27 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    /// ±25% about the measured σ̂₀² (cell 10, 8°, blur 1, σ 2): 0.94, 0.32,
-    /// 0.08, 0.13, 0.08. Below 1 by design: each localizer's systematic term
+    /// ±25% about the measured σ̂₀² (cell 10, 8°, blur 1, σ 2): 0.88, 0.24,
+    /// 0.08, 0.18, 0.08. Below 1 by design: each localizer's systematic term
     /// carries a floor measured on real images, larger than the error of
     /// these ideal synthetic corners. The center of mass's error depends on
     /// the board's rotation, which its model does not see (high at 8°).
     const BANDS_A: [(f64, f64); 5] = [
-        (0.704, 1.17),
-        (0.243, 0.405),
-        (0.0592, 0.0988),
-        (0.101, 0.168),
-        (0.0592, 0.0988),
+        (0.662, 1.1),
+        (0.182, 0.304),
+        (0.0585, 0.0975),
+        (0.136, 0.226),
+        (0.0585, 0.0975),
     ];
-    /// ±25% about the measured σ̂₀² (cell 12, 30°, blur 2, σ 4): 0.21, 0.88,
-    /// 0.54, 1.72, 0.53. The Radon peak fit is overconfident on rotated,
-    /// blurred boards, where noise moves its peak between pixels.
+    /// ±25% about the measured σ̂₀² (cell 12, 30°, blur 2, σ 4): 0.22, 0.84,
+    /// 0.54, 1.22, 0.53. The Radon peak fit is the least conservative on
+    /// rotated, blurred boards, where noise moves its peak between pixels.
     const BANDS_B: [(f64, f64); 5] = [
-        (0.158, 0.263),
-        (0.661, 1.1),
-        (0.404, 0.674),
-        (1.29, 2.15),
-        (0.395, 0.659),
+        (0.164, 0.274),
+        (0.63, 1.05),
+        (0.407, 0.679),
+        (0.918, 1.53),
+        (0.399, 0.665),
     ];
 
     /// Monte Carlo: the propagated noise term predicts the scatter of every

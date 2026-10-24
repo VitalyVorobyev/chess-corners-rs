@@ -4,10 +4,12 @@
 //! response map (not the image intensity patch); cheapest of the
 //! built-in refiners.
 
-use super::{CornerRefiner, PositionCovariance, RefineContext, RefineResult, RefineStatus};
+use super::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
 use crate::detect::chess::response::add_response_gradient;
 use crate::imageview::ImageView;
-use crate::uncertainty::{edge_width, knot, PixelGradients, SystematicModel, Uncertainty};
+use crate::uncertainty::{
+    knot, CovarianceModel, PixelGradients, PixelTile, SystematicModel, Uncertainty, EDGE_REACH,
+};
 use crate::ResponseMap;
 use serde::{Deserialize, Serialize};
 
@@ -20,19 +22,19 @@ use serde::{Deserialize, Serialize};
 /// fitted by `tools/refiner_robustness/fit_systematic.py`.
 const SYSTEMATIC: SystematicModel = SystematicModel {
     knots: &[
-        knot(0.70, 1.000, 0.0909), // rms 0.0867, n 5077
-        knot(0.80, 1.000, 0.0901), // rms 0.0860, n 7590
-        knot(0.90, 1.000, 0.0736), // rms 0.0713, n 4967
-        knot(1.00, 1.000, 0.0750), // rms 0.0725, n 8194
-        knot(1.15, 1.000, 0.0614), // rms 0.0600, n 2081
-        knot(1.30, 1.000, 0.0668), // rms 0.0651, n 7980
-        knot(1.50, 1.000, 0.0653), // rms 0.0637, n 15620
-        knot(1.70, 1.000, 0.0763), // rms 0.0738, n 5237
-        knot(1.90, 1.000, 0.0415), // rms 0.0411, n 9725
-        knot(2.10, 1.000, 0.0504), // rms 0.0496, n 4634
+        knot(1.09, 1.000, 0.0904), // rms 0.0863, n 5604
+        knot(1.14, 1.000, 0.0877), // rms 0.0839, n 7561
+        knot(1.18, 1.000, 0.0758), // rms 0.0733, n 7598
+        knot(1.24, 1.000, 0.0706), // rms 0.0686, n 6581
+        knot(1.30, 1.000, 0.0674), // rms 0.0656, n 9447
+        knot(1.35, 1.000, 0.0664), // rms 0.0647, n 8027
+        knot(1.40, 1.000, 0.0768), // rms 0.0743, n 5742
+        knot(1.47, 1.000, 0.0633), // rms 0.0618, n 5999
+        knot(1.58, 1.000, 0.0441), // rms 0.0436, n 6324
+        knot(1.68, 1.000, 0.0445), // rms 0.0440, n 8222
     ],
     // Real stereo calibration set: `tools/refiner_robustness/real_validation/fit_floor.py`.
-    floor: 0.073,
+    floor: 0.074,
 };
 
 /// Configuration for the [`CenterOfMassRefiner`].
@@ -81,6 +83,7 @@ pub struct CenterOfMassRefiner {
     cfg: CenterOfMassConfig,
     pub(crate) uncertainty: Uncertainty,
     grads: PixelGradients,
+    tile: PixelTile,
 }
 
 impl CenterOfMassRefiner {
@@ -90,12 +93,12 @@ impl CenterOfMassRefiner {
             cfg,
             uncertainty: Uncertainty::default(),
             grads: PixelGradients::default(),
+            tile: PixelTile::default(),
         }
     }
 
-    /// Noise covariance per unit variance and systematic covariance of the
-    /// centroid `xy` of the window centred on pixel `centre`, or `None`
-    /// when the map is not a ChESS response.
+    /// Covariance model of the centroid `xy` of the window centred on pixel
+    /// `centre`, or `None` when the map is not a ChESS response.
     ///
     /// The centroid `x̂ = Σ wₚ xₚ / Σ wₚ` with `wₚ = max(Rₚ, 0)` has
     /// `∂x̂/∂Rₚ = (xₚ − x̂)/Σw` on every positive sample, and each `Rₚ` is
@@ -107,12 +110,14 @@ impl CenterOfMassRefiner {
         centre: [i32; 2],
         xy: [f32; 2],
         mass: f32,
-    ) -> Option<(PositionCovariance, PositionCovariance)> {
+    ) -> Option<CovarianceModel> {
         let ring_kind = resp.chess_ring?;
         let ring = ring_kind.offsets();
         let r = self.cfg.radius;
         let reach = r + ring_kind.radius() as i32;
         let side = (2 * reach + 1) as usize;
+        // One copy of every pixel the response window and the edge width read.
+        self.tile.load(img, centre, reach.max(EDGE_REACH));
         self.grads
             .reset([centre[0] - reach, centre[1] - reach], side);
         for dy in -r..=r {
@@ -123,13 +128,17 @@ impl CenterOfMassRefiner {
                     continue;
                 }
                 let scale = [(xx as f32 - xy[0]) / mass, (yy as f32 - xy[1]) / mass];
-                add_response_gradient(img, xx, yy, ring, scale, &mut self.grads);
+                add_response_gradient(&self.tile, xx, yy, ring, scale, &mut self.grads);
             }
         }
         let noise = self.grads.covariance()?;
         let offset = [xy[0] - centre[0] as f32, xy[1] - centre[1] as f32];
-        let systematic = SYSTEMATIC.covariance(offset, edge_width(img, centre), 1.0);
-        Some((noise, systematic))
+        let systematic = SYSTEMATIC.covariance(offset, self.tile.edge_width(centre), 1.0);
+        Some(CovarianceModel {
+            noise,
+            systematic,
+            growth: [0.0; 2],
+        })
     }
 }
 
@@ -175,10 +184,7 @@ impl CornerRefiner for CenterOfMassRefiner {
             let xy = [sx / sw, sy / sw];
             let mut res = RefineResult::accepted(xy, sw);
             if let (true, Some(img)) = (self.uncertainty.reports(), ctx.image) {
-                if let Some((noise, systematic)) = self.covariance(&img, resp, [x, y], xy, sw) {
-                    res.covariance_per_noise_variance = Some(noise);
-                    res.systematic = systematic;
-                }
+                res.set_model(self.covariance(&img, resp, [x, y], xy, sw));
             }
             res
         } else {

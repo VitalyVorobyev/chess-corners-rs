@@ -12,10 +12,10 @@
 //! peak-fit covariance alone (the peak fit itself is part of detection).
 
 use chess_corners_core::{
-    chess_response_u8, detect_corners_from_response, detect_peaks_from_radon, radon_response_u8,
-    CenterOfMassConfig, ChessParams, CornerRefiner, DenseDetector, ForstnerConfig, ImageView,
-    RadonBuffers, RadonDetector, RadonDetectorParams, RefineContext, Refiner, RefinerKind,
-    ResponseMap, SaddlePointConfig, Uncertainty,
+    attach_radon_peak_covariance, chess_response_u8, detect_corners_from_response,
+    detect_peaks_from_radon, radon_response_u8, CenterOfMassConfig, ChessParams, CornerRefiner,
+    ForstnerConfig, ImageView, RadonBuffers, RadonDetectorParams, RefineContext, Refiner,
+    RefinerKind, ResponseMap, SaddlePointConfig, Uncertainty,
 };
 use chess_corners_testutil::aa_chessboard;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -127,7 +127,9 @@ fn bench_refiners(c: &mut Criterion) {
         group.bench_function(format!("{side}x{side}_n{}", peaks.len()), |b| {
             b.iter(|| {
                 let mut corners = peaks.clone();
-                RadonDetector.attach_peak_covariance(&mut corners, view, &params);
+                for c in &mut corners {
+                    attach_radon_peak_covariance(c, view, &params, &mut buffers);
+                }
                 black_box(corners.len())
             });
         });

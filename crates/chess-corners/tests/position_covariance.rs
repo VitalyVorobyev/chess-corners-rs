@@ -245,7 +245,8 @@ fn covariance_is_conservative_on_a_rotated_board() {
 }
 
 /// `Σ = max(σ², 1/12)·C + Σ_sys` for every localizer: affine in the
-/// supplied noise variance, and constant below the 8-bit rounding variance.
+/// supplied noise variance (the Radon peak fit: at least that steep), and
+/// constant below the 8-bit rounding variance.
 #[test]
 fn covariance_scales_with_the_supplied_noise() {
     let img = standard_image();
@@ -269,17 +270,20 @@ fn covariance_scales_with_the_supplied_noise() {
                 assert!(a.position_covariance.is_none() && c.position_covariance.is_none());
                 continue;
             };
-            // Variances 1, 4, 16: (Σ₁₆ − Σ₁) = 5·(Σ₄ − Σ₁).
-            for (va, vb, vc) in [
-                (ca.xx, cb.xx, cc.xx),
-                (ca.xy, cb.xy, cc.xy),
-                (ca.yy, cb.yy, cc.yy),
-            ] {
+            // Variances 1, 4, 16: (Σ₁₆ − Σ₁) = 5·(Σ₄ − Σ₁) for a noise term
+            // linear in the variance. The Radon peak fit's noise term also
+            // grows to second order (flat responses), so its variances only
+            // grow at least that fast.
+            let second_order = name == "Radon peak fit";
+            for (va, vb, vc) in [(ca.xx, cb.xx, cc.xx), (ca.yy, cb.yy, cc.yy)] {
+                let excess = (vc - va) - 5.0 * (vb - va);
                 let scale = cc.xx.max(cc.yy);
-                assert!(
-                    ((vc - va) - 5.0 * (vb - va)).abs() <= 1e-3 * scale,
-                    "{name}: {ca:?} {cb:?} {cc:?}"
-                );
+                let ok = if second_order {
+                    excess >= -1e-3 * scale
+                } else {
+                    excess.abs() <= 1e-3 * scale
+                };
+                assert!(ok, "{name}: {ca:?} {cb:?} {cc:?}");
             }
             assert!(cc.xx > ca.xx && cc.yy > ca.yy, "{name}");
             checked += 1;
@@ -337,6 +341,18 @@ fn covariance_is_reported_only_where_valid() {
 #[test]
 fn positions_do_not_depend_on_the_tier() {
     let img = standard_image();
+    let roi = Roi::new(50, 40, 150, 160).unwrap();
+    let same = |name: &str, on: &[CornerDescriptor], off: &[CornerDescriptor]| {
+        assert_eq!(on.len(), off.len(), "{name}");
+        for (a, b) in on.iter().zip(off) {
+            assert_eq!(
+                (a.x.to_bits(), a.y.to_bits()),
+                (b.x.to_bits(), b.y.to_bits()),
+                "{name}"
+            );
+            assert!(b.position_covariance.is_none());
+        }
+    };
     for (name, cfg) in localizers() {
         for cfg in [
             cfg,
@@ -348,17 +364,23 @@ fn positions_do_not_depend_on_the_tier() {
                     .detect_u8(img, SIZE as u32, SIZE as u32)
                     .unwrap()
             };
-            let (on, off) = (detect(Uncertainty::Propagated), detect(Uncertainty::Off));
-            assert_eq!(on.len(), off.len(), "{name}");
-            for (a, b) in on.iter().zip(&off) {
-                assert_eq!(
-                    (a.x.to_bits(), a.y.to_bits()),
-                    (b.x.to_bits(), b.y.to_bits()),
-                    "{name}"
-                );
-                assert!(b.position_covariance.is_none());
-            }
+            same(
+                name,
+                &detect(Uncertainty::Propagated),
+                &detect(Uncertainty::Off),
+            );
         }
+        let detect_roi = |u: Uncertainty| {
+            Detector::new(cfg.with_uncertainty(u))
+                .unwrap()
+                .detect_u8_roi(img, SIZE as u32, SIZE as u32, roi)
+                .unwrap()
+        };
+        same(
+            name,
+            &detect_roi(Uncertainty::Propagated),
+            &detect_roi(Uncertainty::Off),
+        );
     }
 }
 
@@ -416,26 +438,46 @@ fn radon_covariance_is_conservative_on_ideal_boards() {
 
 #[test]
 fn roi_covariance_matches_full_frame() {
+    // A corner found at the same position by the ROI or coarse-to-fine path
+    // gets the same covariance as on the full frame, for every localizer.
     let img = standard_image();
-    let mut det = Detector::new(saddle()).unwrap();
-    let full = det.detect_u8(img, SIZE as u32, SIZE as u32).unwrap();
     let roi = Roi::new(60, 60, 140, 140).unwrap();
-    let sub = det
-        .detect_u8_roi(img, SIZE as u32, SIZE as u32, roi)
-        .unwrap();
-    let mut checked = 0;
-    for s in &sub {
-        let f = full
-            .iter()
-            .find(|f| (f.x - s.x).abs() < 1e-3 && (f.y - s.y).abs() < 1e-3)
-            .expect("ROI corner in full frame");
-        let (Some(cs), Some(cf)) = (s.position_covariance, f.position_covariance) else {
-            continue;
+    for (name, cfg) in localizers() {
+        let detect = |cfg: DetectorConfig| {
+            Detector::new(cfg)
+                .unwrap()
+                .detect_u8(img, SIZE as u32, SIZE as u32)
+                .unwrap()
         };
-        assert!((cs.xx - cf.xx).abs() <= 1e-3 * cf.xx);
-        checked += 1;
+        let full = detect(cfg);
+        let sub = Detector::new(cfg)
+            .unwrap()
+            .detect_u8_roi(img, SIZE as u32, SIZE as u32, roi)
+            .unwrap();
+        let pyramid = detect(cfg.with_multiscale(MultiscaleConfig::pyramid_default()));
+        for (path, other) in [("roi", &sub), ("pyramid", &pyramid)] {
+            let mut checked = 0;
+            for s in other {
+                let Some(f) = full
+                    .iter()
+                    .find(|f| (f.x - s.x).abs() < 1e-4 && (f.y - s.y).abs() < 1e-4)
+                else {
+                    continue;
+                };
+                let (Some(cs), Some(cf)) = (s.position_covariance, f.position_covariance) else {
+                    panic!("{name} {path}: covariance on one path only");
+                };
+                for (a, b) in [(cs.xx, cf.xx), (cs.xy, cf.xy), (cs.yy, cf.yy)] {
+                    assert!(
+                        (a - b).abs() <= 1e-4 * cf.xx.max(cf.yy),
+                        "{name} {path}: {cs:?} vs {cf:?}"
+                    );
+                }
+                checked += 1;
+            }
+            assert!(checked > 20, "{name} {path}: {checked} matched corners");
+        }
     }
-    assert!(checked > 20);
 }
 
 #[test]

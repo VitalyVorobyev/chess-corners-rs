@@ -427,8 +427,7 @@ impl DetectorConfig {
     pub(crate) fn covariance_stage(&self) -> CovarianceStage {
         match self.uncertainty {
             Uncertainty::Off => CovarianceStage::Off,
-            tier => CovarianceStage::Reported {
-                tier,
+            _ => CovarianceStage::Reported {
                 noise: match self.noise_sigma {
                     Some(sigma) => NoiseLevel::Known(sigma),
                     None => NoiseLevel::Estimate,

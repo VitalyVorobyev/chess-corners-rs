@@ -11,7 +11,7 @@
 //! - [`saddle_point`] — quadratic surface fit on the image patch.
 
 use crate::imageview::ImageView;
-use crate::uncertainty::{total_covariance, Uncertainty};
+use crate::uncertainty::{CovarianceModel, Uncertainty};
 use crate::ResponseMap;
 use serde::{Deserialize, Serialize};
 
@@ -154,10 +154,9 @@ pub struct RefineResult {
     /// and the Förstner refiner. `None` otherwise, and always under
     /// [`Uncertainty::Off`].
     pub covariance_per_noise_variance: Option<PositionCovariance>,
-    /// Systematic part of the position covariance (px²), from the refiner's
-    /// systematic model; meaningful only with
-    /// `covariance_per_noise_variance`.
-    pub(crate) systematic: PositionCovariance,
+    /// The full covariance model; `covariance_per_noise_variance` mirrors
+    /// its noise term.
+    pub(crate) model: Option<CovarianceModel>,
     /// The refiner reached its own fixed point: the saddle-point refiner's
     /// re-centring converged; always `true` for the single-shot refiners'
     /// accepted results. A Radon peak keeps its peak-fit position unless the
@@ -175,7 +174,7 @@ impl RefineResult {
             score,
             status: RefineStatus::Accepted,
             covariance_per_noise_variance: None,
-            systematic: PositionCovariance::ZERO,
+            model: None,
             converged: true,
         }
     }
@@ -197,11 +196,26 @@ impl RefineResult {
     /// and `Σ_sys` the refiner's systematic term. The model and its
     /// accuracy are described on
     /// [`Corner::position_covariance`](crate::Corner::position_covariance).
-    /// `None` when the result carries no covariance.
+    /// `None` when the result carries no covariance. A result whose
+    /// `covariance_per_noise_variance` was set or changed by the caller
+    /// carries that noise term only, without a systematic part.
     #[inline]
     pub fn position_covariance(&self, noise_sigma: f32) -> Option<PositionCovariance> {
-        self.covariance_per_noise_variance
-            .map(|c| total_covariance(c, self.systematic, noise_sigma))
+        self.covariance_model().map(|m| m.total(noise_sigma))
+    }
+
+    /// Attach `model`, mirroring its noise term in the public field.
+    #[inline]
+    pub(crate) fn set_model(&mut self, model: Option<CovarianceModel>) {
+        self.covariance_per_noise_variance = model.map(|m| m.noise);
+        self.model = model;
+    }
+
+    /// The covariance model this result carries (see
+    /// [`CovarianceModel::effective`]).
+    #[inline]
+    pub(crate) fn covariance_model(&self) -> Option<CovarianceModel> {
+        CovarianceModel::effective(self.model, self.covariance_per_noise_variance)
     }
 }
 
@@ -313,9 +327,11 @@ impl Refiner {
         }
     }
 
-    /// Select which position uncertainty the refiner reports.
-    /// [`Uncertainty::Off`] skips the covariance computation entirely;
-    /// refined positions do not depend on it.
+    /// Select which position uncertainty the refiner reports. A refiner
+    /// from [`Self::from_kind`] computes a covariance for every accepted
+    /// corner; in a custom refinement loop that does not use it, pass
+    /// [`Uncertainty::Off`] to skip that work. Refined positions do not
+    /// depend on the tier.
     pub fn with_uncertainty(mut self, uncertainty: Uncertainty) -> Self {
         match &mut self {
             Refiner::CenterOfMass(r) => r.uncertainty = uncertainty,

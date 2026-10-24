@@ -146,6 +146,8 @@ pub struct RadonBuffers {
     diag_neg_cumsum: Vec<SatElem>,
     response: Vec<f32>,
     blur_scratch: Vec<f32>,
+    /// Scratch for the peak-fit covariance.
+    pub(crate) peak_scratch: super::detect::PeakFitScratch,
 }
 
 impl RadonBuffers {

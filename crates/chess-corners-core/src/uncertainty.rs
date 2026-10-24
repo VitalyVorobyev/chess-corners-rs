@@ -51,19 +51,65 @@ impl Uncertainty {
 /// level²: the variance of rounding to 8 bits.
 pub(crate) const MIN_NOISE_VAR: f32 = 1.0 / 12.0;
 
-/// `max(σₙ², 1/12)·C + Σ_sys`.
-#[inline]
-pub(crate) fn total_covariance(
-    per_noise_variance: PositionCovariance,
-    systematic: PositionCovariance,
-    noise_sigma: f32,
-) -> PositionCovariance {
-    let var = (noise_sigma * noise_sigma).max(MIN_NOISE_VAR);
-    PositionCovariance::new(
-        var * per_noise_variance.xx + systematic.xx,
-        var * per_noise_variance.xy + systematic.xy,
-        var * per_noise_variance.yy + systematic.yy,
-    )
+/// A localizer's position-covariance model: everything needed to express it
+/// in px² for a given image noise level.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CovarianceModel {
+    /// First-order noise covariance per unit noise variance (px² per gray
+    /// level²).
+    pub noise: PositionCovariance,
+    /// Systematic covariance, px².
+    pub systematic: PositionCovariance,
+    /// Second-order growth of the noise term per axis, per gray level²:
+    /// axis `a` of the noise term is scaled by `1 + var·k_a²` (0 for a
+    /// localizer whose first-order term is accurate).
+    pub growth: [f32; 2],
+}
+
+impl CovarianceModel {
+    /// A model with only the noise term `noise`.
+    pub(crate) fn noise_only(noise: PositionCovariance) -> Self {
+        Self {
+            noise,
+            systematic: PositionCovariance::ZERO,
+            growth: [0.0; 2],
+        }
+    }
+
+    /// The model with an image noise of `noise_sigma` gray levels, in px²:
+    /// `max(σₙ², 1/12)·C` (each axis grown by its second-order factor) plus
+    /// `Σ_sys`.
+    pub(crate) fn total(&self, noise_sigma: f32) -> PositionCovariance {
+        let n = self.noise_at(noise_sigma);
+        let s = self.systematic;
+        PositionCovariance::new(n.xx + s.xx, n.xy + s.xy, n.yy + s.yy)
+    }
+
+    /// The noise term alone at `noise_sigma`, in px².
+    pub(crate) fn noise_at(&self, noise_sigma: f32) -> PositionCovariance {
+        let var = (noise_sigma * noise_sigma).max(MIN_NOISE_VAR);
+        let f = self.growth.map(|k| (1.0 + var * k * k).sqrt());
+        let c = self.noise;
+        PositionCovariance::new(
+            var * c.xx * f[0] * f[0],
+            var * c.xy * f[0] * f[1],
+            var * c.yy * f[1] * f[1],
+        )
+    }
+
+    /// The model a result carries: `stored` when it still belongs to the
+    /// public noise term `mirror`, otherwise (a caller set or changed the
+    /// public field) the noise term alone.
+    pub(crate) fn effective(
+        stored: Option<Self>,
+        mirror: Option<PositionCovariance>,
+    ) -> Option<Self> {
+        match (stored, mirror) {
+            (Some(m), Some(c)) if m.noise == c => Some(m),
+            (_, Some(c)) => Some(Self::noise_only(c)),
+            _ => None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -137,41 +183,187 @@ impl PixelGradients {
 // Systematic model
 // ---------------------------------------------------------------------------
 
-/// Radius of the disk [`edge_width`] reads, px.
+// ---------------------------------------------------------------------------
+// Pixel tile and edge width
+// ---------------------------------------------------------------------------
+
+/// Radius of the disk [`PixelTile::edge_width`] reads, px.
 const EDGE_DISK_RADIUS: i32 = 5;
 
-/// Width of the edges around pixel `centre`, in px: the intensity range
-/// over the disk of radius 5 px divided by `√(2π)` times the largest
-/// central-difference gradient magnitude on it. For a straight edge blurred
-/// by a Gaussian of σ that is about σ (pixel integration and the difference
-/// stencil widen it by about 0.6 px at σ = 0); it grows with lens blur up
-/// to σ ≈ 2.5 px, where the disk stops reaching the flat parts of the
-/// cells, and does not depend on contrast. `None` on a flat patch.
-pub(crate) fn edge_width(img: &ImageView<'_>, centre: [i32; 2]) -> Option<f32> {
-    let r = EDGE_DISK_RADIUS;
-    let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
-    let mut g2_max = 0.0f32;
-    for dy in -r..=r {
-        for dx in -r..=r {
-            if dx * dx + dy * dy > r * r {
-                continue;
+/// Half-size of the square [`PixelTile::edge_width`] needs around its
+/// centre: the disk, one pixel for the gradient and two for the smoothing.
+pub(crate) const EDGE_REACH: i32 = EDGE_DISK_RADIUS + 3;
+
+/// A square of image pixels around a corner, copied once (clamped at the
+/// image border like [`ImageView::sample`]) so a localizer's covariance
+/// and the edge width read it without per-pixel bounds handling. The
+/// buffers are reused across corners.
+#[derive(Debug, Default)]
+pub(crate) struct PixelTile {
+    origin: [i32; 2],
+    side: usize,
+    data: Vec<f32>,
+}
+
+impl PixelTile {
+    /// Copy the `(2·reach + 1)²` pixels of `img` centred on `centre` (in
+    /// the view's external frame).
+    pub(crate) fn load(&mut self, img: &ImageView<'_>, centre: [i32; 2], reach: i32) {
+        let side = (2 * reach + 1) as usize;
+        self.origin = [centre[0] - reach, centre[1] - reach];
+        self.side = side;
+        self.data.clear();
+        let (w, h) = (img.width as i32, img.height as i32);
+        let (gx0, gy0) = (
+            self.origin[0] + img.origin[0],
+            self.origin[1] + img.origin[1],
+        );
+        let inside = gx0 >= 0 && gy0 >= 0 && gx0 + side as i32 <= w && gy0 + side as i32 <= h;
+        if inside {
+            for row in 0..side {
+                let start = (gy0 as usize + row) * img.width + gx0 as usize;
+                self.data
+                    .extend(img.data[start..start + side].iter().map(|&v| f32::from(v)));
             }
-            let (x, y) = (centre[0] + dx, centre[1] + dy);
-            let v = img.sample(x, y);
-            lo = lo.min(v);
-            hi = hi.max(v);
-            let gx = 0.5 * (img.sample(x + 1, y) - img.sample(x - 1, y));
-            let gy = 0.5 * (img.sample(x, y + 1) - img.sample(x, y - 1));
-            g2_max = g2_max.max(gx * gx + gy * gy);
+        } else {
+            for j in 0..side as i32 {
+                for i in 0..side as i32 {
+                    self.data
+                        .push(img.sample(self.origin[0] + i, self.origin[1] + j));
+                }
+            }
         }
     }
-    (g2_max > 0.0).then(|| (hi - lo) / ((2.0 * core::f32::consts::PI).sqrt() * g2_max.sqrt()))
+
+    /// Pixel `(x, y)` (external frame); must lie in the tile.
+    #[inline]
+    pub(crate) fn at(&self, x: i32, y: i32) -> f32 {
+        self_at(&self.data, self.origin, self.side, x, y)
+    }
+
+    /// Width of the edges around pixel `centre`, in px, robust to pixel
+    /// noise: on the image smoothed by a 5×5 binomial kernel, the contrast
+    /// across the radius-5 disk (mean of the samples within a fifth of the
+    /// range of its maximum, minus the same at its minimum) divided by
+    /// `√(2π)` times the mean of the eight largest gradient magnitudes on
+    /// the disk. It grows with the lens blur
+    /// (on camera-formed boards about 1.15 px at σ = 0.5, 1.4 at 1.5, 1.5 at
+    /// 2.5; the smoothing, pixel integration and difference stencil set the
+    /// floor) and does not depend on contrast; at a contrast of 60 gray
+    /// levels, noise of σ ≤ 8 moves it by at most 6% (up to 15% at σ = 8 with a
+    /// lens blur of 2.5). Needs
+    /// [`EDGE_REACH`] of tile around `centre`. `None` on a flat patch.
+    pub(crate) fn edge_width(&self, centre: [i32; 2]) -> Option<f32> {
+        const R: i32 = EDGE_DISK_RADIUS;
+        // The smoothed square covers the disk plus one pixel for the
+        // gradient; the raw square two more for the kernel.
+        const N: usize = (2 * (R + 1) + 1) as usize;
+        const RAW: usize = N + 4;
+        let reach = R + 3;
+        let x0 = (centre[0] - reach - self.origin[0]) as usize;
+        let y0 = (centre[1] - reach - self.origin[1]) as usize;
+        debug_assert!(x0 + RAW <= self.side && y0 + RAW <= self.side);
+        // Separable [1 4 6 4 1] smoothing, unnormalised: the width is a
+        // ratio of a contrast to a gradient, so the scale cancels.
+        let mut horiz = [0.0f32; RAW * N];
+        for (j, out) in horiz.as_chunks_mut::<N>().0.iter_mut().enumerate() {
+            let start = (y0 + j) * self.side + x0;
+            let row = &self.data[start..start + RAW];
+            for (i, o) in out.iter_mut().enumerate() {
+                *o = (row[i] + row[i + 4]) + 4.0 * (row[i + 1] + row[i + 3]) + 6.0 * row[i + 2];
+            }
+        }
+        let mut sm = [0.0f32; N * N];
+        for (j, out) in sm.as_chunks_mut::<N>().0.iter_mut().enumerate() {
+            let r = |d: usize| &horiz[(j + d) * N..(j + d + 1) * N];
+            let (r0, r1, r2, r3, r4) = (r(0), r(1), r(2), r(3), r(4));
+            for i in 0..N {
+                out[i] = (r0[i] + r4[i]) + 4.0 * (r1[i] + r3[i]) + 6.0 * r2[i];
+            }
+        }
+        let mut values = [0.0f32; N * N];
+        let mut grads = [0.0f32; N * N];
+        let mut m = 0;
+        for dy in -R..=R {
+            // Half-width of the disk on this row.
+            let half = (0..=R)
+                .rev()
+                .find(|dx| dx * dx + dy * dy <= R * R)
+                .unwrap_or(0);
+            let row = (dy + R + 1) as usize;
+            let (up, mid, down) = (
+                &sm[(row - 1) * N..row * N],
+                &sm[row * N..(row + 1) * N],
+                &sm[(row + 1) * N..(row + 2) * N],
+            );
+            for dx in -half..=half {
+                let i = (dx + R + 1) as usize;
+                values[m] = mid[i];
+                let gx = mid[i + 1] - mid[i - 1];
+                let gy = down[i] - up[i];
+                grads[m] = gx * gx + gy * gy;
+                m += 1;
+            }
+        }
+        let (values, grads) = (&values[..m], &grads[..m]);
+        debug_assert!(m <= 81);
+        // Plateau levels: means of the samples within a fifth of the range
+        // of the extremes; ridge gradient: mean of the eight largest
+        // magnitudes. Averages, so noise moves them little.
+        let (vmin, vmax) = values
+            .iter()
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), &v| {
+                (a.min(v), b.max(v))
+            });
+        let band = 0.2 * (vmax - vmin);
+        let (mut hi, mut nh, mut lo, mut nl) = (0.0f32, 0u32, 0.0f32, 0u32);
+        for &v in values {
+            if v >= vmax - band {
+                hi += v;
+                nh += 1;
+            }
+            if v <= vmin + band {
+                lo += v;
+                nl += 1;
+            }
+        }
+        // The eight largest squared gradients; roots of those only.
+        let mut top = [0.0f32; 81];
+        let top = &mut top[..m];
+        top.copy_from_slice(grads);
+        let k = 8;
+        top.select_nth_unstable_by(m - k - 1, |a, b| a.total_cmp(b));
+        let gs: f32 = top[m - k..].iter().map(|g2| g2.sqrt()).sum();
+        let ng = k as u32;
+        let (high, low) = (hi / nh.max(1) as f32, lo / nl.max(1) as f32);
+        // Central difference without the ½: halve.
+        let g = 0.5 * gs / ng.max(1) as f32;
+        (g > 0.0).then(|| (high - low) / ((2.0 * core::f32::consts::PI).sqrt() * g))
+    }
+}
+
+/// Pixel `(x, y)` of a tile's data (see [`PixelTile::at`]).
+#[inline]
+fn self_at(data: &[f32], origin: [i32; 2], side: usize, x: i32, y: i32) -> f32 {
+    let (i, j) = ((x - origin[0]) as usize, (y - origin[1]) as usize);
+    debug_assert!(i < side && j < side);
+    data[j * side + i]
+}
+
+/// [`PixelTile::edge_width`] of `img` around `centre`, through `tile`.
+pub(crate) fn edge_width(
+    img: &ImageView<'_>,
+    centre: [i32; 2],
+    tile: &mut PixelTile,
+) -> Option<f32> {
+    tile.load(img, centre, EDGE_REACH);
+    tile.edge_width(centre)
 }
 
 /// One knot of a [`SystematicModel`].
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Knot {
-    /// [`edge_width`] at the knot, px.
+    /// [`PixelTile::edge_width`] at the knot, px.
     pub width: f32,
     /// Window-offset gain `g`: a noise-free estimate lands at `g·u` from the
     /// centre of its fit window for a corner at `u`.
@@ -265,8 +457,11 @@ impl SystematicModel {
         let rho2 = rho * rho;
         let denom = g * g * prior + rho2;
         if denom <= 0.0 {
-            let f2 = self.floor * self.floor;
-            return PositionCovariance::new(f2, 0.0, f2);
+            // g = ρ = 0: the estimate says nothing about where in the cell
+            // the corner is; the limit of the expressions below.
+            let p = prior + self.floor * self.floor;
+            let [ux, uy] = offset;
+            return PositionCovariance::new(ux * ux + p, ux * uy, uy * uy + p);
         }
         let shrink = g * prior / denom;
         let spread = prior * rho2 / denom;
@@ -319,27 +514,55 @@ mod tests {
         assert_eq!(MODEL.at(None), (0.7, 0.01));
     }
 
+    /// Width at the centre corner of a camera-formed 9 px board, mean over
+    /// `draws` noise draws (σ `noise`), with `dark`/`bright` levels.
+    fn board_width(blur: f32, dark: u8, bright: u8, noise: f32, draws: u64) -> f32 {
+        use chess_corners_testutil::{add_gaussian_noise, optical_chessboard, Lattice};
+        let side = 41usize;
+        let lattice = Lattice::new(9.0, (20.3, 19.8)).rotated(0.2);
+        let clean = optical_chessboard(side, &lattice, blur, dark, bright);
+        let mut tile = PixelTile::default();
+        let mut sum = 0.0;
+        for d in 0..draws {
+            let mut img = clean.clone();
+            add_gaussian_noise(&mut img, noise, 100 + d);
+            let view = ImageView::from_u8_slice(side, side, &img).unwrap();
+            sum += edge_width(&view, [20, 20], &mut tile).unwrap();
+        }
+        sum / draws as f32
+    }
+
     #[test]
     fn edge_width_tracks_blur_not_contrast() {
-        // A vertical step edge through the patch, blurred analytically.
-        let side = 15usize;
-        let edge = |sigma: f32, contrast: f32| {
-            let data: Vec<u8> = (0..side * side)
-                .map(|k| {
-                    let x = (k % side) as f32 - 7.3;
-                    let t = x / (sigma * core::f32::consts::SQRT_2);
-                    // erf via tanh approximation is enough for a fixture.
-                    let erf =
-                        (core::f32::consts::FRAC_2_SQRT_PI * t * (1.0 + 0.089_431 * t * t)).tanh();
-                    (100.0 + 0.5 * contrast * erf).round() as u8
-                })
-                .collect();
-            let img = ImageView::from_u8_slice(side, side, &data).unwrap();
-            edge_width(&img, [7, 7]).unwrap()
-        };
-        let (w1, w2, w3) = (edge(1.0, 160.0), edge(2.0, 160.0), edge(1.0, 60.0));
-        assert!(w1 > 0.9 && w1 < 1.4, "{w1}");
-        assert!(w2 > 1.4 * w1, "{w2} vs {w1}");
-        assert!((w3 - w1).abs() < 0.1, "{w3} vs {w1}");
+        let (w05, w15, w25) = (
+            board_width(0.5, 40, 200, 0.0, 1),
+            board_width(1.5, 40, 200, 0.0, 1),
+            board_width(2.5, 40, 200, 0.0, 1),
+        );
+        assert!(w15 > 1.15 * w05 && w25 > 1.05 * w15, "{w05} {w15} {w25}");
+        let low = board_width(1.5, 100, 160, 0.0, 1);
+        assert!((low - w15).abs() < 0.05 * w15, "{low} vs {w15}");
+    }
+
+    /// Pixel noise barely moves the width, even at low contrast (60 gray
+    /// levels): within 6% of the noise-free value up to σ = 8 at lens blur
+    /// ≤ 1.5 and up to σ = 4 at 2.5; 15% at σ = 8 and blur 2.5.
+    #[test]
+    fn edge_width_is_stable_under_noise() {
+        for blur in [0.5f32, 1.5, 2.5] {
+            let clean = board_width(blur, 100, 160, 0.0, 1);
+            for noise in [1.0f32, 2.0, 4.0, 8.0] {
+                let noisy = board_width(blur, 100, 160, noise, 16);
+                let tol = if blur > 2.0 && noise > 4.0 {
+                    0.15
+                } else {
+                    0.06
+                };
+                assert!(
+                    (noisy - clean).abs() <= tol * clean,
+                    "blur {blur} σ {noise}: {noisy} vs noise-free {clean}"
+                );
+            }
+        }
     }
 }

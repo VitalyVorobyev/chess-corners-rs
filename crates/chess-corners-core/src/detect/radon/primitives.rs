@@ -91,6 +91,26 @@ pub(crate) fn fit_peak_frac_grad(
     Some(g)
 }
 
+/// The curvature `D` that [`fit_peak_frac`] divides by (`y₋ − 2y₀ + y₊`, of
+/// the logarithms in the Gaussian branch) and its gradient with respect to
+/// the three samples, in the branch the fit takes.
+#[inline]
+pub(crate) fn fit_peak_curvature_grad(
+    y_minus: f32,
+    y_c: f32,
+    y_plus: f32,
+    mode: PeakFitMode,
+) -> (f32, [f32; 3]) {
+    if matches!(mode, PeakFitMode::Gaussian) && y_minus > 0.0 && y_c > 0.0 && y_plus > 0.0 {
+        (
+            y_minus.ln() - 2.0 * y_c.ln() + y_plus.ln(),
+            [1.0 / y_minus, -2.0 / y_c, 1.0 / y_plus],
+        )
+    } else {
+        (y_minus - 2.0 * y_c + y_plus, [1.0, -2.0, 1.0])
+    }
+}
+
 /// Separable `(2·radius+1)²` box blur applied in place to a flat
 /// row-major `w × h` grid. `scratch` must match `resp` in length and
 /// is used as temporary storage. `radius = 0` is a no-op.

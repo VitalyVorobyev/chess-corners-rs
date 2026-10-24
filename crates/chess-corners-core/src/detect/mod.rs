@@ -27,7 +27,7 @@ pub use merge::merge_corners_simple;
 pub(crate) use neighbors::{count_positive_neighbors, is_local_max};
 
 use crate::refine::PositionCovariance;
-use crate::uncertainty::total_covariance;
+use crate::uncertainty::CovarianceModel;
 
 /// A detected corner candidate (subpixel position with raw response strength).
 #[derive(Clone, Debug)]
@@ -47,9 +47,9 @@ pub struct Corner {
     /// `None` when the refiner reports none.
     /// [`Corner::position_covariance`] turns it into px².
     pub covariance_per_noise_variance: Option<PositionCovariance>,
-    /// Systematic part of the position covariance (px²), copied with
-    /// `covariance_per_noise_variance`.
-    pub(crate) systematic: PositionCovariance,
+    /// The full covariance model; `covariance_per_noise_variance` mirrors
+    /// its noise term.
+    pub(crate) model: Option<CovarianceModel>,
 }
 
 impl Corner {
@@ -61,15 +61,15 @@ impl Corner {
             y,
             strength,
             covariance_per_noise_variance: None,
-            systematic: PositionCovariance::ZERO,
+            model: None,
         }
     }
 
-    /// Attach the covariance of `res` (noise and systematic parts).
+    /// Attach `model`, mirroring its noise term in the public field.
     #[inline]
-    pub(crate) fn set_covariance(&mut self, res: &crate::RefineResult) {
-        self.covariance_per_noise_variance = res.covariance_per_noise_variance;
-        self.systematic = res.systematic;
+    pub(crate) fn set_model(&mut self, model: Option<CovarianceModel>) {
+        self.covariance_per_noise_variance = model.map(|m| m.noise);
+        self.model = model;
     }
 
     /// Position covariance in px² for an image whose pixels carry white
@@ -94,13 +94,20 @@ impl Corner {
     ///   localizer's `Σ_sys` also carries a floor measured on real
     ///   calibration images, for the error real optics and targets add
     ///   (about 0.05 px per axis for the saddle-point fit and the Radon peak
-    ///   fit, 0.07 for the center of mass, 0.15 for Förstner); on ideal
-    ///   synthetic corners the covariance is therefore conservative.
+    ///   fit, 0.07 for the center of mass, 0.11 for Förstner); on
+    ///   ideal synthetic corners the covariance is therefore conservative.
     ///
-    /// Error that every corner of an image shares (defocus, depth,
-    /// lens-model error) is outside any single-corner covariance; it shows
-    /// up in a downstream calibration's variance factor. Valid only for the
-    /// image the corner was refined on. With
+    /// Known limits: the systematic model cannot see the board's rotation,
+    /// so the center of mass is overconfident on sharp boards rotated a few
+    /// degrees, and the Radon peak fit on blurred corners near 45° (its
+    /// flat-topped response lets noise move the peak by up to a pixel; the
+    /// whitened error variance reaches about 4 on synthetic boards, more
+    /// under asymmetric blur). Error that every corner of an image shares
+    /// (defocus, depth, lens-model error) is outside any single-corner
+    /// covariance; it shows up in a downstream calibration's variance
+    /// factor. A corner whose `covariance_per_noise_variance` was set or
+    /// changed by the caller carries that noise term only. Valid only for
+    /// the image the corner was refined on. With
     /// spatially correlated noise (demosaiced, compressed or resampled
     /// images) `σₙ` from
     /// [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8) is the
@@ -109,8 +116,8 @@ impl Corner {
     /// covariance.
     #[inline]
     pub fn position_covariance(&self, noise_sigma: f32) -> Option<PositionCovariance> {
-        self.covariance_per_noise_variance
-            .map(|c| total_covariance(c, self.systematic, noise_sigma))
+        CovarianceModel::effective(self.model, self.covariance_per_noise_variance)
+            .map(|m| m.total(noise_sigma))
     }
 }
 

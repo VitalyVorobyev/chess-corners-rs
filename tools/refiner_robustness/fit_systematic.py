@@ -32,7 +32,7 @@ import pandas as pd
 from scipy.optimize import brentq
 
 ROOT = Path(__file__).resolve().parents[2]
-KNOTS = [0.7, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5, 1.7, 1.9, 2.1]
+KNOTS = [1.09, 1.14, 1.18, 1.24, 1.30, 1.35, 1.40, 1.47, 1.58, 1.68]
 # (localizer rows, grid spacing px, fit the gain?)
 MODELS = {
     "center_of_mass.rs": ("CoM", 1.0, False),

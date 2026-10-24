@@ -10,34 +10,36 @@
 //! detection and precise location of distinct points, corners and
 //! centres of circular features."
 
-use super::{CornerRefiner, PositionCovariance, RefineContext, RefineResult, RefineStatus};
+use super::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
 use crate::imageview::ImageView;
-use crate::uncertainty::{edge_width, knot, PixelGradients, SystematicModel, Uncertainty};
+use crate::uncertainty::{
+    knot, CovarianceModel, PixelGradients, PixelTile, SystematicModel, Uncertainty, EDGE_REACH,
+};
 use serde::{Deserialize, Serialize};
 
 /// Systematic error of the single-shot Förstner estimate by edge width
 /// (see [`SystematicModel`]). The estimate is pulled toward the window
 /// centre with a gain that falls from about 0.78 on sharp edges through 0
-/// near an edge width of 1.75 px (there it says nothing about where in the
-/// pixel the corner is) to −0.3, an overshoot, on heavily blurred ones.
+/// near an edge width of 1.5 px (there it says nothing about where in the
+/// pixel the corner is) to −0.2, an overshoot, on heavily blurred ones.
 /// Fitted on camera-formed synthetic boards from two generators (cells
 /// 6–12, rotations 0–45°, shear, lens blur σ 0.3–3) by
 /// `tools/refiner_robustness/fit_systematic.py`.
 const SYSTEMATIC: SystematicModel = SystematicModel {
     knots: &[
-        knot(0.70, 0.776, 0.0251),  // rms 0.0729, n 5076
-        knot(0.80, 0.787, 0.0172),  // rms 0.0659, n 7596
-        knot(0.90, 0.750, 0.0073),  // rms 0.0722, n 4969
-        knot(1.00, 0.649, 0.0161),  // rms 0.1073, n 8194
-        knot(1.15, 0.571, 0.0562),  // rms 0.1501, n 2079
-        knot(1.30, 0.494, 0.0224),  // rms 0.1570, n 7977
-        knot(1.50, 0.260, 0.0690),  // rms 0.2237, n 15623
-        knot(1.70, 0.114, 0.0327),  // rms 0.2614, n 5231
-        knot(1.90, -0.141, 0.0452), // rms 0.3230, n 9248
-        knot(2.10, -0.284, 0.0518), // rms 0.3693, n 4059
+        knot(1.09, 0.778, 0.0252),  // rms 0.0716, n 5605
+        knot(1.14, 0.769, 0.0164),  // rms 0.0719, n 7567
+        knot(1.18, 0.723, 0.0152),  // rms 0.0852, n 7598
+        knot(1.24, 0.618, 0.0163),  // rms 0.1229, n 6582
+        knot(1.30, 0.416, 0.0731),  // rms 0.1892, n 9438
+        knot(1.35, 0.338, 0.0765),  // rms 0.2090, n 8006
+        knot(1.40, 0.193, 0.0452),  // rms 0.2167, n 5755
+        knot(1.47, 0.152, 0.0385),  // rms 0.2470, n 6012
+        knot(1.58, -0.143, 0.0511), // rms 0.3321, n 6052
+        knot(1.68, -0.215, 0.0503), // rms 0.3414, n 7437
     ],
     // Real stereo calibration set: `tools/refiner_robustness/real_validation/fit_floor.py`.
-    floor: 0.150,
+    floor: 0.110,
 };
 
 /// Configuration for the [`ForstnerRefiner`].
@@ -101,6 +103,7 @@ pub struct ForstnerRefiner {
     cfg: ForstnerConfig,
     pub(crate) uncertainty: Uncertainty,
     grads: PixelGradients,
+    tile: PixelTile,
 }
 
 impl ForstnerRefiner {
@@ -110,11 +113,12 @@ impl ForstnerRefiner {
             cfg,
             uncertainty: Uncertainty::default(),
             grads: PixelGradients::default(),
+            tile: PixelTile::default(),
         }
     }
 
-    /// Noise covariance per unit variance and systematic covariance of the
-    /// estimate `seed + u` on the window centred on pixel `centre`, with
+    /// Covariance model of the estimate `seed + u` on the window centred on
+    /// pixel `centre`, with
     /// `a_inv = A⁻¹` of the structure tensor `A`.
     ///
     /// `u = A⁻¹b` with `A = Σ w g gᵀ` and `b = Σ w g gᵀ p` (`p` the pixel
@@ -128,9 +132,11 @@ impl ForstnerRefiner {
         seed: [f32; 2],
         u: [f32; 2],
         a_inv: [[f32; 2]; 2],
-    ) -> Option<(PositionCovariance, PositionCovariance)> {
+    ) -> Option<CovarianceModel> {
         let r = self.cfg.radius;
         let side = (2 * r + 3) as usize;
+        self.tile.load(img, centre, (r + 1).max(EDGE_REACH));
+        let tile = &self.tile;
         self.grads
             .reset([centre[0] - r - 1, centre[1] - r - 1], side);
         let mul = |v: [f32; 2]| {
@@ -144,8 +150,8 @@ impl ForstnerRefiner {
             for dx in -r..=r {
                 let gx = centre[0] + dx;
                 let g = [
-                    0.5 * (img.sample(gx + 1, gy) - img.sample(gx - 1, gy)),
-                    0.5 * (img.sample(gx, gy + 1) - img.sample(gx, gy - 1)),
+                    0.5 * (tile.at(gx + 1, gy) - tile.at(gx - 1, gy)),
+                    0.5 * (tile.at(gx, gy + 1) - tile.at(gx, gy - 1)),
                 ];
                 let p = [gx as f32 - seed[0], gy as f32 - seed[1]];
                 let w = 1.0 / (1.0 + 0.5 * (p[0] * p[0] + p[1] * p[1]));
@@ -165,8 +171,12 @@ impl ForstnerRefiner {
             seed[0] + u[0] - centre[0] as f32,
             seed[1] + u[1] - centre[1] as f32,
         ];
-        let systematic = SYSTEMATIC.covariance(offset, edge_width(img, centre), 1.0);
-        Some((noise, systematic))
+        let systematic = SYSTEMATIC.covariance(offset, self.tile.edge_width(centre), 1.0);
+        Some(CovarianceModel {
+            noise,
+            systematic,
+            growth: [0.0; 2],
+        })
     }
 }
 
@@ -263,12 +273,7 @@ impl CornerRefiner for ForstnerRefiner {
                 [a11 * inv_det, -a01 * inv_det],
                 [-a01 * inv_det, a00 * inv_det],
             ];
-            if let Some((noise, systematic)) =
-                self.covariance(&img, [cx, cy], seed_xy, [ux, uy], a_inv)
-            {
-                res.covariance_per_noise_variance = Some(noise);
-                res.systematic = systematic;
-            }
+            res.set_model(self.covariance(&img, [cx, cy], seed_xy, [ux, uy], a_inv));
         }
         res
     }

@@ -1,7 +1,6 @@
 //! Dense ChESS response computation for 8-bit grayscale inputs.
 use super::ring::RingOffsets;
-use crate::imageview::ImageView;
-use crate::uncertainty::PixelGradients;
+use crate::uncertainty::{PixelGradients, PixelTile};
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "rayon")]
@@ -474,19 +473,19 @@ fn chess_response_at_u8(img: &[u8], w: usize, x: i32, y: i32, ring: &[(i32, i32)
     (sr as f32) - (dr as f32) - 16.0 * mr
 }
 
-/// Add `scale·∂R/∂I` of the ChESS response `R` at pixel `(x, y)` of `img`
-/// to `grads`, for every pixel `R` reads (the 16 ring samples and the
-/// 5-pixel cross). `R` is piecewise linear in the pixels; each `|·|` term
-/// contributes the sign of its argument (0 where it is exactly 0).
+/// Add `scale·∂R/∂I` of the ChESS response `R` at pixel `(x, y)` to
+/// `grads`, for every pixel `R` reads (the 16 ring samples and the 5-pixel
+/// cross, all in `tile`). `R` is piecewise linear in the pixels; each `|·|`
+/// term contributes the sign of its argument (0 where it is exactly 0).
 pub(crate) fn add_response_gradient(
-    img: &ImageView<'_>,
+    tile: &PixelTile,
     x: i32,
     y: i32,
     ring: &[(i32, i32); 16],
     scale: [f32; 2],
     grads: &mut PixelGradients,
 ) {
-    let px = |dx: i32, dy: i32| img.sample(x + dx, y + dy) as i32;
+    let px = |dx: i32, dy: i32| tile.at(x + dx, y + dy) as i32;
     let s: [i32; 16] = core::array::from_fn(|k| px(ring[k].0, ring[k].1));
     let mut coef = [0i32; 16];
     for k in 0..4 {
