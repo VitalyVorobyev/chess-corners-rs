@@ -178,6 +178,8 @@ state.
 | UQ-31 | P3 | todo | 1.6.0 | — | WASM `rgba_to_gray` truncates instead of rounding (some gray levels low by one; noise estimate ~3% high). Changes `detectRgba` output. |
 | UQ-32 | P3 | todo | — | UQ-25 | Noise estimate in SaddlePoint's slope band for correlated noise: a coarse-band estimator calibrates flat and sparse boards (±4%) but needs a noise anchor that is not the quietest windows (dense boards, clipped cells and real images read 5–100× high). |
 | UQ-33 | P2 | todo | 1.6.0+ | — | Radon detects ~70% of the corners of the real stereo ChArUco set; the misses are the blurred corners (larger image radius, twice SaddlePoint's predicted σ), which ChESS finds ([real-data-validation](reference/real-data-validation.md)). Measure Radon's recall against blur on real and synthetic frames and find the stage that drops them (threshold, NMS, cluster size). |
+| UQ-34 | P2 | todo | 1.6.0+ | UQ-21 | ChESS multiscale (3 levels): check whether coarse seeds land outside the refinement search (`refinement_radius` minus border) as they did for Radon at quarter resolution (`UQ-21`); measure seed-to-corner distance per level on the test images and synthetic boards. |
+| UQ-35 | P3 | todo | 1.6.0+ | UQ-21 | The coarse-to-fine frame threshold anchors on the strongest seeded peak, not the frame maximum; equal on the test images, but a frame whose strongest corner is not seeded keeps weaker peaks. |
 
 ## Post-1.0 / future (not blocking 1.0)
 
