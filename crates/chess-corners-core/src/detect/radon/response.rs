@@ -130,12 +130,14 @@ impl RadonDetectorParams {
 }
 
 /// Reusable scratch for the whole-image Radon detector. Holds the
-/// upsampled image buffer, the four summed-area tables, the response
+/// working-resolution image, the four summed-area tables, the response
 /// map, and the box-blur scratch. All buffers grow on demand and are
 /// reused across frames — same pattern as `PyramidBuffers`.
 #[derive(Debug, Default)]
 pub struct RadonBuffers {
-    upsampled: Vec<u8>,
+    /// Working-resolution image: the input, upsampled when
+    /// `image_upsample > 1`. Kept for the peak detector's saddle test.
+    working: Vec<u8>,
     working_w: usize,
     working_h: usize,
     row_cumsum: Vec<SatElem>,
@@ -159,11 +161,7 @@ impl RadonBuffers {
         let n = ww * wh;
         self.working_w = ww;
         self.working_h = wh;
-        if up > 1 {
-            self.upsampled.resize(n, 0);
-        } else {
-            self.upsampled.clear();
-        }
+        self.working.resize(n, 0);
         self.row_cumsum.resize(n, SatElem::default());
         self.col_cumsum.resize(n, SatElem::default());
         self.diag_pos_cumsum.resize(n, SatElem::default());
@@ -542,12 +540,12 @@ pub fn radon_response_u8<'a>(
         );
     }
 
-    let working_img: &[u8] = if up > 1 {
-        upsample_bilinear_2x_if_needed(img, w, h, up, &mut buffers.upsampled);
-        &buffers.upsampled
+    if up > 1 {
+        upsample_bilinear_2x_if_needed(img, w, h, up, &mut buffers.working);
     } else {
-        img
-    };
+        buffers.working.copy_from_slice(img);
+    }
+    let working_img: &[u8] = &buffers.working;
 
     build_cumsums(
         working_img,
@@ -582,6 +580,7 @@ pub fn radon_response_u8<'a>(
     );
     RadonResponseView {
         data: &buffers.response,
+        image: &buffers.working,
         w: ww,
         h: wh,
     }
@@ -594,6 +593,8 @@ pub fn radon_response_u8<'a>(
 #[derive(Debug)]
 pub struct RadonResponseView<'a> {
     pub(super) data: &'a [f32],
+    /// Working-resolution image the response was computed from.
+    pub(super) image: &'a [u8],
     pub(super) w: usize,
     pub(super) h: usize,
 }

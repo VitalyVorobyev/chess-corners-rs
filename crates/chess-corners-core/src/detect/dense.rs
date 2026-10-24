@@ -34,8 +34,8 @@ use super::{
         response::{chess_response_u8, chess_response_u8_patch, Roi},
     },
     radon::{
-        detect_peaks_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
-        RadonResponseView,
+        detect::retain_above_relative_threshold, detect_peaks_from_radon, radon_response_u8,
+        RadonBuffers, RadonDetectorParams, RadonResponseView,
     },
     Corner,
 };
@@ -140,6 +140,25 @@ pub trait DenseDetector: private::Sealed {
         params: &Self::Params,
         buffers: &'a mut Self::Buffers,
     ) -> Self::Response<'a>;
+
+    /// Apply the frame-level acceptance test to the union of the peaks
+    /// [`Self::detect_corners`] returned for every ROI patch of one
+    /// frame (see [`Self::compute_response_patch`]).
+    ///
+    /// A patch can only judge a peak against itself. A detector whose
+    /// threshold is relative to the frame's strongest response (Radon)
+    /// therefore admits, inside a patch without a strong corner, peaks
+    /// far below the frame threshold; this pass re-applies the threshold
+    /// against the strongest peak of the union — the frame's strongest
+    /// response wherever the coarse level seeded it. A per-patch threshold
+    /// is never stricter than that, so the result is the set of peaks the
+    /// detector accepts against that maximum.
+    ///
+    /// The default keeps every corner: an absolute threshold (ChESS)
+    /// already decided each peak inside its patch.
+    fn retain_frame_peaks(&self, corners: &mut Vec<Corner>, params: &Self::Params) {
+        let _ = (corners, params);
+    }
 
     /// Detector-specific safety border (in **base-image pixels**) the
     /// orchestrator must keep around each seed when carving an ROI.
@@ -363,6 +382,10 @@ impl DenseDetector for RadonDetector {
             scratch[dst_off..dst_off + roi_w].copy_from_slice(&base.data[src_off..src_off + roi_w]);
         }
         radon_response_u8(&scratch, roi_w, roi_h, params, buffers)
+    }
+
+    fn retain_frame_peaks(&self, corners: &mut Vec<Corner>, params: &Self::Params) {
+        retain_above_relative_threshold(corners, params.threshold_rel);
     }
 
     fn roi_border(&self, params: &Self::Params) -> i32 {
