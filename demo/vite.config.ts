@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
 
 export default defineConfig({
-  plugins: [react(), wasm(), topLevelAwait()],
+  plugins: [tailwindcss(), react(), wasm(), topLevelAwait()],
   base: "./",
   // The wasm-bindgen glue relies on top-level await, so the bundle targets a
   // modern baseline. This also keeps esbuild (used by vite-plugin-top-level-await)

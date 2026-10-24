@@ -23,6 +23,15 @@ export interface DetectedCorner {
   response: number;
   /** The two estimated orientation axes. */
   axes: [Axis, Axis];
+  /** Position covariance in px², or `null` when the refiner reports none. */
+  covariance: PositionCovariance | null;
+}
+
+/** Symmetric 2×2 position covariance `[[xx, xy], [xy, yy]]`, in px². */
+export interface PositionCovariance {
+  xx: number;
+  xy: number;
+  yy: number;
 }
 
 /** Dense detector response/heatmap at working resolution (row-major). */
@@ -41,6 +50,12 @@ export type OrientationKind = "ringFit" | "diskFit";
 /** Subpixel refiner for the ChESS strategy. */
 export type ChessRefinerKind = "centerOfMass" | "forstner" | "saddlePoint";
 
+/** Radon subpixel refiner. */
+export type RadonRefinerKind = "peakFit" | "saddlePoint";
+
+/** Position-uncertainty tier. */
+export type UncertaintyKind = "off" | "propagated";
+
 /** UI-facing detector configuration, mapped to the typed WASM config tree. */
 export interface DetectorSettings {
   strategy: Strategy;
@@ -49,6 +64,10 @@ export interface DetectorSettings {
   threshold: number;
   orientation: OrientationKind;
   chessRefiner: ChessRefinerKind;
+  radonRefiner: RadonRefinerKind;
+  uncertainty: UncertaintyKind;
+  /** Pixel-noise σ in gray levels supplied by the user; `null` lets the detector estimate it per image. */
+  noiseSigma: number | null;
   /** Non-maximum-suppression radius (px). */
   nmsRadius: number;
   /** Minimum cluster size for a detection to survive. */

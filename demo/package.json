@@ -10,18 +10,23 @@
   },
   "dependencies": {
     "@vitavision/chess-corners": "file:./pkg",
+    "@vitavision/stage2d": "0.14.0",
+    "@vitavision/ui": "0.14.0",
+    "@vitavision/workbench": "0.3.2",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "esbuild": "^0.28.0",
     "rollup": "^4.60.2",
+    "tailwindcss": "^4.3.3",
     "typescript": "~5.8.3",
     "vite": "^8.0.14",
-    "vite-plugin-wasm": "^3.6.0",
-    "vite-plugin-top-level-await": "^1.6.0"
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.6.0"
   }
 }
