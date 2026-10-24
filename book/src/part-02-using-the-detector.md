@@ -44,7 +44,8 @@ Inside `RadonConfig`:
 | `ray_radius`           | Half-length of each ray (working-resolution pixels). Paper default at `image_upsample = 2` is `4`. |
 | `image_upsample`       | `1` (no supersample) or `2` (paper default). Values ≥ 3 are clamped to 2.                       |
 | `response_blur_radius` | Half-size of the box blur applied to the response map. `0` disables blurring.                  |
-| `peak_fit`             | `PeakFitMode::Parabolic` or `Gaussian` for the 3-point subpixel refinement.                   |
+| `peak_fit`             | `PeakFitMode::Parabolic` or `Gaussian` for the 3-point subpixel peak fit on the response map.  |
+| `refiner`              | `RadonRefiner::PeakFit` (default: keep the peak fit) or `SaddlePoint(_)` (refine each peak on the image, with a position covariance). |
 
 Four presets cover the common cases:
 
@@ -62,8 +63,9 @@ Three guarantees follow from this shape:
    no parallel top-level "broad" flag.
 2. **Per-detector refiners.** `ChessRefiner` lists the refiners that
    operate on ChESS output (`CenterOfMass`, `Forstner`, `SaddlePoint`,
-   `Ml`). The Radon detector does not have a pluggable refiner; its
-   subpixel step is the built-in Gaussian peak fit (`peak_fit`).
+   `Ml`); `RadonRefiner` lists the two that apply to Radon peaks
+   (`PeakFit`, `SaddlePoint`), so a refiner that cannot run on the
+   active detector cannot be configured.
 3. **Enum-with-payload everywhere a knob has an "on/off + tuning"
    shape.** `MultiscaleConfig`, `UpscaleConfig`, and `ChessRefiner`
    share the same encoding, so the JSON shape and the binding surface
@@ -142,9 +144,17 @@ f.max_offset = 2.0;
 let refiner = ChessRefiner::Forstner(f);
 ```
 
-The Radon detector does not have a pluggable refiner; its subpixel step
-is the built-in Gaussian peak fit, configured via
-`RadonConfig.peak_fit`. See [Part V](part-05-refiners.md).
+The Radon refiner is `RadonConfig.refiner`: the response-map peak fit
+alone (the default) or the saddle-point fit on the image, which also
+reports a position covariance:
+
+```rust
+use chess_corners::{DetectorConfig, RadonRefiner};
+
+let cfg = DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point());
+```
+
+See [Part V](part-05-refiners.md).
 
 ### 2.2.4 Raw buffer API
 
@@ -297,6 +307,7 @@ The Radon strategy is selected the same way:
 
 ```python
 cfg = chess_corners.DetectorConfig.radon()
+cfg = cfg.with_radon(refiner=chess_corners.RadonRefiner.saddle_point())  # refine the peaks
 ```
 
 If the wheel was built with `ml-refiner`, the ML pipeline is reached
@@ -477,8 +488,7 @@ geometric refiners: `SaddlePoint` has lower error on clean and blurred
 data while ML leads on the heaviest noise row (see the comparison in
 Part IX).
 
-The ML refiner is available on the ChESS strategy only. The Radon
-detector does not use a pluggable refiner.
+The ML refiner is available on the ChESS strategy only.
 
 ## 2.7 Radon heatmap (visualization)
 

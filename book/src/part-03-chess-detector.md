@@ -305,7 +305,7 @@ Fields:
   `(x, y)` in px²: the scatter due to white pixel noise plus a
   small model-error floor (the `Corner::position_covariance` rustdoc gives
   the model and its value). Only the saddle-point refiner
-  reports it (Part V); the detector scales it by the image noise level,
+  reports it (Part V; it can also refine Radon corners); the detector scales it by the image noise level,
   estimated per image or set with `DetectorConfig::noise_sigma`, and
   leaves it `None` on upscaled input. [Part VIII](part-08-uncertainty.md)
   covers what it describes and how to use it.

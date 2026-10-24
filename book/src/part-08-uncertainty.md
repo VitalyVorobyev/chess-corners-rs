@@ -1,7 +1,9 @@
 # Part VIII: Uncertainty
 
-With the `SaddlePoint` refiner, every refined corner carries a 2×2
-covariance of its position, in px², in the input image frame. A
+With the `SaddlePoint` refiner — selected through `ChessRefiner` on
+the ChESS detector or `RadonRefiner` on the Radon detector — every
+refined corner carries a 2×2 covariance of its position, in px²,
+in the input image frame. A
 calibration or pose solver can use it to weight each corner by how well
 it is actually localised, instead of trusting every corner equally.
 
@@ -52,7 +54,11 @@ At noise σ of 1–2 gray levels the scatter of every refiner is
 times their scatter. A covariance that describes only noise would make
 a calibration overconfident by that factor. This is why only
 `SaddlePoint` reports a covariance: once its bias is removed (§8.3),
-the noise is what remains, with the exceptions listed in §8.4.1.
+the noise is what remains, with the exceptions listed in §8.4.1. The
+Radon detector's own peak fit is biased the same way on these boards
+(noise-free, up to 0.17 px; [Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)),
+so Radon reports a covariance only when its peaks are refined with
+`SaddlePoint` (`RadonRefiner::SaddlePoint`).
 
 ## 8.2 What the detector reports
 
@@ -183,6 +189,13 @@ are free of edges, it gives no estimate, and the corners get no
 covariance. That happens on boards that fill the frame with small,
 sharp cells at low noise.
 
+The same estimate is available on its own, for example to display it or
+to check a value you supply: `chess_corners::estimate_noise_sigma_u8`
+(Rust), `chess_corners.estimate_noise_sigma` (Python),
+`estimateNoiseSigma` / `estimateNoiseSigmaRgba` (JS),
+`cc_estimate_noise_sigma_u8` (C) and `chess_corners::estimate_noise_sigma`
+(C++).
+
 ### 8.3.4 The reported covariance
 
 \\[
@@ -237,6 +250,14 @@ estimate declines there and those conditions carry no covariance.
   diagonal: \\(\hat\sigma_0^2\\) between 0.55 and 1.29. Both groups' whitened
   errors follow a unit normal (std 0.96 and 0.98).
 
+The figure uses the ChESS detector. Radon with `RadonRefiner::SaddlePoint`
+gives the same \\(\hat\sigma_0^2\\) on every condition where both detect the
+corners — the re-centred fit converges to the same position from either
+seed — and also covers the 60° shear at blur 2.5, where ChESS finds no
+corners (0.96–1.03). On 5 px cells, where ChESS finds almost none, Radon
+reads 0.77–1.38 on the conditions where its detections match the true
+corners.
+
 ### 8.4.1 Where it does not hold
 
 - **Rotated boards at low noise.** The re-centred fit keeps an error
@@ -266,7 +287,10 @@ estimate declines there and those conditions carry no covariance.
   blur σ ≥ 1.5 px, the window also covers the neighbouring corners. The
   re-centred position can then be worse than the single integer-grid
   fit (60° shear, blur 2.5: 0.16 vs 0.13 px RMS). The covariance does
-  not see this.
+  not see this. With 4 px cells this holds without blur too: on a 60°
+  shear (blur 1.5, noise 2) 19% of Radon's refined corners move more
+  than 0.5 px off, each with a confident covariance; keep Radon's
+  default peak fit there.
 - **Low signal-to-noise.** When the scatter itself reaches about
   0.3 px, the first-order propagation is no longer accurate: the
   covariance understates the scatter by up to 1.5× in variance. A
@@ -321,6 +345,7 @@ fn whiten(r: [f32; 2], c: &PositionCovariance) -> [f32; 2] {
     [w0, (r[1] - l21 * w0) / l22]
 }
 
+// Or `DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point())`.
 let cfg = DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::saddle_point());
 let mut detector = Detector::new(cfg)?;
 for c in detector.detect_u8(&pixels, width, height)? {
@@ -401,8 +426,8 @@ these causes:
 
 | Cause | What to do |
 |-------|------------|
-| The refiner is not `SaddlePoint`, or the detector is Radon | Select `ChessRefiner::saddle_point()` if you need covariances. |
-| Re-centring did not converge for this corner | The position is the single integer-grid fit, which is biased. Leave the corner out, or give it a weight well below its neighbours'. |
+| The refiner is not `SaddlePoint` (ChESS with another refiner, Radon with its default `RadonRefiner::PeakFit`) | Select `ChessRefiner::saddle_point()` or `RadonRefiner::saddle_point()`. |
+| Re-centring did not converge for this corner | The position is the single integer-grid fit (ChESS) or the peak fit (Radon), both biased. Leave the corner out, or give it a weight well below its neighbours'. |
 | The noise estimate declined (too few edge-free areas) | All corners of the frame lack a covariance. Supply `noise_sigma`. |
 | `upscale` is active | Interpolation correlates the noise of the upscaled pixels, so no covariance is reported. |
 

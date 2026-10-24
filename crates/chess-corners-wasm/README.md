@@ -245,6 +245,10 @@ no `exports` map, so any deep import path works.
 | `detectRgba(pixels, w, h)` | Detect corners from RGBA `Uint8Array` |
 | `positionCovariance()` | Position covariance of the corners from the last detection (stride 3) |
 
+Free functions: `estimateNoiseSigma(pixels, w, h)` / `estimateNoiseSigmaRgba(pixels, w, h)`
+return the per-image noise estimate (gray levels, `undefined` when the image
+has too few structure-free areas) that detection uses when `noiseSigma` is unset.
+
 #### Diagnostics
 
 Opt-in methods that expose intermediate detector data for debugging and
@@ -280,7 +284,7 @@ Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector
 
 The orientation fit is the dominant per-corner cost, and it is optional. When it is skipped — `const bare = cfg.withoutOrientation()` — the four axis values (`axis0_angle`, `axis0_sigma`, `axis1_angle`, `axis1_sigma`) are `NaN` for every corner and the stride stays 7. Skip it when a downstream stage recovers board geometry from corner positions alone.
 
-**Position covariance** (`positionCovariance()`): `Float32Array` with stride 3 per corner, `[xx, xy, yy]` in px², in the order of the corners returned by the most recent `detect` / `detectRgba` call. All three are `NaN` for a corner without one: only the saddle-point refiner reports it, and not on upscaled input. The image noise level behind it is estimated per image, or set with `cfg.withNoiseSigma(sigma)` / `cfg.noiseSigma`.
+**Position covariance** (`positionCovariance()`): `Float32Array` with stride 3 per corner, `[xx, xy, yy]` in px², in the order of the corners returned by the most recent `detect` / `detectRgba` call. All three are `NaN` for a corner without one: only the saddle-point refiner reports it (`ChessRefiner.withSaddlePoint(...)`, or `cfg.withRadonRefiner(RadonRefiner.withSaddlePoint(cfg))` on Radon, whose default peak fit reports none), and not on upscaled input. The image noise level behind it is estimated per image, or set with `cfg.withNoiseSigma(sigma)` / `cfg.noiseSigma`.
 
 **Response map** (`diagnosticsResponse` / `diagnosticsResponseRgba`): `Float32Array` in row-major order, dimensions available via `diagnosticsResponseWidth()` / `diagnosticsResponseHeight()`.
 

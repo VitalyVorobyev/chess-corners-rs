@@ -137,9 +137,11 @@ the input image.
 Use the Radon presets when the ChESS ring response does not produce
 enough reliable seeds. The repository has synthetic tests and benchmark
 sections for small cells, blur, and low contrast; those are the cases
-where the Radon ray-sum response was added. Treat this as a measured
-configuration choice, not a universal statement about all camera data:
-validate on your own images when the decision matters.
+where the Radon ray-sum response was added. Radon corners can be
+refined with the saddle-point fit (`RadonRefiner::SaddlePoint`), which
+also gives them a position covariance. Treat this as a measured configuration choice, not a
+universal statement about all camera data: validate on your own images
+when the decision matters.
 
 Refiner choice is also workload-dependent. The benchmark chapter reports
 the fixture, timing loop, and error metric used for each claim. In that

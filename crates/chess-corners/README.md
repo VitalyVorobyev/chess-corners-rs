@@ -91,8 +91,8 @@ Three guarantees follow from this shape:
 1. **One place per knob.** `cfg.strategy.chess.ring = ChessRing::Broad`
    is the only way to request the wider ChESS ring.
 2. **Per-detector refiners.** `ChessRefiner` lists the refiners that
-   operate on ChESS output. The Radon detector uses its built-in
-   Gaussian peak fit (`RadonConfig.peak_fit`), not a pluggable refiner.
+   operate on ChESS output; `RadonRefiner` the two that apply to Radon
+   peaks (`PeakFit`, the default, and `SaddlePoint`).
 3. **Symmetric encoding.** `MultiscaleConfig`, `UpscaleConfig`, and
    `ChessRefiner` use the same enum-with-payload shape, so the JSON and
    binding surface stays uniform. (`threshold` is a plain number, so it
@@ -118,9 +118,10 @@ Each detection is a `CornerDescriptor` with:
   weighting the corner in a calibration: the scatter due to white pixel
   noise plus a small model-error floor (see `Corner::position_covariance`
   in `chess-corners-core`). Only the saddle-point
-  refiner reports it. The noise level is estimated from each image, or
-  set with `DetectorConfig::with_noise_sigma`; it is `None` on upscaled
-  input.
+  refiner reports it (`ChessRefiner::SaddlePoint` or
+  `RadonRefiner::SaddlePoint`). The noise level is estimated from each image
+  (`estimate_noise_sigma_u8` returns the same estimate), or set with
+  `DetectorConfig::with_noise_sigma`; it is `None` on upscaled input.
 
 The orientation fit is the dominant per-corner cost. If a downstream
 stage recovers board geometry from corner positions alone, disable it
@@ -145,9 +146,16 @@ let cfg = DetectorConfig::chess().with_chess(|c| {
 });
 ```
 
-The Radon detector does not have a pluggable refiner. Its subpixel step
-is the built-in 3-point Gaussian peak fit, selected via
-`RadonConfig.peak_fit` (`PeakFitMode::Parabolic` or `Gaussian`).
+The Radon detector locates its peaks with a 3-point fit on the response
+map (`RadonConfig.peak_fit`); by default that position is final.
+`RadonConfig.refiner` can instead refine each peak with the saddle-point
+fit on the image, which also reports a position covariance:
+
+```rust
+use chess_corners::{DetectorConfig, RadonRefiner};
+
+let cfg = DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point());
+```
 
 ## CLI config shape
 

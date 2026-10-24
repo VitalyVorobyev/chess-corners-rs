@@ -10,10 +10,10 @@ either the image or the response map and returns a refined
 The library ships five refiners with one trait and one configuration
 enum, so swapping between them is a one-line change. The ChESS
 detector always runs one of these refiners to reach subpixel accuracy.
-The Radon detector handles subpixel accuracy through its own built-in
-3-point Gaussian peak fit (see
-[Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline)); it
-does not use a pluggable refiner.
+The Radon detector already locates its peaks to a fraction of a pixel
+with a 3-point peak fit (see
+[Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline)), and can
+refine them with `SaddlePoint` (§5.4).
 
 ## 5.1 The refiner trait
 
@@ -47,10 +47,14 @@ per-refiner config field behind. At runtime the facade stores an owned
 `Refiner` enum (one allocated scratch buffer per concrete refiner) so
 the same instance is reused across seeds — no per-corner allocation.
 
-The Radon detector does not use a pluggable refiner. Its subpixel step
-is the 3-point Gaussian peak fit built into the Radon pipeline,
-configured via `RadonConfig.peak_fit` (`PeakFitMode::Parabolic` or
-`Gaussian`).
+The Radon selector is `RadonRefiner`, nested inside `RadonConfig`:
+`PeakFit` (the default), which keeps the 3-point peak fit
+(`RadonConfig.peak_fit`) as the final position, or
+`SaddlePoint(SaddlePointConfig)`.
+`CenterOfMass` reads the ChESS response map and cannot refine Radon
+peaks; `Förstner` and ML are not offered, since `SaddlePoint` measures
+more accurate on synthetic boards. A Radon corner whose saddle-point refinement
+does not converge keeps its peak-fit position.
 
 ## 5.2 CenterOfMass
 
@@ -134,7 +138,8 @@ that pull vanishes. On accepted corners where this
 converges it also reports the first-order covariance of the converged
 position per unit image-noise variance
 (`RefineResult::covariance_per_noise_variance`, px² per gray-level²);
-otherwise it returns the single fit without one. [Part VIII](part-08-uncertainty.md)
+otherwise it returns the single fit without one (a Radon corner keeps
+its peak-fit position instead). [Part VIII](part-08-uncertainty.md)
 derives that covariance and shows where it matches the measured error.
 
 The determinant of the Hessian is `4·a·c − b²`. A true X‑junction is a
@@ -292,8 +297,10 @@ The measurement-driven comparison lives in Part IX. In short:
 
 The ChESS refiner is selected through `ChessConfig.refiner`:
 `DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner())`.
-The Radon detector's subpixel step is the built-in 3-point peak fit;
-configure it via `RadonConfig.peak_fit` (e.g. `PeakFitMode::Gaussian`).
+The Radon refiner through `RadonConfig.refiner`:
+`DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point())`
+refines the peaks and reports a covariance
+([Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)).
 Switching is a single-line change, and the comparison numbers
 in Part IX come from running all four ChESS refiners on the same
 fixture at a single build.
