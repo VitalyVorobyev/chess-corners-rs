@@ -3,6 +3,7 @@
 use chess_corners::{
     ChessConfig as RsChessConfig, DetectorConfig as RsDetectorConfig,
     OrientationMethod as RsOrientationMethod, RadonConfig as RsRadonConfig,
+    Uncertainty as RsUncertainty,
 };
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -11,8 +12,8 @@ use pyo3::types::{PyDict, PyString, PyType};
 use super::multiscale::MultiscaleConfig;
 use super::parse::{
     config_error, extract_float, json_dumps, json_loads, orientation_method_str,
-    parse_orientation_method, reject_unknown_keys, require_dict, ChessRing, OrientationMethod,
-    PeakFitMode,
+    parse_orientation_method, parse_uncertainty, reject_unknown_keys, require_dict,
+    uncertainty_str, ChessRing, OrientationMethod, PeakFitMode, Uncertainty,
 };
 use super::refiners::{ChessRefiner, RadonRefiner};
 use super::strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig, StrategyKind};
@@ -32,6 +33,7 @@ pub struct DetectorConfig {
     pub(crate) orientation_method: Option<RsOrientationMethod>,
     pub(crate) merge_radius: f32,
     pub(crate) noise_sigma: Option<f32>,
+    pub(crate) uncertainty: RsUncertainty,
 }
 
 impl DetectorConfig {
@@ -45,6 +47,7 @@ impl DetectorConfig {
             orientation_method: src.orientation_method,
             merge_radius: src.merge_radius,
             noise_sigma: src.noise_sigma,
+            uncertainty: src.uncertainty,
         })
     }
 
@@ -68,6 +71,7 @@ impl DetectorConfig {
         cfg.orientation_method = self.orientation_method;
         cfg.merge_radius = self.merge_radius;
         cfg.noise_sigma = self.noise_sigma;
+        cfg.uncertainty = self.uncertainty;
         cfg
     }
 }
@@ -154,6 +158,14 @@ impl DetectorConfig {
     fn with_noise_sigma(&self, py: Python<'_>, sigma: f32) -> PyResult<Self> {
         let mut cfg = self.clone_inner(py)?;
         cfg.noise_sigma = Some(sigma);
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` with the position-uncertainty tier
+    /// replaced.
+    fn with_uncertainty(&self, py: Python<'_>, uncertainty: Uncertainty) -> PyResult<Self> {
+        let mut cfg = self.clone_inner(py)?;
+        cfg.uncertainty = uncertainty.into();
         Ok(cfg)
     }
 
@@ -371,6 +383,15 @@ impl DetectorConfig {
         self.noise_sigma = v;
     }
 
+    #[getter]
+    fn uncertainty(&self) -> Uncertainty {
+        self.uncertainty.into()
+    }
+    #[setter]
+    fn set_uncertainty(&mut self, v: Uncertainty) {
+        self.uncertainty = v.into();
+    }
+
     // ---- serialization ----
 
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
@@ -388,6 +409,7 @@ impl DetectorConfig {
         d.set_item("merge_radius", self.merge_radius as f64)?;
         // `None` (estimate per image) serialises to a JSON `null`.
         d.set_item("noise_sigma", self.noise_sigma.map(f64::from))?;
+        d.set_item("uncertainty", uncertainty_str(self.uncertainty))?;
         Ok(d.unbind())
     }
 
@@ -414,6 +436,7 @@ impl DetectorConfig {
                 "orientation_method",
                 "merge_radius",
                 "noise_sigma",
+                "uncertainty",
             ],
             "config",
         )?;
@@ -465,6 +488,12 @@ impl DetectorConfig {
                 cfg.noise_sigma = extract_float(&dict, "noise_sigma", "config")?.map(|v| v as f32);
             }
             _ => cfg.noise_sigma = None,
+        }
+        if let Some(value) = dict.get_item("uncertainty")? {
+            let s = value
+                .extract::<String>()
+                .map_err(|_| config_error("config.uncertainty must be a string"))?;
+            cfg.uncertainty = parse_uncertainty(&s, "config.uncertainty")?;
         }
         Ok(cfg)
     }

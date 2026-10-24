@@ -20,7 +20,7 @@ use pyo3::types::{PyAny, PyModule};
 use crate::config::{
     CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, ConfigError, DetectionParams,
     DetectionStrategy, DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod,
-    PeakFitMode, RadonConfig, RadonRefiner, SaddlePointConfig, UpscaleConfig,
+    PeakFitMode, RadonConfig, RadonRefiner, SaddlePointConfig, Uncertainty, UpscaleConfig,
 };
 
 fn extract_image<'py>(
@@ -88,7 +88,9 @@ impl Detections {
 
     /// `(N, 2, 2)` float32 array of per-corner position covariance in px²
     /// (`[[xx, xy], [xy, yy]]`). Rows are `NaN` for corners without one:
-    /// only the saddle-point refiner reports it, and not on upscaled input.
+    /// every localizer except the ML refiner reports it under
+    /// `Uncertainty.PROPAGATED`; none does under `Uncertainty.OFF` or on
+    /// upscaled input.
     #[getter]
     fn position_covariance(&self, py: Python<'_>) -> Py<PyAny> {
         self.position_covariance.clone_ref(py)
@@ -388,6 +390,7 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ChessRing>()?;
     m.add_class::<PeakFitMode>()?;
     m.add_class::<OrientationMethod>()?;
+    m.add_class::<Uncertainty>()?;
 
     m.add_class::<CenterOfMassConfig>()?;
     m.add_class::<ForstnerConfig>()?;

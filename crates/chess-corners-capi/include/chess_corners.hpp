@@ -25,7 +25,7 @@ namespace chess_corners {
 /// Checked against `cc_abi_version()` before each detection (see
 /// `check_abi()`); a mismatch means the header and the linked library are
 /// incompatible and detection throws rather than reading a stale layout.
-inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 6;
+inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 7;
 
 /// One local grid-axis direction with its 1-sigma angular uncertainty.
 ///
@@ -52,9 +52,9 @@ struct Covariance {
 /// `false` and `axes` is zeroed.
 ///
 /// `position_covariance` is the covariance of `(x, y)` in px^2 (white-noise
-/// scatter plus a small model-error floor; see `cc_corner`). It is set only with
-/// the saddle-point refiner (`CC_REFINER_SADDLE_POINT`, either strategy), on
-/// corners whose refinement converged, and not on upscaled input.
+/// scatter plus a small model-error floor; see `cc_corner`). It is set under
+/// `CC_UNCERTAINTY_PROPAGATED` (the default) on corners whose refinement
+/// converged, and not under `CC_UNCERTAINTY_OFF` or on upscaled input.
 struct Corner {
     float x = 0.0f;
     float y = 0.0f;
@@ -106,6 +106,10 @@ private:
 /// `noise_sigma` is the image's pixel-noise standard deviation in gray
 /// levels, used to express position covariances in px^2; empty estimates it
 /// from each image (see `estimate_noise_sigma`).
+///
+/// `uncertainty` is one of the `CC_UNCERTAINTY_*` tags: `CC_UNCERTAINTY_PROPAGATED`
+/// (the default) reports position covariances, `CC_UNCERTAINTY_OFF` reports
+/// none and skips the noise estimate. Positions are identical under both.
 struct Config {
     cc_strategy_t strategy;
     float threshold;
@@ -122,6 +126,7 @@ struct Config {
     std::uint32_t response_blur_radius;
     cc_peak_fit_t peak_fit;
     std::optional<float> noise_sigma;
+    cc_uncertainty_t uncertainty;
 
     /// Defaults to the single-scale ChESS preset.
     Config() noexcept : Config(from_c(cc_config_chess())) {}
@@ -146,6 +151,7 @@ struct Config {
         if (c.has_noise_sigma != 0) {
             out.noise_sigma = c.noise_sigma;
         }
+        out.uncertainty = c.uncertainty;
         return out;
     }
 
@@ -168,6 +174,7 @@ struct Config {
         c.peak_fit = peak_fit;
         c.has_noise_sigma = noise_sigma.has_value() ? 1u : 0u;
         c.noise_sigma = noise_sigma.value_or(0.0f);
+        c.uncertainty = uncertainty;
         return c;
     }
 

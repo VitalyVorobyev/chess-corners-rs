@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use chess_corners::{
     ChessRing as RsChessRing, OrientationMethod as RsOrientationMethod,
-    PeakFitMode as RsPeakFitMode,
+    PeakFitMode as RsPeakFitMode, Uncertainty as RsUncertainty,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
@@ -237,6 +237,19 @@ py_enum!(
     ]
 );
 
+py_enum!(
+    /// Position-uncertainty tier.
+    ///
+    /// `PROPAGATED` *(default)* — every corner whose localizer supports it
+    /// reports a position covariance, scaled by the image noise level.
+    ///
+    /// `OFF` — no covariance and no noise estimate; the corresponding
+    /// output rows are `NaN`. Positions are identical under both tiers.
+    Uncertainty,
+    RsUncertainty,
+    [(Off, "OFF", Off), (Propagated, "PROPAGATED", Propagated),]
+);
+
 pub(crate) fn parse_enum<E>(value: &str, path: &str, allowed: &[(&str, E)]) -> PyResult<E>
 where
     E: Copy,
@@ -289,6 +302,17 @@ pub(crate) fn parse_orientation_method(value: &str, path: &str) -> PyResult<RsOr
     )
 }
 
+pub(crate) fn parse_uncertainty(value: &str, path: &str) -> PyResult<RsUncertainty> {
+    parse_enum(
+        value,
+        path,
+        &[
+            ("off", RsUncertainty::Off),
+            ("propagated", RsUncertainty::Propagated),
+        ],
+    )
+}
+
 pub(crate) fn chess_ring_str(v: RsChessRing) -> &'static str {
     match v {
         RsChessRing::Canonical => "canonical",
@@ -310,6 +334,14 @@ pub(crate) fn orientation_method_str(v: RsOrientationMethod) -> &'static str {
         RsOrientationMethod::RingFit => "ring_fit",
         RsOrientationMethod::DiskFit => "disk_fit",
         _ => "ring_fit",
+    }
+}
+
+pub(crate) fn uncertainty_str(v: RsUncertainty) -> &'static str {
+    match v {
+        RsUncertainty::Off => "off",
+        RsUncertainty::Propagated => "propagated",
+        _ => "propagated",
     }
 }
 

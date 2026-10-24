@@ -36,11 +36,59 @@ def test_saddle_point_reports_position_covariance():
     assert np.isnan(cov[~present]).all()
 
 
-def test_default_refiner_reports_no_covariance():
+def test_default_refiner_reports_covariance():
     det = chess_corners.Detector(chess_corners.DetectorConfig.chess()).detect(_noisy_board())
     assert len(det) > 0
-    assert det.position_covariance.shape == (len(det), 2, 2)
-    assert np.isnan(det.position_covariance).all()
+    cov = det.position_covariance
+    assert cov.shape == (len(det), 2, 2)
+    assert np.isfinite(cov).all()
+
+
+def test_radon_peak_fit_reports_covariance():
+    cfg = chess_corners.DetectorConfig.radon()
+    assert cfg.strategy.radon.refiner.kind == "peak_fit"
+    det = chess_corners.Detector(cfg).detect(_noisy_board())
+    assert len(det) > 0
+    assert np.isfinite(det.position_covariance).all()
+
+
+def test_uncertainty_default_and_round_trip():
+    cfg = chess_corners.DetectorConfig.chess()
+    assert cfg.uncertainty == chess_corners.Uncertainty.PROPAGATED
+    assert cfg.to_dict()["uncertainty"] == "propagated"
+    off = cfg.with_uncertainty(chess_corners.Uncertainty.OFF)
+    assert off.uncertainty == chess_corners.Uncertainty.OFF
+    assert cfg.uncertainty == chess_corners.Uncertainty.PROPAGATED
+    assert json.loads(off.to_json())["uncertainty"] == "off"
+    back = chess_corners.DetectorConfig.from_json(off.to_json())
+    assert back.uncertainty == chess_corners.Uncertainty.OFF
+    assert chess_corners.DetectorConfig.from_dict({}).uncertainty == (
+        chess_corners.Uncertainty.PROPAGATED
+    )
+    off.uncertainty = chess_corners.Uncertainty.PROPAGATED
+    assert off.uncertainty == chess_corners.Uncertainty.PROPAGATED
+    with pytest.raises(chess_corners.ConfigError):
+        chess_corners.DetectorConfig.from_dict({"uncertainty": "bogus"})
+    with pytest.raises(chess_corners.ConfigError):
+        chess_corners.DetectorConfig.from_dict({"uncertainty": 1})
+
+
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        chess_corners.DetectorConfig.chess(),
+        chess_corners.DetectorConfig.radon(),
+        _saddle_config(),
+    ],
+)
+def test_uncertainty_off_drops_covariance_not_positions(cfg):
+    img = _noisy_board()
+    on = chess_corners.Detector(cfg).detect(img)
+    off = chess_corners.Detector(cfg.with_uncertainty(chess_corners.Uncertainty.OFF)).detect(img)
+    assert len(on) > 0
+    assert np.isfinite(on.position_covariance).any()
+    assert np.isnan(off.position_covariance).all()
+    np.testing.assert_array_equal(on.xy, off.xy)
 
 
 def test_supplied_noise_sigma_scales_covariance():
@@ -89,8 +137,7 @@ def test_radon_saddle_point_reports_position_covariance():
 
     plain = chess_corners.Detector(cfg).detect(img)
     assert len(plain) == len(det)
-    assert np.isnan(plain.position_covariance).all()
-    # Corners without a covariance keep their peak-fit position.
+    # Corners without a saddle-point covariance keep their peak-fit position.
     np.testing.assert_array_equal(det.xy[~present], plain.xy[~present])
 
 

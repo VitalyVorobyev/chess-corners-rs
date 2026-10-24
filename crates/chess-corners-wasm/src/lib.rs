@@ -44,7 +44,7 @@ use wasm_bindgen::prelude::*;
 pub use crate::config::{
     CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy,
     DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig,
-    RadonRefiner, SaddlePointConfig, UpscaleConfig,
+    RadonRefiner, SaddlePointConfig, Uncertainty, UpscaleConfig,
 };
 
 /// Default detector configuration as a JSON string, in the same shape as
@@ -258,8 +258,9 @@ impl ChessDetector {
     /// Position covariance of the corners returned by the most recent
     /// `detect` / `detectRgba` call, in the same order: a `Float32Array`
     /// with stride 3 per corner, `[xx, xy, yy, ...]`, in px². All three are
-    /// `NaN` for a corner without one — only the saddle-point refiner
-    /// reports it, and not on upscaled input. Empty before the first
+    /// `NaN` for a corner without one — every localizer except the ML
+    /// refiner reports it under `Uncertainty.Propagated`; none does under
+    /// `Uncertainty.Off` or on upscaled input. Empty before the first
     /// detection, after a failed one, and after `applyConfig`.
     #[wasm_bindgen(js_name = positionCovariance)]
     pub fn position_covariance(&self) -> js_sys::Float32Array {

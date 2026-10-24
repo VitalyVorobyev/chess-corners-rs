@@ -1,13 +1,16 @@
 //! `#[wasm_bindgen]` wrapper for the top-level `DetectorConfig`.
 
-use chess_corners::{DetectorConfig as RsDetectorConfig, OrientationMethod as RsOrientationMethod};
+use chess_corners::{
+    DetectorConfig as RsDetectorConfig, OrientationMethod as RsOrientationMethod,
+    Uncertainty as RsUncertainty,
+};
 use wasm_bindgen::prelude::*;
 
 use super::multiscale::MultiscaleConfig;
 use super::refiners::{ChessRefiner, RadonRefiner};
 use super::strategy::{DetectionParams, DetectionStrategy};
 use super::upscale::UpscaleConfig;
-use super::{cell, Cell, ChessRing, OrientationMethod, PeakFitMode};
+use super::{cell, Cell, ChessRing, OrientationMethod, PeakFitMode, Uncertainty};
 
 // ---------------------------------------------------------------------------
 // DetectorConfig
@@ -34,6 +37,7 @@ pub struct DetectorConfig {
     orientation_method: Cell<Option<RsOrientationMethod>>,
     merge_radius: Cell<f32>,
     noise_sigma: Cell<Option<f32>>,
+    uncertainty: Cell<RsUncertainty>,
 }
 
 impl DetectorConfig {
@@ -51,6 +55,7 @@ impl DetectorConfig {
             orientation_method: cell(value.orientation_method),
             merge_radius: cell(value.merge_radius),
             noise_sigma: cell(value.noise_sigma),
+            uncertainty: cell(value.uncertainty),
         }
     }
 
@@ -87,6 +92,7 @@ impl DetectorConfig {
         cfg.orientation_method = *self.orientation_method.borrow();
         cfg.merge_radius = *self.merge_radius.borrow();
         cfg.noise_sigma = *self.noise_sigma.borrow();
+        cfg.uncertainty = *self.uncertainty.borrow();
         cfg
     }
 }
@@ -221,6 +227,15 @@ impl DetectorConfig {
     pub fn with_noise_sigma(&self, sigma: f32) -> Self {
         let mut out = self.deep_clone();
         out.set_noise_sigma(Some(sigma));
+        out
+    }
+
+    /// Return a copy of this config with the position-uncertainty tier
+    /// replaced. JS: `cfg.withUncertainty(Uncertainty.Off)`.
+    #[wasm_bindgen(js_name = withUncertainty)]
+    pub fn with_uncertainty(&self, uncertainty: Uncertainty) -> Self {
+        let mut out = self.deep_clone();
+        out.set_uncertainty(uncertainty);
         out
     }
 
@@ -490,6 +505,18 @@ impl DetectorConfig {
     #[wasm_bindgen(setter, js_name = noiseSigma)]
     pub fn set_noise_sigma(&mut self, v: Option<f32>) {
         *self.noise_sigma.borrow_mut() = v;
+    }
+
+    /// Position-uncertainty tier: `Uncertainty.Propagated` (default) reports
+    /// a position covariance per corner, `Uncertainty.Off` reports none.
+    /// JSON: `"uncertainty": "off" | "propagated"`.
+    #[wasm_bindgen(getter)]
+    pub fn uncertainty(&self) -> Uncertainty {
+        (*self.uncertainty.borrow()).into()
+    }
+    #[wasm_bindgen(setter)]
+    pub fn set_uncertainty(&mut self, v: Uncertainty) {
+        *self.uncertainty.borrow_mut() = v.into();
     }
 }
 

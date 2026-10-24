@@ -71,6 +71,15 @@ fn assert_ffi_matches_facade(cfg: &cc_config, reference: DetectorConfig) -> usiz
             }
             None => assert_eq!(a.has_orientation, 0, "orientation should be skipped"),
         }
+        assert_eq!(
+            a.has_position_covariance == 1,
+            b.position_covariance.is_some(),
+            "covariance presence mismatch"
+        );
+        if let Some(cov) = b.position_covariance {
+            assert!((a.position_covariance.xx - cov.xx).abs() <= 1e-4 * cov.xx.abs().max(1.0));
+            assert!((a.position_covariance.yy - cov.yy).abs() <= 1e-4 * cov.yy.abs().max(1.0));
+        }
     }
 
     let len = out.len;

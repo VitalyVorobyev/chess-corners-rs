@@ -22,15 +22,17 @@
 
 use chess_corners::{
     ChessError, ChessRefiner, ChessRing, CornerDescriptor, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig, RadonRefiner, UpscaleConfig,
+    MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig, RadonRefiner, Uncertainty,
+    UpscaleConfig,
 };
 
 use crate::{
     cc_axis, cc_chess_ring_t, cc_config, cc_corner, cc_covariance, cc_peak_fit_t, cc_refiner_t,
-    cc_status, CC_CHESS_RING_BROAD, CC_CHESS_RING_CANONICAL, CC_ORIENTATION_DISK_FIT,
-    CC_ORIENTATION_NONE, CC_ORIENTATION_RING_FIT, CC_PEAK_FIT_GAUSSIAN, CC_PEAK_FIT_PARABOLIC,
-    CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, CC_REFINER_PEAK_FIT, CC_REFINER_SADDLE_POINT,
-    CC_STRATEGY_CHESS, CC_STRATEGY_RADON,
+    cc_status, cc_uncertainty_t, CC_CHESS_RING_BROAD, CC_CHESS_RING_CANONICAL,
+    CC_ORIENTATION_DISK_FIT, CC_ORIENTATION_NONE, CC_ORIENTATION_RING_FIT, CC_PEAK_FIT_GAUSSIAN,
+    CC_PEAK_FIT_PARABOLIC, CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, CC_REFINER_PEAK_FIT,
+    CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS, CC_STRATEGY_RADON, CC_UNCERTAINTY_OFF,
+    CC_UNCERTAINTY_PROPAGATED,
 };
 
 /// Convert a flat [`cc_config`] into a facade [`DetectorConfig`].
@@ -49,6 +51,12 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
         CC_ORIENTATION_RING_FIT => Some(OrientationMethod::RingFit),
         CC_ORIENTATION_DISK_FIT => Some(OrientationMethod::DiskFit),
         CC_ORIENTATION_NONE => None,
+        _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
+    };
+
+    let uncertainty = match cfg.uncertainty {
+        CC_UNCERTAINTY_OFF => Uncertainty::Off,
+        CC_UNCERTAINTY_PROPAGATED => Uncertainty::Propagated,
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
     };
 
@@ -116,6 +124,7 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
         .with_multiscale(multiscale)
         .with_upscale(upscale)
         .with_merge_radius(cfg.merge_radius)
+        .with_uncertainty(uncertainty)
         .with_detection(|d| {
             d.nms_radius = cfg.nms_radius;
             d.min_cluster_size = cfg.min_cluster_size;
@@ -175,6 +184,11 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
         Some(OrientationMethod::DiskFit) => CC_ORIENTATION_DISK_FIT,
         Some(_) => CC_ORIENTATION_RING_FIT,
     };
+    let uncertainty: cc_uncertainty_t = match config.uncertainty {
+        Uncertainty::Off => CC_UNCERTAINTY_OFF,
+        // Future variants fall back to the default tier.
+        _ => CC_UNCERTAINTY_PROPAGATED,
+    };
     let upscale_factor = match config.upscale {
         UpscaleConfig::Disabled => 0,
         UpscaleConfig::Fixed(k) => k,
@@ -198,6 +212,7 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
         peak_fit: peak_fit_tag(radon.peak_fit),
         has_noise_sigma: u32::from(config.noise_sigma.is_some()),
         noise_sigma: config.noise_sigma.unwrap_or(0.0),
+        uncertainty,
     }
 }
 
@@ -327,5 +342,6 @@ pub(crate) fn zeroed_config() -> cc_config {
         peak_fit: peak_fit_tag(radon.peak_fit),
         has_noise_sigma: 0,
         noise_sigma: 0.0,
+        uncertainty: CC_UNCERTAINTY_PROPAGATED,
     }
 }
