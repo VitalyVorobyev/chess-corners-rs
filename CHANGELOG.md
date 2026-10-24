@@ -35,11 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   presets' value) or `CC_REFINER_SADDLE_POINT`, and rejects the other tags
   with `CC_ERR_INVALID_CONFIG` (it ignored them before).
 
-### Deprecated
-
-- `DenseDetector::refines_on_image` (`chess-corners-core`): both detectors
-  can refine on the image, so it is always `true`.
-
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.
