@@ -259,38 +259,24 @@ over 10 runs (milliseconds), 8-core M-class CPU:
 | Full pipeline      | none        |  28.6         |  31.3        | 298             | 162             |
 | Full pipeline      | rayon+simd  |  28.8         |  19.6        | 188             | 162             |
 
-End-to-end cumulative speedup vs. the scalar pre-opt reference (the
-state Radon shipped in at #45):
+How the Radon pipeline uses the `rayon` and `simd` features:
 
-| Bench | Pre-opt | Post-opt (rayon+simd) | Speedup |
-|---|---:|---:|---:|
-| `radon_response` 1920×1080 up=2 | 130.6 ms | 28.0 ms | **4.7×** |
-| `radon_pipeline` 1920×1080 synth | 692 ms | 162 ms | **4.3×** |
-| `radon_pipeline` large.png | 393 ms | 188 ms | **2.1×** |
-| `radon_pipeline` mid.png | 47 ms | 19.6 ms | **2.4×** |
-
-What was changed, in order:
-
-1. **Row-parallel `compute_response`** under `rayon`, plus a
-   handwritten `Simd<i64, 8>` inner kernel under `simd`. This is
-   the biggest single win on the response stage (~4.7×).
-2. **Row-parallel `box_blur_inplace`** under `rayon`. The vertical
-   pass was rewritten row-major (was column-strided), which also
-   speeds up the **scalar** path 5–28% as a side effect.
-3. **`upsample_bilinear_2x` and `build_cumsums` parallelism** —
-   rayon row-wise on the upsampler, `rayon::join` across the four
-   independent cumsum directions.
-4. **`merge_corners_simple` spatial grid** — the original O(N²)
-   pairwise scan was the dominant cost on synthetic chessboards
-   and low-contrast frames where Radon emits thousands of
-   candidates. Replaced with a uniform spatial grid keyed on the
-   merge radius (cell size = `radius`); expected O(N) for typical
-   distributions. This is the single largest pipeline-level win
-   (1920×1080 synth dropped from 665 ms to 185 ms with all
-   features enabled).
-5. **Row-parallel NMS + peak-fit** in `detect_peaks_from_radon`
-   under `rayon`, with thread-local accumulators concatenated in
-   row order to keep the output deterministic.
+1. **`compute_response`** runs row-parallel under `rayon`, with a
+   `Simd<i64, 8>` inner kernel under `simd`. This is the largest
+   effect on the response stage (130.6 → 28.0 ms on the 1920×1080
+   frame).
+2. **`box_blur_inplace`** runs row-parallel under `rayon`; both passes
+   traverse the image row-major.
+3. **`upsample_bilinear_2x`** runs row-parallel, and the four
+   independent cumulative sums are built in parallel with
+   `rayon::join`.
+4. **`merge_corners_simple`** buckets candidates on a uniform grid
+   whose cell size is the merge radius, so merging is close to linear
+   in the number of candidates. This matters on synthetic chessboards
+   and low-contrast frames, where Radon emits thousands of candidates.
+5. **NMS and the peak fit** in `detect_peaks_from_radon` run
+   row-parallel under `rayon`, with per-row results concatenated in row
+   order so the output is deterministic.
 
 Caveats and notes:
 
@@ -498,8 +484,8 @@ cargo bench -p chess-corners        --bench radon_pipeline --features rayon,simd
 cargo bench -p chess-corners-core   --bench radon_response --features rayon,simd
 
 # Save a baseline before optimizing, then re-run with --baseline <name>
-cargo bench --workspace -- --save-baseline pre-opt
-cargo bench --workspace -- --baseline pre-opt
+cargo bench --workspace -- --save-baseline before
+cargo bench --workspace -- --baseline before
 
 # Flamegraph / samply harness for hot-path profiling.
 # Outputs under testdata/out/profiles/.

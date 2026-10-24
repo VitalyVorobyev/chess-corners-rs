@@ -98,24 +98,22 @@ from a measured bias/precision split, not ahead of it.
 | decision | `UQ-01` found SaddlePoint bias (~0.12 px on sharp corners) far above noise scatter, removable by re-centred refitting: reduce bias first, then expose the covariance | — |
 | `1.5.0` | SaddlePoint re-centred refit (default) with a validated covariance; per-image noise estimate (px² output); SaddlePoint covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; CenterOfMass non-refinement fix; a book Part on uncertainty; camera-formed (lens blur before pixel integration) evidence fixtures and the floor tuned on rotated boards | `UQ-03`, `UQ-05`, `UQ-07`, `UQ-09`, `UQ-15` |
 | `1.6.0` | Position covariance for every localizer behind `Uncertainty { Off, Propagated }` (noise through each localizer's Jacobian plus a per-localizer systematic term with a real-data floor); opt-in SaddlePoint refinement of Radon corners (`RadonRefiner`; default stays the peak fit, `UQ-22`); per-image noise estimate public in every binding; robustness audit and real-data validation; book Part VIII rewritten on that evidence | `UQ-18`, `UQ-23`–`UQ-28`, `UQ-30` |
-| `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); Förstner and CenterOfMass covariance once their bias is addressed; cubic re-centring for SaddlePoint and a smaller floor | `UQ-04`, `UQ-06`, `UQ-16` |
+| `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); per-corner systematic term that sees board rotation and Radon peak switching; cubic re-centring for SaddlePoint; a noise estimate for correlated noise | `UQ-06`, `UQ-16`, `UQ-32` |
 | ongoing | Realistic ground truth (calib-synth / etendue renders; end-to-end σ̂₀ check in calibration-rs) | `UQ-08`, `ML-01`, `ML-02` |
 
-**Known gaps this program has to close.**
-- SaddlePoint keeps a phase-dependent error the covariance covers only
-  through a 0.006 px floor (`UQ-15`): with a lens blur of ≥ 0.5 px, σ̂₀² is
-  0.61–1.75 at σₙ 1 (overconfident at 30–45° rotations, conservative on
-  grid-aligned boards) and 0.7–1.15 at σₙ ≥ 4. The bilinear re-centring
-  causes the 30–45° part; a cubic resampler would remove it and let the
-  floor shrink (`UQ-16`). With ideally sharp optics, oblique edges alias:
-  0.01–0.02 px on 2–15° / 45° boards, σ̂₀² ≈ 6 at σₙ 1, not removable by
-  refining the same pixels.
-- All accuracy evidence is synthetic; `testimages/` carry no ground truth.
-- Validation so far uses i.i.d. Gaussian noise. Real sensors add
-  signal-dependent (shot) noise and spatially correlated noise (demosaicing,
-  compression).
-- The default refiners (ChESS CenterOfMass, Radon peak fit) report no
-  covariance; SaddlePoint is opt-in on both (`UQ-18`, `UQ-22`).
+**Known gaps.**
+- The systematic term models a window-offset pull in an edge-width
+  observable plus a constant floor fitted on one real calibration set; it
+  cannot see board rotation (CenterOfMass and Förstner per-condition
+  calibration) or the Radon peak fit's switching on flat-topped responses
+  (σ̂₀² up to ~6 on blurred near-45° corners).
+- Per-view errors common to all corners of an image (defocus, tilt: ~0.06 px
+  per axis on the real set) are outside any per-corner covariance, and
+  weighting a calibration by Σ is neutral on the real data measured so far.
+- The noise estimate misreads demosaiced images and declines on JPEG;
+  users must supply σ there (`UQ-32`).
+- Real-data evidence comes from one stereo ChArUco set; no repeated-capture
+  or stage-truth data yet (`UQ-30`).
 - Orientation σ mixes methods: RingFit scales a Gauss-Newton covariance by
   the fit residual plus a calibration factor; DiskFit is a heuristic that is
   overcautious on clean corners.
