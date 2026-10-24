@@ -88,9 +88,10 @@ Two sources, each with a per-corner observable:
    3× the SaddlePoint refinement. Using β as a correction was rejected: it
    raises error on blur, coma and perspective, and on three of four real
    sets. A multi-radius spread was rejected: the radii share the bias.
+   The covariance term failed the real-data gate (§8) and does not ship.
 
-Which of these ship as correction versus as covariance, and in which tier,
-is decided by the `UQ-26` gate (§8).
+The window-offset term ships as covariance in `Propagated`; the asymmetry
+term does not ship (§8).
 
 ## 5. Noise estimate
 
@@ -111,9 +112,6 @@ pub enum Uncertainty {
     Off,
     /// Noise propagation plus the per-localizer systematic model (§4.1).
     Propagated,
-    /// Propagated, plus the per-corner asymmetry term (§4.2).
-    // Variant added by UQ-27 if the UQ-26 gate passes; named for what it
-    // measures.
 }
 ```
 
@@ -121,8 +119,6 @@ pub enum Uncertainty {
   Must stay within 2% p95 of 1.5.0 frame time.
 - `Propagated` — the default. Every localizer reports a covariance.
   Its cost per localizer and per frame is measured and published.
-- The asymmetry tier costs one extra pass over each patch plus a small
-  least-squares solve.
 
 `DetectorConfig::noise_sigma` keeps its meaning and is ignored under `Off`.
 The per-corner output stays one total `position_covariance`.
@@ -172,6 +168,13 @@ The per-corner output stays one total `position_covariance`.
   The tier ships (`UQ-27`) only if the residual decomposition of `UQ-30`,
   which removes the field and board components, shows the asymmetry term
   tracking the per-corner remainder better than `Propagated`.
+  **Outcome: no-go** ([asymmetry-term § Real-data gate](../reference/asymmetry-term.md)).
+  Against the shipped `Propagated`, with the floor refitted so neither
+  double-counts, the term lowers Spearman(σ, |remainder|) on the local
+  remainder by 0.05–0.06 and on the cross-fold remainder by 0.08–0.15, and
+  weighting by it is worse (held-out CV +0.6%, cross-fold remainder +2.0%
+  with blurred corners). It fixes strong synthetic shading (±15%: σ̂₀²
+  1.7–2.6 → 0.4–0.5), the only synthetic condition `Propagated` misses.
 - **Radon default localizer (`UQ-22`):** decided on the real sets with
   Radon + SaddlePoint included.
 
@@ -200,7 +203,7 @@ colours, non-pickable `PointSet`).
 | UQ-24 | `Uncertainty` stage; Jacobian noise term for CenterOfMass, Förstner, Radon peak fit; systematic model §4.1 | UQ-18 |
 | UQ-25 | Noise estimate on demosaiced and JPEG images | UQ-18 |
 | UQ-26 | Asymmetry term §4.2: prototype and gate | UQ-23 |
-| UQ-27 | Ship the asymmetry tier (and correction if gated in) | UQ-24, UQ-26 |
+| UQ-27 | Ship the asymmetry tier (and correction if gated in): no-go | UQ-24, UQ-26 |
 | UQ-28 | Book, README, CHANGELOG, reference docs | UQ-24–27 |
 | UQ-29 | Demo: per-localizer covariance, tiers, noise readout | UQ-24 |
 | UQ-30 | Absolute validation data with detector-separable truth (absorbs UQ-08) | — |
