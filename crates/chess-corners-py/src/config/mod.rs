@@ -18,7 +18,7 @@ create_exception!(_native, ConfigError, PyValueError);
 
 pub use detector::DetectorConfig;
 pub use multiscale::MultiscaleConfig;
-pub use parse::{ChessRing, OrientationMethod, PeakFitMode};
+pub use parse::{ChessRing, OrientationMethod, PeakFitMode, Uncertainty};
 pub use refiners::{
     CenterOfMassConfig, ChessRefiner, ForstnerConfig, RadonRefiner, SaddlePointConfig,
 };

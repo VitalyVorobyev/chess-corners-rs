@@ -302,10 +302,10 @@ Fields:
   directions and their 1σ uncertainties, or `None` when the
   orientation fit was disabled (§3.4.6).
 - `position_covariance` – the 2×2 covariance `{ xx, xy, yy }` of
-  `(x, y)` in px²: the scatter due to white pixel noise plus a
-  small model-error floor (the `Corner::position_covariance` rustdoc gives
-  the model and its value). Only the saddle-point refiner
-  reports it (Part V; it can also refine Radon corners); the detector scales it by the image noise level,
+  `(x, y)` in px²: the scatter due to white pixel noise plus the
+  localizer's systematic error (the `Corner::position_covariance` rustdoc
+  gives the model). Every refiner except the ML one reports it, unless
+  `DetectorConfig::uncertainty` is `Off`; the detector scales it by the image noise level,
   estimated per image or set with `DetectorConfig::noise_sigma`, and
   leaves it `None` on upscaled input. [Part VIII](part-08-uncertainty.md)
   covers what it describes and how to use it.

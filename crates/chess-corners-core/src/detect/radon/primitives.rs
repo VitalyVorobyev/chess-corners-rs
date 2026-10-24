@@ -52,6 +52,65 @@ pub(crate) fn fit_peak_frac(y_minus: f32, y_c: f32, y_plus: f32, mode: PeakFitMo
     frac.clamp(-0.5, 0.5)
 }
 
+/// Gradient of [`fit_peak_frac`] with respect to its three samples,
+/// `[∂f/∂y₋, ∂f/∂y₀, ∂f/∂y₊]`, at the same branch the fit takes. `None`
+/// where the fit does not respond to the samples: a non-maximum
+/// (the fit returns 0) or an offset clamped to `±0.5`.
+#[inline]
+pub(crate) fn fit_peak_frac_grad(
+    y_minus: f32,
+    y_c: f32,
+    y_plus: f32,
+    mode: PeakFitMode,
+) -> Option<[f32; 3]> {
+    let log = matches!(mode, PeakFitMode::Gaussian) && y_minus > 0.0 && y_c > 0.0 && y_plus > 0.0;
+    let (ym, y0, yp) = if log {
+        (y_minus.ln(), y_c.ln(), y_plus.ln())
+    } else {
+        (y_minus, y_c, y_plus)
+    };
+    let denom = ym - 2.0 * y0 + yp;
+    if denom > -1e-12 {
+        return None;
+    }
+    let frac = 0.5 * (ym - yp) / denom;
+    if frac.is_nan() || frac.abs() >= 0.5 {
+        return None;
+    }
+    // f = ½(m − p)/D with D = m − 2c + p.
+    let mut g = [
+        (0.5 - frac) / denom,
+        2.0 * frac / denom,
+        -(0.5 + frac) / denom,
+    ];
+    if log {
+        g[0] /= y_minus;
+        g[1] /= y_c;
+        g[2] /= y_plus;
+    }
+    Some(g)
+}
+
+/// The curvature `D` that [`fit_peak_frac`] divides by (`y₋ − 2y₀ + y₊`, of
+/// the logarithms in the Gaussian branch) and its gradient with respect to
+/// the three samples, in the branch the fit takes.
+#[inline]
+pub(crate) fn fit_peak_curvature_grad(
+    y_minus: f32,
+    y_c: f32,
+    y_plus: f32,
+    mode: PeakFitMode,
+) -> (f32, [f32; 3]) {
+    if matches!(mode, PeakFitMode::Gaussian) && y_minus > 0.0 && y_c > 0.0 && y_plus > 0.0 {
+        (
+            y_minus.ln() - 2.0 * y_c.ln() + y_plus.ln(),
+            [1.0 / y_minus, -2.0 / y_c, 1.0 / y_plus],
+        )
+    } else {
+        (y_minus - 2.0 * y_c + y_plus, [1.0, -2.0, 1.0])
+    }
+}
+
 /// Separable `(2·radius+1)²` box blur applied in place to a flat
 /// row-major `w × h` grid. `scratch` must match `resp` in length and
 /// is used as temporary storage. `radius = 0` is a no-op.
@@ -200,6 +259,33 @@ mod tests {
         let parab = fit_peak_frac(-0.5, 2.0, 1.5, PeakFitMode::Parabolic);
         let gauss = fit_peak_frac(-0.5, 2.0, 1.5, PeakFitMode::Gaussian);
         assert_eq!(parab, gauss);
+    }
+
+    #[test]
+    fn fit_peak_frac_grad_matches_finite_differences() {
+        for mode in [PeakFitMode::Parabolic, PeakFitMode::Gaussian] {
+            for y in [[3.0f32, 5.0, 4.0], [10.0, 12.0, 6.5], [2.0, 9.0, 8.0]] {
+                let g = fit_peak_frac_grad(y[0], y[1], y[2], mode).unwrap();
+                for k in 0..3 {
+                    let h = 1e-2f32;
+                    let mut a = y;
+                    let mut b = y;
+                    a[k] += h;
+                    b[k] -= h;
+                    let fd = (fit_peak_frac(a[0], a[1], a[2], mode)
+                        - fit_peak_frac(b[0], b[1], b[2], mode))
+                        / (2.0 * h);
+                    assert!(
+                        (fd - g[k]).abs() < 1e-3,
+                        "{mode:?} {y:?} k {k}: {fd} vs {}",
+                        g[k]
+                    );
+                }
+            }
+            // A non-maximum and a clamped offset do not respond.
+            assert!(fit_peak_frac_grad(1.0, 0.5, 1.0, mode).is_none());
+            assert!(fit_peak_frac_grad(0.0, 5.0, 5.1, mode).is_none());
+        }
     }
 
     #[test]

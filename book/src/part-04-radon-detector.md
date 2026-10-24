@@ -168,9 +168,8 @@ no iteration. Implementation: `radon::fit_peak_frac` in
    `RadonConfig.refiner = RadonRefiner::SaddlePoint(_)`, each peak seeds
    the `SaddlePoint` refiner of [Part V §5.4](part-05-refiners.md#54-saddlepoint)
    on the input image, which re-centres a quadratic fit on the corner
-   and reports a position covariance
    ([Part VIII](part-08-uncertainty.md)). A corner whose refinement does
-   not converge keeps its peak-fit position, without a covariance; no
+   not converge keeps its peak-fit position and covariance; no
    peak is dropped. The default, `RadonRefiner::PeakFit`, stops at
    step 6.
 
@@ -190,7 +189,7 @@ board rotation; the saddle-point fit on the pixels measures lower there
 | `nms_radius` (`detection`)      | 4       | Matches `ray_radius` — local maxima should be at least one ray length apart. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `min_cluster_size` (`detection`)| 2       | Requires at least one supporting positive neighbor inside the NMS window. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `peak_fit`              | Gaussian | Log-space 3-point fit used by the paper-style pipeline; parabolic fit is also available.              |
-| `refiner`               | PeakFit | The paper's pipeline; `SaddlePoint` is an opt-in refinement that reports a covariance (§4.5). |
+| `refiner`               | PeakFit | The paper's pipeline; `SaddlePoint` is an opt-in refinement on the image (§4.5). |
 
 ## 4.5 When to pick ChESS vs Radon
 
@@ -297,7 +296,7 @@ The facade runs the Radon detector, refines its peaks per
 `RadonConfig.refiner` (§4.4), feeds them into `describe_corners` (the
 shared descriptor stage from Part III §3.4), and returns
 `CornerDescriptor` values in the input pixel frame. To refine the peaks
-with the saddle-point fit (and get a position covariance):
+with the saddle-point fit:
 
 ```rust
 use chess_corners::{DetectorConfig, RadonRefiner};

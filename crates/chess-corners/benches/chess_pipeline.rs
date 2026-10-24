@@ -9,10 +9,11 @@
 //! Runs on:
 //!
 //! - **Synthetic chessboards** at 640×480, 1280×720, 1920×1080.
-//! - **Real test images** (`testimages/{small,mid,large}.png`).
+//! - **Real test images** (`testimages/{small,mid,large}.png`), also
+//!   single-scale with the position covariance off (`Uncertainty::Off`).
 //!   Skipped with a stderr note if the file is missing.
 
-use chess_corners::{Detector, DetectorConfig};
+use chess_corners::{Detector, DetectorConfig, Uncertainty};
 use chess_corners_testutil::synth_chessboard;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;
@@ -50,10 +51,23 @@ fn bench_chess_pipeline_synth(c: &mut Criterion) {
     group.finish();
 }
 
+fn chess_without_uncertainty() -> DetectorConfig {
+    DetectorConfig::chess().with_uncertainty(Uncertainty::Off)
+}
+
+fn chess_multiscale_without_uncertainty() -> DetectorConfig {
+    DetectorConfig::chess_multiscale().with_uncertainty(Uncertainty::Off)
+}
+
 fn bench_chess_pipeline_real(c: &mut Criterion) {
     let presets: &[(&str, ConfigCtor)] = &[
         ("multiscale", DetectorConfig::chess_multiscale),
         ("single", DetectorConfig::chess),
+        ("single_uncertainty_off", chess_without_uncertainty),
+        (
+            "multiscale_uncertainty_off",
+            chess_multiscale_without_uncertainty,
+        ),
     ];
     let mut group = c.benchmark_group("chess_pipeline_real");
     for name in ["small.png", "mid.png", "large.png"] {

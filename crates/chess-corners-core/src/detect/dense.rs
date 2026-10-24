@@ -180,9 +180,9 @@ pub trait DenseDetector: private::Sealed {
     /// peak positions' frame, so the refiner sees only the image (the
     /// center-of-mass refiner, which reads the response map, rejects
     /// every seed). Radon peaks are already subpixel, so a corner keeps
-    /// its peak-fit position unless the refiner accepts it **with** a
-    /// position covariance — the saddle-point refiner does so exactly
-    /// when its re-centred fit converged — and is never dropped.
+    /// its peak-fit position (and covariance) unless the refiner
+    /// converges on it — the saddle-point refiner does so when its
+    /// re-centred fit converged — and is never dropped.
     fn refine_peaks_on_image(
         &self,
         corners: Vec<Corner>,
@@ -412,19 +412,17 @@ impl DenseDetector for RadonDetector {
     ) -> Vec<Corner> {
         // The working-resolution Radon response is not a `ResponseMap`
         // in the peaks' frame, so the refiner sees the image only. A
-        // refined position replaces the peak fit only together with its
-        // covariance: the saddle-point refiner's integer-grid fallback
+        // refined position replaces the peak fit only when the refiner
+        // converged: the saddle-point refiner's integer-grid fallback
         // (re-centring did not converge) is less accurate than the peak
         // fit it would replace.
         let ctx = RefineContext::new(Some(image), None);
         for c in &mut corners {
             let res = refiner.refine([c.x, c.y], ctx);
-            if let (RefineStatus::Accepted, Some(cov)) =
-                (res.status, res.covariance_per_noise_variance)
-            {
+            if res.status == RefineStatus::Accepted && res.converged {
                 c.x = res.x;
                 c.y = res.y;
-                c.covariance_per_noise_variance = Some(cov);
+                c.set_model(res.covariance_model());
             }
         }
         corners

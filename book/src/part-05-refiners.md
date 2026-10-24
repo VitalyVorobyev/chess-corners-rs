@@ -299,7 +299,7 @@ The ChESS refiner is selected through `ChessConfig.refiner`:
 `DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner())`.
 The Radon refiner through `RadonConfig.refiner`:
 `DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point())`
-refines the peaks and reports a covariance
+refines the peaks
 ([Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)).
 Switching is a single-line change, and the comparison numbers
 in Part IX come from running all four ChESS refiners on the same

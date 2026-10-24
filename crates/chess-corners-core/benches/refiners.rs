@@ -7,12 +7,15 @@
 //!
 //! The harness keeps the seed list constant across refiners so the
 //! resulting per-refiner numbers are directly comparable. Throughput
-//! is reported in seeds/second.
+//! is reported in seeds/second. Each refiner runs with the position
+//! covariance on (`propagated`) and off (`off`); the Radon group times the
+//! peak-fit covariance alone (the peak fit itself is part of detection).
 
 use chess_corners_core::{
-    chess_response_u8, detect_corners_from_response, CenterOfMassConfig, ChessParams,
-    CornerRefiner, ForstnerConfig, ImageView, RefineContext, Refiner, RefinerKind, ResponseMap,
-    SaddlePointConfig,
+    attach_radon_peak_covariance, chess_response_u8, detect_corners_from_response,
+    detect_peaks_from_radon, radon_response_u8, CenterOfMassConfig, ChessParams, CornerRefiner,
+    ForstnerConfig, ImageView, RadonBuffers, RadonDetectorParams, RefineContext, Refiner,
+    RefinerKind, ResponseMap, SaddlePointConfig, Uncertainty,
 };
 use chess_corners_testutil::aa_chessboard;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -84,22 +87,52 @@ fn bench_refiners(c: &mut Criterion) {
         ];
 
         for (label, kind) in cases {
-            group.bench_with_input(
-                BenchmarkId::new(*label, format!("{side}x{side}_n{}", scene.seeds.len())),
-                kind,
-                |b, kind| {
-                    let mut refiner = Refiner::from_kind(kind.clone());
-                    b.iter(|| {
-                        let mut acc = 0.0f32;
-                        for seed in &scene.seeds {
-                            let r = refiner.refine(*seed, ctx(&scene));
-                            acc += r.x + r.y;
-                        }
-                        black_box(acc)
-                    });
-                },
-            );
+            for (tier, uncertainty) in [
+                ("propagated", Uncertainty::Propagated),
+                ("off", Uncertainty::Off),
+            ] {
+                group.bench_with_input(
+                    BenchmarkId::new(
+                        format!("{label}/{tier}"),
+                        format!("{side}x{side}_n{}", scene.seeds.len()),
+                    ),
+                    kind,
+                    |b, kind| {
+                        let mut refiner =
+                            Refiner::from_kind(kind.clone()).with_uncertainty(uncertainty);
+                        b.iter(|| {
+                            let mut acc = 0.0f32;
+                            for seed in &scene.seeds {
+                                let r = refiner.refine(*seed, ctx(&scene));
+                                acc += r.x + r.y;
+                            }
+                            black_box(acc)
+                        });
+                    },
+                );
+            }
         }
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("radon_peak_covariance");
+    for &side in &sides {
+        let scene = build_scene(side, cell);
+        let params = RadonDetectorParams::default();
+        let mut buffers = RadonBuffers::new();
+        let resp = radon_response_u8(&scene.img, side, side, &params, &mut buffers);
+        let peaks = detect_peaks_from_radon(&resp, &params);
+        let view = ImageView::from_u8_slice(side, side, &scene.img).unwrap();
+        group.throughput(Throughput::Elements(peaks.len() as u64));
+        group.bench_function(format!("{side}x{side}_n{}", peaks.len()), |b| {
+            b.iter(|| {
+                let mut corners = peaks.clone();
+                for c in &mut corners {
+                    attach_radon_peak_covariance(c, view, &params, &mut buffers);
+                }
+                black_box(corners.len())
+            });
+        });
     }
     group.finish();
 }

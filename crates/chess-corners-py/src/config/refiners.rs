@@ -720,7 +720,7 @@ impl RadonRefiner {
         Self::from_rs(RsRadonRefiner::default())
     }
 
-    /// Keep the response-map peak fit; no position covariance.
+    /// Keep the response-map peak fit.
     #[classmethod]
     #[pyo3(name = "peak_fit")]
     fn ctor_peak_fit(_cls: &Bound<'_, PyType>) -> Self {

@@ -257,8 +257,9 @@ between them crossing a dark sector. The `axes` are valid only when
 skips the per-corner fit, sets `has_orientation` to `0`, and zeroes
 `axes`. `position_covariance` (`xx`, `xy`, `yy`, in px²) is valid when
 `has_position_covariance` is `1` (a `std::optional<Covariance>` in
-C++): only the saddle-point refiner (`CC_REFINER_SADDLE_POINT`, either
-strategy) reports it, and not when `upscale_factor` is set
+C++): every refiner reports it under the default
+`uncertainty = CC_UNCERTAINTY_PROPAGATED`, none under `CC_UNCERTAINTY_OFF`
+or when `upscale_factor` is set
 ([Part VIII](part-08-uncertainty.md) covers its meaning and use).
 `cc_estimate_noise_sigma_u8` (`chess_corners::estimate_noise_sigma`,
 returning `std::optional<float>`, in C++) returns the per-image noise

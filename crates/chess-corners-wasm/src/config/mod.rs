@@ -51,7 +51,7 @@ use std::rc::Rc;
 
 use chess_corners::{
     ChessRing as RsChessRing, OrientationMethod as RsOrientationMethod,
-    PeakFitMode as RsPeakFitMode,
+    PeakFitMode as RsPeakFitMode, Uncertainty as RsUncertainty,
 };
 use wasm_bindgen::prelude::*;
 
@@ -169,6 +169,45 @@ impl From<RsOrientationMethod> for OrientationMethod {
             RsOrientationMethod::DiskFit => OrientationMethod::DiskFit,
             // Any future variants map to the default.
             _ => OrientationMethod::RingFit,
+        }
+    }
+}
+
+/// Position-uncertainty tier. Mirrors [`chess_corners::Uncertainty`].
+///
+/// `Off` *(= 0)* — no position covariance and no noise estimate; all
+/// covariance values are `NaN`.
+///
+/// `Propagated` *(default, = 1)* — every corner whose localizer supports it
+/// reports a position covariance. Positions are identical under both tiers.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Uncertainty {
+    Off = 0,
+    Propagated = 1,
+}
+
+impl From<Uncertainty> for RsUncertainty {
+    fn from(v: Uncertainty) -> Self {
+        match v {
+            Uncertainty::Off => RsUncertainty::Off,
+            Uncertainty::Propagated => RsUncertainty::Propagated,
+        }
+    }
+}
+
+impl TryFrom<RsUncertainty> for Uncertainty {
+    type Error = wasm_bindgen::JsError;
+
+    /// A tier these bindings do not know is an error, never mapped silently
+    /// to another tier.
+    fn try_from(v: RsUncertainty) -> Result<Self, Self::Error> {
+        match v {
+            RsUncertainty::Off => Ok(Uncertainty::Off),
+            RsUncertainty::Propagated => Ok(Uncertainty::Propagated),
+            other => Err(wasm_bindgen::JsError::new(&format!(
+                "unsupported uncertainty tier {other:?}"
+            ))),
         }
     }
 }
@@ -581,6 +620,21 @@ mod tests {
     }
 
     #[test]
+    fn uncertainty_defaults_to_propagated_and_round_trips() {
+        let cfg = DetectorConfig::chess();
+        assert_eq!(cfg.uncertainty().ok(), Some(Uncertainty::Propagated));
+        assert_eq!(cfg.snapshot().uncertainty, RsUncertainty::Propagated);
+        let off = cfg.with_uncertainty(Uncertainty::Off);
+        assert_eq!(off.uncertainty().ok(), Some(Uncertainty::Off));
+        assert_eq!(off.snapshot().uncertainty, RsUncertainty::Off);
+        // Original is unchanged.
+        assert_eq!(cfg.snapshot().uncertainty, RsUncertainty::Propagated);
+        let mut back = off.clone();
+        back.set_uncertainty(Uncertainty::Propagated);
+        assert_eq!(back.snapshot().uncertainty, RsUncertainty::Propagated);
+    }
+
+    #[test]
     fn noise_sigma_builder_and_setter_round_trip() {
         let cfg = DetectorConfig::chess();
         assert_eq!(cfg.noise_sigma(), None);
@@ -795,5 +849,9 @@ mod tests {
         // OrientationMethod
         assert_eq!(OrientationMethod::RingFit as u32, 0);
         assert_eq!(OrientationMethod::DiskFit as u32, 1);
+
+        // Uncertainty
+        assert_eq!(Uncertainty::Off as u32, 0);
+        assert_eq!(Uncertainty::Propagated as u32, 1);
     }
 }

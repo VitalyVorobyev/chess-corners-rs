@@ -65,11 +65,11 @@ pub const CC_REFINER_CENTER_OF_MASS: cc_refiner_t = 0;
 /// Förstner refiner. ChESS strategy only.
 pub const CC_REFINER_FORSTNER: cc_refiner_t = 1;
 /// Saddle-point refiner. Valid for both strategies. Under Radon a corner
-/// whose refinement does not converge keeps its peak-fit position, without
-/// a position covariance.
+/// whose refinement does not converge keeps its peak-fit position and
+/// covariance.
 pub const CC_REFINER_SADDLE_POINT: cc_refiner_t = 2;
-/// Radon's response-map peak fit, with no image refinement and no position
-/// covariance. Radon strategy only (the Radon default).
+/// Radon's response-map peak fit, with no image refinement. Radon strategy
+/// only (the Radon default).
 pub const CC_REFINER_PEAK_FIT: cc_refiner_t = 3;
 
 /// Orientation-fit tag stored in `cc_config::orientation_method`.
@@ -81,6 +81,16 @@ pub const CC_ORIENTATION_DISK_FIT: cc_orientation_method_t = 1;
 /// Skip the per-corner orientation fit. Detected corners then have
 /// `cc_corner::has_orientation == 0` and a zeroed `axes` array.
 pub const CC_ORIENTATION_NONE: cc_orientation_method_t = 2;
+
+/// Position-uncertainty tier stored in `cc_config::uncertainty`.
+pub type cc_uncertainty_t = u32;
+/// Every corner whose localizer supports it reports a position covariance
+/// (the default, and the value of a zero-initialised config).
+pub const CC_UNCERTAINTY_PROPAGATED: cc_uncertainty_t = 0;
+/// No position covariance and no noise estimate: every corner has
+/// `has_position_covariance == 0`. Positions are identical to
+/// `CC_UNCERTAINTY_PROPAGATED`. `noise_sigma` is ignored.
+pub const CC_UNCERTAINTY_OFF: cc_uncertainty_t = 1;
 
 /// ChESS sampling-ring tag stored in `cc_config::chess_ring`.
 ///
@@ -146,7 +156,7 @@ pub struct cc_corner {
     /// `has_orientation` is `1`; zeroed otherwise.
     pub axes: [cc_axis; 2],
     /// Covariance of `(x, y)` in px²: first-order scatter due to white
-    /// pixel noise plus a small model-error floor (the Rust
+    /// pixel noise plus the localizer's systematic error (the Rust
     /// `Corner::position_covariance` documents the model). Valid only
     /// when `has_position_covariance` is `1`; zeroed otherwise.
     pub position_covariance: cc_covariance,
@@ -154,10 +164,11 @@ pub struct cc_corner {
     /// orientation fit was skipped (`CC_ORIENTATION_NONE`) and `axes`
     /// is zeroed.
     pub has_orientation: u8,
-    /// `1` when `position_covariance` is set. Only the saddle-point refiner
-    /// reports one (either strategy), on corners whose refinement
-    /// converged, and not when the input is upscaled (`upscale_factor`
-    /// other than `0`).
+    /// `1` when `position_covariance` is set. Under
+    /// `CC_UNCERTAINTY_PROPAGATED` every localizer reports one (a ChESS
+    /// saddle-point refinement only when it converged); none does under
+    /// `CC_UNCERTAINTY_OFF` or when the input is upscaled
+    /// (`upscale_factor` other than `0`).
     pub has_position_covariance: u8,
 }
 
@@ -243,6 +254,10 @@ pub struct cc_config {
     /// (finite, `>= 0`; otherwise `CC_ERR_INVALID_CONFIG`). Read only when
     /// `has_noise_sigma` is non-zero.
     pub noise_sigma: f32,
+    /// One of the `CC_UNCERTAINTY_*` constants (any other value is
+    /// `CC_ERR_INVALID_CONFIG`). A zero-initialised config, like the
+    /// presets, selects `CC_UNCERTAINTY_PROPAGATED`.
+    pub uncertainty: cc_uncertainty_t,
 }
 
 // ─── Status codes (library returns) ─────────────────────────────────────
@@ -684,9 +699,43 @@ mod tests {
             let p = c.position_covariance;
             assert!(p.xx > 0.0 && p.yy > 0.0 && p.xx * p.yy > p.xy * p.xy);
         }
-        // The default refiner reports none.
+        // The default refiner reports one too.
         let plain = detect_board(&cc_config_chess()).expect("detection");
-        assert!(plain.iter().all(|c| c.has_position_covariance == 0));
+        assert!(plain.iter().any(|c| c.has_position_covariance == 1));
+    }
+
+    #[test]
+    fn uncertainty_off_drops_covariance_not_positions() {
+        for base in [cc_config_chess(), cc_config_radon()] {
+            let on = detect_board(&base).expect("detection");
+            assert!(on.iter().any(|c| c.has_position_covariance == 1));
+            let mut cfg = base;
+            cfg.uncertainty = CC_UNCERTAINTY_OFF;
+            let off = detect_board(&cfg).expect("detection");
+            assert!(!off.is_empty());
+            assert!(off.iter().all(|c| c.has_position_covariance == 0));
+            assert_eq!(on.len(), off.len());
+            for (a, b) in on.iter().zip(off.iter()) {
+                assert_eq!((a.x, a.y), (b.x, b.y));
+            }
+        }
+    }
+
+    #[test]
+    fn uncertainty_tag_is_validated_and_defaults_to_propagated() {
+        for cfg in [cc_config_default(), cc_config_chess(), cc_config_radon()] {
+            assert_eq!(cfg.uncertainty, CC_UNCERTAINTY_PROPAGATED);
+        }
+        let mut cfg = cc_config_chess();
+        cfg.uncertainty = CC_UNCERTAINTY_OFF;
+        let rs = convert::to_detector_config(&cfg).expect("valid");
+        assert_eq!(rs.uncertainty, chess_corners::Uncertainty::Off);
+        assert_eq!(convert::flatten(&rs).uncertainty, CC_UNCERTAINTY_OFF);
+        cfg.uncertainty = 99;
+        assert_eq!(
+            convert::to_detector_config(&cfg),
+            Err(cc_status::CC_ERR_INVALID_CONFIG)
+        );
     }
 
     #[test]
@@ -741,7 +790,7 @@ mod tests {
         cfg.refiner = CC_REFINER_PEAK_FIT;
         let plain = detect_board(&cfg).expect("detection");
         assert!(!plain.is_empty());
-        assert!(plain.iter().all(|c| c.has_position_covariance == 0));
+        assert!(plain.iter().any(|c| c.has_position_covariance == 1));
     }
 
     #[test]

@@ -64,7 +64,11 @@ impl MlRefinerState {
         let buffer = vec![0.0f32; batch_size * patch_area];
         let indices = Vec::with_capacity(batch_size);
         let fallback_refiner = match params.fallback {
-            MlFallback::UseClassicRefiner => Some(Refiner::from_kind(fallback_kind.clone())),
+            // ML corners carry no covariance, so neither does the fallback.
+            MlFallback::UseClassicRefiner => Some(
+                Refiner::from_kind(fallback_kind.clone())
+                    .with_uncertainty(chess_corners_core::Uncertainty::Off),
+            ),
             _ => None,
         };
         let model = load_model(params, patch_size);

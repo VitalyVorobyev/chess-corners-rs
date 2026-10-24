@@ -33,9 +33,9 @@ int main() {
             chess_corners::detect(image, width, height, chess_corners::Config::chess());
         std::printf("chess-corners: detected %zu corners\n", corners.size());
 
-        // The saddle-point refiner reports each corner's position covariance
-        // (px^2). This synthetic board has no noise to estimate, so supply
-        // the sensor noise level.
+        // Every localizer reports each corner's position covariance (px^2)
+        // under the default uncertainty tier. This synthetic board has no
+        // noise to estimate, so supply the sensor noise level.
         chess_corners::Config saddle = chess_corners::Config::chess();
         saddle.refiner = CC_REFINER_SADDLE_POINT;
         saddle.noise_sigma = 1.0f;
@@ -52,13 +52,23 @@ int main() {
         }
 
         // Radon keeps its peak fit by default; refining its peaks with the
-        // saddle point gives its corners a covariance too.
+        // saddle point is opt-in. Switching the uncertainty tier off drops
+        // the covariances and leaves positions unchanged.
         chess_corners::Config radon = chess_corners::Config::radon();
         radon.refiner = CC_REFINER_SADDLE_POINT;
         radon.noise_sigma = 1.0f;
         const std::vector<chess_corners::Corner> radon_corners =
             chess_corners::detect(image, width, height, radon);
         std::printf("chess-corners: Radon detected %zu corners\n", radon_corners.size());
+
+        chess_corners::Config quiet = saddle;
+        quiet.uncertainty = CC_UNCERTAINTY_OFF;
+        for (const chess_corners::Corner& c :
+             chess_corners::detect(image, width, height, quiet)) {
+            if (c.position_covariance) {
+                return 1;
+            }
+        }
     } catch (const std::exception& error) {
         std::fprintf(stderr, "detection failed: %s\n", error.what());
         return 1;

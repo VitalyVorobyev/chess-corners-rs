@@ -14,7 +14,35 @@
 
 use super::{CornerRefiner, PositionCovariance, RefineContext, RefineResult, RefineStatus};
 use crate::imageview::ImageView;
+use crate::uncertainty::{
+    edge_width, knot, CovarianceModel, PixelTile, SystematicModel, Uncertainty,
+};
 use serde::{Deserialize, Serialize};
+
+/// Systematic error of the converged, re-centred estimate by edge width
+/// (see [`SystematicModel`]): the window is centred on the estimate, so the
+/// gain is 1 and only the residual remains — the error the fit keeps where
+/// the corner sits between pixels (largest on sharp, rotated edges, which
+/// alias) and on small, blurred cells. RMS per axis on camera-formed
+/// synthetic boards from two generators (cells 6–12, rotations 0–45°,
+/// shear, lens blur σ 0.3–3), fitted by
+/// `tools/refiner_robustness/fit_systematic.py`.
+const SYSTEMATIC: SystematicModel = SystematicModel {
+    knots: &[
+        knot(1.09, 1.000, 0.0066), // rms 0.0066, n 5700
+        knot(1.14, 1.000, 0.0037), // rms 0.0037, n 7505
+        knot(1.18, 1.000, 0.0041), // rms 0.0041, n 7591
+        knot(1.24, 1.000, 0.0041), // rms 0.0041, n 6594
+        knot(1.30, 1.000, 0.0078), // rms 0.0078, n 9476
+        knot(1.35, 1.000, 0.0092), // rms 0.0092, n 7996
+        knot(1.40, 1.000, 0.0108), // rms 0.0108, n 5794
+        knot(1.47, 1.000, 0.0068), // rms 0.0068, n 5921
+        knot(1.58, 1.000, 0.0061), // rms 0.0061, n 6357
+        knot(1.68, 1.000, 0.0074), // rms 0.0074, n 8182
+    ],
+    // Real stereo calibration set: `tools/refiner_robustness/real_validation/fit_floor.py`.
+    floor: 0.053,
+};
 
 /// Most re-centring steps per corner after the integer-grid fit.
 const MAX_STEPS: usize = 16;
@@ -124,6 +152,7 @@ impl Default for SaddlePointConfig {
 #[derive(Debug)]
 pub struct SaddlePointRefiner {
     cfg: SaddlePointConfig,
+    pub(crate) uncertainty: Uncertainty,
     /// The least-squares operator `R = (ΦᵀΦ)⁻¹Φᵀ` of the
     /// [`quadratic_basis`] over the `(2·radius+1)²` samples: the
     /// coefficients are `Σₖ Rₖ·zₖ`. `None` when `ΦᵀΦ` is singular
@@ -150,6 +179,8 @@ struct FitOperator {
 struct Scratch {
     /// One `(2·radius+1)²` integer-centred patch, row-major.
     patch: Vec<f32>,
+    /// Pixels around the estimate for the edge width.
+    tile: PixelTile,
 }
 
 impl SaddlePointRefiner {
@@ -158,9 +189,11 @@ impl SaddlePointRefiner {
         let side = (2 * cfg.radius.max(0) + 1) as usize;
         Self {
             cfg,
+            uncertainty: Uncertainty::default(),
             fit_op: fit_operator(cfg.radius),
             scratch: Scratch {
                 patch: vec![0.0; side * side],
+                tile: PixelTile::default(),
             },
         }
     }
@@ -173,13 +206,8 @@ impl CornerRefiner for SaddlePointRefiner {
     }
 
     fn refine(&mut self, seed_xy: [f32; 2], ctx: RefineContext<'_>) -> RefineResult {
-        let unmoved = |score: f32, status: RefineStatus| RefineResult {
-            x: seed_xy[0],
-            y: seed_xy[1],
-            score,
-            status,
-            covariance_per_noise_variance: None,
-        };
+        let unmoved =
+            |score: f32, status: RefineStatus| RefineResult::unmoved(seed_xy, score, status);
 
         let Some(img) = ctx.image else {
             return unmoved(0.0, RefineStatus::Rejected);
@@ -191,10 +219,22 @@ impl CornerRefiner for SaddlePointRefiner {
         }
 
         match self.estimate(&img, centre, seed_xy, MAX_STEPS, STEP_TOL) {
-            Ok(est) => RefineResult {
-                covariance_per_noise_variance: est.covariance,
-                ..RefineResult::accepted(est.xy, est.score)
-            },
+            Ok(est) => {
+                let mut res = RefineResult {
+                    converged: est.converged,
+                    ..RefineResult::accepted(est.xy, est.score)
+                };
+                if let Some(noise) = est.covariance {
+                    let at = est.xy.map(|v| v.round() as i32);
+                    let width = edge_width(&img, at, &mut self.scratch.tile);
+                    res.set_model(Some(CovarianceModel {
+                        noise,
+                        systematic: SYSTEMATIC.covariance([0.0; 2], width, 1.0),
+                        growth: [0.0; 2],
+                    }));
+                }
+                res
+            }
             Err((score, status)) => unmoved(score, status),
         }
     }
@@ -408,6 +448,9 @@ struct Estimate {
     xy: [f32; 2],
     score: f32,
     covariance: Option<PositionCovariance>,
+    /// Re-centring converged to a fixed point with a regular window
+    /// sensitivity; `false` for the integer-grid fallback.
+    converged: bool,
 }
 
 impl SaddlePointRefiner {
@@ -428,6 +471,7 @@ impl SaddlePointRefiner {
     ) -> Result<Estimate, (f32, RefineStatus)> {
         let Self {
             cfg,
+            uncertainty,
             fit_op,
             scratch,
         } = self;
@@ -451,6 +495,7 @@ impl SaddlePointRefiner {
             xy: [centre[0] as f32 + fit.u[0], centre[1] as f32 + fit.u[1]],
             score: (-fit.det_h).sqrt(),
             covariance: None,
+            converged: false,
         };
 
         // Damped Newton on F(o) = u(o) = 0, with `o` the window offset from
@@ -495,10 +540,20 @@ impl SaddlePointRefiner {
             Some(slope) => Some(slope),
             None => fits.slope(&window),
         };
-        let covariance = slope.and_then(|slope| {
-            let (jac, m) = sensitivity(&fit, &slope);
-            covariance(fit_op, &window, &jac, m)
-        });
+        // The fixed point is regular when the window sensitivity `M` is
+        // invertible: that alone decides convergence, under every tier. The
+        // covariance (only under a reporting tier) is separate and may still
+        // overflow to `None` on a nearly singular `M`.
+        let regular = slope
+            .map(|slope| sensitivity(&fit, &slope))
+            .filter(|(_, m)| {
+                let det = m[0][0] * m[1][1] - m[0][1] * m[1][0];
+                det.is_finite() && det != 0.0
+            });
+        let converged = regular.is_some();
+        let covariance = regular
+            .filter(|_| uncertainty.reports())
+            .and_then(|(jac, m)| covariance(fit_op, &window, &jac, m));
         Ok(Estimate {
             xy: [
                 centre[0] as f32 + o[0] + fit.u[0],
@@ -506,6 +561,7 @@ impl SaddlePointRefiner {
             ],
             score: (-fit.det_h).sqrt(),
             covariance,
+            converged,
         })
     }
 }
@@ -1031,6 +1087,42 @@ mod tests {
             err(full.xy) < 0.5 * err(single.xy),
             "{full:?} vs {single:?}"
         );
+    }
+
+    /// Convergence, position and status do not depend on the tier: one
+    /// predicate (a regular window sensitivity) decides convergence under
+    /// both, the covariance is computed separately. Sweeps blur, noise and
+    /// subpixel phase, including corners near the image border.
+    #[test]
+    fn convergence_does_not_depend_on_the_tier() {
+        let mut on = SaddlePointRefiner::new(SaddlePointConfig::default());
+        let mut off = SaddlePointRefiner::new(SaddlePointConfig::default());
+        off.uncertainty = Uncertainty::Off;
+        let mut checked = 0;
+        for k in 0..60u64 {
+            let offset = (
+                2.4 + (k % 8) as f32 * 2.1 + 0.13 * k as f32 % 1.0,
+                10.0 + (k % 5) as f32 * 0.21,
+            );
+            let mut img = board(offset, [0.0, 0.8, 2.5][k as usize % 3]);
+            add_gaussian_noise(&mut img, [0.0, 1.0, 8.0][k as usize % 3], k);
+            let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
+            for seed in [
+                [offset.0.round(), offset.1.round()],
+                [offset.0.floor(), offset.1.ceil()],
+            ] {
+                let ctx = RefineContext::new(Some(view), None);
+                let (a, b) = (on.refine(seed, ctx), off.refine(seed, ctx));
+                assert_eq!(
+                    (a.x.to_bits(), a.y.to_bits(), a.status, a.converged),
+                    (b.x.to_bits(), b.y.to_bits(), b.status, b.converged),
+                    "seed {seed:?} offset {offset:?}"
+                );
+                assert!(b.covariance_per_noise_variance.is_none());
+                checked += usize::from(a.converged);
+            }
+        }
+        assert!(checked > 60, "{checked} converged");
     }
 
     /// With both determinant thresholds at zero a flat patch has

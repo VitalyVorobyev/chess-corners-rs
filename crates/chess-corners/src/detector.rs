@@ -30,7 +30,7 @@ use chess_corners_core::{ChessBuffers, RadonBuffers};
 
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
-use crate::multiscale::{self, NoiseLevel};
+use crate::multiscale::{self, CovarianceStage};
 use crate::upscale::{self, UpscaleBuffers};
 use crate::{ChessError, CornerDescriptor, DetectorConfig, Roi};
 use chess_corners_core::ImageView;
@@ -143,7 +143,7 @@ impl Detector {
                 ImageView::from_u8_slice(src_w, src_h, img).expect("dimensions were checked above");
             return Ok(Self::detect_view_inner(
                 &self.cfg,
-                self.cfg.noise_level(),
+                self.cfg.covariance_stage(),
                 &mut self.pyramid,
                 &mut self.chess_buffers,
                 &mut self.radon_buffers,
@@ -163,7 +163,7 @@ impl Detector {
         // reported.
         let mut corners = Self::detect_view_inner(
             &self.cfg,
-            NoiseLevel::Unavailable,
+            CovarianceStage::Off,
             &mut self.pyramid,
             &mut self.chess_buffers,
             &mut self.radon_buffers,
@@ -321,7 +321,7 @@ impl Detector {
 
     fn detect_view_inner(
         cfg: &DetectorConfig,
-        noise: NoiseLevel,
+        covariance: CovarianceStage,
         pyramid: &mut PyramidBuffers,
         chess_buffers: &mut ChessBuffers,
         radon_buffers: &mut RadonBuffers,
@@ -347,7 +347,14 @@ impl Detector {
             );
         }
 
-        multiscale::detect_with_buffers(view, cfg, noise, pyramid, chess_buffers, radon_buffers)
+        multiscale::detect_with_buffers(
+            view,
+            cfg,
+            covariance,
+            pyramid,
+            chess_buffers,
+            radon_buffers,
+        )
     }
 
     /// Whether the active config selects the ML refiner. Only true on

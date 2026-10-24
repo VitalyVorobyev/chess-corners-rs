@@ -85,6 +85,11 @@ typedef uint32_t cc_chess_ring_t;
 typedef uint32_t cc_peak_fit_t;
 
 /**
+ * Position-uncertainty tier stored in `cc_config::uncertainty`.
+ */
+typedef uint32_t cc_uncertainty_t;
+
+/**
  * Flat, C-fillable detector configuration.
  *
  * Construct one with a preset (`cc_config_default`, `cc_config_chess`, …)
@@ -184,6 +189,12 @@ typedef struct cc_config {
    * `has_noise_sigma` is non-zero.
    */
   float noise_sigma;
+  /**
+   * One of the `CC_UNCERTAINTY_*` constants (any other value is
+   * `CC_ERR_INVALID_CONFIG`). A zero-initialised config, like the
+   * presets, selects `CC_UNCERTAINTY_PROPAGATED`.
+   */
+  cc_uncertainty_t uncertainty;
 } cc_config;
 
 /**
@@ -246,7 +257,7 @@ typedef struct cc_corner {
   struct cc_axis axes[2];
   /**
    * Covariance of `(x, y)` in px²: first-order scatter due to white
-   * pixel noise plus a small model-error floor (the Rust
+   * pixel noise plus the localizer's systematic error (the Rust
    * `Corner::position_covariance` documents the model). Valid only
    * when `has_position_covariance` is `1`; zeroed otherwise.
    */
@@ -258,10 +269,11 @@ typedef struct cc_corner {
    */
   uint8_t has_orientation;
   /**
-   * `1` when `position_covariance` is set. Only the saddle-point refiner
-   * reports one (either strategy), on corners whose refinement
-   * converged, and not when the input is upscaled (`upscale_factor`
-   * other than `0`).
+   * `1` when `position_covariance` is set. Under
+   * `CC_UNCERTAINTY_PROPAGATED` every localizer reports one (a ChESS
+   * saddle-point refinement only when it converged); none does under
+   * `CC_UNCERTAINTY_OFF` or when the input is upscaled
+   * (`upscale_factor` other than `0`).
    */
   uint8_t has_position_covariance;
 } cc_corner;
@@ -304,14 +316,14 @@ typedef struct cc_result {
 
 /**
  * Saddle-point refiner. Valid for both strategies. Under Radon a corner
- * whose refinement does not converge keeps its peak-fit position, without
- * a position covariance.
+ * whose refinement does not converge keeps its peak-fit position and
+ * covariance.
  */
 #define CC_REFINER_SADDLE_POINT 2
 
 /**
- * Radon's response-map peak fit, with no image refinement and no position
- * covariance. Radon strategy only (the Radon default).
+ * Radon's response-map peak fit, with no image refinement. Radon strategy
+ * only (the Radon default).
  */
 #define CC_REFINER_PEAK_FIT 3
 
@@ -330,6 +342,19 @@ typedef struct cc_result {
  * `cc_corner::has_orientation == 0` and a zeroed `axes` array.
  */
 #define CC_ORIENTATION_NONE 2
+
+/**
+ * Every corner whose localizer supports it reports a position covariance
+ * (the default, and the value of a zero-initialised config).
+ */
+#define CC_UNCERTAINTY_PROPAGATED 0
+
+/**
+ * No position covariance and no noise estimate: every corner has
+ * `has_position_covariance == 0`. Positions are identical to
+ * `CC_UNCERTAINTY_PROPAGATED`. `noise_sigma` is ignored.
+ */
+#define CC_UNCERTAINTY_OFF 1
 
 /**
  * Paper-default radius-5 ring (16 samples).

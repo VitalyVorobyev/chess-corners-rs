@@ -11,6 +11,7 @@
 //! - [`saddle_point`] — quadratic surface fit on the image patch.
 
 use crate::imageview::ImageView;
+use crate::uncertainty::{CovarianceModel, Uncertainty};
 use crate::ResponseMap;
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +42,12 @@ impl PositionCovariance {
     pub fn new(xx: f32, xy: f32, yy: f32) -> Self {
         Self { xx, xy, yy }
     }
+
+    pub(crate) const ZERO: Self = Self {
+        xx: 0.0,
+        xy: 0.0,
+        yy: 0.0,
+    };
 }
 
 /// Sealing supertrait for [`CornerRefiner`]. Implemented only for the
@@ -131,19 +138,30 @@ pub struct RefineResult {
     /// candidate. See [`RefineStatus`].
     pub status: RefineStatus,
     /// First-order covariance of the refined position per unit image-noise
-    /// variance, in px² per gray-level²: multiply by the variance of the
-    /// image's pixel noise (gray-level²) for the position covariance in
-    /// px². A first-order approximation that assumes independent,
+    /// variance, in px² per gray-level²: the noise part of the position
+    /// covariance. [`position_covariance`](Self::position_covariance) scales
+    /// it by the image's noise variance and adds the refiner's systematic
+    /// term. A first-order approximation that assumes independent,
     /// identically distributed per-pixel noise; spatially correlated noise
     /// (upscaling, demosaicing, JPEG, blur applied after the noise) makes it
-    /// underestimate the scatter. It describes noise scatter only, not the
-    /// refiner's residual systematic error (on synthetic corners with cells
-    /// of 8 px or more up to about 0.02 px per axis, largest on sharp boards
-    /// rotated a few degrees from the pixel grid; larger on smaller, blurred
-    /// cells). Set by the saddle-point refiner on accepted corners
-    /// whose re-centred refinement converged; `None` otherwise and for the
-    /// center-of-mass and Förstner refiners.
+    /// underestimate the scatter.
+    ///
+    /// Set on accepted corners by every refiner under
+    /// [`Uncertainty::Propagated`] (the default; see
+    /// [`Refiner::with_uncertainty`]): the saddle-point refiner when its
+    /// re-centred refinement converged, the center-of-mass refiner when the
+    /// image and a ChESS response map are both in the [`RefineContext`],
+    /// and the Förstner refiner. `None` otherwise, and always under
+    /// [`Uncertainty::Off`].
     pub covariance_per_noise_variance: Option<PositionCovariance>,
+    /// The full covariance model; `covariance_per_noise_variance` mirrors
+    /// its noise term.
+    pub(crate) model: Option<CovarianceModel>,
+    /// The refiner reached its own fixed point: the saddle-point refiner's
+    /// re-centring converged; always `true` for the single-shot refiners'
+    /// accepted results. A Radon peak keeps its peak-fit position unless the
+    /// refinement converged.
+    pub(crate) converged: bool,
 }
 
 impl RefineResult {
@@ -156,14 +174,57 @@ impl RefineResult {
             score,
             status: RefineStatus::Accepted,
             covariance_per_noise_variance: None,
+            model: None,
+            converged: true,
         }
+    }
+
+    /// A result that leaves the seed where it is, with `status`.
+    #[inline]
+    pub(crate) fn unmoved(seed_xy: [f32; 2], score: f32, status: RefineStatus) -> Self {
+        Self {
+            status,
+            converged: false,
+            ..Self::accepted(seed_xy, score)
+        }
+    }
+
+    /// Position covariance in px² for an image whose pixels carry white
+    /// noise of standard deviation `noise_sigma` gray levels:
+    /// `max(σₙ², 1/12)·C + Σ_sys`, with `C` =
+    /// [`covariance_per_noise_variance`](Self::covariance_per_noise_variance)
+    /// and `Σ_sys` the refiner's systematic term. The model and its
+    /// accuracy are described on
+    /// [`Corner::position_covariance`](crate::Corner::position_covariance).
+    /// `None` when the result carries no covariance. A result whose
+    /// `covariance_per_noise_variance` was set or changed by the caller
+    /// carries that noise term only, without a systematic part.
+    #[inline]
+    pub fn position_covariance(&self, noise_sigma: f32) -> Option<PositionCovariance> {
+        self.covariance_model().map(|m| m.total(noise_sigma))
+    }
+
+    /// Attach `model`, mirroring its noise term in the public field.
+    #[inline]
+    pub(crate) fn set_model(&mut self, model: Option<CovarianceModel>) {
+        self.covariance_per_noise_variance = model.map(|m| m.noise);
+        self.model = model;
+    }
+
+    /// The covariance model this result carries (see
+    /// [`CovarianceModel::effective`]).
+    #[inline]
+    pub(crate) fn covariance_model(&self) -> Option<CovarianceModel> {
+        CovarianceModel::effective(self.model, self.covariance_per_noise_variance)
     }
 }
 
 /// Inputs shared by refinement methods.
 ///
 /// Callers pass whichever sources the active refiner requires:
-/// - [`CenterOfMassRefiner`] reads `response`; it ignores `image`.
+/// - [`CenterOfMassRefiner`] reads `response`; its position covariance
+///   also needs `image`, the image that ChESS response was computed from
+///   (see [`RefineResult::covariance_per_noise_variance`]).
 /// - [`ForstnerRefiner`] and [`SaddlePointRefiner`] read `image`;
 ///   they ignore `response`.
 ///
@@ -256,13 +317,28 @@ pub enum Refiner {
 
 impl Refiner {
     /// Construct a [`Refiner`] from the given kind, allocating scratch
-    /// buffers at the configured size.
+    /// buffers at the configured size. It reports position covariances
+    /// ([`Uncertainty::Propagated`]); see [`Self::with_uncertainty`].
     pub fn from_kind(kind: RefinerKind) -> Self {
         match kind {
             RefinerKind::CenterOfMass(cfg) => Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg)),
             RefinerKind::Forstner(cfg) => Refiner::Forstner(ForstnerRefiner::new(cfg)),
             RefinerKind::SaddlePoint(cfg) => Refiner::SaddlePoint(SaddlePointRefiner::new(cfg)),
         }
+    }
+
+    /// Select which position uncertainty the refiner reports. A refiner
+    /// from [`Self::from_kind`] computes a covariance for every accepted
+    /// corner; in a custom refinement loop that does not use it, pass
+    /// [`Uncertainty::Off`] to skip that work. Refined positions do not
+    /// depend on the tier.
+    pub fn with_uncertainty(mut self, uncertainty: Uncertainty) -> Self {
+        match &mut self {
+            Refiner::CenterOfMass(r) => r.uncertainty = uncertainty,
+            Refiner::Forstner(r) => r.uncertainty = uncertainty,
+            Refiner::SaddlePoint(r) => r.uncertainty = uncertainty,
+        }
+        self
     }
 }
 
@@ -293,6 +369,34 @@ impl private::Sealed for Refiner {}
 
 #[cfg(test)]
 pub(crate) mod test_fixtures {
+    /// `side × side` smooth saddle `mid + amp·tanh(n₁·p/width)·tanh(n₂·p/width)`
+    /// with edge normals at `angles` (radians) and its centre at pixel
+    /// `centre + offset`, plus a deterministic ±`jitter` gray-level texture
+    /// so no two pixels tie by symmetry. Unrounded.
+    pub(crate) fn tanh_saddle(
+        side: usize,
+        centre: [i32; 2],
+        offset: [f32; 2],
+        angles: [f32; 2],
+        width: f32,
+        jitter: f32,
+    ) -> Vec<f32> {
+        let normals = angles.map(|a| [a.cos(), a.sin()]);
+        let mut state = 0x2545_f491u32;
+        (0..side * side)
+            .map(|k| {
+                let x = (k % side) as f32 - centre[0] as f32 - offset[0];
+                let y = (k / side) as f32 - centre[1] as f32 - offset[1];
+                let edge = |n: [f32; 2]| ((n[0] * x + n[1] * y) / width).tanh();
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                let u = (state as f32 / u32::MAX as f32) * 2.0 - 1.0;
+                120.0 + 80.0 * edge(normals[0]) * edge(normals[1]) + jitter * u
+            })
+            .collect()
+    }
+
     /// Mildly-blurred synthetic chessboard centred at `offset`. Used
     /// across the per-refiner test modules.
     pub(crate) fn synthetic_checkerboard(

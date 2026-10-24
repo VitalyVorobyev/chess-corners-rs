@@ -12,15 +12,13 @@ use std::sync::OnceLock;
 
 use chess_corners::{
     ChessRefiner, CornerDescriptor, Detector, DetectorConfig, MultiscaleConfig, RadonRefiner, Roi,
-    UpscaleConfig,
+    Uncertainty, UpscaleConfig,
 };
 use chess_corners_core::estimate_noise_sigma_u8;
 use chess_corners_testutil::{add_gaussian_noise, optical_chessboard, Lattice};
 use rayon::prelude::*;
 
 const SIZE: usize = 200;
-/// Model-error floor the detector adds per axis, px.
-const FLOOR: f64 = 0.006;
 const DEG: f32 = core::f32::consts::PI / 180.0;
 
 /// Board geometry, contrast, lens blur and pixel noise.
@@ -104,17 +102,23 @@ fn radon_saddle() -> DetectorConfig {
     DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point())
 }
 
-/// Model-error floors (px per axis) compared by the measurement; the
-/// reported covariance carries [`FLOOR`].
-const CANDIDATE_FLOORS: [f64; 10] = [
-    0.0, 0.002, 0.003, 0.004, 0.005, 0.006, 0.007, 0.008, 0.01, 0.015,
-];
+/// Every localizer, as the facade composes them.
+fn localizers() -> [(&'static str, DetectorConfig); 5] {
+    [
+        ("ChESS + CenterOfMass", DetectorConfig::chess()),
+        (
+            "ChESS + Förstner",
+            DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner()),
+        ),
+        ("ChESS + SaddlePoint", saddle()),
+        ("Radon peak fit", DetectorConfig::radon()),
+        ("Radon + SaddlePoint", radon_saddle()),
+    ]
+}
 
 /// Whitening statistics over a set of boards.
 #[derive(Default)]
 struct Whitened {
-    /// Σ eᵀΣ⁻¹e with the floor replaced by each [`CANDIDATE_FLOORS`] entry.
-    sum_candidates: [f64; CANDIDATE_FLOORS.len()],
     /// Σ eᵀΣ⁻¹e with the reported covariance.
     sum: f64,
     /// Corners with a covariance, matched to the truth.
@@ -135,19 +139,8 @@ impl Whitened {
                 self.unmatched += 1;
                 continue;
             }
-            // Whitened squared error with `df2` added to the diagonal.
-            let quad = |df2: f64| {
-                let (a, b, d) = (
-                    f64::from(cov.xx) + df2,
-                    f64::from(cov.xy),
-                    f64::from(cov.yy) + df2,
-                );
-                (d * ex * ex - 2.0 * b * ex * ey + a * ey * ey) / (a * d - b * b)
-            };
-            self.sum += quad(0.0);
-            for (acc, f) in self.sum_candidates.iter_mut().zip(CANDIDATE_FLOORS) {
-                *acc += quad(f * f - FLOOR * FLOOR);
-            }
+            let (a, b, d) = (f64::from(cov.xx), f64::from(cov.xy), f64::from(cov.yy));
+            self.sum += (d * ex * ex - 2.0 * b * ex * ey + a * ey * ey) / (a * d - b * b);
             self.n += 1;
         }
     }
@@ -155,11 +148,6 @@ impl Whitened {
     /// σ̂₀² with the reported covariance.
     fn sigma0_sq(&self) -> f64 {
         self.sum / (2.0 * self.n as f64)
-    }
-
-    /// σ̂₀² with the floor replaced by `CANDIDATE_FLOORS[k]`.
-    fn sigma0_sq_with(&self, k: usize) -> f64 {
-        self.sum_candidates[k] / (2.0 * self.n as f64)
     }
 }
 
@@ -181,11 +169,21 @@ fn clean_boards(fixture: Fixture, boards: usize) -> Vec<(Lattice, Vec<u8>)> {
         .collect()
 }
 
-/// Detect on noisy copies of `clean` boards; `known` supplies the realised
-/// noise level instead of estimating it. Also returns the mean estimated σ
-/// relative to the realised one, over the boards with an estimate, and the
-/// number of boards without one.
+/// [`run_with`] for ChESS with the saddle-point refiner.
 fn run(fixture: Fixture, clean: &[(Lattice, Vec<u8>)], known: bool) -> (Whitened, f64, usize) {
+    run_with(saddle(), fixture, clean, known)
+}
+
+/// Detect with `config` on noisy copies of `clean` boards; `known` supplies
+/// the realised noise level instead of estimating it. Also returns the mean
+/// estimated σ relative to the realised one, over the boards with an
+/// estimate, and the number of boards without one.
+fn run_with(
+    config: DetectorConfig,
+    fixture: Fixture,
+    clean: &[(Lattice, Vec<u8>)],
+    known: bool,
+) -> (Whitened, f64, usize) {
     let mut w = Whitened::default();
     let (mut ratio, mut declined) = (0f64, 0usize);
     for (k, (lattice, clean)) in clean.iter().enumerate() {
@@ -195,9 +193,9 @@ fn run(fixture: Fixture, clean: &[(Lattice, Vec<u8>)], known: bool) -> (Whitened
             None => declined += 1,
         }
         let cfg = if known {
-            saddle().with_noise_sigma(realised)
+            config.with_noise_sigma(realised)
         } else {
-            saddle()
+            config
         };
         let corners = Detector::new(cfg)
             .unwrap()
@@ -209,29 +207,30 @@ fn run(fixture: Fixture, clean: &[(Lattice, Vec<u8>)], known: bool) -> (Whitened
     (w, ratio / estimated.max(1) as f64, declined)
 }
 
-/// The noise part of the reported covariance — estimated σ times the
-/// refiner's per-noise-variance covariance — is calibrated end to end, and
-/// the model-error floor only makes it more conservative.
+/// The reported covariance — estimated σ through the refiner's noise term,
+/// plus its systematic term — is conservative on ideal synthetic corners:
+/// the systematic term carries a floor measured on real images, larger than
+/// the error these boards have. (The noise term alone is checked against
+/// Monte Carlo scatter in `chess-corners-core`.)
 #[test]
-fn saddle_point_covariance_is_calibrated() {
+fn saddle_point_covariance_is_conservative_on_ideal_boards() {
     let fx = Fixture::new(0.8, 2.0);
     let (w, _, declined) = run(fx, &clean_boards(fx, 1), false);
     assert_eq!(declined, 0);
-    let (with_floor, noise_only) = (w.sigma0_sq(), w.sigma0_sq_with(0));
     assert!(w.n > 300, "too few corners with a covariance: {}", w.n);
     assert_eq!(w.unmatched, 0);
+    let s0 = w.sigma0_sq();
     assert!(
-        (0.8..1.25).contains(&noise_only),
-        "noise-only σ̂₀² = {noise_only:.3} over {} corners",
+        (0.03..1.0).contains(&s0),
+        "σ̂₀² = {s0:.3} over {} corners",
         w.n
     );
-    assert!(with_floor < noise_only);
 }
 
 /// On a board rotated off the pixel grid, where the re-centred fit keeps a
-/// small phase-dependent error, the floor keeps the covariance calibrated.
+/// small phase-dependent error, the covariance is still conservative.
 #[test]
-fn covariance_is_calibrated_on_a_rotated_board() {
+fn covariance_is_conservative_on_a_rotated_board() {
     let fx = Fixture::new(0.8, 2.0).rotated(30.0);
     let (w, _, declined) = run(fx, &clean_boards(fx, 1), false);
     assert_eq!(declined, 0);
@@ -239,12 +238,15 @@ fn covariance_is_calibrated_on_a_rotated_board() {
     assert_eq!(w.unmatched, 0);
     let s0 = w.sigma0_sq();
     assert!(
-        (0.75..1.25).contains(&s0),
+        (0.03..1.0).contains(&s0),
         "σ̂₀² = {s0:.3} over {} corners",
         w.n
     );
 }
 
+/// `Σ = max(σ², 1/12)·C + Σ_sys` for every localizer: affine in the
+/// supplied noise variance (the Radon peak fit: at least that steep), and
+/// constant below the 8-bit rounding variance.
 #[test]
 fn covariance_scales_with_the_supplied_noise() {
     let img = standard_image();
@@ -254,34 +256,48 @@ fn covariance_scales_with_the_supplied_noise() {
             .detect_u8(img, SIZE as u32, SIZE as u32)
             .unwrap()
     };
-    let lo = detect(saddle().with_noise_sigma(1.0));
-    let hi = detect(saddle().with_noise_sigma(4.0));
-    assert_eq!(lo.len(), hi.len());
-    let floor2 = (FLOOR * FLOOR) as f32;
-    let mut checked = 0;
-    for (a, b) in lo.iter().zip(&hi) {
-        let (Some(ca), Some(cb)) = (a.position_covariance, b.position_covariance) else {
-            assert!(a.position_covariance.is_none() && b.position_covariance.is_none());
-            continue;
-        };
-        // (σ²·C + f²) at σ = 4 is 16× the noise term at σ = 1, plus the floor.
-        let expect_xx = 16.0 * (ca.xx - floor2) + floor2;
-        assert!(
-            (cb.xx - expect_xx).abs() <= 1e-4 * expect_xx,
-            "{ca:?} {cb:?}"
-        );
-        assert!((cb.xy - 16.0 * ca.xy).abs() <= 1e-4 * cb.xx);
-        checked += 1;
-    }
-    assert!(checked > 100);
+    for (name, cfg) in localizers() {
+        let [s1, s2, s4] = [1.0f32, 2.0, 4.0].map(|s| detect(cfg.with_noise_sigma(s)));
+        assert_eq!(s1.len(), s4.len(), "{name}");
+        let mut checked = 0;
+        for ((a, b), c) in s1.iter().zip(&s2).zip(&s4) {
+            assert_eq!((a.x, a.y), (c.x, c.y), "{name}");
+            let (Some(ca), Some(cb), Some(cc)) = (
+                a.position_covariance,
+                b.position_covariance,
+                c.position_covariance,
+            ) else {
+                assert!(a.position_covariance.is_none() && c.position_covariance.is_none());
+                continue;
+            };
+            // Variances 1, 4, 16: (Σ₁₆ − Σ₁) = 5·(Σ₄ − Σ₁) for a noise term
+            // linear in the variance. The Radon peak fit's noise term also
+            // grows to second order (flat responses), so its variances only
+            // grow at least that fast.
+            let second_order = name == "Radon peak fit";
+            for (va, vb, vc) in [(ca.xx, cb.xx, cc.xx), (ca.yy, cb.yy, cc.yy)] {
+                let excess = (vc - va) - 5.0 * (vb - va);
+                let scale = cc.xx.max(cc.yy);
+                let ok = if second_order {
+                    excess >= -1e-3 * scale
+                } else {
+                    excess.abs() <= 1e-3 * scale
+                };
+                assert!(ok, "{name}: {ca:?} {cb:?} {cc:?}");
+            }
+            assert!(cc.xx > ca.xx && cc.yy > ca.yy, "{name}");
+            checked += 1;
+        }
+        assert!(checked > 100, "{name}: {checked}");
 
-    // The noise variance is at least the 8-bit rounding variance 1/12, so a
-    // lower (or zero) σ gives the same covariance as √(1/12).
-    let at_rounding = detect(saddle().with_noise_sigma((1.0f32 / 12.0).sqrt()));
-    for sigma in [0.0f32, 0.1] {
-        let low = detect(saddle().with_noise_sigma(sigma));
-        for (a, b) in low.iter().zip(&at_rounding) {
-            assert_eq!(a.position_covariance, b.position_covariance);
+        // The noise variance is at least the 8-bit rounding variance 1/12,
+        // so a lower (or zero) σ gives the same covariance as √(1/12).
+        let at_rounding = detect(cfg.with_noise_sigma((1.0f32 / 12.0).sqrt()));
+        for sigma in [0.0f32, 0.1] {
+            let low = detect(cfg.with_noise_sigma(sigma));
+            for (a, b) in low.iter().zip(&at_rounding) {
+                assert_eq!(a.position_covariance, b.position_covariance, "{name}");
+            }
         }
     }
 }
@@ -301,35 +317,78 @@ fn covariance_is_reported_only_where_valid() {
             .count();
         (with, corners.len())
     };
-    // Saddle point on the input image, single scale or coarse-to-fine,
-    // after either detector.
-    for cfg in [
-        saddle(),
-        saddle().with_multiscale(MultiscaleConfig::pyramid_default()),
-        radon_saddle(),
-        radon_saddle().with_multiscale(MultiscaleConfig::pyramid_default()),
-    ] {
-        let (with, all) = count(cfg);
-        assert!(with * 10 >= all * 9, "{with} of {all}: {cfg:?}");
+    // Every localizer, single scale or coarse-to-fine.
+    for (name, cfg) in localizers() {
+        for cfg in [
+            cfg,
+            cfg.with_multiscale(MultiscaleConfig::pyramid_default()),
+        ] {
+            let (with, all) = count(cfg);
+            assert!(with * 10 >= all * 9, "{name}: {with} of {all}: {cfg:?}");
+        }
+        // No covariance: the `Off` tier, or an upscaled input.
+        for cfg in [
+            cfg.with_uncertainty(Uncertainty::Off),
+            cfg.with_upscale(UpscaleConfig::fixed(2)),
+        ] {
+            assert_eq!(count(cfg).0, 0, "{name}: {cfg:?}");
+        }
     }
-    // No covariance: other refiners, Radon's peak fit (its default), or an
-    // upscaled input.
-    for cfg in [
-        DetectorConfig::chess(),
-        DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner()),
-        DetectorConfig::radon(),
-        saddle().with_upscale(UpscaleConfig::fixed(2)),
-        radon_saddle().with_upscale(UpscaleConfig::fixed(2)),
-    ] {
-        assert_eq!(count(cfg).0, 0, "{cfg:?}");
+}
+
+/// The tier never moves a corner: positions under `Off` and `Propagated`
+/// are identical for every localizer, single scale and coarse-to-fine.
+#[test]
+fn positions_do_not_depend_on_the_tier() {
+    let img = standard_image();
+    let roi = Roi::new(50, 40, 150, 160).unwrap();
+    let same = |name: &str, on: &[CornerDescriptor], off: &[CornerDescriptor]| {
+        assert_eq!(on.len(), off.len(), "{name}");
+        for (a, b) in on.iter().zip(off) {
+            assert_eq!(
+                (a.x.to_bits(), a.y.to_bits()),
+                (b.x.to_bits(), b.y.to_bits()),
+                "{name}"
+            );
+            assert!(b.position_covariance.is_none());
+        }
+    };
+    for (name, cfg) in localizers() {
+        for cfg in [
+            cfg,
+            cfg.with_multiscale(MultiscaleConfig::pyramid_default()),
+        ] {
+            let detect = |u: Uncertainty| {
+                Detector::new(cfg.with_uncertainty(u))
+                    .unwrap()
+                    .detect_u8(img, SIZE as u32, SIZE as u32)
+                    .unwrap()
+            };
+            same(
+                name,
+                &detect(Uncertainty::Propagated),
+                &detect(Uncertainty::Off),
+            );
+        }
+        let detect_roi = |u: Uncertainty| {
+            Detector::new(cfg.with_uncertainty(u))
+                .unwrap()
+                .detect_u8_roi(img, SIZE as u32, SIZE as u32, roi)
+                .unwrap()
+        };
+        same(
+            name,
+            &detect_roi(Uncertainty::Propagated),
+            &detect_roi(Uncertainty::Off),
+        );
     }
 }
 
 /// Radon with saddle-point refinement keeps every peak: a corner whose
-/// refinement carries a covariance has moved off the peak fit, and every
-/// other corner keeps its peak-fit position exactly.
+/// refinement converged has moved off the peak fit, and every other corner
+/// keeps its peak-fit position and covariance exactly.
 #[test]
-fn radon_keeps_the_peak_fit_where_refinement_has_no_covariance() {
+fn radon_keeps_the_peak_fit_where_refinement_does_not_converge() {
     let img = standard_image();
     let detect = |cfg: DetectorConfig| {
         Detector::new(cfg)
@@ -343,19 +402,20 @@ fn radon_keeps_the_peak_fit_where_refinement_has_no_covariance() {
     let (mut moved, mut kept) = (0, 0);
     for (p, r) in peaks.iter().zip(&refined) {
         assert!((p.x - r.x).abs() < 0.5 && (p.y - r.y).abs() < 0.5);
-        if r.position_covariance.is_some() {
-            moved += 1;
-        } else {
-            assert_eq!((p.x, p.y), (r.x, r.y));
+        if (p.x, p.y) == (r.x, r.y) {
+            assert_eq!(p.position_covariance, r.position_covariance);
             kept += 1;
+        } else {
+            assert!(r.position_covariance.is_some());
+            moved += 1;
         }
     }
     assert!(moved > 300, "{moved} refined, {kept} kept");
 }
 
-/// Radon's saddle-point refinement is calibrated like the ChESS one.
+/// Radon's saddle-point refinement is conservative like the ChESS one.
 #[test]
-fn radon_covariance_is_calibrated() {
+fn radon_covariance_is_conservative_on_ideal_boards() {
     let fx = Fixture::new(0.8, 2.0);
     let mut w = Whitened::default();
     for (k, (lattice, clean)) in clean_boards(fx, 2).iter().enumerate() {
@@ -370,7 +430,7 @@ fn radon_covariance_is_calibrated() {
     assert_eq!(w.unmatched, 0);
     let s0 = w.sigma0_sq();
     assert!(
-        (0.75..1.25).contains(&s0),
+        (0.03..1.0).contains(&s0),
         "σ̂₀² = {s0:.3} over {} corners",
         w.n
     );
@@ -378,26 +438,46 @@ fn radon_covariance_is_calibrated() {
 
 #[test]
 fn roi_covariance_matches_full_frame() {
+    // A corner found at the same position by the ROI or coarse-to-fine path
+    // gets the same covariance as on the full frame, for every localizer.
     let img = standard_image();
-    let mut det = Detector::new(saddle()).unwrap();
-    let full = det.detect_u8(img, SIZE as u32, SIZE as u32).unwrap();
     let roi = Roi::new(60, 60, 140, 140).unwrap();
-    let sub = det
-        .detect_u8_roi(img, SIZE as u32, SIZE as u32, roi)
-        .unwrap();
-    let mut checked = 0;
-    for s in &sub {
-        let f = full
-            .iter()
-            .find(|f| (f.x - s.x).abs() < 1e-3 && (f.y - s.y).abs() < 1e-3)
-            .expect("ROI corner in full frame");
-        let (Some(cs), Some(cf)) = (s.position_covariance, f.position_covariance) else {
-            continue;
+    for (name, cfg) in localizers() {
+        let detect = |cfg: DetectorConfig| {
+            Detector::new(cfg)
+                .unwrap()
+                .detect_u8(img, SIZE as u32, SIZE as u32)
+                .unwrap()
         };
-        assert!((cs.xx - cf.xx).abs() <= 1e-3 * cf.xx);
-        checked += 1;
+        let full = detect(cfg);
+        let sub = Detector::new(cfg)
+            .unwrap()
+            .detect_u8_roi(img, SIZE as u32, SIZE as u32, roi)
+            .unwrap();
+        let pyramid = detect(cfg.with_multiscale(MultiscaleConfig::pyramid_default()));
+        for (path, other) in [("roi", &sub), ("pyramid", &pyramid)] {
+            let mut checked = 0;
+            for s in other {
+                let Some(f) = full
+                    .iter()
+                    .find(|f| (f.x - s.x).abs() < 1e-4 && (f.y - s.y).abs() < 1e-4)
+                else {
+                    continue;
+                };
+                let (Some(cs), Some(cf)) = (s.position_covariance, f.position_covariance) else {
+                    panic!("{name} {path}: covariance on one path only");
+                };
+                for (a, b) in [(cs.xx, cf.xx), (cs.xy, cf.xy), (cs.yy, cf.yy)] {
+                    assert!(
+                        (a - b).abs() <= 1e-4 * cf.xx.max(cf.yy),
+                        "{name} {path}: {cs:?} vs {cf:?}"
+                    );
+                }
+                checked += 1;
+            }
+            assert!(checked > 20, "{name} {path}: {checked} matched corners");
+        }
     }
-    assert!(checked > 20);
 }
 
 #[test]
@@ -408,128 +488,54 @@ fn invalid_noise_sigma_is_rejected() {
     assert!(Detector::new(saddle().with_noise_sigma(0.0)).is_ok());
 }
 
-/// One measured row: its label and the whitening statistics with the
-/// estimated and the supplied noise level.
-struct Measured {
-    label: String,
-    est: Whitened,
-    known: Whitened,
-    ratio: f64,
-    declined: usize,
-}
-
 #[test]
-#[ignore = "measurement: σ̂₀² of the reported covariance and the floor minimax"]
+#[ignore = "measurement: σ̂₀² of the reported covariance per localizer"]
 fn position_covariance_calibration() {
     // (label, cell, rotation°, axis angle°, dark, bright)
     let mut boards: Vec<(String, f32, f32, f32, u8, u8)> = Vec::new();
     for cell in [8.0f32, 12.0] {
-        for rot in [0.0f32, 2.0, 5.0, 8.0, 15.0, 30.0, 45.0] {
+        for rot in [0.0f32, 8.0, 45.0] {
             boards.push((format!("rot{rot} c{cell}"), cell, rot, 90.0, 40, 200));
         }
         boards.push((format!("skew60 c{cell}"), cell, 0.0, 60.0, 40, 200));
     }
-    boards.push(("axis 90/150 c8".into(), 8.0, 0.0, 90.0, 90, 150));
-    let psfs = [0.5f32, 0.8, 1.5, 2.5];
-    let sigmas = [1.0f32, 2.0, 4.0, 8.0];
-
-    let mut rows: Vec<Measured> = Vec::new();
-    println!("{SIZE}² boards, 25 per row (5×5 phases); σ̂₀² with the {FLOOR} px floor");
-    println!("board | psf | σ | σ̂/σ | σ̂₀² est | σ̂₀² known | corners | unmatched | no σ̂ | noise-free RMS px/axis");
-    for (label, cell, rot, axis, dark, bright) in &boards {
-        for &psf in &psfs {
-            let base = Fixture {
-                cell: *cell,
-                rotation: rot * DEG,
-                axis_angle: axis * DEG,
-                dark: *dark,
-                bright: *bright,
-                psf,
-                sigma: 0.0,
-            };
-            let clean = clean_boards(base, 25);
-            // Noise-free error of the converged corners (any σ supplied
-            // gives them a covariance, which marks convergence).
-            let mut sq = (0.0f64, 0usize);
-            for (lattice, img) in &clean {
-                let corners = Detector::new(saddle().with_noise_sigma(1.0))
-                    .unwrap()
-                    .detect_u8(img, SIZE as u32, SIZE as u32)
-                    .unwrap();
-                for c in corners.iter().filter(|c| c.position_covariance.is_some()) {
-                    let (tx, ty) = lattice.nearest_corner(c.x, c.y);
-                    let (ex, ey) = (f64::from(c.x - tx), f64::from(c.y - ty));
-                    if ex.abs() < 0.5 && ey.abs() < 0.5 {
-                        sq = (sq.0 + ex * ex + ey * ey, sq.1 + 1);
-                    }
+    let psfs = [0.5f32, 1.5, 2.5];
+    let sigmas = [1.0f32, 2.0, 8.0];
+    println!("{SIZE}² boards, 5 per row; σ̂₀² with the noise σ estimated / supplied");
+    println!("localizer | board | psf | σ | σ̂₀² est | σ̂₀² known | corners | unmatched | no σ̂");
+    for (name, cfg) in localizers() {
+        for (label, cell, rot, axis, dark, bright) in &boards {
+            for &psf in &psfs {
+                let base = Fixture {
+                    cell: *cell,
+                    rotation: rot * DEG,
+                    axis_angle: axis * DEG,
+                    dark: *dark,
+                    bright: *bright,
+                    psf,
+                    sigma: 0.0,
+                };
+                let clean = clean_boards(base, 5);
+                let rows: Vec<_> = sigmas
+                    .par_iter()
+                    .map(|&sigma| {
+                        let fx = Fixture { sigma, ..base };
+                        let est = run_with(cfg, fx, &clean, false);
+                        let known = run_with(cfg, fx, &clean, true);
+                        (sigma, est, known)
+                    })
+                    .collect();
+                for (sigma, (est, _, declined), (known, _, _)) in rows {
+                    println!(
+                        "{name} | {label} | {psf} | {sigma} | {:.3} | {:.3} | {} | {} | {declined}",
+                        est.sigma0_sq(),
+                        known.sigma0_sq(),
+                        est.n,
+                        est.unmatched,
+                    );
                 }
             }
-            let rms = (sq.0 / (2.0 * sq.1.max(1) as f64)).sqrt();
-            let measured: Vec<Measured> = sigmas
-                .par_iter()
-                .map(|&sigma| {
-                    let fx = Fixture { sigma, ..base };
-                    let (est, ratio, declined) = run(fx, &clean, false);
-                    let (known, _, _) = run(fx, &clean, true);
-                    Measured {
-                        label: format!("{label} psf {psf} σ {sigma}"),
-                        est,
-                        known,
-                        ratio,
-                        declined,
-                    }
-                })
-                .collect();
-            for (m, sigma) in measured.into_iter().zip(sigmas) {
-                println!(
-                    "{label} | {psf} | {sigma} | {:.3} | {:.3} | {:.3} | {} | {} | {} | {rms:.4}",
-                    m.ratio,
-                    m.est.sigma0_sq(),
-                    m.known.sigma0_sq(),
-                    m.est.n,
-                    m.est.unmatched,
-                    m.declined
-                );
-                rows.push(m);
-            }
         }
-    }
-
-    // Per candidate floor: worst |ln σ̂₀²| (estimated σ) over the rows whose
-    // detections match the truth (≥ 1 000 matched, ≤ 1% unmatched), over
-    // all of them and over the grid-aligned and rotated ones separately.
-    let clean = |m: &Measured| m.est.n >= 1000 && m.est.unmatched * 100 <= m.est.n;
-    // Rotated boards are labelled `rot<deg>`; everything else (`rot0`,
-    // `skew60`, `axis 90/150`) has an axis on the pixel grid.
-    let rotated = |l: &str| l.starts_with("rot") && !l.starts_with("rot0 ");
-    let groups = [
-        ("all", None),
-        ("grid-aligned", Some(false)),
-        ("rotated", Some(true)),
-    ];
-    println!("\nf (px) | worst |ln σ̂₀²| (σ̂₀², row) per group; [min, max] σ̂₀²");
-    for (k, f) in CANDIDATE_FLOORS.iter().enumerate() {
-        let mut line = format!("{f}");
-        for (name, want) in groups {
-            let vals: Vec<(f64, &str)> = rows
-                .iter()
-                .filter(|m| clean(m) && want.is_none_or(|w| rotated(&m.label) == w))
-                .map(|m| (m.est.sigma0_sq_with(k), m.label.as_str()))
-                .collect();
-            let worst = vals
-                .iter()
-                .max_by(|a, b| a.0.ln().abs().total_cmp(&b.0.ln().abs()))
-                .unwrap();
-            let lo = vals.iter().map(|v| v.0).fold(f64::INFINITY, f64::min);
-            let hi = vals.iter().map(|v| v.0).fold(0.0, f64::max);
-            line += &format!(
-                " | {name}: {:.3} ({:.3}, {}) [{lo:.2}, {hi:.2}]",
-                worst.0.ln().abs(),
-                worst.0,
-                worst.1
-            );
-        }
-        println!("{line}");
     }
 }
 

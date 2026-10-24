@@ -78,8 +78,9 @@ int main(void) {
         return 5;
     }
 
-    /* The saddle-point refiner reports a position covariance. This board is
-     * saturated (0/255), so its noise cannot be estimated: supply it. */
+    /* Every refiner reports a position covariance; check the saddle-point
+     * one. This board is saturated (0/255), so its noise cannot be
+     * estimated: supply it. */
     cc_config saddle = cc_config_chess();
     saddle.refiner = CC_REFINER_SADDLE_POINT;
     saddle.has_noise_sigma = 1;
@@ -103,6 +104,62 @@ int main(void) {
         fprintf(stderr, "no corner carried a position covariance\n");
         free(img);
         return 7;
+    }
+
+    /* The default tier reports a covariance for the center-of-mass refiner
+     * too; CC_UNCERTAINTY_OFF reports none, and an unknown tag is rejected. */
+    cc_config plain = cc_config_chess();
+    if (plain.uncertainty != CC_UNCERTAINTY_PROPAGATED) {
+        fprintf(stderr, "preset does not default to propagated uncertainty\n");
+        free(img);
+        return 10;
+    }
+    /* A zero-initialised config selects the same default tier. */
+    cc_config zeroed = {0};
+    if (zeroed.uncertainty != CC_UNCERTAINTY_PROPAGATED) {
+        fprintf(stderr, "zero-initialised config is not the default tier\n");
+        free(img);
+        return 10;
+    }
+    plain.has_noise_sigma = 1;
+    plain.noise_sigma = 1.0f;
+    cc_result plain_out = {NULL, 0};
+    if (cc_detect_u8(img, w, h, &plain, &plain_out) != CC_OK) {
+        fprintf(stderr, "default-refiner detection failed\n");
+        free(img);
+        return 10;
+    }
+    size_t plain_cov = 0;
+    for (size_t i = 0; i < plain_out.len; ++i) {
+        plain_cov += plain_out.corners[i].has_position_covariance ? 1u : 0u;
+    }
+    cc_result_free(&plain_out);
+    if (plain_cov == 0) {
+        fprintf(stderr, "default refiner carried no position covariance\n");
+        free(img);
+        return 10;
+    }
+    plain.uncertainty = CC_UNCERTAINTY_OFF;
+    cc_result off_out = {NULL, 0};
+    if (cc_detect_u8(img, w, h, &plain, &off_out) != CC_OK) {
+        fprintf(stderr, "uncertainty-off detection failed\n");
+        free(img);
+        return 11;
+    }
+    for (size_t i = 0; i < off_out.len; ++i) {
+        if (off_out.corners[i].has_position_covariance) {
+            fprintf(stderr, "uncertainty off still reported a covariance\n");
+            cc_result_free(&off_out);
+            free(img);
+            return 11;
+        }
+    }
+    cc_result_free(&off_out);
+    plain.uncertainty = 99;
+    if (cc_detect_u8(img, w, h, &plain, &ignored) != CC_ERR_INVALID_CONFIG) {
+        fprintf(stderr, "unknown uncertainty tag was not rejected\n");
+        free(img);
+        return 12;
     }
 
     saddle.noise_sigma = -1.0f; /* must be finite and >= 0 */

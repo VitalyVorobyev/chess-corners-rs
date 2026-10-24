@@ -431,9 +431,8 @@ pub(crate) enum RadonRefinerKind {
 /// [`chess_corners::RadonRefiner`].
 ///
 /// `RadonRefiner.withPeakFit()` (the default) keeps the response-map peak
-/// fit, without a position covariance; `RadonRefiner.withSaddlePoint(cfg)`
-/// refines each peak with the saddle-point fit on the input image and
-/// reports one. The `saddlePoint` getter hands back the payload
+/// fit; `RadonRefiner.withSaddlePoint(cfg)` refines each peak with the
+/// saddle-point fit on the input image. The `saddlePoint` getter hands back the payload
 /// wrapper, sharing its cell.
 #[wasm_bindgen]
 #[derive(Clone, Debug)]

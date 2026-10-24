@@ -19,6 +19,7 @@ const {
   ChessDetector,
   RadonRefiner,
   SaddlePointConfig,
+  Uncertainty,
   default_detector_config_json,
   defaultDetectorConfigJson,
   estimateNoiseSigma,
@@ -93,7 +94,7 @@ assert.equal(DetectorConfig.fromJson('{"noise_sigma": 2.5}').noiseSigma, 2.5);
 assert.equal(JSON.parse(DetectorConfig.chess().withNoiseSigma(2.5).toJson()).noise_sigma, 2.5);
 
 // Position covariance: stride 3 per corner, aligned with `detect`; finite with
-// the saddle-point refiner, NaN with the default refiner.
+// every localizer by default, NaN with `uncertainty: "off"`.
 const size = 128;
 const board = new Uint8Array(size * size);
 let seed = 1;
@@ -116,7 +117,16 @@ assert.ok(cov.some((v) => Number.isFinite(v) && v > 0), "saddle point reports co
 const plain = new ChessDetector();
 const plainFound = plain.detect(board, size, size);
 assert.equal(plain.positionCovariance().length, (plainFound.length / 7) * 3);
-assert.ok(plain.positionCovariance().every((v) => Number.isNaN(v)));
+assert.ok(plain.positionCovariance().every((v) => Number.isFinite(v)), "default refiner reports covariances");
+assert.equal(DetectorConfig.chess().uncertainty, Uncertainty.Propagated);
+assert.equal(JSON.parse(DetectorConfig.chess().toJson()).uncertainty, "propagated");
+assert.equal(DetectorConfig.fromJson('{"uncertainty": "off"}').uncertainty, Uncertainty.Off);
+assert.equal(JSON.parse(DetectorConfig.chess().withUncertainty(Uncertainty.Off).toJson()).uncertainty, "off");
+const quiet = ChessDetector.withConfig(DetectorConfig.chess().withUncertainty(Uncertainty.Off));
+const quietFound = quiet.detect(board, size, size);
+assert.equal(quiet.positionCovariance().length, (quietFound.length / 7) * 3);
+assert.ok(quiet.positionCovariance().every((v) => Number.isNaN(v)), "uncertainty off reports none");
+assert.deepEqual(Array.from(quietFound), Array.from(plainFound), "positions identical across tiers");
 // The covariance buffer never outlives the detection it belongs to.
 assert.throws(() => saddle.detect(board, size + 1, size));
 assert.equal(saddle.positionCovariance().length, 0, "cleared by a failed detection");
@@ -125,13 +135,13 @@ assert.ok(saddle.positionCovariance().length > 0);
 saddle.applyConfig(DetectorConfig.chess());
 assert.equal(saddle.positionCovariance().length, 0, "cleared by applyConfig");
 
-// Radon keeps its peak fit by default (no covariance); the saddle-point
-// refinement reports one.
+// Radon keeps its peak fit by default, which reports a covariance as well as
+// the saddle-point refinement.
 const radonCfg = DetectorConfig.radon();
 assert.equal(JSON.parse(radonCfg.toJson()).strategy.radon.refiner, "peak_fit");
 const peakFit = ChessDetector.withConfig(radonCfg);
 peakFit.detect(board, size, size);
-assert.ok(peakFit.positionCovariance().every((v) => Number.isNaN(v)));
+assert.ok(peakFit.positionCovariance().every((v) => Number.isFinite(v)));
 const saddleCfg = radonCfg.withRadonRefiner(RadonRefiner.withSaddlePoint(new SaddlePointConfig()));
 assert.equal(JSON.parse(saddleCfg.toJson()).strategy.radon.refiner.saddle_point.radius, 2);
 const radon = ChessDetector.withConfig(saddleCfg);

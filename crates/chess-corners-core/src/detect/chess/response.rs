@@ -1,5 +1,6 @@
 //! Dense ChESS response computation for 8-bit grayscale inputs.
 use super::ring::RingOffsets;
+use crate::uncertainty::{PixelGradients, PixelTile};
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "rayon")]
@@ -239,6 +240,7 @@ pub fn chess_response_u8_patch(
             w: 0,
             h: 0,
             data: Vec::new(),
+            chess_ring: None,
         };
     }
 
@@ -288,6 +290,7 @@ pub fn chess_response_u8_patch(
         w: patch_w,
         h: patch_h,
         data,
+        chess_ring: Some(ring_kind),
     }
 }
 
@@ -324,7 +327,12 @@ fn compute_response_sequential(
         }
     }
 
-    ResponseMap { w, h, data }
+    ResponseMap {
+        w,
+        h,
+        data,
+        chess_ring: Some(ring_kind),
+    }
 }
 
 #[cfg(all(test, feature = "simd"))]
@@ -351,7 +359,12 @@ fn compute_response_sequential_scalar(
         compute_row_range_scalar(img, w, y as i32, ring, dst_row, x0, x1);
     }
 
-    ResponseMap { w, h, data }
+    ResponseMap {
+        w,
+        h,
+        data,
+        chess_ring: Some(ring_kind),
+    }
 }
 
 #[cfg(feature = "rayon")]
@@ -387,7 +400,12 @@ fn compute_response_parallel(img: &[u8], w: usize, h: usize, params: &ChessParam
         }
     });
 
-    ResponseMap { w, h, data }
+    ResponseMap {
+        w,
+        h,
+        data,
+        chess_ring: Some(ring_kind),
+    }
 }
 
 // Fallback stub: when the `rayon` feature is off, `chess_response_u8` takes
@@ -453,6 +471,53 @@ fn chess_response_at_u8(img: &[u8], w: usize, x: i32, y: i32, ring: &[(i32, i32)
     let mr = (mu_n - mu_l).abs();
 
     (sr as f32) - (dr as f32) - 16.0 * mr
+}
+
+/// Add `scale·∂R/∂I` of the ChESS response `R` at pixel `(x, y)` to
+/// `grads`, for every pixel `R` reads (the 16 ring samples and the 5-pixel
+/// cross, all in `tile`). `R` is piecewise linear in the pixels; each `|·|`
+/// term contributes the sign of its argument (0 where it is exactly 0).
+pub(crate) fn add_response_gradient(
+    tile: &PixelTile,
+    x: i32,
+    y: i32,
+    ring: &[(i32, i32); 16],
+    scale: [f32; 2],
+    grads: &mut PixelGradients,
+) {
+    let px = |dx: i32, dy: i32| tile.at(x + dx, y + dy) as i32;
+    let s: [i32; 16] = core::array::from_fn(|k| px(ring[k].0, ring[k].1));
+    let mut coef = [0i32; 16];
+    for k in 0..4 {
+        let sg = ((s[k] + s[k + 8]) - (s[k + 4] + s[k + 12])).signum();
+        coef[k] += sg;
+        coef[k + 8] += sg;
+        coef[k + 4] -= sg;
+        coef[k + 12] -= sg;
+    }
+    for k in 0..8 {
+        let sd = (s[k] - s[k + 8]).signum();
+        coef[k] -= sd;
+        coef[k + 8] += sd;
+    }
+    let cross = [(0, 0), (0, -1), (0, 1), (1, 0), (-1, 0)];
+    // 80·(μₙ − μₗ) = 5·Σ ring − 16·Σ cross, exactly in integers.
+    let sm = (5 * s.iter().sum::<i32>()
+        - 16 * cross.iter().map(|&(dx, dy)| px(dx, dy)).sum::<i32>())
+    .signum();
+    // R −= 16·|μₙ − μₗ|: −sign/1 per ring sample, +16·sign/5 per cross pixel.
+    for (k, &(dx, dy)) in ring.iter().enumerate() {
+        let c = (coef[k] - sm) as f32;
+        if c != 0.0 {
+            grads.add(x + dx, y + dy, [scale[0] * c, scale[1] * c]);
+        }
+    }
+    if sm != 0 {
+        let c = 3.2 * sm as f32;
+        for (dx, dy) in cross {
+            grads.add(x + dx, y + dy, [scale[0] * c, scale[1] * c]);
+        }
+    }
 }
 
 // The scalar row kernel is the production path when SIMD is off; in a
