@@ -14,28 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `position_covariance` — the ChESS center-of-mass, Förstner and
   saddle-point refiners, the Radon peak fit and saddle-point refinement of
   Radon peaks (not the ML refiner): image noise propagated through the
-  localizer, plus a per-localizer systematic term (from the corner's offset
-  to the localizer's fit window and the width of its edges) with a floor
-  measured on real calibration images, about 0.05 px per axis for the
-  saddle-point fit and the Radon peak fit, 0.07 for center of mass and 0.11
-  for Förstner. On real images the reported σ then matches each
-  localizer's own error; error that every corner of an image shares
-  (defocus, depth, lens-model error) is outside any single-corner
-  covariance and shows up in a downstream calibration's variance factor.
-  Weighting a calibration by these covariances is neutral (held-out error
-  unchanged within 0.5% for the saddle-point fit); the covariance is
-  conservative on ideal synthetic corners and overconfident for the Radon
-  peak fit on blurred corners near 45° and for the center of mass on sharp
-  boards rotated a few degrees. Cost of the default tier: single-scale
-  ChESS frame time +2–7% (the test images), coarse-to-fine +5–13%,
-  Radon within ±2.5%. `Off` reports no covariance and makes no noise
-  estimate; positions are identical under both. Also
-  `Refiner::with_uncertainty` in `chess-corners-core` (turns the covariance
-  off in custom refinement loops), Python (`Uncertainty`,
-  `DetectorConfig.uncertainty`, `with_uncertainty`), WASM (`Uncertainty`,
-  `cfg.uncertainty`, `withUncertainty`), the JSON schema, and the C ABI
-  (`cc_config::uncertainty`: `CC_UNCERTAINTY_PROPAGATED` (0, so a
-  zero-initialised config is the default) / `CC_UNCERTAINTY_OFF`).
+  localizer, plus a per-localizer systematic term with a floor measured on
+  real calibration images (about 0.05 px per axis for the saddle-point fit
+  and the Radon peak fit, 0.07 for center of mass, 0.11 for Förstner). It
+  is conservative on ideal synthetic corners; error that every corner of an
+  image shares (defocus, lens-model error) is outside it, and its known
+  limits are listed in the book's uncertainty chapter. `Off` reports no
+  covariance and skips the noise estimate; positions are identical under
+  both. Cost of the default: single-scale ChESS frame time +2–7% on the
+  test images, coarse-to-fine +5–13%, Radon within ±2.5%. Also
+  `Refiner::with_uncertainty` in `chess-corners-core`, Python
+  (`Uncertainty`, `DetectorConfig.uncertainty`, `with_uncertainty`), WASM
+  (`Uncertainty`, `cfg.uncertainty`, `withUncertainty`), the JSON schema,
+  and the C ABI (`cc_config::uncertainty`: `CC_UNCERTAINTY_PROPAGATED` (0,
+  so a zero-initialised config is the default) / `CC_UNCERTAINTY_OFF`).
 - `RadonConfig::refiner` (`RadonRefiner`): the final subpixel position of
   a Radon corner — `PeakFit` (the default, unchanged behaviour) keeps the
   response-map peak fit; `SaddlePoint(SaddlePointConfig)` refines each peak
@@ -43,13 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does not converge keeps its peak-fit position. On synthetic boards with
   8 px cells the refinement lowers the RMS error per axis from
   0.02–0.17 px to under 0.01 px without noise (lens blur σ 1.5–2.5, any
-  rotation) and by 2–6× at noise σ 2; on 4 px cells it is no better.
+  rotation) and by 2–6× at noise σ 2, and on a real calibration set the
+  corner-local error per axis from 0.056 to 0.038 px; on 4 px cells it is
+  no better.
   Available in Python (`RadonRefiner`, `RadonConfig.refiner`,
   `with_radon(refiner=...)`), WASM (`RadonRefiner`, `withRadonRefiner`),
   the JSON schema and the C ABI (`CC_REFINER_PEAK_FIT` /
   `CC_REFINER_SADDLE_POINT` under `CC_STRATEGY_RADON`).
 - `estimate_noise_sigma_u8` in the `chess-corners` facade: the per-image
-  noise estimate the detector uses when `noise_sigma` is `None`. Also
+  noise estimate the detector uses when `noise_sigma` is `None`. It is not
+  reliable on demosaiced or JPEG images; supply `noise_sigma` there. Also
   Python `estimate_noise_sigma`, WASM `estimateNoiseSigma` /
   `estimateNoiseSigmaRgba`, C `cc_estimate_noise_sigma_u8` and C++
   `chess_corners::estimate_noise_sigma`.
@@ -57,10 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Every localizer now reports a `position_covariance` by default, not only
-  the saddle-point refiner, and the saddle-point covariance's fixed
-  0.006 px floor is replaced by its systematic term (larger: the covariance
-  is conservative on ideal synthetic corners). Select `Uncertainty::Off`
-  for no covariance and no per-image noise estimate.
+  the saddle-point refiner, and the saddle-point covariance is larger: its
+  fixed 0.006 px floor is replaced by the systematic term above. Select
+  `Uncertainty::Off` for no covariance and no per-image noise estimate.
 - `RadonDetector::refine_peaks_on_image` (`chess-corners-core`) replaces a
   peak's position whenever the refiner accepts it and reaches its own fixed
   point: every single-shot refiner (center of mass, Förstner) now moves the

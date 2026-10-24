@@ -32,6 +32,7 @@ use the same `DetectorConfig` schema.
 | Detector | `ChESS` ring response, `Radon` ray-sum response | [ChESS](book/src/part-03-chess-detector.md) · [atlas](https://vitavision.dev/atlas/chess-corners), [Radon](book/src/part-04-radon-detector.md) · [atlas](https://vitavision.dev/atlas/duda-radon-corners) |
 | Refiner | `CenterOfMass`, `Förstner`, `SaddlePoint`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
 | Scale handling | Single-scale or coarse-to-fine 2× pyramid | [Multiscale](book/src/part-07-multiscale-and-pyramids.md) |
+| Uncertainty | Per-corner position covariance (noise plus each localizer's systematic error), or `Off` | [Uncertainty](book/src/part-08-uncertainty.md) |
 | Benchmarks | Synthetic sweeps and pipeline timings | [Benchmarks](book/src/part-09-benchmarks.md) |
 
 Workspace crates:
@@ -70,7 +71,7 @@ use image::ImageReader;
 let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
 let cfg = DetectorConfig::chess_multiscale()
-    .with_chess(|c| c.refiner = ChessRefiner::forstner());
+    .with_chess(|c| c.refiner = ChessRefiner::saddle_point());
 
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&img)?;
@@ -106,6 +107,7 @@ Each Rust detection is a `CornerDescriptor`:
 | `x`, `y` | Subpixel position in input-image pixels |
 | `response` | Raw detector response at the detected peak |
 | `axes` | `Option` of two local grid-axis directions with per-axis 1σ uncertainty; `None` when the orientation fit is disabled |
+| `position_covariance` | `Option` of the 2×2 position covariance in px² (image noise plus the localizer's systematic error); `None` under `Uncertainty::Off`, with the ML refiner, or on upscaled input ([Uncertainty](book/src/part-08-uncertainty.md)) |
 
 The two axes are not forced to be orthogonal. This lets the descriptor
 represent perspective warp and lens distortion instead of collapsing the
@@ -139,7 +141,8 @@ enough reliable seeds. The repository has synthetic tests and benchmark
 sections for small cells, blur, and low contrast; those are the cases
 where the Radon ray-sum response was added. Radon corners can be
 refined with the saddle-point fit (`RadonRefiner::SaddlePoint`), which
-also gives them a position covariance. Treat this as a measured configuration choice, not a
+is more accurate than the default peak fit on synthetic boards and on a
+real calibration set. Treat this as a measured configuration choice, not a
 universal statement about all camera data: validate on your own images
 when the decision matters.
 
@@ -190,7 +193,7 @@ import chess_corners
 img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.DetectorConfig.chess_multiscale()
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point()
 
 detector = chess_corners.Detector(cfg)
 det = detector.detect(img)

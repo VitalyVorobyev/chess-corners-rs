@@ -86,9 +86,13 @@ where a refiner is usable without per-scene tuning.
 
 ![Accuracy vs Gaussian blur σ](img/bench/accuracy_vs_blur.png)
 
-- **Förstner** is gradient-based. Gaussian smoothing flattens the
-  gradient magnitudes its structure tensor depends on, so its error
-  grows roughly linearly in `σ_blur`.
+- **Förstner** loses its hold on the corner as the blur grows. Its
+  estimate moves by only a fraction \\(g\\) of the corner's offset from
+  the seed pixel, about 0.8 on sharp edges; blur lowers that gain until
+  it passes through zero (near a lens blur σ of 2–2.5 px), where the
+  estimate no longer depends on where the corner is. Its error grows
+  roughly linearly in `σ_blur`
+  ([Part VIII §8.3.3](part-08-uncertainty.md#833-the-systematic-term)).
 - Every other refiner stays inside the plotted 0.05–0.10 px band up to
   `σ_blur = 2.5 px` on this fixture.
 - **SaddlePoint** stays at about 0.045 px at every `σ_blur` from 0 to
@@ -139,7 +143,39 @@ neighborhood and are cell-size-agnostic down to 4 px.
 For dense targets (ChArUco, compact calibration boards) pick from
 those three.
 
-## 9.6 Throughput vs accuracy
+## 9.6 Accuracy on real calibration images
+
+The synthetic fixtures have exact truth but idealised optics: straight
+edges, a symmetric blur, uniform light. On real images there is no
+truth, and a calibration residual mostly measures the lens model and
+the target, not the detector. On a real stereo calibration set with an
+accurate ChArUco target, the residual of a rig calibration was split
+into a smooth term over each camera's image (lens model), a 3-D
+displacement per target corner (target error), a smooth term per view,
+and the error left at each corner. The first three are the same for
+every localizer; the last ranks them
+([Part VIII §8.4.2](part-08-uncertainty.md#842-real-calibration-images)):
+
+| Localizer | Corner-local error, RMS per axis | Error over SaddlePoint, blurred corners included |
+|-----------|---------------------------------:|-------------------------------------------------:|
+| Radon + `RadonRefiner::SaddlePoint` | 0.038 px | — |
+| `SaddlePoint`                       | 0.040 px | — |
+| `cv2.cornerSubPix`, 11×11 window    | 0.045 px | +0.16 px |
+| Radon peak fit                      | 0.056 px | — |
+| `CenterOfMass`                      | 0.103 px | +0.07 px |
+| `Förstner`                          | 0.164 px | +0.29 px |
+
+The first column covers the corners every localizer finds, about 70%
+of the board corners; the Radon detector misses the most blurred ones.
+The second adds them for the ChESS refiners and `cornerSubPix` (error
+over SaddlePoint, \\(\sqrt{\text{rms}^2 - \text{rms}_{SP}^2}\\) per
+axis). The synthetic ranking holds on real data, and Förstner, which
+is competitive on the sharp synthetic fixture, is the least accurate on
+real images, sharp or blurred. This is one dataset, one camera type and
+one target; treat the sizes as indicative and the ordering as the
+finding.
+
+## 9.7 Throughput vs accuracy
 
 Log-log axes. Two orders of magnitude separate the fastest refiner
 (CenterOfMass at ~16 ns/corner) from ML inference (~150 µs/corner at
@@ -157,13 +193,18 @@ The Pareto frontier, fast-to-slow:
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.07 px               | OpenCV's iterative gradient refiner.                                  |
 | `ML (ONNX)`         | ~150 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row (`σ_noise = 12`).             |
 
+The times are the refinement alone. Under the default
+`Uncertainty::Propagated` each geometric refiner also computes its
+position covariance, which brings it to about 0.5 µs per corner
+([Part VIII §8.2.1](part-08-uncertainty.md#821-cost)).
+
 A measurement loop that includes fixture construction in the timed
 region reports ~300 µs for `cv2.cornerSubPix`; the refinement-only
 value (~2.7 µs) is what the table above quotes. See
 `tools/book/opencv_subpix_sweep.py` for the exact measurement
 boundaries.
 
-## 9.7 Whole-pipeline throughput
+## 9.8 Whole-pipeline throughput
 
 The per-refiner timings above are the refinement step alone. End-to-end
 detector-plus-refiner wall times on three test images, release build,
@@ -197,7 +238,7 @@ Observations:
   you specifically want to compare against the full-resolution detector
   path.
 
-### 9.7.1 Whole-image Radon detector
+### 9.8.1 Whole-image Radon detector
 
 The Duda-Frese Radon path (`DetectorConfig::radon()`) is an alternative
 detector for frames where ChESS's 16-sample ring does not produce enough
@@ -218,38 +259,24 @@ over 10 runs (milliseconds), 8-core M-class CPU:
 | Full pipeline      | none        |  28.6         |  31.3        | 298             | 162             |
 | Full pipeline      | rayon+simd  |  28.8         |  19.6        | 188             | 162             |
 
-End-to-end cumulative speedup vs. the scalar pre-opt reference (the
-state Radon shipped in at #45):
+How the Radon pipeline uses the `rayon` and `simd` features:
 
-| Bench | Pre-opt | Post-opt (rayon+simd) | Speedup |
-|---|---:|---:|---:|
-| `radon_response` 1920×1080 up=2 | 130.6 ms | 28.0 ms | **4.7×** |
-| `radon_pipeline` 1920×1080 synth | 692 ms | 162 ms | **4.3×** |
-| `radon_pipeline` large.png | 393 ms | 188 ms | **2.1×** |
-| `radon_pipeline` mid.png | 47 ms | 19.6 ms | **2.4×** |
-
-What was changed, in order:
-
-1. **Row-parallel `compute_response`** under `rayon`, plus a
-   handwritten `Simd<i64, 8>` inner kernel under `simd`. This is
-   the biggest single win on the response stage (~4.7×).
-2. **Row-parallel `box_blur_inplace`** under `rayon`. The vertical
-   pass was rewritten row-major (was column-strided), which also
-   speeds up the **scalar** path 5–28% as a side effect.
-3. **`upsample_bilinear_2x` and `build_cumsums` parallelism** —
-   rayon row-wise on the upsampler, `rayon::join` across the four
-   independent cumsum directions.
-4. **`merge_corners_simple` spatial grid** — the original O(N²)
-   pairwise scan was the dominant cost on synthetic chessboards
-   and low-contrast frames where Radon emits thousands of
-   candidates. Replaced with a uniform spatial grid keyed on the
-   merge radius (cell size = `radius`); expected O(N) for typical
-   distributions. This is the single largest pipeline-level win
-   (1920×1080 synth dropped from 665 ms to 185 ms with all
-   features enabled).
-5. **Row-parallel NMS + peak-fit** in `detect_peaks_from_radon`
-   under `rayon`, with thread-local accumulators concatenated in
-   row order to keep the output deterministic.
+1. **`compute_response`** runs row-parallel under `rayon`, with a
+   `Simd<i64, 8>` inner kernel under `simd`. This is the largest
+   effect on the response stage (130.6 → 28.0 ms on the 1920×1080
+   frame).
+2. **`box_blur_inplace`** runs row-parallel under `rayon`; both passes
+   traverse the image row-major.
+3. **`upsample_bilinear_2x`** runs row-parallel, and the four
+   independent cumulative sums are built in parallel with
+   `rayon::join`.
+4. **`merge_corners_simple`** buckets candidates on a uniform grid
+   whose cell size is the merge radius, so merging is close to linear
+   in the number of candidates. This matters on synthetic chessboards
+   and low-contrast frames, where Radon emits thousands of candidates.
+5. **NMS and the peak fit** in `detect_peaks_from_radon` run
+   row-parallel under `rayon`, with per-row results concatenated in row
+   order so the output is deterministic.
 
 Caveats and notes:
 
@@ -272,12 +299,12 @@ recall, precision, and p95 subpixel error per detector mode so
 optimization patches that change correctness fail at `cargo test`
 rather than silently drifting in production.
 
-## 9.8 Comparison with OpenCV
+## 9.9 Comparison with OpenCV
 
 OpenCV ships two reference paths standard in calibration pipelines:
 
 - `cv2.cornerSubPix` — iterative gradient-based refiner, covered in
-  §9.2–9.6 above as one of the refiner candidates.
+  §9.2–9.7 above as one of the refiner candidates.
 - `cv2.findChessboardCornersSB` — a complete chessboard detector.
   Not a direct refiner comparison, but a useful reference for
   whole-pipeline accuracy on real calibration frames.
@@ -299,7 +326,7 @@ real calibration frames the three methods agree to within about
 Wall-time, same dataset: `findChessboardCornersSB` takes ~115 ms
 per frame; our detector takes ~4 ms per frame — a ~30× speedup.
 
-## 9.9 Tracing and diagnostics
+## 9.10 Tracing and diagnostics
 
 Build with the `tracing` feature to emit JSON spans for each pipeline
 step. Named spans:
@@ -315,7 +342,7 @@ step. Named spans:
 Capture traces via the CLI's `--json-trace` flag or the
 `tools/perf_bench.py` script. `tools/trace/parser.py` extracts spans
 into CSV or JSON for aggregation, and `tools/perf_bench.py` produces
-the table in §9.7.
+the table in §9.8.
 
 When a frame returns fewer corners than expected:
 
@@ -331,9 +358,9 @@ When a frame returns fewer corners than expected:
 3. If accuracy is fine but wall time is large, inspect the `refine`
    span. On the measured refiner benchmark, replacing ML
    with a structure-tensor refiner (SaddlePoint or Förstner) is much
-   cheaper per corner, with the accuracy tradeoff shown in §9.2–§9.6.
+   cheaper per corner, with the accuracy tradeoff shown in §9.2–§9.7.
 
-## 9.10 Integration recipes
+## 9.11 Integration recipes
 
 ### Real-time loop, 30+ fps
 
@@ -358,7 +385,8 @@ loop {
 ### Offline calibration, maximum accuracy
 
 For still calibration frames, `SaddlePoint` has the lowest mean error
-among the built-in refiners on clean and blurred data alike (§9.2, §9.3).
+among the built-in refiners on clean and blurred data alike (§9.2, §9.3),
+and on real calibration images (§9.6).
 
 ```rust
 use chess_corners::{ChessRefiner, Detector, DetectorConfig};
@@ -417,7 +445,7 @@ Combines the Radon response kernel with the coarse-to-fine pyramid.
 Prefer this over single-scale `radon` when the frame is ≥ 1280×960
 and latency matters.
 
-## 9.11 Reproducing every plot
+## 9.12 Reproducing every plot
 
 ```sh
 # Cross-refiner accuracy sweep (Rust), feeds all Part IX plots
@@ -456,8 +484,8 @@ cargo bench -p chess-corners        --bench radon_pipeline --features rayon,simd
 cargo bench -p chess-corners-core   --bench radon_response --features rayon,simd
 
 # Save a baseline before optimizing, then re-run with --baseline <name>
-cargo bench --workspace -- --save-baseline pre-opt
-cargo bench --workspace -- --baseline pre-opt
+cargo bench --workspace -- --save-baseline before
+cargo bench --workspace -- --baseline before
 
 # Flamegraph / samply harness for hot-path profiling.
 # Outputs under testdata/out/profiles/.

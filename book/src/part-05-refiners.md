@@ -39,6 +39,15 @@ A `RefineResult` carries the refined `(x, y)`, a refiner-specific
 - `Rejected` — the refined offset exceeded the refiner's
   `max_offset`, or a per-refiner score threshold fired.
 
+Under the default `Uncertainty::Propagated`, an accepted result also
+carries `covariance_per_noise_variance`: the image noise propagated to
+the refined position through the refiner's exact Jacobian, per unit
+noise variance (px² per gray-level²). Every refiner except ML sets it;
+the saddle-point refiner only when its re-centring converges. The
+detector scales it by the image's noise level and adds the refiner's
+systematic term to give each corner's `position_covariance`
+([Part VIII](part-08-uncertainty.md)).
+
 The user-facing selector for ChESS is `ChessRefiner` (carrying
 `CenterOfMass`, `Forstner`, `SaddlePoint`, and optionally `Ml`),
 nested inside `ChessConfig`. Each enum variant carries its tuning
@@ -53,7 +62,7 @@ The Radon selector is `RadonRefiner`, nested inside `RadonConfig`:
 `SaddlePoint(SaddlePointConfig)`.
 `CenterOfMass` reads the ChESS response map and cannot refine Radon
 peaks; `Förstner` and ML are not offered, since `SaddlePoint` measures
-more accurate on synthetic boards. A Radon corner whose saddle-point refinement
+more accurate on synthetic boards and on real calibration images. A Radon corner whose saddle-point refinement
 does not converge keeps its peak-fit position.
 
 ## 5.2 CenterOfMass
@@ -75,7 +84,7 @@ detector's seeds are positive response peaks, so it never hits this.
 |------------------|-------------------------------------------------|
 | Input            | Response map                                    |
 | Default `radius` | 2 (5×5 window)                                  |
-| Typical cost     | ~20 ns per corner                               |
+| Typical cost     | ~20 ns per corner; ~0.5 µs with the default covariance |
 | Strengths        | Cheapest option in the benchmark; closed-form   |
 | Weaknesses       | Centroid bias when the response is asymmetric;  |
 |                  | fails when `radius` crosses neighboring corners |
@@ -112,13 +121,21 @@ Rejections:
 |------------------|-------------------------------------------------|
 | Input            | Image                                           |
 | Default `radius` | 2 (5×5 gradient window + 1 px halo)             |
-| Typical cost     | ~60 ns per corner                               |
-| Strengths        | Principled on sharp, high-SNR images            |
-| Weaknesses       | Relies on sharp gradients — blur flattens `M`   |
+| Typical cost     | ~60 ns per corner; ~0.5 µs with the default covariance |
+| Strengths        | Cheap; uses only image gradients                |
+| Weaknesses       | Stops following the corner under blur; least accurate on real images |
 
-Good pick for clean calibration frames where image edges are sharp.
-In the synthetic blur sweep in Part IX, Gaussian blur flattens the
-gradient magnitudes and this refiner's error increases with σ.
+Förstner fits once, on a window centred on the seed pixel, and its
+estimate moves by only a fraction \\(g\\) of the corner's offset from
+that pixel: about 0.8 on sharp edges. Blur lowers the gain until it
+passes through zero (near a lens blur σ of 2–2.5 px); there the estimate
+no longer depends on where the corner is, and its error grows to the
+size of the corner's offset from the seed. Its reported covariance
+grows with it
+([Part VIII §8.3.3](part-08-uncertainty.md#833-the-systematic-term)).
+On real calibration images it has the largest error of the built-in
+refiners, on sharp views as well as blurred ones
+([Part IX §9.6](part-09-benchmarks.md#96-accuracy-on-real-calibration-images)).
 
 Reference: Förstner & Gülch, 1987, *"A fast operator for detection
 and precise location of distinct points, corners and centres of
@@ -134,13 +151,10 @@ saddle partway back toward the window centre, so the refiner moves the
 window — Newton steps, refitting on the patch resampled bilinearly at
 each position — until the fitted saddle is within 0.001 px of the window
 centre; re-centred, the window is point-symmetric about the corner and
-that pull vanishes. On accepted corners where this
-converges it also reports the first-order covariance of the converged
-position per unit image-noise variance
-(`RefineResult::covariance_per_noise_variance`, px² per gray-level²);
-otherwise it returns the single fit without one (a Radon corner keeps
-its peak-fit position instead). [Part VIII](part-08-uncertainty.md)
-derives that covariance and shows where it matches the measured error.
+that pull vanishes. Where this does not converge it returns the single
+fit without a covariance (a Radon corner keeps its peak-fit position
+instead). [Part VIII §8.3.1](part-08-uncertainty.md#831-noise-through-the-localizer)
+derives the covariance at the converged position.
 
 The determinant of the Hessian is `4·a·c − b²`. A true X‑junction is a
 saddle, so the Hessian should be indefinite (`det < 0`). The refiner
@@ -154,9 +168,9 @@ rejects:
 |------------------|-------------------------------------------------|
 | Input            | Image                                           |
 | Default `radius` | 2 (5×5 patch)                                   |
-| Typical cost     | ~0.2 µs per corner                              |
-| Strengths        | Lowest error of the geometric refiners, sharp or blurred |
-| Weaknesses       | On ~5 px cells with strong shear and blur, the window holds neighbouring corners and the re-centred position can be worse than a single fit |
+| Typical cost     | ~0.2 µs per corner; ~0.6 µs with the default covariance |
+| Strengths        | Lowest error of the geometric refiners, sharp or blurred, synthetic or real |
+| Weaknesses       | Biased by illumination gradients and asymmetric lens blur (0.02–0.10 px); on ~5 px cells with strong shear and blur, the window holds neighbouring corners and the re-centred position can be worse than a single fit |
 
 The default choice for calibration-grade work: in Part IX's synthetic
 sweeps it has the lowest mean error of the built-in refiners on every
@@ -290,9 +304,10 @@ The measurement-driven comparison lives in Part IX. In short:
 - Budget matters more than anything else: the structure-tensor
   refiners are orders of magnitude faster than ML per corner.
 - `SaddlePoint` has the lowest mean error of the built-in refiners on
-  clean and blurred frames and is the default choice for image-patch refinement.
-- `Förstner` is about 4× cheaper and close on sharp frames, but degrades
-  with blur.
+  clean and blurred synthetic frames and on real calibration images, and
+  is the default choice for image-patch refinement.
+- `Förstner` is about 3× cheaper, but under blur it stops following the
+  corner, and on real calibration images it has the largest error.
 - ML has the lowest mean error on the heaviest synthetic noise row.
 
 The ChESS refiner is selected through `ChessConfig.refiner`:

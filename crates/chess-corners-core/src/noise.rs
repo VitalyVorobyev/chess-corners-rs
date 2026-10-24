@@ -104,12 +104,14 @@ const OPERATOR_GAIN: f64 = 20.0;
 /// noise the estimate is the root of the mean noise variance over the
 /// image's structure-free areas.
 ///
-/// For white noise it is the noise standard deviation. For spatially
-/// correlated noise (demosaiced, compressed or resampled images) it is the
-/// noise as the estimator's operator, a product of third differences, sees
-/// it — usually below the per-pixel σ, which that operator partly cancels:
-/// a consistent per-image scale rather than the per-pixel σ. Adding white
-/// noise of variance `σₐ²` raises its square by `σₐ²`.
+/// For white noise it is the noise standard deviation; adding white noise
+/// of variance `σₐ²` raises its square by `σₐ²`. It is not reliable for
+/// spatially correlated noise: on Bayer-demosaiced images it reads the
+/// demosaicing pattern along edges (about 4 gray levels whatever the
+/// noise), and on JPEG images of a dense board it usually returns `None`,
+/// because almost every 8×8 block holds an edge. Supply the noise level for
+/// such images instead, measured on the delivered images (for example from
+/// two frames of a static scene).
 ///
 /// Accuracy on synthetic boards with white noise (cells 5–12, any rotation
 /// or shear, blur up to 2.5 px): within about 4% for σ ≥ 2 gray levels and
