@@ -180,3 +180,40 @@ Caveats: covers illumination gradients only; PSF asymmetry is covered loosely
 conservative; the absolute scale inherits the noise estimate (Bayer 1.64
 with σ supplied). No measurable benefit on the real sets, where board and
 model error dominate.
+
+## Real-data gate (UQ-27)
+
+Gate of [design §8](../design/uncertainty-v2.md): does the asymmetry term
+track the per-corner remainder of the [`UQ-30`](real-data-validation.md)
+decomposition (lens field, per-corner target term and, for the local
+remainder, the per-view smooth pattern removed) better than the shipped
+`Propagated` covariance ([uncertainty-model](uncertainty-model.md))?
+
+### Pre-registered criteria
+
+Fixed before any number below was computed. SaddlePoint (ChESS seeds) on the
+stereo ChArUco set, both corner sets (**all**, and **chess** with the
+blurred corners). \(\Sigma_P\): the bindings' `position_covariance` under
+`Propagated`. Asymmetry term \(T = (\beta\beta^\top - \sigma_n^2 L_\beta L_\beta^\top)_+\)
+(`mul` 9×9, at the same σₙ as \(\Sigma_P\)).
+
+- **Form.** `Propagated`'s real-data floor (0.053 px) was fitted to absorb
+  the real-image error beyond the synthetic model — the error \(T\) is meant
+  to measure. Adding \(T\) on top counts it twice, so the gated form
+  replaces the floor: \(\Sigma_A = \Sigma_P - f_P^2 I + T + f_A^2 I\), with
+  \(f_A\) refitted by the shipped rule (the floor making the local-remainder
+  σ̂₀² 1, max over the two sets). For a like-for-like comparison
+  `Propagated` is also scored with its floor refitted by the same rule on
+  the same positions. \(\Sigma_P + T\) is reported, not gated.
+  Spearman of \(\sqrt{\operatorname{tr}\Sigma/2}\) does not depend on the
+  floor.
+- **Ranking (both required).** ΔSpearman = Spearman(\(\Sigma_A\)) −
+  Spearman(\(\Sigma_P\)) between predicted σ and \(|e|\) is **≥ +0.10 on the
+  local remainder** on both sets, and **> 0 on the cross-fold remainder** on
+  both sets.
+- **Weighting.** Σ-whitened rig calibration with \(\Sigma_A\) is not worse
+  than with \(\Sigma_P\): held-out (2-fold CV) residual RMS and cross-fold
+  remainder RMS each at most +0.5% over the \(\Sigma_P\)-weighted value, on
+  both sets.
+- **Verdict.** SHIP (opt-in tier, SaddlePoint only) iff both hold;
+  otherwise NO-GO.
