@@ -219,6 +219,16 @@ pub fn aa_chessboard(
     img
 }
 
+/// ChESS-hostile capture of an [`aa_chessboard`]: a 30-gray-level contrast
+/// band (108..138) blurred with σ = 2.5 px. The blur washes out the 5 px
+/// bimodal ring ChESS's response depends on, while the Radon integral
+/// stays well-defined — the fixture for the Radon-vs-ChESS tests.
+pub fn hostile_chessboard(size: usize, cell: usize, offset: (f32, f32)) -> Vec<u8> {
+    let mut img = aa_chessboard(size, cell, offset, 108, 138);
+    crate::gaussian_blur(&mut img, size, 2.5);
+    img
+}
+
 /// Supersampled `size × size` chessboard rotated by `angle` radians about
 /// `center`, with `cell`-pixel cells and `dark`/`bright` levels.
 ///

@@ -70,19 +70,19 @@
 #![cfg(feature = "ml-refiner")]
 
 use std::collections::BTreeMap;
-use std::env;
-use std::fs;
-use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use chess_corners::{ChessRefiner, CornerDescriptor, Detector, DetectorConfig};
 use chess_corners_testutil::aa_chessboard;
-use rayon::ThreadPool;
 use serde::Serialize;
 
-const SNAPSHOT_DIR: &str = "tests/snapshots";
+#[path = "common/snapshot.rs"]
+mod snapshot;
+use snapshot::{check_or_update_manifest, ndjson, pinned_pool};
+
 const MANIFEST_FILE: &str = "ml_manifest.txt";
-const ACTUAL_SUBDIR: &str = "actual";
+const MANIFEST_HEADER: &str = "# Per-preset corner count for the ChessRefiner::Ml pipelines.
+# Refresh with UPDATE_SNAPSHOTS=1 cargo test -p chess-corners --features ml-refiner --test ml_snapshot
+";
 
 /// Base image side. See the module doc "Fixture sizing" note: must be
 /// `>= 256` for `chess_multiscale()`'s default pyramid to build a second
@@ -139,21 +139,6 @@ impl CornerSnap {
     }
 }
 
-/// One-thread rayon pool, lazily initialised. Pinning the pool removes
-/// thread-count-dependent reduction order (e.g. under `--all-features`,
-/// which enables the facade's own `rayon` response path) so this test
-/// only fails on a genuine algorithm change, not on thread-pool sizing.
-/// See `snapshot_regression.rs::pinned_pool` for the original rationale.
-fn pinned_pool() -> &'static ThreadPool {
-    static POOL: OnceLock<ThreadPool> = OnceLock::new();
-    POOL.get_or_init(|| {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
-            .build()
-            .expect("build single-threaded rayon pool")
-    })
-}
-
 /// Render the detector output for one preset on the shared fixture.
 /// Returns `(count, ndjson_for_local_debugging)`.
 fn render_snapshot(img: &[u8], preset: &Preset) -> (usize, String) {
@@ -164,114 +149,10 @@ fn render_snapshot(img: &[u8], preset: &Preset) -> (usize, String) {
             .detect_u8(img, DIM as u32, DIM as u32)
             .expect("detect")
     });
-
-    corners.sort_by(|a, b| {
-        a.x.partial_cmp(&b.x)
-            .unwrap()
-            .then_with(|| a.y.partial_cmp(&b.y).unwrap())
-    });
-
-    let mut out = format!("# count={}\n", corners.len());
-    for c in &corners {
-        let snap = CornerSnap::from_descriptor(c);
-        out.push_str(&serde_json::to_string(&snap).expect("serialize corner"));
-        out.push('\n');
-    }
-    (corners.len(), out)
-}
-
-/// Parse the manifest file into a `preset name → count` map.
-fn parse_manifest(text: &str) -> BTreeMap<String, usize> {
-    let mut out = BTreeMap::new();
-    for (lineno, line) in text.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        // Format: "<key> count=<N>"
-        let mut parts = line.split_whitespace();
-        let key = parts.next().unwrap_or("").to_string();
-        let count_part = parts.next().unwrap_or("");
-        let count: usize = count_part
-            .strip_prefix("count=")
-            .and_then(|s| s.parse().ok())
-            .unwrap_or_else(|| panic!("manifest line {}: bad count: {line}", lineno + 1));
-        out.insert(key, count);
-    }
-    out
-}
-
-/// Format the manifest map back to text. Sorted by key for stable commits.
-fn format_manifest(entries: &BTreeMap<String, usize>) -> String {
-    let mut out = String::from("# Per-preset corner count for the ChessRefiner::Ml pipelines.\n");
-    out.push_str("# Refresh with UPDATE_SNAPSHOTS=1 cargo test -p chess-corners --features ml-refiner --test ml_snapshot\n");
-    for (key, count) in entries {
-        out.push_str(&format!("{key} count={count}\n"));
-    }
-    out
-}
-
-fn check_or_update_manifest() {
-    let manifest_path = PathBuf::from(SNAPSHOT_DIR).join(MANIFEST_FILE);
-    let img = aa_chessboard(DIM, CELL, OFFSET, DARK, BRIGHT);
-
-    let mut current: BTreeMap<String, usize> = BTreeMap::new();
-    let mut actuals: Vec<(String, String)> = Vec::new();
-
-    for preset in PRESETS {
-        let (count, ndjson) = render_snapshot(&img, preset);
-        current.insert(preset.name.to_string(), count);
-        actuals.push((preset.name.to_string(), ndjson));
-    }
-
-    if env::var_os("UPDATE_SNAPSHOTS").is_some() {
-        fs::create_dir_all(SNAPSHOT_DIR).expect("create snapshot dir");
-        fs::write(&manifest_path, format_manifest(&current))
-            .unwrap_or_else(|e| panic!("write {}: {e}", manifest_path.display()));
-        return;
-    }
-
-    let expected_text = fs::read_to_string(&manifest_path).unwrap_or_else(|e| {
-        panic!(
-            "missing baseline {} ({e}); run with UPDATE_SNAPSHOTS=1 to seed it",
-            manifest_path.display()
-        )
-    });
-    let expected = parse_manifest(&expected_text);
-
-    let mut mismatches: Vec<String> = Vec::new();
-    for (key, cur_count) in &current {
-        match expected.get(key) {
-            Some(exp_count) if exp_count == cur_count => {}
-            Some(exp_count) => mismatches.push(format!(
-                "{key}: expected count={exp_count}, got count={cur_count}"
-            )),
-            None => mismatches.push(format!(
-                "{key}: missing from manifest (current count={cur_count})"
-            )),
-        }
-    }
-    for key in expected.keys() {
-        if !current.contains_key(key) {
-            mismatches.push(format!(
-                "{key}: in manifest but not produced by current code"
-            ));
-        }
-    }
-
-    if !mismatches.is_empty() {
-        let actual_dir = PathBuf::from(SNAPSHOT_DIR).join(ACTUAL_SUBDIR);
-        let _ = fs::create_dir_all(&actual_dir);
-        for (key, ndjson) in &actuals {
-            let path = actual_dir.join(format!("{key}.json"));
-            let _ = fs::write(&path, ndjson);
-        }
-        panic!(
-            "ml snapshot regression failed:\n  {}\n\nActual NDJSON dumps for inspection: {}\nIf intended, refresh with UPDATE_SNAPSHOTS=1.",
-            mismatches.join("\n  "),
-            actual_dir.display(),
-        );
-    }
+    (
+        corners.len(),
+        ndjson(&mut corners, CornerSnap::from_descriptor),
+    )
 }
 
 /// Single test that exercises both `Ml` presets in one pass. Skipped
@@ -279,5 +160,13 @@ fn check_or_update_manifest() {
 /// `#![cfg(feature = "ml-refiner")]` file-level gate above.
 #[test]
 fn ml_snapshot() {
-    check_or_update_manifest();
+    let img = aa_chessboard(DIM, CELL, OFFSET, DARK, BRIGHT);
+    let mut current = BTreeMap::new();
+    let mut actuals = Vec::new();
+    for preset in PRESETS {
+        let (count, dump) = render_snapshot(&img, preset);
+        current.insert(preset.name.to_string(), count);
+        actuals.push((preset.name.to_string(), dump));
+    }
+    check_or_update_manifest(MANIFEST_FILE, MANIFEST_HEADER, &current, &actuals);
 }

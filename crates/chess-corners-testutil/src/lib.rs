@@ -20,7 +20,8 @@
 //!   and affine-skewed variants used by the orientation/descriptor fits.
 //! - [`aa_chessboard`] — anti-aliased board with caller-chosen cell size,
 //!   subpixel `offset`, and `dark`/`bright` levels; the refiner-accuracy
-//!   and Radon-vs-ChESS fixtures.
+//!   fixtures. [`hostile_chessboard`] is its low-contrast, heavily blurred
+//!   Radon-vs-ChESS variant.
 //! - [`optical_chessboard`] — a board on any [`Lattice`] (rotated, sheared)
 //!   formed as a camera forms it: Gaussian lens blur, then exact
 //!   integration over each pixel. Corners sit exactly on the lattice; the
@@ -29,6 +30,10 @@
 //!   with an ideally sharp lens (exact pixel area of the hard pattern).
 //!   Blurring its output with [`gaussian_blur`] is *not* a camera: it keeps
 //!   the aliasing of the sharp edges.
+//!
+//! ## Metrics
+//!
+//! - [`line_delta`] — undirected (mod π) distance between two axis angles.
 //!
 //! ## Degradations
 //!
@@ -39,12 +44,14 @@
 
 #![forbid(unsafe_code)]
 
+mod angles;
 mod boards;
 mod lattice;
 mod noise;
 
+pub use angles::line_delta;
 pub use boards::{
-    aa_chessboard, expected_corner_count, rotated_chessboard, synth_chessboard,
+    aa_chessboard, expected_corner_count, hostile_chessboard, rotated_chessboard, synth_chessboard,
     synth_chessboard_soft, synth_chessboard_warped, ORIENT_CORNER, ORIENT_DIM,
 };
 pub use lattice::{area_chessboard, lattice_area_chessboard, optical_chessboard, Lattice};

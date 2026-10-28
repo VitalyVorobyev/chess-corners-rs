@@ -10,7 +10,7 @@
 //! fixture.
 
 use chess_corners::{DetectionStrategy, Detector, DetectorConfig};
-use chess_corners_testutil::{aa_chessboard, expected_corner_count, gaussian_blur};
+use chess_corners_testutil::{aa_chessboard, expected_corner_count, hostile_chessboard};
 
 fn detect_u8(
     img: &[u8],
@@ -22,18 +22,6 @@ fn detect_u8(
     detector
         .detect_u8(img, width as u32, height as u32)
         .expect("image dimensions match")
-}
-
-/// Narrow-contrast, heavily-blurred chessboard — the fixture style
-/// from `chess-corners-core/tests/radon_vs_chess.rs`. ChESS's 5-px
-/// ring kernel cannot recover a useful SR-DR signature from this, but
-/// the Radon integral is still well-defined.
-fn hostile_chessboard(size: usize, cell: usize, offset: (f32, f32)) -> Vec<u8> {
-    let dark = 108u8;
-    let bright = 138u8;
-    let mut img = aa_chessboard(size, cell, offset, dark, bright);
-    gaussian_blur(&mut img, size, 2.5);
-    img
 }
 
 #[test]

@@ -3,15 +3,13 @@
 
 Reports overall mean/p50/p90/p95/p99 radial error in **pixels**, plus
 a conditional breakdown by cell size, blur sigma, and noise sigma.
-This is the promotion gate for v5 model selection — the shipping
-model must meet the thresholds defined in
-`docs/proposal-ml-refiner-v3.md` (tightened here to the user's
-<0.1 px success bar for the clean regime).
+`--gate` enforces the promotion bar for a shipping model (<0.1 px mean
+radial error in the clean regime).
 
 Usage:
 
     python tools/ml_refiner/eval_hardcell.py \\
-        --data-dir tools/ml_refiner/data/val_hardcell_v5 \\
+        --data-dir tools/ml_refiner/data/val_hardcell_v6 \\
         --checkpoint tools/ml_refiner/runs/<run>/model_best.pt
 """
 
@@ -30,7 +28,7 @@ ML_ROOT = Path(__file__).resolve().parent
 if str(ML_ROOT) not in sys.path:
     sys.path.insert(0, str(ML_ROOT))
 
-from model import build_model  # noqa: E402
+from model import CornerRefinerNet  # noqa: E402
 
 
 def load_shards(
@@ -175,12 +173,7 @@ def main() -> None:
     parser.add_argument(
         "--gate",
         action="store_true",
-        help="Enforce the v5 promotion gate (<0.1 px clean mean).",
-    )
-    parser.add_argument(
-        "--model",
-        default="small",
-        help="Architecture name (small | large). Default: small.",
+        help="Enforce the promotion gate (<0.1 px clean mean).",
     )
     parser.add_argument("--json", help="Optional path to dump metrics as JSON")
     args = parser.parse_args()
@@ -194,7 +187,7 @@ def main() -> None:
     device = select_device(args.device)
     print(f"device={device}")
 
-    model = build_model(args.model)
+    model = CornerRefinerNet()
     # LazyLinear needs a dummy forward before state_dict load to
     # materialise shape-dependent layers.
     dummy = torch.zeros(1, 1, 21, 21)

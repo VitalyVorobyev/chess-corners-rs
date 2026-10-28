@@ -339,10 +339,8 @@ step. Named spans:
 - `ml_refiner` — ML path only; carries a batch-size event.
 - `radon_detect` — Radon path only.
 
-Capture traces via the CLI's `--json-trace` flag or the
-`tools/perf_bench.py` script. `tools/trace/parser.py` extracts spans
-into CSV or JSON for aggregation, and `tools/perf_bench.py` produces
-the table in §9.8.
+Capture traces via the CLI's `--json-trace` flag: one JSON object per
+line, with each span's busy time on its close event.
 
 When a frame returns fewer corners than expected:
 
@@ -462,9 +460,6 @@ python tools/book/synth_examples.py
 # All accuracy + throughput plots
 python tools/book/plot_benchmark.py
 
-# Whole-pipeline timings on the three test images
-python tools/perf_bench.py
-
 # Integration test that gates refiner accuracy on CI
 cargo test --release -p chess-corners --test refiner_benchmark \
     --features ml-refiner -- --nocapture --test-threads=1
@@ -473,7 +468,8 @@ cargo test --release -p chess-corners --test refiner_benchmark \
 cargo test --release -p chess-corners --test perf_accuracy_guard \
     --all-features
 
-# Criterion benchmarks (default features = scalar reference)
+# Criterion benchmarks (default features = scalar reference); the
+# *_pipeline benches time the whole detector on the three test images
 cargo bench -p chess-corners        --bench radon_pipeline
 cargo bench -p chess-corners        --bench chess_pipeline
 cargo bench -p chess-corners-core   --bench refiners

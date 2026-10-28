@@ -1,51 +1,36 @@
 # Tools
 
-This directory contains helper scripts used to benchmark and visualize the
-`chess-corners` CLI and compare it to reference detectors. They are **not**
-required to use the Rust crates, but they are useful for:
+Helper scripts for regenerating the book/README figures, benchmarking, and
+research harnesses. None of them is required to use the Rust crates.
 
-- generating synthetic chessboard datasets with ground-truth corners,
-- running accuracy benchmarks (GT matching + plots),
-- visualizing detector outputs on individual images, and
-- profiling performance across feature combinations (`rayon`, `simd`, etc.).
+Most Python scripts assume Python 3.10+ with NumPy, Matplotlib and OpenCV
+(`pip install -r tools/requirements.txt`); scripts that call the detector
+directly need the Python bindings
+(`(cd crates/chess-corners-py && maturin develop --release)`), and scripts
+that drive the CLI need it built first (`cargo build -p chess-corners --release`).
 
-Most scripts assume:
-
-- Python 3.10+ (recommended: Python 3.12 for best `opencv-python` wheel availability),
-- NumPy,
-- Matplotlib,
-- OpenCV (`opencv-python`).
-
-A minimal setup with `pip`:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install numpy opencv-python matplotlib
-```
-
-Some scripts optionally use SciPy (for faster point merging in Harris):
-
-```bash
-pip install scipy
-```
-
-Scripts expect the `chess-corners` CLI binary to be built first:
-
-```bash
-cargo build -p chess-corners --release
-```
-
----
+| Path | Purpose |
+|------|---------|
+| `book/` | Part IX benchmark plots and fixture panels (`opencv_subpix_sweep.py`, `synth_examples.py`, `plot_benchmark.py`); see the book's §9.12. |
+| `render_book_overlays.py` (+ `plot_output.py`) | `book/src/img/{small,mid,large}_chess.png` detector overlays. |
+| `render_orientation_overlays.py` | Part VI orientation figures. |
+| `render_radon_saddle_overlay.py` | Part IV Radon figure. |
+| `render_uncertainty_overlays.py` | Part VIII uncertainty figures. |
+| `render_readme_perf.py`, `render_readme_warp_overlays.py` | README timing table and warp overlay. |
+| `synthimages.py` | Synthetic chessboard dataset with ground truth (below). |
+| `detect.py` | Single-image overlay of the CLI's corners, optionally next to OpenCV Harris / `findChessboardCornersSB` (below). |
+| `perf/` | Criterion bench-regression gate and committed baseline; see `perf/README.md`. |
+| `profile.sh` | `cargo-flamegraph` / `samply` wrapper for hot-path profiling. |
+| `check_doc_versions.py` | Checks install-snippet versions in the docs against the workspace version (CI; `--fix` rewrites). |
+| `orientation_bench/` | Orientation-fit benchmark; see its README. |
+| `ml_refiner/` | Training pipeline for the shipped ML refiner; see its README. |
+| `refiner_robustness/` | Refiner-robustness and uncertainty research harnesses; results in `docs/reference/`. |
+| `detection/`, `plotting/` | Internal modules used by `detect.py` and `plot_output.py`. |
 
 ## Synthetic dataset generation
 
-`synthimages.py` generates a folder containing:
-
-- `dataset.json` — metadata + per-image ground truth (`gt_corners_uv`)
-- `images/000000.png`, `images/000001.png`, … — rendered grayscale images
-
-Example:
+`synthimages.py` writes `dataset.json` (metadata + per-image ground truth
+`gt_corners_uv`) and rendered grayscale `images/000000.png`, …:
 
 ```bash
 python3 tools/synthimages.py \
@@ -60,73 +45,13 @@ python3 tools/synthimages.py \
   --vignetting 0.15
 ```
 
-This writes `testdata/synthetic_sigma_3/dataset.json` and an `images/` subfolder.
-
----
-
-## Synthetic accuracy benchmark (GT matching)
-
-`accuracy_bench.py` runs three corner detectors on the synthetic dataset and
-computes match statistics against ground truth:
-
-- `chess-corners` (Rust CLI)
-- OpenCV Harris (+ `cornerSubPix`)
-- OpenCV `findChessboardCornersSB`
-
-Run it like this:
-
-```bash
-python3 tools/accuracy_bench.py \
-  --dataset testdata/synthetic_sigma_3/dataset.json \
-  --config config/config_single.json \
-  --bin target/release/chess-corners \
-  --outdir testdata/out/synthetic_accuracy_sigma_3 \
-  --match-threshold-px 2.5 \
-  --worst-k 8
-```
-
-Outputs:
-
-- `report.json` — summary + per-image metrics
-- `plots/` — error hist/CDF, residual scatter, precision/recall/F1, counts
-- `overlays/` — per-detector “worst case” image grids (FP/FN visualization)
-
-Tip: for a quick smoke test, add `--max-images 10`.
-
----
-
-## Single-image visualization / debugging
-
-`detect.py` runs the Rust detector (and optionally OpenCV reference detectors)
-on one image and produces an overlay:
+## Single-image visualization
 
 ```bash
 python3 tools/detect.py testdata/synthetic_sigma_3/images/000000.png \
-  --config config/config_single.json \
+  --config config/chess_cli_config_example.json \
   --harris --chessboard --pattern-size 9 6 \
   --out /tmp/overlay.png
 ```
 
-`plot_detectors.py` is a thin wrapper around `detect.py` for compatibility.
-
----
-
-## Performance benchmarking and tracing
-
-- `perf_bench.py` – builds and runs the CLI across feature combinations
-  (`simd`, `rayon`, `par_pyramid`), repeats runs, and writes a JSON report under
-  `testdata/out/`.
-- `trace/` – helpers used by `perf_bench.py` (run the CLI with `--json-trace`,
-  parse spans, aggregate metrics).
-- `analyze_trace.py` – analyze a raw line-delimited tracing log (from
-  `chess-corners ... --json-trace`) and generate a simple perf plot.
-
----
-
-## Misc scripts
-
-- `crop.py` – small helper for ad-hoc image cropping during experiments.
-- `detection/` and `plotting/` – internal Python modules used by the scripts
-  above (OpenCV detectors + plotting helpers).
-
-For details, check each script’s docstring and CLI `--help`.
+For details, check each script's docstring and `--help`.

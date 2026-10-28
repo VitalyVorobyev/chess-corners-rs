@@ -5,8 +5,9 @@ antisymmetric part of a SaddlePoint patch give a per-corner systematic term
 (a), a bias correction (b), or is a multi-radius spread (c) enough?
 Scripts: `tools/refiner_robustness/asymmetry/` (`core.py` numpy SaddlePoint
 and asymmetry fit as linear pixel maps; `check.py`, `gain.py`,
-`gate_synth.py`, `gate_real.py`). Raw output goes to
-`tools/refiner_robustness/out/asym_*.json` (gitignored).
+`gate_synth.py`, `gate_real.py`, and the `*_uq27.py` scripts below). They
+were removed after the no-go; recover them from git history at commit
+`1609850b6`.
 
 ## Method
 
@@ -44,7 +45,7 @@ position.
 
 ## Synthetic gate
 
-Independent generator (`../run_synth.py` conditions), 3 boards × 12 draws,
+Independent generator (`run_synth.py` conditions), 3 boards × 12 draws,
 noise σ supplied (realised), σ̂₀² = mean \(e^\top\Sigma^{-1}e\)/2. Cell 10,
 noise 2. "+0.010 floor" is a control: 1.5.0 plus a constant 0.010 px floor.
 RMS and bias in px; (b) = `mul` 9×9 ungated unless stated.

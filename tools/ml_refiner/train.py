@@ -30,7 +30,7 @@ if str(ML_ROOT) not in sys.path:
     sys.path.insert(0, str(ML_ROOT))
 
 from dataset import ShardDataset  # noqa: E402
-from model import build_model  # noqa: E402
+from model import CornerRefinerNet  # noqa: E402
 
 
 def load_config(path: Path) -> Dict[str, Any]:
@@ -417,7 +417,7 @@ def main() -> None:
 
     device = select_device(str(cfg.get("device", "auto")))
 
-    model = build_model(str(cfg.get("model", "small")))
+    model = CornerRefinerNet()
     model.to(device)
 
     train_loader = build_loader(cfg, "train", seed, device)

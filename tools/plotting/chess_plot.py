@@ -1,6 +1,5 @@
 """ Corner plot utils """
 
-from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -168,29 +167,3 @@ def plot_overlay(
 
     fig.tight_layout()
     return fig
-
-def plot_offset_hist(offsets: np.ndarray, title: str, path: Path) -> None:
-    if offsets.size == 0:
-        return
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.hist(offsets, bins=30, color="steelblue", edgecolor="black", alpha=0.8)
-    ax.set_xlabel("Nearest GT distance (px)")
-    ax.set_ylabel("Count")
-    ax.set_title(title)
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-
-
-def plot_error_scatter(errors: np.ndarray, title: str, path: Path) -> None:
-    if errors.size == 0:
-        return
-    x = np.arange(len(errors))
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.scatter(x, errors, s=10, alpha=0.7, color="darkorange")
-    ax.set_xlabel("Detection index")
-    ax.set_ylabel("Nearest GT distance (px)")
-    ax.set_title(title)
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)

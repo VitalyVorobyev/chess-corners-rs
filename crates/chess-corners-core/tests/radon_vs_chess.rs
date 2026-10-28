@@ -17,25 +17,7 @@ use chess_corners_core::{
     chess_response_u8, detect_corners_from_response, detect_peaks_from_radon, radon_response_u8,
     ChessParams, RadonBuffers, RadonDetectorParams,
 };
-use chess_corners_testutil::{aa_chessboard, expected_corner_count, gaussian_blur};
-
-/// Render a chessboard, then simulate a hostile capture: heavy
-/// Gaussian blur and intensity-compressed values. Tuned so the ChESS
-/// ring kernel's SR-DR signature sinks into the noise floor: a
-/// large-σ blur washes out the 5-px bimodal ring, and a compressed
-/// contrast range narrows the intra-ring differences the kernel
-/// depends on.
-fn hostile_chessboard(size: usize, cell: usize, offset: (f32, f32)) -> Vec<u8> {
-    // Narrow contrast band — 30 gray levels.
-    let dark = 108u8;
-    let bright = 138u8;
-    let img = aa_chessboard(size, cell, offset, dark, bright);
-    let mut blurred = img;
-    // Large blur radius vs. cell size so the ring sees near-uniform
-    // grey at every position.
-    gaussian_blur(&mut blurred, size, 2.5);
-    blurred
-}
+use chess_corners_testutil::{aa_chessboard, expected_corner_count, hostile_chessboard};
 
 #[test]
 fn radon_beats_chess_on_blurred_low_contrast_board() {
