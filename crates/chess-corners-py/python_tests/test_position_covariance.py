@@ -175,3 +175,16 @@ def test_estimate_noise_sigma_matches_the_detector():
     assert chess_corners.estimate_noise_sigma(np.full((3, 3), 9, np.uint8)) is None
     with pytest.raises(TypeError):
         chess_corners.estimate_noise_sigma(img.astype(np.float32))
+
+
+@pytest.mark.parametrize("make", [_chess, _radon, _saddle_config])
+def test_detections_report_the_frame_noise_sigma(make):
+    img = _noisy_board(sigma=3.0)
+    estimated = chess_corners.Detector(make()).detect(img)
+    assert estimated.noise_sigma == chess_corners.estimate_noise_sigma(img)
+    supplied = chess_corners.Detector(make().with_noise_sigma(1.25)).detect(img)
+    assert supplied.noise_sigma == pytest.approx(1.25)
+    off = make().with_uncertainty(chess_corners.Uncertainty.OFF).with_noise_sigma(1.25)
+    quiet = chess_corners.Detector(off).detect(img)
+    assert len(quiet) > 0
+    assert quiet.noise_sigma is None

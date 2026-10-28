@@ -288,7 +288,7 @@ mod tests {
         refiner
     }
 
-    /// `covariance_per_noise_variance` is `Σₚ (∂x̂/∂Iₚ)(∂x̂/∂Iₚ)ᵀ`: central
+    /// `noise_covariance_per_unit_variance()` is `Σₚ (∂x̂/∂Iₚ)(∂x̂/∂Iₚ)ᵀ`: central
     /// differences of the full estimate over every pixel (±1 gray level;
     /// the estimate is smooth in the pixels) on skewed saddles off the
     /// window centre.
@@ -311,7 +311,7 @@ mod tests {
             };
             let base = refine(&img);
             assert_eq!(base.status, RefineStatus::Accepted);
-            let cov = base.covariance_per_noise_variance.unwrap();
+            let cov = base.noise_covariance_per_unit_variance().unwrap();
             let mut fd = [0.0f64; 3];
             for k in 0..img.len() {
                 let v = img[k];

@@ -34,8 +34,9 @@ use super::{
         response::{chess_response_u8, chess_response_u8_patch, Roi},
     },
     radon::{
-        detect::retain_above_relative_threshold, detect_peaks_from_radon, radon_response_u8,
-        RadonBuffers, RadonDetectorParams, RadonResponseView,
+        detect::{attach_peak_fit_covariance, retain_above_relative_threshold},
+        detect_peaks_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
+        RadonResponseView,
     },
     Corner,
 };
@@ -190,6 +191,31 @@ pub trait DenseDetector: private::Sealed {
         response: &Self::Response<'_>,
         refiner: &mut dyn CornerRefiner,
     ) -> Vec<Corner>;
+
+    /// Attach the peak fit's own position covariance to every corner of
+    /// `corners` that still sits at the subpixel position
+    /// [`Self::detect_corners`] fitted, on the `image` (in the peaks' frame)
+    /// the response was computed from. Run it after
+    /// [`Self::refine_peaks_on_image`] (or in place of it, when no image
+    /// refiner runs), once the response is no longer borrowed: it reuses
+    /// `buffers`' scratch. Call it only when the position covariance is
+    /// wanted (any [`Uncertainty`](crate::Uncertainty) tier other than
+    /// `Off`).
+    ///
+    /// Radon's peak fit is itself a subpixel localizer, so a Radon peak the
+    /// image refiner left in place gets the peak fit's covariance; a corner
+    /// the refiner moved keeps the refiner's. ChESS peaks sit on integer
+    /// pixels and are not position estimates, so this does nothing for
+    /// ChESS.
+    fn attach_peak_covariance(
+        &self,
+        corners: &mut [Corner],
+        image: ImageView<'_>,
+        params: &Self::Params,
+        buffers: &mut Self::Buffers,
+    ) {
+        let _ = (corners, image, params, buffers);
+    }
 
     /// Whether [`Self::refine_peaks_on_image`] consumes the refiner:
     /// `true` for both built-in detectors.
@@ -427,9 +453,22 @@ impl DenseDetector for RadonDetector {
                 c.x = res.x;
                 c.y = res.y;
                 c.set_model(res.covariance_model());
+                c.at_peak_fit = false;
             }
         }
         corners
+    }
+
+    fn attach_peak_covariance(
+        &self,
+        corners: &mut [Corner],
+        image: ImageView<'_>,
+        params: &Self::Params,
+        buffers: &mut Self::Buffers,
+    ) {
+        for c in corners.iter_mut().filter(|c| c.at_peak_fit) {
+            attach_peak_fit_covariance(c, image, params, buffers);
+        }
     }
 }
 
@@ -500,7 +539,7 @@ mod tests {
         let mut moved = 0;
         for (p, r) in peaks.iter().zip(&refined) {
             assert_eq!(p.strength, r.strength);
-            if r.covariance_per_noise_variance.is_some() {
+            if r.noise_covariance_per_unit_variance().is_some() {
                 moved += 1;
                 assert!((p.x - r.x).abs() < 0.5 && (p.y - r.y).abs() < 0.5);
             } else {
@@ -519,8 +558,68 @@ mod tests {
         assert_eq!(kept.len(), peaks.len());
         for (p, k) in peaks.iter().zip(&kept) {
             assert_eq!((p.x, p.y), (k.x, k.y));
-            assert!(k.covariance_per_noise_variance.is_none());
+            assert!(k.noise_covariance_per_unit_variance().is_none());
         }
+    }
+
+    /// The peak-fit covariance goes to every peak the image refiner left in
+    /// place and to no corner it moved; ChESS peaks never get one.
+    #[test]
+    fn peak_covariance_attaches_to_unmoved_radon_peaks_only() {
+        use crate::refine::{Refiner, RefinerKind, SaddlePointConfig};
+        use crate::Uncertainty;
+        const SIZE: usize = 65;
+        let img = synthetic_chessboard_aa(SIZE, 8, (32.35, 32.8), 30, 230);
+        let view = ImageView::from_u8_slice(SIZE, SIZE, &img).expect("view");
+        let params = RadonDetectorParams::default();
+        let mut buffers = RadonBuffers::default();
+        let resp = RadonDetector.compute_response(view, &params, &mut buffers);
+        let peaks = RadonDetector.detect_corners(&resp, &params, 0);
+        let mut sp = Refiner::from_kind(RefinerKind::SaddlePoint(SaddlePointConfig::default()))
+            .with_uncertainty(Uncertainty::Propagated);
+        let refined = RadonDetector.refine_peaks_on_image(peaks.clone(), view, &resp, &mut sp);
+
+        let mut attached = refined.clone();
+        RadonDetector.attach_peak_covariance(&mut attached, view, &params, &mut buffers);
+        // Peaks the refiner moved keep its covariance; one it left in place
+        // would get the peak fit's (checked below without a refiner).
+        let mut moved = 0;
+        for ((p, r), a) in peaks.iter().zip(&refined).zip(&attached) {
+            assert_eq!((r.x, r.y), (a.x, a.y));
+            if r.at_peak_fit {
+                assert_eq!((p.x, p.y), (a.x, a.y));
+                assert!(a.covariance_model().is_some());
+            } else {
+                moved += 1;
+                assert_eq!(a.covariance_model(), r.covariance_model());
+            }
+        }
+        assert!(moved > 0);
+
+        // Without an image refiner every peak gets the peak-fit covariance,
+        // the model the deprecated per-corner entry point attaches.
+        let mut fit_only = peaks.clone();
+        RadonDetector.attach_peak_covariance(&mut fit_only, view, &params, &mut buffers);
+        for (p, a) in peaks.iter().zip(&fit_only) {
+            let mut single = p.clone();
+            #[allow(deprecated)]
+            crate::attach_radon_peak_covariance(&mut single, view, &params, &mut buffers);
+            assert!(a.covariance_model().is_some());
+            assert_eq!(a.covariance_model(), single.covariance_model());
+        }
+
+        let chess_params = ChessParams::default();
+        let mut chess_buffers = ChessBuffers::default();
+        let resp = ChessDetector.compute_response(view, &chess_params, &mut chess_buffers);
+        let mut chess_peaks = ChessDetector.detect_corners(&resp, &chess_params, 0);
+        assert!(!chess_peaks.is_empty());
+        ChessDetector.attach_peak_covariance(
+            &mut chess_peaks,
+            view,
+            &chess_params,
+            &mut chess_buffers,
+        );
+        assert!(chess_peaks.iter().all(|c| c.covariance_model().is_none()));
     }
 
     /// A second smoke test that pins the buffer-reuse semantics: a

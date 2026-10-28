@@ -200,7 +200,7 @@ level, and tilt with the board's axes. `Förstner`'s grow from 0.15 px to
 more than half a pixel: under blur its estimate stops following the
 corner (§8.3.3), and the covariance says so. Core callers get the noise
 term per unit noise variance, \\(J J^\top\\), as
-`RefineResult::covariance_per_noise_variance`.
+`RefineResult::noise_covariance_per_unit_variance()`.
 
 ### 8.3.2 The image noise level
 
@@ -573,6 +573,15 @@ config.noise_sigma = 1.8f; // std::nullopt estimates it per image
 
 A negative or non-finite value is rejected when the detector is built
 (`ChessError::InvalidNoiseSigma`).
+
+Each detection reports the σ its covariances were computed with, supplied
+or estimated, so you can audit them or re-scale their noise term:
+`Detector::last_noise_sigma()` (Rust), `Detections.noise_sigma` (Python),
+`detector.noiseSigma()` (JS), `cc_result.has_noise_sigma` / `noise_sigma`
+(C) and the optional `noise_sigma` out-parameter of
+`chess_corners::detect` (C++). It is absent when no corner has a
+covariance (the `Off` tier, upscaled input, or an estimate that
+declined).
 
 ### 8.6.3 The fast path
 

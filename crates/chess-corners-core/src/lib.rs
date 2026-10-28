@@ -78,6 +78,7 @@ pub use crate::params::ChessParams;
 pub use crate::detect::chess::response::{chess_response_u8, chess_response_u8_patch, Roi};
 pub use crate::detect::dense::{ChessBuffers, ChessDetector, DenseDetector, RadonDetector};
 #[doc(hidden)]
+#[allow(deprecated)]
 pub use crate::detect::radon::detect::attach_radon_peak_covariance;
 pub use crate::detect::radon::primitives::PeakFitMode;
 pub use crate::detect::radon::{

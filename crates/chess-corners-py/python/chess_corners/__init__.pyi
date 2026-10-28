@@ -345,6 +345,16 @@ class Detections:
         not been shown to beat uniform weighting on real data."""
         ...
 
+    @property
+    def noise_sigma(self) -> float | None:
+        """Image noise σ in gray levels that ``position_covariance`` was
+        computed with: ``DetectorConfig.noise_sigma`` when set, otherwise the
+        per-image estimate (what ``estimate_noise_sigma`` returns for the same
+        image). ``None`` when no corner has a covariance (``Uncertainty.OFF``,
+        the default; upscaled input; the ML refiner) or the estimate
+        declined."""
+        ...
+
     def __len__(self) -> int: ...
     def __repr__(self) -> str: ...
 

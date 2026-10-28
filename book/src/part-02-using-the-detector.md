@@ -266,6 +266,7 @@ print(det.response.shape) # (N,)  float32
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.sigmas` — `(N, 2)` float32, per-axis fit-quality score in radians (larger means a less reliable axis; not a calibrated 1σ), or `None` when orientation is disabled
 - `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.OFF`, the default — `cfg.with_uncertainty(chess_corners.Uncertainty.PROPAGATED)` reports it — the ML refiner, or upscaling)
+- `det.noise_sigma` — the image noise σ (gray levels) behind `position_covariance`, supplied or estimated; `None` when no corner has a covariance
 
 When the orientation fit is skipped (`cfg.without_orientation()`),
 `det.angles` and `det.sigmas` are `None`.

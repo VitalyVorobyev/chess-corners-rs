@@ -25,7 +25,7 @@ namespace chess_corners {
 /// Checked against `cc_abi_version()` before each detection (see
 /// `check_abi()`); a mismatch means the header and the linked library are
 /// incompatible and detection throws rather than reading a stale layout.
-inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 6;
+inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 7;
 
 /// One local grid-axis direction with a fit-quality score.
 ///
@@ -219,7 +219,7 @@ namespace detail {
 /// including during stack unwinding.
 class ResultGuard {
 public:
-    ResultGuard() noexcept : result_{nullptr, 0} {}
+    ResultGuard() noexcept : result_{nullptr, 0, 0, 0.0f} {}
     ~ResultGuard() { cc_result_free(&result_); }
 
     ResultGuard(const ResultGuard&) = delete;
@@ -238,13 +238,18 @@ private:
 
 /// Detect corners in an 8-bit, row-major grayscale image.
 ///
-/// `pixels` must point to at least `width * height` readable bytes. Throws
+/// `pixels` must point to at least `width * height` readable bytes. When
+/// `noise_sigma` is non-null it receives the image noise sigma, in gray
+/// levels, the corners' position covariances were computed with
+/// (`Config::noise_sigma`, or the per-image estimate `estimate_noise_sigma`
+/// returns), or `std::nullopt` when no corner has a covariance. Throws
 /// `chess_corners::Error` if the C ABI returns a non-`CC_OK` status, or
 /// `std::runtime_error` on an ABI-version mismatch.
 inline std::vector<Corner> detect(const std::uint8_t* pixels,
                                   std::uint32_t width,
                                   std::uint32_t height,
-                                  const Config& config = Config::chess()) {
+                                  const Config& config = Config::chess(),
+                                  std::optional<float>* noise_sigma = nullptr) {
     check_abi();
 
     const cc_config c = config.to_c();
@@ -272,6 +277,10 @@ inline std::vector<Corner> detect(const std::uint8_t* pixels,
                                                  src.position_covariance.yy};
         }
         corners.push_back(dst);
+    }
+    if (noise_sigma != nullptr) {
+        *noise_sigma = result.has_noise_sigma != 0 ? std::optional<float>(result.noise_sigma)
+                                                   : std::nullopt;
     }
     return corners;
 }
@@ -303,11 +312,12 @@ inline std::optional<float> estimate_noise_sigma(const std::uint8_t* pixels,
 inline std::vector<Corner> detect(const std::vector<std::uint8_t>& pixels,
                                   std::uint32_t width,
                                   std::uint32_t height,
-                                  const Config& config = Config::chess()) {
+                                  const Config& config = Config::chess(),
+                                  std::optional<float>* noise_sigma = nullptr) {
     if (pixels.size() < static_cast<std::size_t>(width) * static_cast<std::size_t>(height)) {
         throw Error(CC_ERR_DIMENSION_MISMATCH);
     }
-    return detect(pixels.data(), width, height, config);
+    return detect(pixels.data(), width, height, config, noise_sigma);
 }
 
 }  // namespace chess_corners

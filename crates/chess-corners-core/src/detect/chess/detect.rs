@@ -176,7 +176,7 @@ pub fn detect_peaks_from_response_with_refine_radius(
 /// output; accepted peaks are emitted with their refined subpixel
 /// `(x, y)`, the **input** `strength` (the refiner does not
 /// rescore the peak strength), and the refiner's
-/// [`covariance_per_noise_variance`](Corner::covariance_per_noise_variance).
+/// covariance model ([`Corner::position_covariance`]).
 ///
 /// Iteration order matches the order of the input vector — necessary
 /// for downstream stages that assume a stable scan order.

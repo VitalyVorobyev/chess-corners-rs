@@ -40,7 +40,7 @@ A `RefineResult` carries the refined `(x, y)`, a refiner-specific
   `max_offset`, or a per-refiner score threshold fired.
 
 Under `Uncertainty::Propagated` (the default is `Off`), an accepted result also
-carries `covariance_per_noise_variance`: the image noise propagated to
+carries `noise_covariance_per_unit_variance()`: the image noise propagated to
 the refined position through the refiner's exact Jacobian, per unit
 noise variance (px² per gray-level²). Every refiner except ML sets it;
 the saddle-point refiner only when its re-centring converges. The

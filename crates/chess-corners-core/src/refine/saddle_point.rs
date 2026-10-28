@@ -849,7 +849,7 @@ mod tests {
             let mut img = clean.clone();
             add_gaussian_noise(&mut img, noise, seed + 1);
             let res = refine_default(&img, [offset.0.round(), offset.1.round()]);
-            let Some(cov) = res.covariance_per_noise_variance else {
+            let Some(cov) = res.noise_covariance_per_unit_variance() else {
                 continue;
             };
             pred[0] += f64::from(cov.xx);
@@ -869,7 +869,7 @@ mod tests {
         ([sigma(0), sigma(1)], [predicted(0), predicted(1)])
     }
 
-    /// Predicted (`σₙ²·covariance_per_noise_variance`) against empirical
+    /// Predicted (`σₙ²·noise_covariance_per_unit_variance()`) against empirical
     /// position scatter. 300 draws give the empirical σ a relative standard
     /// error of `1/sqrt(2·300) ≈ 4%`, so the ±15% band is ≈3.7 standard
     /// errors wide.
@@ -966,7 +966,7 @@ mod tests {
         }
     }
 
-    /// `covariance_per_noise_variance` equals `Σₚ (∂ĉ/∂Iₚ)(∂ĉ/∂Iₚ)ᵀ` over
+    /// `noise_covariance_per_unit_variance()` equals `Σₚ (∂ĉ/∂Iₚ)(∂ĉ/∂Iₚ)ᵀ` over
     /// the image pixels for the converged re-centred estimate `ĉ`, the
     /// noise-propagation sum it linearizes. Central differences of the full
     /// iterated estimate (run to a tight tolerance) on `f32` images of
@@ -1054,7 +1054,7 @@ mod tests {
         let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
         let res = refine_default(&img, [2.0, 10.0]);
         assert_eq!(res.status, RefineStatus::Accepted);
-        assert!(res.covariance_per_noise_variance.is_none());
+        assert!(res.noise_covariance_per_unit_variance().is_none());
         let single = propagated(SaddlePointConfig::default())
             .estimate(&view, [2, 10], [2.0, 10.0], 0, STEP_TOL)
             .unwrap();
@@ -1116,7 +1116,7 @@ mod tests {
                     (b.x.to_bits(), b.y.to_bits(), b.status, b.converged),
                     "seed {seed:?} offset {offset:?}"
                 );
-                assert!(b.covariance_per_noise_variance.is_none());
+                assert!(b.noise_covariance_per_unit_variance().is_none());
                 checked += usize::from(a.converged);
             }
         }

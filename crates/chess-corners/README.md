@@ -128,6 +128,8 @@ Each detection is a `CornerDescriptor` with:
   noise level is estimated from each image
   (`estimate_noise_sigma_u8` returns the same estimate), or set with
   `DetectorConfig::with_noise_sigma`; it is `None` on upscaled input.
+  `Detector::last_noise_sigma` returns the σ the most recent detection
+  used.
 
 The orientation fit is the dominant per-corner cost. If a downstream
 stage recovers board geometry from corner positions alone, disable it

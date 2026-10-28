@@ -124,27 +124,21 @@ pub(crate) fn localize(
     let mut buffers = RadonBuffers::new();
     let resp = radon_response_u8(img, w, h, &params, &mut buffers);
     let mut peaks = detect_peaks_from_radon(&resp, &params);
-    let fitted: Vec<[f32; 2]> = peaks.iter().map(|c| [c.x, c.y]).collect();
     if loc == Localizer::RadonSaddle {
         let mut sp = Refiner::from_kind(RefinerKind::SaddlePoint(SaddlePointConfig::default()))
             .with_uncertainty(unc);
         peaks = RadonDetector.refine_peaks_on_image(peaks, view, &resp, &mut sp);
     }
     if unc.reports() {
-        for (c, fit) in peaks.iter_mut().zip(&fitted) {
-            if [c.x, c.y] == *fit {
-                crate::attach_radon_peak_covariance(c, view, &params, &mut buffers);
-            }
-        }
+        RadonDetector.attach_peak_covariance(&mut peaks, view, &params, &mut buffers);
     }
     let mut tile = PixelTile::default();
     let up = params.image_upsample_clamped() as f32;
     peaks
         .into_iter()
-        .zip(fitted)
-        .map(|(corner, fit)| {
-            let centre = if [corner.x, corner.y] == fit {
-                fit.map(|v| (v * up).round() / up)
+        .map(|corner| {
+            let centre = if corner.at_peak_fit {
+                [corner.x, corner.y].map(|v| (v * up).round() / up)
             } else {
                 [corner.x.round(), corner.y.round()]
             };

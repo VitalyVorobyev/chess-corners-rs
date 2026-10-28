@@ -46,7 +46,7 @@ fn extract_image<'py>(
 /// [`Self::angles`] and [`Self::sigmas`]. Both `angles` and `sigmas` are
 /// `None` when orientation estimation was disabled for the run.
 /// [`Self::position_covariance`] holds each corner's 2×2 position
-/// covariance.
+/// covariance and [`Self::noise_sigma`] the image noise level behind it.
 #[pyclass(module = "chess_corners")]
 pub struct Detections {
     n: usize,
@@ -56,6 +56,7 @@ pub struct Detections {
     angles: Option<Py<PyAny>>,
     sigmas: Option<Py<PyAny>>,
     position_covariance: Py<PyAny>,
+    noise_sigma: Option<f32>,
 }
 
 #[pymethods]
@@ -101,6 +102,16 @@ impl Detections {
         self.position_covariance.clone_ref(py)
     }
 
+    /// Image noise σ in gray levels that `position_covariance` was computed
+    /// with: `DetectorConfig.noise_sigma` when set, otherwise the per-image
+    /// estimate (what `estimate_noise_sigma` returns for the same image).
+    /// `None` when no corner has a covariance (`Uncertainty.OFF`, the
+    /// default; upscaled input; the ML refiner) or the estimate declined.
+    #[getter]
+    fn noise_sigma(&self) -> Option<f32> {
+        self.noise_sigma
+    }
+
     fn __len__(&self) -> usize {
         self.n
     }
@@ -114,6 +125,7 @@ impl Detections {
 fn build_detections(
     py: Python<'_>,
     mut corners: Vec<chess_corners_rs::CornerDescriptor>,
+    noise_sigma: Option<f32>,
 ) -> PyResult<Detections> {
     corners.sort_by(|a, b| {
         b.response
@@ -208,6 +220,7 @@ fn build_detections(
         angles,
         sigmas,
         position_covariance,
+        noise_sigma,
     })
 }
 
@@ -271,7 +284,7 @@ impl Detector {
         let corners = py
             .detach(|| self.inner.detect_u8(slice, width_u32, height_u32))
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        build_detections(py, corners)
+        build_detections(py, corners, self.inner.last_noise_sigma())
     }
 
     /// Return a snapshot of the current detector configuration.
