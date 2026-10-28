@@ -17,9 +17,17 @@
     "  - chess_response/* (radon-target secondary group; duplicate of",
     "                      chess_response_kernel and noisy on small frames)",
     "Whole targets excluded as too coarse/variable for a 2% gate: refiners,",
-    "upscale, chess_pipeline, radon_pipeline (end-to-end), plus the third-party",
-    "pyramid comparison builders (fast_image_resize / resize / image) which are",
-    "not our code. The committed snapshot tracks the SAME gated ids.",
+    "upscale, radon_pipeline (end-to-end), plus the third-party pyramid",
+    "comparison builders (fast_image_resize / resize / image) which are not",
+    "our code. chess_pipeline is excluded except for the uncertainty pairs",
+    "(Off vs Propagated, single and multiscale) on the real mid/large images,",
+    "which guard the default-on position-covariance cost, and noise_estimate",
+    "(the per-frame noise estimate) is gated on all three real images.",
+    "The pipeline ids are end-to-end and noisier than the kernels: the gate",
+    "supports one global threshold only, so a pipeline id can trip the 2%",
+    "budget on jitter alone. The gate is advisory (continue-on-error), so",
+    "treat a lone pipeline-id failure as a prompt to re-run, not a proof.",
+    "The committed snapshot tracks the SAME gated ids.",
     "",
     "Threshold is enforced on Criterion's MEDIAN point estimate (the number",
     "critcmp reports). True p95 would require parsing target/criterion/*/new/",
@@ -31,6 +39,33 @@
   "warm_up_time_s": 2,
   "measurement_time_s": 6,
   "targets": [
+    {
+      "crate": "chess-corners",
+      "bench": "noise_estimate",
+      "features": [],
+      "filter": "noise_estimate/",
+      "ids": [
+        "noise_estimate/small.png",
+        "noise_estimate/mid.png",
+        "noise_estimate/large.png"
+      ]
+    },
+    {
+      "crate": "chess-corners",
+      "bench": "chess_pipeline",
+      "features": [],
+      "filter": "chess_pipeline_real/(single|multiscale)/(off|propagated)/(mid|large)",
+      "ids": [
+        "chess_pipeline_real/single/off/mid.png",
+        "chess_pipeline_real/single/propagated/mid.png",
+        "chess_pipeline_real/multiscale/off/mid.png",
+        "chess_pipeline_real/multiscale/propagated/mid.png",
+        "chess_pipeline_real/single/off/large.png",
+        "chess_pipeline_real/single/propagated/large.png",
+        "chess_pipeline_real/multiscale/off/large.png",
+        "chess_pipeline_real/multiscale/propagated/large.png"
+      ]
+    },
     {
       "crate": "chess-corners-core",
       "bench": "chess_response",

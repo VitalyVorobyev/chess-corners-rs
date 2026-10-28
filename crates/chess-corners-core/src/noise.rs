@@ -161,12 +161,20 @@ fn noise_sigma(sample: &Sample) -> Option<f32> {
     }
     let image_var = sample.image_variance();
     // Per band: the fixed point of its own gate and its admitted count.
-    let bands: Vec<(usize, f64)> = (0..BANDS)
-        .filter_map(|b| sample.band(b).variance(image_var))
-        .collect();
+    let mut bands = [(0usize, 0f64); BANDS];
+    let mut count = 0;
+    for found in (0..BANDS).filter_map(|b| sample.band(b).variance(image_var)) {
+        bands[count] = found;
+        count += 1;
+    }
+    let bands = &bands[..count];
     // Noise variance changes smoothly with brightness; a band far above the
     // others holds structure (edge-only intensities between the flat ones).
-    let mut vars: Vec<f64> = bands.iter().map(|&(_, v)| v).collect();
+    let mut vars = [0f64; BANDS];
+    for (slot, &(_, v)) in vars.iter_mut().zip(bands) {
+        *slot = v;
+    }
+    let vars = &mut vars[..count];
     vars.sort_by(f64::total_cmp);
     let median = match vars.len() {
         0 => return None,
@@ -174,7 +182,7 @@ fn noise_sigma(sample: &Sample) -> Option<f32> {
         n => 0.5 * (vars[n / 2 - 1] + vars[n / 2]),
     };
     let (mut n, mut nvar) = (0usize, 0f64);
-    for &(nb, var) in &bands {
+    for &(nb, var) in bands {
         if var <= MAX_BAND_OUTLIER * median.max(ROUNDING_OP_VAR) {
             n += nb;
             nvar += nb as f64 * var;
@@ -279,23 +287,36 @@ impl Band<'_> {
 /// The sampled windows, by intensity band: the bands one after the other,
 /// each in sampling order.
 struct Sample {
-    gate: Vec<f32>,
-    op: Vec<f32>,
+    /// Gate statistics of the `kept` windows, then squared operator outputs
+    /// of the same: each followed by one spare slot (the sink for windows
+    /// near the rails while sorting), `2 * kept + 2` values in all.
+    buf: Vec<f32>,
+    kept: usize,
     /// Band `b` is windows `start[b]..start[b + 1]`.
     start: [usize; BANDS + 1],
 }
 
 impl Sample {
     fn len(&self) -> usize {
-        self.op.len()
+        self.kept
+    }
+
+    /// Gate statistic per window, all bands.
+    fn gate(&self) -> &[f32] {
+        &self.buf[..self.kept]
+    }
+
+    /// Squared operator output per window, all bands.
+    fn op(&self) -> &[f32] {
+        &self.buf[self.kept + 1..2 * self.kept + 1]
     }
 
     /// The windows of band `b`.
     fn band(&self, b: usize) -> Band<'_> {
         let range = self.start[b]..self.start[b + 1];
         Band {
-            gate: &self.gate[range.clone()],
-            op: &self.op[range],
+            gate: &self.gate()[range.clone()],
+            op: &self.op()[range],
         }
     }
 
@@ -312,7 +333,9 @@ impl Sample {
         };
         let total: usize = (0..(h - 3).div_ceil(step)).map(|j| grid_row(j).1).sum();
         // Every window in sampling order: pixel sum, gate, operator output.
-        let (mut sums, mut gates, mut ops) = (vec![0; total], vec![0; total], vec![0; total]);
+        let mut raw = vec![0i32; 3 * total];
+        let (sums, rest) = raw.split_at_mut(total);
+        let (gates, ops) = rest.split_at_mut(total);
         let mut at = 0;
         for (j, y) in (0..h - 3).step_by(step).enumerate() {
             let (x0, count) = grid_row(j);
@@ -342,7 +365,7 @@ impl Sample {
             }
         };
         let mut count = [0usize; BANDS + 1];
-        for &sum in &sums {
+        for &sum in &*sums {
             let b = band(sum);
             for (slot, n) in count.iter_mut().enumerate() {
                 *n += usize::from(b == slot);
@@ -355,9 +378,10 @@ impl Sample {
         let kept = start[BANDS];
         // Grouped by band, each in sampling order; windows near the rails
         // land in one spare slot past the end.
-        let (mut gate, mut op) = (vec![0f32; kept + 1], vec![0f32; kept + 1]);
+        let mut buf = vec![0f32; 2 * kept + 2];
+        let (gate, op) = buf.split_at_mut(kept + 1);
         let [mut c0, mut c1, mut c2, mut c3] = [start[0], start[1], start[2], start[3]];
-        for ((&sum, &g), &o) in sums.iter().zip(&gates).zip(&ops) {
+        for ((&sum, &g), &o) in sums.iter().zip(&*gates).zip(&*ops) {
             let b = band(sum);
             let k = match b {
                 0 => c0,
@@ -373,17 +397,15 @@ impl Sample {
             c2 += usize::from(b == 2);
             c3 += usize::from(b == 3);
         }
-        gate.truncate(kept);
-        op.truncate(kept);
-        (Self { gate, op, start }, step)
+        (Self { buf, kept, start }, step)
     }
 
     /// Image-wide operator noise variance: the fixed point where the gate
     /// it sets yields it, starting from the quietest sixteenth of the
     /// windows (below any structure).
     fn image_variance(&self) -> f64 {
-        let quiet = quantile(&self.gate, 1.0 / 16.0);
-        let mut var = mean_quiet(&self.op, &self.gate, quiet);
+        let quiet = quantile(self.gate(), 1.0 / 16.0);
+        let mut var = mean_quiet(self.op(), self.gate(), quiet);
         let mut n_prev = usize::MAX;
         for _ in 0..ROUNDS {
             let (n, sum) = (0..BANDS)
@@ -539,8 +561,14 @@ fn mean_quiet(op: &[f32], gate: &[f32], quiet: f32) -> f64 {
 /// The `p`-quantile of a sub-sample of at most 255 evenly spaced values.
 fn quantile(values: &[f32], p: f64) -> f32 {
     let stride = values.len().div_ceil(255).max(1);
-    let mut sub: Vec<f32> = values.iter().step_by(stride).copied().collect();
-    let at = ((sub.len() as f64 * p) as usize).min(sub.len() - 1);
+    let mut buf = [0f32; 255];
+    let mut n = 0;
+    for &v in values.iter().step_by(stride) {
+        buf[n] = v;
+        n += 1;
+    }
+    let sub = &mut buf[..n];
+    let at = ((n as f64 * p) as usize).min(n - 1);
     *sub.select_nth_unstable_by(at, f32::total_cmp).1
 }
 
