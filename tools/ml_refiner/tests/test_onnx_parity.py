@@ -32,6 +32,10 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-x))
 
 
+ATOL = 1e-4
+RTOL = 1e-4
+
+
 def test_onnx_parity() -> None:
     try:
         import onnxruntime as ort  # type: ignore
@@ -45,18 +49,12 @@ def test_onnx_parity() -> None:
     sess = ort.InferenceSession(str(ONNX_PATH), providers=["CPUExecutionProvider"])
     out = sess.run(["pred"], {"patches": patches})[0]
 
-    diff = out - torch_out
-    abs_max = float(np.max(np.abs(diff)))
-    rel_max = float(np.max(np.abs(diff) / (np.abs(torch_out) + 1e-6)))
-
-    assert abs_max < 1e-4, f"abs_max {abs_max} exceeds tolerance"
-    assert rel_max < 1e-4, f"rel_max {rel_max} exceeds tolerance"
+    # |a - b| <= atol + rtol·|b| (the np.allclose form): a pure relative
+    # bound is ill-posed for outputs near zero.
+    excess = np.abs(out - torch_out) - (ATOL + RTOL * np.abs(torch_out))
+    assert float(np.max(excess)) <= 0.0, f"pred exceeds tolerance by {np.max(excess)}"
 
     conf_torch = _sigmoid(torch_out[:, 2])
     conf_onnx = _sigmoid(out[:, 2])
-    conf_diff = conf_onnx - conf_torch
-    conf_abs = float(np.max(np.abs(conf_diff)))
-    conf_rel = float(np.max(np.abs(conf_diff) / (np.abs(conf_torch) + 1e-6)))
-
-    assert conf_abs < 1e-4, f"conf abs_max {conf_abs} exceeds tolerance"
-    assert conf_rel < 1e-4, f"conf rel_max {conf_rel} exceeds tolerance"
+    excess = np.abs(conf_onnx - conf_torch) - (ATOL + RTOL * np.abs(conf_torch))
+    assert float(np.max(excess)) <= 0.0, f"conf exceeds tolerance by {np.max(excess)}"
