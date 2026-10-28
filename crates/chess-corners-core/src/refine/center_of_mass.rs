@@ -132,14 +132,9 @@ impl CenterOfMassRefiner {
                 stencil.add_gradient(&self.tile, xx, yy, scale, &mut self.grads);
             }
         }
-        let noise = self.grads.covariance()?;
         let offset = [xy[0] - centre[0] as f32, xy[1] - centre[1] as f32];
-        let systematic = SYSTEMATIC.covariance(offset, self.tile.edge_width(centre), 1.0);
-        Some(CovarianceModel {
-            noise,
-            systematic,
-            growth: [0.0; 2],
-        })
+        let width = self.tile.edge_width(centre);
+        Some(SYSTEMATIC.model(self.grads.covariance()?, offset, width, 1.0))
     }
 }
 

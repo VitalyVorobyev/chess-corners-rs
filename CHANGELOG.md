@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `PositionCovariance` implements `Add`: the covariance of the sum of two
+  independent position errors.
+
 ### Changed
 
 - The default uncertainty tier is now `Off` in every binding: corners carry

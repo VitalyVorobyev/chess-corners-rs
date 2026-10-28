@@ -55,9 +55,15 @@ impl Uncertainty {
     }
 }
 
-/// Lower bound on the pixel-noise variance used for a covariance, in gray
-/// level²: the variance of rounding to 8 bits.
-pub(crate) const MIN_NOISE_VAR: f32 = 1.0 / 12.0;
+/// Variance of a quantity spread uniformly over an interval `width` long:
+/// `width²/12`.
+pub(crate) const fn uniform_variance(width: f32) -> f32 {
+    width * width / 12.0
+}
+
+/// Variance of rounding to integer gray levels (8-bit quantization), gray
+/// level². It is also the least pixel-noise variance a covariance uses.
+pub(crate) const ROUNDING_VAR: f32 = uniform_variance(1.0);
 
 /// A localizer's position-covariance model: everything needed to express it
 /// in px² for a given image noise level.
@@ -88,14 +94,14 @@ impl CovarianceModel {
     /// `max(σₙ², 1/12)·C` (each axis grown by its second-order factor) plus
     /// `Σ_sys`.
     pub(crate) fn total(&self, noise_sigma: f32) -> PositionCovariance {
-        let n = self.noise_at(noise_sigma);
-        let s = self.systematic;
-        PositionCovariance::new(n.xx + s.xx, n.xy + s.xy, n.yy + s.yy)
+        self.noise_at(noise_sigma) + self.systematic
     }
 
-    /// The noise term alone at `noise_sigma`, in px².
+    /// The noise term alone at `noise_sigma`, in px². `noise_sigma` is the
+    /// total noise of the 8-bit image, rounding included; its variance is
+    /// taken as at least [`ROUNDING_VAR`].
     pub(crate) fn noise_at(&self, noise_sigma: f32) -> PositionCovariance {
-        let var = (noise_sigma * noise_sigma).max(MIN_NOISE_VAR);
+        let var = (noise_sigma * noise_sigma).max(ROUNDING_VAR);
         let f = self.growth.map(|k| (1.0 + var * k * k).sqrt());
         let c = self.noise;
         PositionCovariance::new(
@@ -194,38 +200,35 @@ impl PixelGradients {
 
     /// `Σₚ gₚ gₚᵀ`, or `None` when it is not finite.
     pub(crate) fn covariance(&self) -> Option<PositionCovariance> {
-        // Four partial sums, so the additions do not wait on one chain.
-        // Each product of two `f32` is exact in `f64`, and the sums carry
-        // 29 more bits than the `f32` result: the order moves the result
-        // by far less than its last bit.
-        let mut acc = [[0.0f64; 3]; 4];
-        let (chunks, rest) = self.grad[..self.side * self.side].as_chunks::<4>();
-        let mut add = |l: usize, g: &[f32; 2]| {
-            let (gx, gy) = (f64::from(g[0]), f64::from(g[1]));
-            acc[l][0] += gx * gx;
-            acc[l][1] += gx * gy;
-            acc[l][2] += gy * gy;
-        };
-        for c in chunks {
-            for (l, g) in c.iter().enumerate() {
-                add(l, g);
-            }
-        }
-        for g in rest {
-            add(0, g);
-        }
-        let total = |k: usize| ((acc[0][k] + acc[1][k]) + (acc[2][k] + acc[3][k])) as f32;
-        let cov = PositionCovariance::new(total(0), total(1), total(2));
-        [cov.xx, cov.xy, cov.yy]
-            .iter()
-            .all(|v| v.is_finite())
-            .then_some(cov)
+        gram(&self.grad[..self.side * self.side])
     }
 }
 
-// ---------------------------------------------------------------------------
-// Systematic model
-// ---------------------------------------------------------------------------
+/// `Σ g gᵀ` over `grads`, or `None` when it is not finite.
+pub(crate) fn gram(grads: &[[f32; 2]]) -> Option<PositionCovariance> {
+    // Four partial sums, so the additions do not wait on one chain. Each
+    // product of two `f32` is exact in `f64`, and the sums carry 29 more
+    // bits than the `f32` result: the order moves the result by far less
+    // than its last bit.
+    let mut acc = [[0.0f64; 3]; 4];
+    let (chunks, rest) = grads.as_chunks::<4>();
+    let mut add = |l: usize, g: &[f32; 2]| {
+        let (gx, gy) = (f64::from(g[0]), f64::from(g[1]));
+        acc[l][0] += gx * gx;
+        acc[l][1] += gx * gy;
+        acc[l][2] += gy * gy;
+    };
+    for c in chunks {
+        for (l, g) in c.iter().enumerate() {
+            add(l, g);
+        }
+    }
+    for g in rest {
+        add(0, g);
+    }
+    let total = |k: usize| ((acc[0][k] + acc[1][k]) + (acc[2][k] + acc[3][k])) as f32;
+    PositionCovariance::new(total(0), total(1), total(2)).finite()
+}
 
 // ---------------------------------------------------------------------------
 // Pixel tile and edge width
@@ -332,6 +335,20 @@ impl PixelTile {
         let (i, j) = ((x - self.origin[0]) as usize, (y - self.origin[1]) as usize);
         debug_assert!(i < self.side && j < self.side);
         j * self.side + i
+    }
+
+    /// Bilinear interpolation at `(x, y)` (external frame), with the
+    /// arithmetic of [`ImageView::sample_bilinear`]; the four pixels around
+    /// the point must lie in the tile.
+    #[inline]
+    pub(crate) fn bilinear(&self, x: f32, y: f32) -> f32 {
+        let (x0, y0) = (x.floor(), y.floor());
+        let (tx, ty) = (x - x0, y - y0);
+        let (k, s) = (self.index(x0 as i32, y0 as i32), self.side);
+        let d = &self.data;
+        let a = d[k] + (d[k + 1] - d[k]) * tx;
+        let b = d[k + s] + (d[k + s + 1] - d[k + s]) * tx;
+        a + (b - a) * ty
     }
 
     /// The tile's pixels, row-major, [`Self::side`] per row.
@@ -469,6 +486,10 @@ pub(crate) fn edge_width(
     tile.edge_width(centre)
 }
 
+// ---------------------------------------------------------------------------
+// Systematic model
+// ---------------------------------------------------------------------------
+
 /// One knot of a [`SystematicModel`].
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Knot {
@@ -553,30 +574,36 @@ impl SystematicModel {
         (last.gain, last.residual)
     }
 
-    /// `Σ_sys` for an estimate at `offset` px from the centre of its fit
-    /// window on a grid of spacing `grid` px, with edges of width `width`.
-    pub(crate) fn covariance(
+    /// The covariance model of an estimate with noise term `noise`: `Σ_sys`
+    /// for an estimate at `offset` px from the centre of its fit window on a
+    /// grid of spacing `grid` px, with edges of width `width`.
+    pub(crate) fn model(
         &self,
+        noise: PositionCovariance,
         offset: [f32; 2],
         width: Option<f32>,
         grid: f32,
-    ) -> PositionCovariance {
+    ) -> CovarianceModel {
         let (g, rho) = self.at(width);
-        let prior = grid * grid / 12.0;
+        let prior = uniform_variance(grid);
         let rho2 = rho * rho;
         let denom = g * g * prior + rho2;
-        if denom <= 0.0 {
-            // g = ρ = 0: the estimate says nothing about where in the cell
-            // the corner is; the limit of the expressions below.
-            let p = prior + self.floor * self.floor;
-            let [ux, uy] = offset;
-            return PositionCovariance::new(ux * ux + p, ux * uy, uy * uy + p);
-        }
-        let shrink = g * prior / denom;
-        let spread = prior * rho2 / denom;
+        // g = ρ = 0: the estimate says nothing about where in the cell the
+        // corner is; the limit of the general expressions.
+        let (error, spread) = if denom <= 0.0 {
+            (offset, prior)
+        } else {
+            let shrink = g * prior / denom;
+            (offset.map(|u| u - shrink * u), prior * rho2 / denom)
+        };
+        let [ex, ey] = error;
         let spread = spread + self.floor * self.floor;
-        let e = offset.map(|u| u - shrink * u);
-        PositionCovariance::new(e[0] * e[0] + spread, e[0] * e[1], e[1] * e[1] + spread)
+        let systematic = PositionCovariance::new(ex * ex + spread, ex * ey, ey * ey + spread);
+        CovarianceModel {
+            noise,
+            systematic,
+            growth: [0.0; 2],
+        }
     }
 }
 
@@ -602,8 +629,13 @@ mod tests {
 
     #[test]
     fn systematic_model_limits() {
+        let sys = |offset, width, grid| {
+            MODEL
+                .model(PositionCovariance::ZERO, offset, Some(width), grid)
+                .systematic
+        };
         // g = 0.7: the error is the linear pull (1 − 1/g)·û, the spread ≈ ρ/g.
-        let c = MODEL.covariance([0.21, 0.0], Some(1.0), 1.0);
+        let c = sys([0.21, 0.0], 1.0, 1.0);
         let pull = 0.21 * (1.0 - 1.0 / 0.7);
         assert!(
             (c.xx - (pull * pull + (0.01f32 / 0.7).powi(2))).abs() < 2e-4,
@@ -612,7 +644,7 @@ mod tests {
         assert!((c.yy - (0.01f32 / 0.7).powi(2)).abs() < 1e-5, "{c:?}");
         // g = 0: the estimate carries no information about the offset; the
         // cell's own variance plus the observed offset.
-        let c = MODEL.covariance([0.05, 0.0], Some(10.0), 0.5);
+        let c = sys([0.05, 0.0], 10.0, 0.5);
         let p = 0.25f32 / 12.0;
         assert!(
             (c.xx - (0.0025 + p)).abs() < 1e-6 && (c.yy - p).abs() < 1e-6,

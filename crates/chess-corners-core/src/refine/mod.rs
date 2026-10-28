@@ -48,6 +48,28 @@ impl PositionCovariance {
         xy: 0.0,
         yy: 0.0,
     };
+
+    /// Every entry multiplied by `k`.
+    #[inline]
+    pub(crate) fn scaled(self, k: f32) -> Self {
+        Self::new(self.xx * k, self.xy * k, self.yy * k)
+    }
+
+    /// `self` when every entry is finite.
+    #[inline]
+    pub(crate) fn finite(self) -> Option<Self> {
+        (self.xx.is_finite() && self.xy.is_finite() && self.yy.is_finite()).then_some(self)
+    }
+}
+
+/// The covariance of the sum of two independent errors.
+impl core::ops::Add for PositionCovariance {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: Self) -> Self {
+        Self::new(self.xx + rhs.xx, self.xy + rhs.xy, self.yy + rhs.yy)
+    }
 }
 
 /// Sealing supertrait for [`CornerRefiner`]. Implemented only for the
