@@ -326,6 +326,12 @@ test images. Every refined corner is reported (≥ 99%: merge and the frame
 filters drop almost none), so computing covariances later would save
 nothing.
 
+Noise-estimate bench (`cargo bench -p chess-corners --bench noise_estimate`,
+release build, Apple M4 Pro, 12 cores, single-threaded call, nightly rustc
+1.101): 62 / 49 / 59 µs per frame on small / mid / large. Measured while the
+machine was busy (load average 9 to 15), so read it as an upper bound with
+±10% scatter. The table below predates this bench and was not re-measured.
+
 Frame time, `testimages/` small / mid / large, default build, mean (the p95
 cost is within about a point of it):
 

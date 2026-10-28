@@ -66,9 +66,13 @@ scheduling jitter exceeds 2% even same-runner):
   duplicate of `chess_response_kernel` and noisy on small frames.
 
 **Excluded — too coarse/variable** (whole targets): `refiners`, `upscale`,
-`chess_pipeline`, `radon_pipeline` (end-to-end), and the third-party pyramid
-comparison builders (`fast_image_resize` / `resize` / `image`) which are not our
-code.
+`radon_pipeline` (end-to-end), and the third-party pyramid comparison builders
+(`fast_image_resize` / `resize` / `image`) which are not our code.
+`chess_pipeline` is excluded except the real-image `mid`/`large` uncertainty
+pairs (`single|multiscale` x `off|propagated`), which guard the default-on
+covariance cost; being end-to-end they are noisier than the kernels and the
+gate has one global threshold, so a lone failure there is advisory. The
+per-frame `noise_estimate` bench is gated on all three test images.
 
 ## How the budget is enforced
 

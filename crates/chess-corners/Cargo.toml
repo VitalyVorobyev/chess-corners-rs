@@ -78,6 +78,11 @@ harness = false
 required-features = []
 
 [[bench]]
+name = "noise_estimate"
+harness = false
+required-features = []
+
+[[bench]]
 name = "radon_pipeline"
 harness = false
 required-features = []
