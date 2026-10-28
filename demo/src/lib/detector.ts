@@ -79,7 +79,7 @@ export function defaultSettings(): DetectorSettings {
     orientation: "ringFit",
     chessRefiner: mapChessRefiner(chess.strategy.chess.refiner.kind),
     radonRefiner: "peakFit",
-    uncertainty: "propagated",
+    uncertainty: chess.uncertainty === Uncertainty.Propagated ? "propagated" : "off",
     noiseSigma: null,
     nmsRadius: chess.detection.nmsRadius,
     minClusterSize: chess.detection.minClusterSize,

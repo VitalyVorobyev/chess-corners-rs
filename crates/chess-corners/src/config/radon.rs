@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// position is final or seeds a saddle-point refinement on the input
 /// image. Either reports a
 /// [`position_covariance`](crate::CornerDescriptor::position_covariance)
-/// under the default [`Uncertainty`](crate::Uncertainty) tier.
+/// under [`Uncertainty::Propagated`](crate::Uncertainty::Propagated).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]

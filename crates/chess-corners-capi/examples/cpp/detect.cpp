@@ -34,10 +34,12 @@ int main() {
         std::printf("chess-corners: detected %zu corners\n", corners.size());
 
         // Every localizer reports each corner's position covariance (px^2)
-        // under the default uncertainty tier. This synthetic board has no
-        // noise to estimate, so supply the sensor noise level.
+        // when the uncertainty tier is propagated (the default is off). This
+        // synthetic board has no noise to estimate, so supply the sensor
+        // noise level.
         chess_corners::Config saddle = chess_corners::Config::chess();
         saddle.refiner = CC_REFINER_SADDLE_POINT;
+        saddle.uncertainty = CC_UNCERTAINTY_PROPAGATED;
         saddle.noise_sigma = 1.0f;
         std::size_t with_cov = 0;
         for (const chess_corners::Corner& c :
@@ -56,6 +58,7 @@ int main() {
         // the covariances and leaves positions unchanged.
         chess_corners::Config radon = chess_corners::Config::radon();
         radon.refiner = CC_REFINER_SADDLE_POINT;
+        radon.uncertainty = CC_UNCERTAINTY_PROPAGATED;
         radon.noise_sigma = 1.0f;
         const std::vector<chess_corners::Corner> radon_corners =
             chess_corners::detect(image, width, height, radon);

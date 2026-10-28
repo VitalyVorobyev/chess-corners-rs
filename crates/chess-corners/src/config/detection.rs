@@ -189,15 +189,15 @@ pub struct DetectorConfig {
     pub noise_sigma: Option<f32>,
     /// Which position uncertainty each corner reports in
     /// [`position_covariance`](crate::CornerDescriptor::position_covariance).
-    /// [`Uncertainty::Propagated`] (the default) gives every localizer —
+    /// [`Uncertainty::Off`] (the default) reports none and makes no noise
+    /// estimate. [`Uncertainty::Propagated`] gives every localizer —
     /// each [`ChessRefiner`] except the ML refiner, the Radon peak fit, and
     /// saddle-point refinement of Radon peaks — a covariance: image noise
     /// propagated through the localizer plus its systematic-error model.
     /// The systematic part includes a per-localizer floor measured on real
     /// calibration images; on real, well-exposed images it is usually the
     /// largest part of the covariance, and weighting a calibration by it
-    /// has not been shown to beat uniform weighting on real data.
-    /// [`Uncertainty::Off`] skips that work and the noise estimate; corner
+    /// has not been shown to beat uniform weighting on real data. Corner
     /// positions are the same under every tier.
     pub uncertainty: Uncertainty,
 }

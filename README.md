@@ -107,7 +107,7 @@ Each Rust detection is a `CornerDescriptor`:
 | `x`, `y` | Subpixel position in input-image pixels |
 | `response` | Raw detector response at the detected peak |
 | `axes` | `Option` of two local grid-axis directions with per-axis angular fit-quality score (not a calibrated 1σ); `None` when the orientation fit is disabled |
-| `position_covariance` | `Option` of the 2×2 position covariance in px² (image noise plus the localizer's systematic error); `None` under `Uncertainty::Off`, with the ML refiner, or on upscaled input ([Uncertainty](book/src/part-08-uncertainty.md)) |
+| `position_covariance` | `Option` of the 2×2 position covariance in px² (image noise plus the localizer's systematic error); `None` under `Uncertainty::Off` (the default; select `Uncertainty::Propagated` to report it), with the ML refiner, or on upscaled input ([Uncertainty](book/src/part-08-uncertainty.md)) |
 
 The two axes are not forced to be orthogonal. This lets the descriptor
 represent perspective warp and lens distortion instead of collapsing the
@@ -207,7 +207,7 @@ print(det.response.shape) # (N,)  float32
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.sigmas` — `(N, 2)` float32, per-axis fit-quality score in radians (larger means a less reliable axis; not a calibrated 1σ), or `None` when orientation is disabled
-- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (`Uncertainty.OFF`, the ML refiner, or upscaling). The covariance includes a per-localizer floor measured on real images that usually dominates it there; weighting by it has not been shown to beat uniform weighting on real data
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (`Uncertainty.OFF`, the default — select `cfg.with_uncertainty(Uncertainty.PROPAGATED)` to report it — the ML refiner, or upscaling). The covariance includes a per-localizer floor measured on real images that usually dominates it there; weighting by it has not been shown to beat uniform weighting on real data
 
 With `cfg.without_orientation()`, `det.angles` and `det.sigmas` are `None`.
 

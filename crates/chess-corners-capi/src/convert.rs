@@ -323,7 +323,7 @@ pub(crate) fn map_error(err: &ChessError) -> cc_status {
 /// Fallback config returned only if a preset constructor were to panic (it
 /// cannot in practice). Zero tags select single-scale ChESS with the
 /// center-of-mass refiner, the canonical ring, no upscaling, and a zero
-/// threshold. The Radon geometry fields carry harmless defaults (ignored
+/// threshold; the uncertainty tier is the presets' `CC_UNCERTAINTY_OFF`. The Radon geometry fields carry harmless defaults (ignored
 /// under the ChESS strategy).
 pub(crate) fn zeroed_config() -> cc_config {
     let radon = RadonConfig::default();
@@ -344,6 +344,6 @@ pub(crate) fn zeroed_config() -> cc_config {
         peak_fit: peak_fit_tag(radon.peak_fit),
         has_noise_sigma: 0,
         noise_sigma: 0.0,
-        uncertainty: CC_UNCERTAINTY_PROPAGATED,
+        uncertainty: CC_UNCERTAINTY_OFF,
     }
 }

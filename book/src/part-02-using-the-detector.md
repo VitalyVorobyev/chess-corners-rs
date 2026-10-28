@@ -22,7 +22,7 @@ active strategy variant.
 | `orientation_method`  | `OrientationMethod::RingFit` (default) or `DiskFit`. Drives the two-axis descriptor fit on both detectors; `without_orientation()` skips the fit and leaves each descriptor's `axes` as `None`. |
 | `merge_radius`        | Duplicate-suppression distance (base-image pixels) for the final cross-scale merge step.                                                          |
 | `noise_sigma`         | `None` (estimate per image, default) or the image's pixel-noise σ in gray levels; turns each corner's covariance into its descriptor's `position_covariance` in px² ([Part VIII](part-08-uncertainty.md)). |
-| `uncertainty`         | `Propagated` (default: every localizer reports a `position_covariance`) or `Off` (none, and no noise estimate; positions unchanged). |
+| `uncertainty`         | `Off` (default: no `position_covariance`, and no noise estimate) or `Propagated` (every localizer reports one; positions unchanged). |
 
 Inside `DetectionParams` (set via `DetectorConfig.detection`):
 
@@ -265,7 +265,7 @@ print(det.response.shape) # (N,)  float32
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.sigmas` — `(N, 2)` float32, per-axis fit-quality score in radians (larger means a less reliable axis; not a calibrated 1σ), or `None` when orientation is disabled
-- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.OFF`, the ML refiner, or upscaling)
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.OFF`, the default — `cfg.with_uncertainty(chess_corners.Uncertainty.PROPAGATED)` reports it — the ML refiner, or upscaling)
 
 When the orientation fit is skipped (`cfg.without_orientation()`),
 `det.angles` and `det.sigmas` are `None`.

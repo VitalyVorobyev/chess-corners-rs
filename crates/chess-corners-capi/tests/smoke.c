@@ -83,6 +83,7 @@ int main(void) {
      * estimated: supply it. */
     cc_config saddle = cc_config_chess();
     saddle.refiner = CC_REFINER_SADDLE_POINT;
+    saddle.uncertainty = CC_UNCERTAINTY_PROPAGATED;
     saddle.has_noise_sigma = 1;
     saddle.noise_sigma = 1.0f;
     cc_result cov_out = {NULL, 0};
@@ -106,21 +107,25 @@ int main(void) {
         return 7;
     }
 
-    /* The default tier reports a covariance for the center-of-mass refiner
-     * too; CC_UNCERTAINTY_OFF reports none, and an unknown tag is rejected. */
-    cc_config plain = cc_config_chess();
-    if (plain.uncertainty != CC_UNCERTAINTY_PROPAGATED) {
-        fprintf(stderr, "preset does not default to propagated uncertainty\n");
+    /* The presets default to CC_UNCERTAINTY_OFF; a zero-initialised config
+     * selects tag 0, CC_UNCERTAINTY_PROPAGATED. Propagated reports a
+     * covariance for the center-of-mass refiner too; CC_UNCERTAINTY_OFF
+     * reports none, and an unknown tag is rejected. */
+    if (cc_config_default().uncertainty != CC_UNCERTAINTY_OFF ||
+        cc_config_chess().uncertainty != CC_UNCERTAINTY_OFF ||
+        cc_config_radon().uncertainty != CC_UNCERTAINTY_OFF) {
+        fprintf(stderr, "preset does not default to uncertainty off\n");
         free(img);
         return 10;
     }
-    /* A zero-initialised config selects the same default tier. */
     cc_config zeroed = {0};
     if (zeroed.uncertainty != CC_UNCERTAINTY_PROPAGATED) {
-        fprintf(stderr, "zero-initialised config is not the default tier\n");
+        fprintf(stderr, "zero-initialised config is not tag 0 (propagated)\n");
         free(img);
         return 10;
     }
+    cc_config plain = cc_config_chess();
+    plain.uncertainty = CC_UNCERTAINTY_PROPAGATED;
     plain.has_noise_sigma = 1;
     plain.noise_sigma = 1.0f;
     cc_result plain_out = {NULL, 0};

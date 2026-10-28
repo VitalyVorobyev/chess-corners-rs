@@ -1,6 +1,6 @@
 # Part VIII: Uncertainty
 
-By default every corner the detector refines carries a 2×2 covariance
+On request, every corner the detector refines carries a 2×2 covariance
 of its position, in px², in the input image frame. A calibration or pose
 solver can use it to tell well-localised corners from poorly localised
 ones, to propagate corner error into its parameters, and to check its
@@ -70,21 +70,31 @@ reported by every localizer: the ChESS refiners `CenterOfMass`,
 
 `DetectorConfig::uncertainty` selects it:
 
-- `Uncertainty::Propagated` (the default) reports the covariance.
-- `Uncertainty::Off` reports none and skips the per-image noise
-  estimate. Positions are identical under both.
+- `Uncertainty::Off` (the default) reports none and skips the per-image
+  noise estimate.
+- `Uncertainty::Propagated` reports the covariance.
+
+Positions are identical under both. The covariance is opt-in because it
+costs frame time (§8.2.1) and weighting a real calibration by it has not
+been shown to help (§8.5); its uses are flagging poorly localised
+corners and putting residuals on a known scale (§8.6).
 
 | Binding | Covariance | Tier | Noise level |
 |---------|------------|------|-------------|
 | Rust    | `CornerDescriptor::position_covariance: Option<PositionCovariance>` | `DetectorConfig::uncertainty` | `DetectorConfig::noise_sigma: Option<f32>` |
 | Python  | `Detections.position_covariance`: `(N, 2, 2)` float32, `NaN` rows when absent | `DetectorConfig.uncertainty` (`Uncertainty.PROPAGATED` / `OFF`) | `DetectorConfig.noise_sigma` (`None` = estimate) |
-| JS/WASM | `detector.positionCovariance()`: `Float32Array`, stride 3 `[xx, xy, yy]`, `NaN` when absent | `cfg.withUncertainty(Uncertainty.Off)` | `cfg.noiseSigma` (`undefined` = estimate) |
+| JS/WASM | `detector.positionCovariance()`: `Float32Array`, stride 3 `[xx, xy, yy]`, `NaN` when absent | `cfg.withUncertainty(Uncertainty.Propagated)` | `cfg.noiseSigma` (`undefined` = estimate) |
 | C       | `cc_corner.position_covariance`, valid when `has_position_covariance` is `1` | `cc_config.uncertainty` (`CC_UNCERTAINTY_PROPAGATED` / `_OFF`) | `cc_config.has_noise_sigma` / `noise_sigma` |
 | C++     | `Corner::position_covariance: std::optional<Covariance>` | `Config::uncertainty` | `Config::noise_sigma: std::optional<float>` |
 
+In C, start from `cc_config_default()` or a strategy preset, which select
+`CC_UNCERTAINTY_OFF`: a zero-initialised `cc_config` has tag `0`, which is
+`CC_UNCERTAINTY_PROPAGATED`. The integer values of the tiers differ
+between the C API and the Python and WASM enums; use the named constants.
+
 ### 8.2.1 Cost
 
-The default tier costs a per-frame noise estimate (43–55 µs on the
+`Propagated` costs a per-frame noise estimate (43–55 µs on the
 test images) and about 0.5 µs per refined corner (2.6 µs per Radon
 peak that keeps its peak fit). Frame time on the three test images
 (small / mid / large, default build, mean):
@@ -96,8 +106,7 @@ peak that keeps its peak fit). Frame time on the three test images
 | Radon single scale | 12.7 / 28.5 / 146.5 ms   | 13.0 / 27.8 / 147.4 ms   | within ±2.5%       |
 
 The share is largest on small, sparse frames, where the noise estimate
-is a larger part of the work. Select `Off` when nothing downstream reads
-the covariance.
+is a larger part of the work. The default, `Off`, does not pay it.
 
 ### 8.2.2 When there is no covariance
 
@@ -462,7 +471,7 @@ respected.
 Rust:
 
 ```rust
-use chess_corners::{ChessRefiner, Detector, DetectorConfig, PositionCovariance};
+use chess_corners::{ChessRefiner, Detector, DetectorConfig, PositionCovariance, Uncertainty};
 
 /// `L⁻¹·r` for `Σ = L·Lᵀ`: its squared norm is `rᵀ·Σ⁻¹·r`.
 fn whiten(r: [f32; 2], c: &PositionCovariance) -> [f32; 2] {
@@ -474,7 +483,9 @@ fn whiten(r: [f32; 2], c: &PositionCovariance) -> [f32; 2] {
 }
 
 // Any classic localizer reports a covariance; SaddlePoint is the most accurate.
-let cfg = DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::saddle_point());
+let cfg = DetectorConfig::chess()
+    .with_chess(|c| c.refiner = ChessRefiner::saddle_point())
+    .with_uncertainty(Uncertainty::Propagated);
 let mut detector = Detector::new(cfg)?;
 for c in detector.detect_u8(&pixels, width, height)? {
     let Some(cov) = c.position_covariance else { continue }; // see §8.2.2
@@ -490,7 +501,7 @@ Python:
 import numpy as np
 import chess_corners
 
-cfg = chess_corners.DetectorConfig.chess()
+cfg = chess_corners.DetectorConfig.chess().with_uncertainty(chess_corners.Uncertainty.PROPAGATED)
 cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point()
 det = chess_corners.Detector(cfg).detect(img)
 
@@ -533,6 +544,7 @@ demosaiced or JPEG input (§8.3.2). Give the noise as it appears in the
 ```rust
 let cfg = DetectorConfig::chess()
     .with_chess(|c| c.refiner = ChessRefiner::saddle_point())
+    .with_uncertainty(Uncertainty::Propagated)
     .with_noise_sigma(1.8); // gray levels; `None` estimates it per image
 ```
 
@@ -546,6 +558,7 @@ cfg.noiseSigma = 1.8;      // undefined estimates it per image
 
 ```cpp
 config.refiner = CC_REFINER_SADDLE_POINT;
+config.uncertainty = CC_UNCERTAINTY_PROPAGATED;
 config.noise_sigma = 1.8f; // std::nullopt estimates it per image
 // C: cfg.has_noise_sigma = 1; cfg.noise_sigma = 1.8f;
 ```
@@ -555,11 +568,11 @@ A negative or non-finite value is rejected when the detector is built
 
 ### 8.6.3 The fast path
 
-When nothing reads the covariance, select `Uncertainty::Off`
-(`DetectorConfig::with_uncertainty(Uncertainty::Off)`; Python
-`with_uncertainty(chess_corners.Uncertainty.OFF)`; C
-`CC_UNCERTAINTY_OFF`). It skips the noise estimate and the per-corner
-Jacobians (§8.2.1) and returns the same positions.
+The default tier, `Uncertainty::Off` (Python `Uncertainty.OFF`, JS
+`Uncertainty.Off`, C `CC_UNCERTAINTY_OFF`), is the fast path: it skips
+the noise estimate and the per-corner Jacobians (§8.2.1) and returns the
+same positions. Select `Propagated` only when something reads the
+covariance.
 
 ## 8.7 Orientation uncertainty
 

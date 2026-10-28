@@ -203,6 +203,13 @@ mod tests {
     use crate::detect::chess::ring::RING5;
     use crate::{chess_response_u8, ChessParams, ResponseMap};
 
+    /// A refiner reporting a covariance, which these tests examine.
+    fn propagated(cfg: CenterOfMassConfig) -> CenterOfMassRefiner {
+        let mut refiner = CenterOfMassRefiner::new(cfg);
+        refiner.uncertainty = Uncertainty::Propagated;
+        refiner
+    }
+
     /// The ChESS response `SR − DR − 16·|μₙ − μₗ|` at `(x, y)` of an `f32`
     /// image: the reference the analytic gradient is checked against.
     fn response_f64(img: &[f64], side: usize, x: i32, y: i32) -> f64 {
@@ -260,7 +267,7 @@ mod tests {
                 }
             }
             let view = ImageView::from_u8_slice(SIDE, SIDE, &img).unwrap();
-            let res = CenterOfMassRefiner::new(CenterOfMassConfig::default()).refine(
+            let res = propagated(CenterOfMassConfig::default()).refine(
                 centre.map(|c| c as f32),
                 RefineContext::new(Some(view), Some(&resp)),
             );
@@ -324,7 +331,7 @@ mod tests {
         let resp = chess_response_u8(&img, SIDE, SIDE, &ChessParams::default());
         let plain = ResponseMap::new(SIDE, SIDE, resp.data().to_vec());
         let view = ImageView::from_u8_slice(SIDE, SIDE, &img).unwrap();
-        let mut refiner = CenterOfMassRefiner::new(CenterOfMassConfig::default());
+        let mut refiner = propagated(CenterOfMassConfig::default());
         let with = refiner.refine([10.0, 10.0], RefineContext::new(Some(view), Some(&resp)));
         assert!(with.covariance_per_noise_variance.is_some());
         for ctx in [
@@ -349,7 +356,7 @@ mod tests {
         resp.data[4 * 7 + 3] = 5.0;
         resp.data[4 * 7 + 4] = 2.0;
 
-        let mut refiner = CenterOfMassRefiner::new(CenterOfMassConfig { radius: 1 });
+        let mut refiner = propagated(CenterOfMassConfig { radius: 1 });
         let ctx = RefineContext {
             image: None,
             response: Some(&resp),
@@ -383,7 +390,7 @@ mod tests {
         resp.data[3 * 7 + 3] = 0.0;
         resp.data[3 * 7 + 6] = 50.0;
 
-        let mut refiner = CenterOfMassRefiner::new(CenterOfMassConfig { radius: 1 });
+        let mut refiner = propagated(CenterOfMassConfig { radius: 1 });
         let ctx = RefineContext {
             image: None,
             response: Some(&resp),

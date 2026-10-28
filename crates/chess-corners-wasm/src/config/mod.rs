@@ -175,15 +175,19 @@ impl From<RsOrientationMethod> for OrientationMethod {
 
 /// Position-uncertainty tier. Mirrors [`chess_corners::Uncertainty`].
 ///
-/// `Off` *(= 0)* — no position covariance and no noise estimate; all
-/// covariance values are `NaN`.
+/// `Off` *(default, = 0)* — no position covariance and no noise estimate;
+/// all covariance values are `NaN`.
 ///
-/// `Propagated` *(default, = 1)* — every corner whose localizer supports it
-/// reports a position covariance: image noise propagated through the
-/// localizer plus its systematic error, including a per-localizer floor
-/// measured on real images that usually dominates it there (weighting by it
-/// has not been shown to beat uniform weighting on real data). Positions are
-/// identical under both tiers.
+/// `Propagated` *(= 1)* — every corner whose localizer supports it reports a
+/// position covariance: image noise propagated through the localizer plus
+/// its systematic error, including a per-localizer floor measured on real
+/// images that usually dominates it there (weighting by it has not been
+/// shown to beat uniform weighting on real data). Positions are identical
+/// under both tiers.
+///
+/// Use the named constants (`Uncertainty.Off`, `Uncertainty.Propagated`) or
+/// the JSON strings, not the integers: the C API numbers the same tiers
+/// differently (`CC_UNCERTAINTY_PROPAGATED = 0`, `CC_UNCERTAINTY_OFF = 1`).
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Uncertainty {
@@ -624,18 +628,25 @@ mod tests {
     }
 
     #[test]
-    fn uncertainty_defaults_to_propagated_and_round_trips() {
+    fn uncertainty_defaults_to_off_and_round_trips() {
+        for cfg in [
+            DetectorConfig::chess(),
+            DetectorConfig::chess_multiscale(),
+            DetectorConfig::radon(),
+            DetectorConfig::radon_multiscale(),
+        ] {
+            assert_eq!(cfg.uncertainty().ok(), Some(Uncertainty::Off));
+            assert_eq!(cfg.snapshot().uncertainty, RsUncertainty::Off);
+        }
         let cfg = DetectorConfig::chess();
-        assert_eq!(cfg.uncertainty().ok(), Some(Uncertainty::Propagated));
-        assert_eq!(cfg.snapshot().uncertainty, RsUncertainty::Propagated);
-        let off = cfg.with_uncertainty(Uncertainty::Off);
-        assert_eq!(off.uncertainty().ok(), Some(Uncertainty::Off));
-        assert_eq!(off.snapshot().uncertainty, RsUncertainty::Off);
+        let on = cfg.with_uncertainty(Uncertainty::Propagated);
+        assert_eq!(on.uncertainty().ok(), Some(Uncertainty::Propagated));
+        assert_eq!(on.snapshot().uncertainty, RsUncertainty::Propagated);
         // Original is unchanged.
-        assert_eq!(cfg.snapshot().uncertainty, RsUncertainty::Propagated);
-        let mut back = off.clone();
-        back.set_uncertainty(Uncertainty::Propagated);
-        assert_eq!(back.snapshot().uncertainty, RsUncertainty::Propagated);
+        assert_eq!(cfg.snapshot().uncertainty, RsUncertainty::Off);
+        let mut back = on.clone();
+        back.set_uncertainty(Uncertainty::Off);
+        assert_eq!(back.snapshot().uncertainty, RsUncertainty::Off);
     }
 
     #[test]

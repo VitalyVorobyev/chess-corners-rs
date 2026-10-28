@@ -8,12 +8,13 @@
 //!
 //! Runs on:
 //!
-//! - **Synthetic chessboards** at 640×480, 1280×720, 1920×1080. These
-//!   are deterministic across machines, so absolute speedups are
-//!   directly comparable run-to-run.
-//! - **Real test images** (`testimages/{small,mid,large}.png`) when
-//!   the `image` dev-dependency loads them successfully. Skipped
-//!   silently (with a stderr note) if the file is missing.
+//! - **Synthetic chessboards** at 640×480, 1280×720, 1920×1080, with the
+//!   preset as it is (the default uncertainty tier). These are
+//!   deterministic across machines, so absolute speedups are directly
+//!   comparable run-to-run.
+//! - **Real test images** (`testimages/{small,mid,large}.png`) under both
+//!   uncertainty tiers, named in the id: `<image>/off`, `<image>/propagated`.
+//!   Skipped with a stderr note if the file is missing.
 
 use chess_corners::{Detector, DetectorConfig, Uncertainty};
 use chess_corners_testutil::synth_chessboard;
@@ -49,13 +50,13 @@ fn bench_radon_pipeline_real(c: &mut Criterion) {
             continue;
         };
         group.throughput(Throughput::Elements((w as u64) * (h as u64)));
-        for (id, uncertainty) in [
-            (name.to_string(), Uncertainty::Propagated),
-            (format!("{name}/uncertainty_off"), Uncertainty::Off),
+        for (tier, uncertainty) in [
+            ("off", Uncertainty::Off),
+            ("propagated", Uncertainty::Propagated),
         ] {
             let cfg = DetectorConfig::radon().with_uncertainty(uncertainty);
             let mut detector = Detector::new(cfg).unwrap();
-            group.bench_function(id, |b| {
+            group.bench_function(format!("{name}/{tier}"), |b| {
                 b.iter(|| {
                     let corners = detector.detect_u8(&data, w, h).unwrap();
                     black_box(corners.len())

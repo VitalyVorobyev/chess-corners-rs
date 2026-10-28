@@ -8,10 +8,12 @@
 //!
 //! Runs on:
 //!
-//! - **Synthetic chessboards** at 640×480, 1280×720, 1920×1080.
-//! - **Real test images** (`testimages/{small,mid,large}.png`), also
-//!   single-scale with the position covariance off (`Uncertainty::Off`).
-//!   Skipped with a stderr note if the file is missing.
+//! - **Synthetic chessboards** at 640×480, 1280×720, 1920×1080, with the
+//!   presets as they are (the default uncertainty tier).
+//! - **Real test images** (`testimages/{small,mid,large}.png`) under both
+//!   uncertainty tiers, named in the id: `single/off`, `single/propagated`,
+//!   `multiscale/off`, `multiscale/propagated`. Skipped with a stderr note
+//!   if the file is missing.
 
 use chess_corners::{Detector, DetectorConfig, Uncertainty};
 use chess_corners_testutil::synth_chessboard;
@@ -51,23 +53,14 @@ fn bench_chess_pipeline_synth(c: &mut Criterion) {
     group.finish();
 }
 
-fn chess_without_uncertainty() -> DetectorConfig {
-    DetectorConfig::chess().with_uncertainty(Uncertainty::Off)
-}
-
-fn chess_multiscale_without_uncertainty() -> DetectorConfig {
-    DetectorConfig::chess_multiscale().with_uncertainty(Uncertainty::Off)
-}
-
 fn bench_chess_pipeline_real(c: &mut Criterion) {
-    let presets: &[(&str, ConfigCtor)] = &[
+    let modes: &[(&str, ConfigCtor)] = &[
         ("multiscale", DetectorConfig::chess_multiscale),
         ("single", DetectorConfig::chess),
-        ("single_uncertainty_off", chess_without_uncertainty),
-        (
-            "multiscale_uncertainty_off",
-            chess_multiscale_without_uncertainty,
-        ),
+    ];
+    let tiers = [
+        ("off", Uncertainty::Off),
+        ("propagated", Uncertainty::Propagated),
     ];
     let mut group = c.benchmark_group("chess_pipeline_real");
     for name in ["small.png", "mid.png", "large.png"] {
@@ -76,15 +69,18 @@ fn bench_chess_pipeline_real(c: &mut Criterion) {
             continue;
         };
         group.throughput(Throughput::Elements((w as u64) * (h as u64)));
-        for &(label, mk) in presets {
-            let cfg = mk();
-            let mut detector = Detector::new(cfg).unwrap();
-            group.bench_with_input(BenchmarkId::new(label, name), &cfg, |b, _cfg| {
-                b.iter(|| {
-                    let corners = detector.detect_u8(&data, w, h).unwrap();
-                    black_box(corners.len())
+        for &(mode, mk) in modes {
+            for (tier, uncertainty) in tiers {
+                let cfg = mk().with_uncertainty(uncertainty);
+                let mut detector = Detector::new(cfg).unwrap();
+                let id = BenchmarkId::new(format!("{mode}/{tier}"), name);
+                group.bench_with_input(id, &cfg, |b, _cfg| {
+                    b.iter(|| {
+                        let corners = detector.detect_u8(&data, w, h).unwrap();
+                        black_box(corners.len())
+                    });
                 });
-            });
+            }
         }
     }
     group.finish();

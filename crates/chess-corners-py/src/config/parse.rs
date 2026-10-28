@@ -6,6 +6,7 @@ use chess_corners::{
     ChessRing as RsChessRing, OrientationMethod as RsOrientationMethod,
     PeakFitMode as RsPeakFitMode, Uncertainty as RsUncertainty,
 };
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
 
@@ -143,11 +144,26 @@ pub(crate) fn extract_string(
 // Enums.
 // ---------------------------------------------------------------------------
 
+/// Error for a core variant these bindings do not know (the library is
+/// newer than the bindings). Never mapped silently to another variant.
+pub(crate) fn unknown_variant(kind: &str, value: &dyn std::fmt::Debug) -> PyErr {
+    PyRuntimeError::new_err(format!(
+        "unsupported {kind} {value:?}: not known to these chess_corners bindings"
+    ))
+}
+
+/// A Python enum mirroring a core enum, with its config-string form.
+///
+/// Each variant is listed once as `(Python variant, Python name, core
+/// variant, config string)`; the macro derives every conversion from that
+/// list: Python → core (`From`), core → Python (`from_rs`), core → config
+/// string (`config_str`) and config string → core (`parse`).
+/// A core variant missing from the list is an error, never a default.
 macro_rules! py_enum {
     (
         $(#[$attr:meta])*
         $name:ident, $rs:path,
-        [$( ($variant:ident, $py_name:literal, $rs_variant:ident) ),+ $(,)?]
+        [$( ($variant:ident, $py_name:literal, $rs_variant:ident, $config:literal) ),+ $(,)?]
     ) => {
         $(#[$attr])*
         #[pyclass(eq, eq_int, module = "chess_corners", from_py_object)]
@@ -167,30 +183,30 @@ macro_rules! py_enum {
             }
         }
 
-        impl From<$rs> for $name {
-            // The wildcard arm is unreachable while the source enum is
-            // exhaustive; it keeps the macro valid for `#[non_exhaustive]` ones.
-            #[allow(unreachable_patterns)]
-            fn from(v: $rs) -> Self {
-                match v {
-                    $( <$rs>::$rs_variant => $name::$variant, )+
-                    // Future-proof for `#[non_exhaustive]` source enums.
-                    _ => $name::default_for_unknown(),
-                }
-            }
-        }
-
         impl $name {
-            fn default_for_unknown() -> Self {
-                Self::__first()
-            }
-            fn __first() -> Self {
-                // Returns the first listed variant; the trailing `return`s
-                // after the first are intentionally unreachable.
-                #[allow(unreachable_code, clippy::needless_return)]
-                {
-                    $( return $name::$variant; )+
+            /// The Python enum of a core value; an error for a core variant
+            /// these bindings do not know.
+            pub(crate) fn from_rs(v: $rs) -> PyResult<Self> {
+                // The source enums are `#[non_exhaustive]`: the wildcard arm
+                // catches variants added to the library after these bindings.
+                #[allow(unreachable_patterns)]
+                match v {
+                    $( <$rs>::$rs_variant => Ok($name::$variant), )+
+                    other => Err(unknown_variant(stringify!($name), &other)),
                 }
+            }
+
+            /// The config (JSON / dict) string of a core value; an error for
+            /// a core variant these bindings do not know.
+            pub(crate) fn config_str(v: $rs) -> PyResult<&'static str> {
+                Ok(match Self::from_rs(v)? {
+                    $( $name::$variant => $config, )+
+                })
+            }
+
+            /// Parse a config string; `path` names the field in errors.
+            pub(crate) fn parse(value: &str, path: &str) -> PyResult<$rs> {
+                parse_enum(value, path, &[$( ($config, <$rs>::$rs_variant), )+])
             }
         }
     };
@@ -202,7 +218,10 @@ py_enum!(
     /// the radius-10 ring for low-resolution or heavily blurred inputs.
     ChessRing,
     RsChessRing,
-    [(Canonical, "CANONICAL", Canonical), (Broad, "BROAD", Broad)]
+    [
+        (Canonical, "CANONICAL", Canonical, "canonical"),
+        (Broad, "BROAD", Broad, "broad"),
+    ]
 );
 
 py_enum!(
@@ -210,8 +229,8 @@ py_enum!(
     PeakFitMode,
     RsPeakFitMode,
     [
-        (Parabolic, "PARABOLIC", Parabolic),
-        (Gaussian, "GAUSSIAN", Gaussian),
+        (Parabolic, "PARABOLIC", Parabolic, "parabolic"),
+        (Gaussian, "GAUSSIAN", Gaussian, "gaussian"),
     ]
 );
 
@@ -232,25 +251,30 @@ py_enum!(
     OrientationMethod,
     RsOrientationMethod,
     [
-        (RingFit, "RING_FIT", RingFit),
-        (DiskFit, "DISK_FIT", DiskFit),
+        (RingFit, "RING_FIT", RingFit, "ring_fit"),
+        (DiskFit, "DISK_FIT", DiskFit, "disk_fit"),
     ]
 );
 
 py_enum!(
     /// Position-uncertainty tier.
     ///
-    /// `PROPAGATED` *(default)* — every corner whose localizer supports it
-    /// reports a position covariance, scaled by the image noise level.
+    /// `OFF` *(default)* — no covariance and no noise estimate; the
+    /// corresponding output rows are `NaN`.
     ///
-    /// `OFF` — no covariance and no noise estimate; the corresponding
-    /// output rows are `NaN`. Positions are identical under both tiers.
+    /// `PROPAGATED` — every corner whose localizer supports it reports a
+    /// position covariance, scaled by the image noise level.
+    ///
+    /// Positions are identical under both tiers.
     Uncertainty,
     RsUncertainty,
-    [(Off, "OFF", Off), (Propagated, "PROPAGATED", Propagated),]
+    [
+        (Off, "OFF", Off, "off"),
+        (Propagated, "PROPAGATED", Propagated, "propagated"),
+    ]
 );
 
-pub(crate) fn parse_enum<E>(value: &str, path: &str, allowed: &[(&str, E)]) -> PyResult<E>
+fn parse_enum<E>(value: &str, path: &str, allowed: &[(&str, E)]) -> PyResult<E>
 where
     E: Copy,
 {
@@ -267,97 +291,6 @@ where
     Err(config_error(format!(
         "{path} must be one of: {allowed_str}"
     )))
-}
-
-pub(crate) fn parse_chess_ring(value: &str, path: &str) -> PyResult<RsChessRing> {
-    parse_enum(
-        value,
-        path,
-        &[
-            ("canonical", RsChessRing::Canonical),
-            ("broad", RsChessRing::Broad),
-        ],
-    )
-}
-
-pub(crate) fn parse_peak_fit_mode(value: &str, path: &str) -> PyResult<RsPeakFitMode> {
-    parse_enum(
-        value,
-        path,
-        &[
-            ("parabolic", RsPeakFitMode::Parabolic),
-            ("gaussian", RsPeakFitMode::Gaussian),
-        ],
-    )
-}
-
-pub(crate) fn parse_orientation_method(value: &str, path: &str) -> PyResult<RsOrientationMethod> {
-    parse_enum(
-        value,
-        path,
-        &[
-            ("ring_fit", RsOrientationMethod::RingFit),
-            ("disk_fit", RsOrientationMethod::DiskFit),
-        ],
-    )
-}
-
-pub(crate) fn parse_uncertainty(value: &str, path: &str) -> PyResult<RsUncertainty> {
-    parse_enum(
-        value,
-        path,
-        &[
-            ("off", RsUncertainty::Off),
-            ("propagated", RsUncertainty::Propagated),
-        ],
-    )
-}
-
-pub(crate) fn chess_ring_str(v: RsChessRing) -> &'static str {
-    match v {
-        RsChessRing::Canonical => "canonical",
-        RsChessRing::Broad => "broad",
-        _ => "canonical",
-    }
-}
-
-pub(crate) fn peak_fit_mode_str(v: RsPeakFitMode) -> &'static str {
-    match v {
-        RsPeakFitMode::Parabolic => "parabolic",
-        RsPeakFitMode::Gaussian => "gaussian",
-        _ => "gaussian",
-    }
-}
-
-pub(crate) fn orientation_method_str(v: RsOrientationMethod) -> &'static str {
-    match v {
-        RsOrientationMethod::RingFit => "ring_fit",
-        RsOrientationMethod::DiskFit => "disk_fit",
-        _ => "ring_fit",
-    }
-}
-
-/// The config string of `v`; an error for a tier these bindings do not
-/// know (never mapped silently to another tier).
-pub(crate) fn uncertainty_str(v: RsUncertainty) -> PyResult<&'static str> {
-    match v {
-        RsUncertainty::Off => Ok("off"),
-        RsUncertainty::Propagated => Ok("propagated"),
-        other => Err(config_error(format!(
-            "unsupported uncertainty tier {other:?}"
-        ))),
-    }
-}
-
-/// The Python enum of `v`; an error for a tier these bindings do not know.
-pub(crate) fn uncertainty_py(v: RsUncertainty) -> PyResult<Uncertainty> {
-    match v {
-        RsUncertainty::Off => Ok(Uncertainty::Off),
-        RsUncertainty::Propagated => Ok(Uncertainty::Propagated),
-        other => Err(config_error(format!(
-            "unsupported uncertainty tier {other:?}"
-        ))),
-    }
 }
 
 // ---------------------------------------------------------------------------
