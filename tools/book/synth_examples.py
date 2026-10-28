@@ -117,7 +117,6 @@ def make_fixture_grid(out_path: Path) -> None:
     fig.tight_layout(rect=[0, 0, 1, 0.97])
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150)
-    fig.savefig(out_path.with_suffix(".svg"))
     plt.close(fig)
     print(f"wrote {out_path}")
 
@@ -144,7 +143,6 @@ def make_mode_comparison(out_path: Path) -> None:
                  fontsize=12)
     fig.tight_layout(rect=[0, 0, 1, 0.92])
     fig.savefig(out_path, dpi=150)
-    fig.savefig(out_path.with_suffix(".svg"))
     plt.close(fig)
     print(f"wrote {out_path}")
 

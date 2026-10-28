@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Produce Part V plot figures from the bench_sweep + OpenCV JSON outputs.
+"""Produce Part IX plot figures from the bench_sweep + OpenCV JSON outputs.
 
 Inputs
 ------
@@ -8,11 +8,11 @@ Inputs
 
 Outputs
 -------
-- ``book/src/img/bench/accuracy_vs_blur.svg``
-- ``book/src/img/bench/accuracy_vs_noise.svg``
-- ``book/src/img/bench/accuracy_vs_cell.svg``
-- ``book/src/img/bench/error_cdf_clean.svg``
-- ``book/src/img/bench/throughput_vs_accuracy.svg``
+- ``book/src/img/bench/accuracy_vs_blur.png``
+- ``book/src/img/bench/accuracy_vs_noise.png``
+- ``book/src/img/bench/accuracy_vs_cell.png``
+- ``book/src/img/bench/error_cdf_clean.png``
+- ``book/src/img/bench/throughput_vs_accuracy.png``
 """
 from __future__ import annotations
 
@@ -160,8 +160,7 @@ def plot_line_sweep(
     ax.legend(loc="best", fontsize=9, frameon=False)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path)
-    fig.savefig(out_path.with_suffix(".png"), dpi=150)
+    fig.savefig(out_path, dpi=150)
     plt.close(fig)
     print(f"  wrote {out_path}")
 
@@ -196,8 +195,7 @@ def plot_error_cdf(rows: List[dict], fixed: Dict, out_path: Path, title: str) ->
     ax.set_ylim(0.0, 1.0)
     ax.legend(loc="lower right", fontsize=9, frameon=False)
     fig.tight_layout()
-    fig.savefig(out_path)
-    fig.savefig(out_path.with_suffix(".png"), dpi=150)
+    fig.savefig(out_path, dpi=150)
     plt.close(fig)
     print(f"  wrote {out_path}")
 
@@ -238,8 +236,7 @@ def plot_throughput_vs_accuracy(rows: List[dict], fixed: Dict, out_path: Path) -
                 ylabel="Mean error (px, log scale)")
     ax.legend(loc="upper left", fontsize=8, frameon=False)
     fig.tight_layout()
-    fig.savefig(out_path)
-    fig.savefig(out_path.with_suffix(".png"), dpi=150)
+    fig.savefig(out_path, dpi=150)
     plt.close(fig)
     print(f"  wrote {out_path}")
 
@@ -278,7 +275,7 @@ def main() -> None:
         fixed={"cell": 8, "noise_sigma": 0.0},
         title="Accuracy vs Gaussian blur σ (cell=8 px, no noise)",
         xlabel="Blur σ (image pixels)",
-        out_path=args.out_dir / "accuracy_vs_blur.svg",
+        out_path=args.out_dir / "accuracy_vs_blur.png",
         log_y=True,
     )
     plot_line_sweep(
@@ -287,7 +284,7 @@ def main() -> None:
         fixed={"cell": 8, "blur_sigma": 0.7},
         title="Accuracy vs additive noise σ (cell=8 px, blur σ=0.7)",
         xlabel="Noise σ (gray levels, on 0–255)",
-        out_path=args.out_dir / "accuracy_vs_noise.svg",
+        out_path=args.out_dir / "accuracy_vs_noise.png",
         log_y=True,
     )
     plot_line_sweep(
@@ -296,19 +293,19 @@ def main() -> None:
         fixed={"blur_sigma": 0.0, "noise_sigma": 0.0},
         title="Accuracy vs cell size (clean data)",
         xlabel="Cell size (pixels)",
-        out_path=args.out_dir / "accuracy_vs_cell.svg",
+        out_path=args.out_dir / "accuracy_vs_cell.png",
         log_y=True,
     )
     plot_error_cdf(
         rows,
         fixed={"cell": 8, "blur_sigma": 0.0, "noise_sigma": 0.0},
-        out_path=args.out_dir / "error_cdf_clean.svg",
+        out_path=args.out_dir / "error_cdf_clean.png",
         title="Error CDF on clean cell=8 fixture",
     )
     plot_throughput_vs_accuracy(
         rows,
         fixed={"cell": 8, "blur_sigma": 0.0, "noise_sigma": 0.0},
-        out_path=args.out_dir / "throughput_vs_accuracy.svg",
+        out_path=args.out_dir / "throughput_vs_accuracy.png",
     )
 
 

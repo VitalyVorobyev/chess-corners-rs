@@ -6,7 +6,7 @@
 //! dispatch wiring and fallback paths are correct end-to-end.
 
 use chess_corners_core::{fit_axes_at_point, ImageView, OrientationMethod};
-use core::f32::consts::PI;
+use chess_corners_testutil::line_delta;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -33,11 +33,6 @@ fn synthetic_corner(size: usize, theta0: f32, theta1: f32, width: f32) -> Vec<u8
         }
     }
     img
-}
-
-/// Undirected angular distance between two line angles (both in `[0, π)`).
-fn line_delta(a: f32, b: f32) -> f32 {
-    ((a - b + PI * 0.5).rem_euclid(PI) - PI * 0.5).abs()
 }
 
 /// Max angular error between two axis pairs — tests both direct and swapped.
@@ -135,13 +130,6 @@ fn disk_fit_lazy_gate_matches_ring_fit_on_clean_orthogonal() {
 // F8-3: Border fallback
 // ---------------------------------------------------------------------------
 
-/// Smallest signed angular distance between `a` and `b` modulo π,
-/// returned as an unsigned magnitude in `[0, π/2]`.
-fn line_err_mod_pi(a: f32, b: f32) -> f32 {
-    let d = (a - b).rem_euclid(PI);
-    d.min(PI - d)
-}
-
 // ---------------------------------------------------------------------------
 // F8-4: Canonical convention parity between RingFit and DiskFit.
 //
@@ -205,7 +193,7 @@ fn canonical_axes_match_across_methods() {
             }
 
             // (2) axes[0] agrees mod π — the slot-parity invariant.
-            let axis0_err = line_err_mod_pi(ring.theta1, disk.theta1);
+            let axis0_err = line_delta(ring.theta1, disk.theta1);
             if axis0_err > 0.10 {
                 violations.push(format!(
                     "axis0 flip: axis0={axis0_deg}° sep={sep_deg}° \

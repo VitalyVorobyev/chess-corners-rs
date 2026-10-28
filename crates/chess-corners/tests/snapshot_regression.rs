@@ -47,19 +47,20 @@
 //! ```
 
 use std::collections::BTreeMap;
-use std::env;
-use std::fs;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use chess_corners::{CornerDescriptor, Detector, DetectorConfig};
 use image::ImageReader;
-use rayon::ThreadPool;
 use serde::Serialize;
 
-const SNAPSHOT_DIR: &str = "tests/snapshots";
+#[path = "common/snapshot.rs"]
+mod snapshot;
+use snapshot::{check_or_update_manifest, ndjson, pinned_pool};
+
 const MANIFEST_FILE: &str = "manifest.txt";
-const ACTUAL_SUBDIR: &str = "actual";
+const MANIFEST_HEADER: &str = "# Per-case corner count for the ChESS presets.
+# Refresh with UPDATE_SNAPSHOTS=1 cargo test -p chess-corners --test snapshot_regression --all-features
+";
 
 const IMAGES: &[&str] = &["small", "mid", "large"];
 
@@ -108,27 +109,10 @@ impl CornerSnap {
     }
 }
 
-/// One-thread rayon pool, lazily initialised. Pinning the pool
-/// removes thread-count-dependent reduction order; the test still
-/// fails across CPU microarchitectures because FP results differ
-/// at the last bit, but the counts (the thing we actually check)
-/// stay stable.
-fn pinned_pool() -> &'static ThreadPool {
-    static POOL: OnceLock<ThreadPool> = OnceLock::new();
-    POOL.get_or_init(|| {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
-            .build()
-            .expect("build single-threaded rayon pool")
-    })
-}
-
-fn manifest_key(image: &str, preset: &str) -> String {
-    format!("{image}-{preset}")
-}
-
-/// Render the detector output for one `(image, preset)` cell.
-/// Returns `(count, ndjson_for_local_debugging)`.
+/// Render the detector output for one `(image, preset)` cell on the pinned
+/// one-thread pool. Returns `(count, ndjson_for_local_debugging)`. Positions
+/// still differ across CPU microarchitectures at the last bit; the counts
+/// (the thing we check) stay stable.
 fn render_snapshot(image: &str, preset: &Preset) -> (usize, String) {
     let img_path = PathBuf::from("../../testimages").join(format!("{image}.png"));
     let img = ImageReader::open(&img_path)
@@ -140,117 +124,10 @@ fn render_snapshot(image: &str, preset: &Preset) -> (usize, String) {
     let cfg = (preset.build)();
     let mut detector = Detector::new(cfg).expect("build detector");
     let mut corners = pinned_pool().install(|| detector.detect(&img).expect("detect"));
-
-    corners.sort_by(|a, b| {
-        a.x.partial_cmp(&b.x)
-            .unwrap()
-            .then_with(|| a.y.partial_cmp(&b.y).unwrap())
-    });
-
-    let mut out = format!("# count={}\n", corners.len());
-    for c in &corners {
-        let snap = CornerSnap::from_descriptor(c);
-        out.push_str(&serde_json::to_string(&snap).expect("serialize corner"));
-        out.push('\n');
-    }
-    (corners.len(), out)
-}
-
-/// Parse the manifest file into a `key → count` map.
-fn parse_manifest(text: &str) -> BTreeMap<String, usize> {
-    let mut out = BTreeMap::new();
-    for (lineno, line) in text.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        // Format: "<key> count=<N>"
-        let mut parts = line.split_whitespace();
-        let key = parts.next().unwrap_or("").to_string();
-        let count_part = parts.next().unwrap_or("");
-        let count: usize = count_part
-            .strip_prefix("count=")
-            .and_then(|s| s.parse().ok())
-            .unwrap_or_else(|| panic!("manifest line {}: bad count: {line}", lineno + 1));
-        out.insert(key, count);
-    }
-    out
-}
-
-/// Format the manifest map back to text. Sorted by key for stable
-/// commits.
-fn format_manifest(entries: &BTreeMap<String, usize>) -> String {
-    let mut out = String::from("# Per-case corner count for the ChESS presets.\n");
-    out.push_str("# Refresh with UPDATE_SNAPSHOTS=1 cargo test -p chess-corners --test snapshot_regression --all-features\n");
-    for (key, count) in entries {
-        out.push_str(&format!("{key} count={count}\n"));
-    }
-    out
-}
-
-fn check_or_update_manifest() {
-    let manifest_path = PathBuf::from(SNAPSHOT_DIR).join(MANIFEST_FILE);
-
-    let mut current: BTreeMap<String, usize> = BTreeMap::new();
-    let mut actuals: Vec<(String, String)> = Vec::new();
-
-    for image in IMAGES {
-        for preset in PRESETS {
-            let (count, ndjson) = render_snapshot(image, preset);
-            let key = manifest_key(image, preset.name);
-            current.insert(key.clone(), count);
-            actuals.push((key, ndjson));
-        }
-    }
-
-    if env::var_os("UPDATE_SNAPSHOTS").is_some() {
-        fs::create_dir_all(SNAPSHOT_DIR).expect("create snapshot dir");
-        fs::write(&manifest_path, format_manifest(&current))
-            .unwrap_or_else(|e| panic!("write {}: {e}", manifest_path.display()));
-        return;
-    }
-
-    let expected_text = fs::read_to_string(&manifest_path).unwrap_or_else(|e| {
-        panic!(
-            "missing baseline {} ({e}); run with UPDATE_SNAPSHOTS=1 to seed it",
-            manifest_path.display()
-        )
-    });
-    let expected = parse_manifest(&expected_text);
-
-    let mut mismatches: Vec<String> = Vec::new();
-    for (key, cur_count) in &current {
-        match expected.get(key) {
-            Some(exp_count) if exp_count == cur_count => {}
-            Some(exp_count) => mismatches.push(format!(
-                "{key}: expected count={exp_count}, got count={cur_count}"
-            )),
-            None => mismatches.push(format!(
-                "{key}: missing from manifest (current count={cur_count})"
-            )),
-        }
-    }
-    for key in expected.keys() {
-        if !current.contains_key(key) {
-            mismatches.push(format!(
-                "{key}: in manifest but not produced by current code"
-            ));
-        }
-    }
-
-    if !mismatches.is_empty() {
-        let actual_dir = PathBuf::from(SNAPSHOT_DIR).join(ACTUAL_SUBDIR);
-        let _ = fs::create_dir_all(&actual_dir);
-        for (key, ndjson) in &actuals {
-            let path = actual_dir.join(format!("{key}.json"));
-            let _ = fs::write(&path, ndjson);
-        }
-        panic!(
-            "snapshot regression failed:\n  {}\n\nActual NDJSON dumps for inspection: {}\nIf intended, refresh with UPDATE_SNAPSHOTS=1.",
-            mismatches.join("\n  "),
-            actual_dir.display(),
-        );
-    }
+    (
+        corners.len(),
+        ndjson(&mut corners, CornerSnap::from_descriptor),
+    )
 }
 
 /// Single test that exercises every `(image, preset)` cell in one
@@ -258,5 +135,15 @@ fn check_or_update_manifest() {
 /// manifest read cheap.
 #[test]
 fn snapshot_regression() {
-    check_or_update_manifest();
+    let mut current = BTreeMap::new();
+    let mut actuals = Vec::new();
+    for image in IMAGES {
+        for preset in PRESETS {
+            let (count, dump) = render_snapshot(image, preset);
+            let key = format!("{image}-{}", preset.name);
+            current.insert(key.clone(), count);
+            actuals.push((key, dump));
+        }
+    }
+    check_or_update_manifest(MANIFEST_FILE, MANIFEST_HEADER, &current, &actuals);
 }

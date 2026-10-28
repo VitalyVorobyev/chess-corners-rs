@@ -39,30 +39,16 @@
 
 use std::f32::consts::PI;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use chess_corners::{CornerDescriptor, Detector, DetectorConfig, OrientationMethod};
+use chess_corners_testutil::line_delta;
 use image::ImageReader;
-use rayon::ThreadPool;
 
-/// One-thread rayon pool so the corner set is reduction-order stable
-/// regardless of host thread count (same rationale as the snapshot test).
-fn pinned_pool() -> &'static ThreadPool {
-    static POOL: OnceLock<ThreadPool> = OnceLock::new();
-    POOL.get_or_init(|| {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
-            .build()
-            .expect("build single-threaded rayon pool")
-    })
-}
-
-/// Undirected angular distance between two line angles, folded into
-/// `[0, π/2]`. Lines are equivalent mod π, so this is the natural metric
-/// for "do these two `axes[*].angle` values point along the same line".
-fn line_delta(a: f32, b: f32) -> f32 {
-    ((a - b + PI * 0.5).rem_euclid(PI) - PI * 0.5).abs()
-}
+// Only `pinned_pool` is used here; the manifest helpers serve the snapshot tests.
+#[allow(dead_code)]
+#[path = "common/snapshot.rs"]
+mod snapshot;
+use snapshot::pinned_pool;
 
 fn detect(image: &str, method: OrientationMethod) -> Vec<CornerDescriptor> {
     let img_path = PathBuf::from("../../testimages").join(format!("{image}.png"));

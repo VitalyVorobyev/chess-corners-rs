@@ -23,7 +23,7 @@ Smoke (≤30 s, useful for CI):
 ```bash
 python -m orientation_bench sweep \
   --config tools/orientation_bench/configs/bench_smoke.yaml \
-  --methods ring_fit disk_fit polar_fit_py \
+  --methods ring_fit disk_fit \
   --out out/orientation_bench
 ```
 
@@ -71,20 +71,11 @@ review).
   (the workspace default).
 - `disk_fit`: full-disk crossing-line estimator with `ring_fit`
   fallback when the disk model is weak or invalid.
-- `disk_sector_py`: benchmark-only Python post-processor. It first
-  runs `ring_fit` for centers/fallback sigmas, then conditionally
-  replaces angles using a full-disk crossing-line score.
-- `polar_fit_py`: benchmark-only Python post-processor. It first runs
-  `ring_fit` for centers/fallback rows, then samples multi-radius polar
-  traces and conditionally replaces only the two axis angles when the
-  polar correlation and radial consistency gates pass.
 
 ## Adding a new method
 
 `variants.py` maps method names to a builder function returning a
-`chess_corners.ChessConfig`. Benchmark-only Python post-processors can
-be registered as special methods in `runner.py` and should keep their
-extra logic in a helper module under `tools/orientation_bench`.
+`chess_corners.DetectorConfig`.
 
 ```python
 def _build_my_variant():

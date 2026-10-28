@@ -1,6 +1,6 @@
-# Held-out hard-cell validation set for v6 — identical to
-# val_hardcell_v5.yaml but with a fresh seed to avoid contaminating
-# training signals.
+# Held-out hard-cell validation set (cell sizes 5-8 px, the Rust refiner
+# benchmark envelope), seeded apart from the training set. Source of the
+# ONNX parity fixtures.
 seed: 0xC0FFEE12
 patch_size: 21
 num_samples: 10000

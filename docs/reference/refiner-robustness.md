@@ -9,8 +9,10 @@ ranking on an independent generator that breaks the symmetry, and on real
 calibration data.
 
 Scripts: `tools/refiner_robustness/` (`synth.py` generator, `estimators.py`,
-`run_synth.py`, `run_real.py`, `sanity.py`, `diag_forstner.py`). Raw tables
-are written to `tools/refiner_robustness/out/` (gitignored).
+`run_synth.py`). Raw tables are written to `tools/refiner_robustness/out/`
+(gitignored). The real-data runner `run_real.py` and the one-off checks
+`sanity.py` / `diag_forstner.py` were removed; recover them from git history
+at commit `1609850b6`.
 
 ## Generator
 

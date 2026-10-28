@@ -1,7 +1,8 @@
 # ML refiner tools
 
-This folder contains a synthetic data generator for the ML subpixel refiner.
-Phase 1 generates grayscale patches with `(dx, dy, conf)` labels.
+Training pipeline for the ML subpixel refiner shipped in
+`crates/chess-corners-ml`: a synthetic patch generator, the PyTorch model
+(`model.py`), training/evaluation scripts, and the ONNX exporter.
 
 ## Setup
 
@@ -13,24 +14,22 @@ pip install -r tools/ml_refiner/requirements.txt
 
 `matplotlib` is optional (only needed for `--preview` and calibration plots).
 
-Optional install:
-
-```bash
-pip install matplotlib
-```
-
 ## Generate a dataset
 
 ```bash
 python tools/ml_refiner/synth/generate_dataset.py \
-  --config tools/ml_refiner/configs/synth_v1.yaml \
-  --out tools/ml_refiner/data/synth_v1
+  --config tools/ml_refiner/configs/synth_v6.yaml \
+  --out tools/ml_refiner/data/synth_v6
 ```
+
+`synth_v6.yaml` is the shipped model's training set. `val_hardcell_v6.yaml`
+and `val_tanh_v6.yaml` generate the held-out hard-cell and smooth-saddle
+validation sets the same way.
 
 Outputs:
 
 ```
-tools/ml_refiner/data/synth_v1/
+tools/ml_refiner/data/synth_v6/
   meta.json
   shard_00000.npz
   shard_00001.npz
@@ -50,6 +49,9 @@ Each shard (`npz`) contains:
 
 `meta.json` stores the full config plus a seed for reproducibility.
 
+Add `--preview 16` to save a preview grid (red arrows for `(dx, dy)`, green
+cross at the true corner), or `--self-test` for a quick sanity check.
+
 ### Sign convention
 
 The patch is centered on the candidate corner. Labels are the offset from the
@@ -61,47 +63,22 @@ true_corner = patch_center + (dx, dy)
 
 `dx` is positive to the right, `dy` is positive downward (image coordinates).
 
-## Preview
-
-Save a preview grid (red arrows for `(dx, dy)` plus a green cross at the true corner):
-
-```bash
-python tools/ml_refiner/synth/generate_dataset.py \
-  --config tools/ml_refiner/configs/synth_v1.yaml \
-  --out tools/ml_refiner/data/synth_v1 \
-  --preview 16
-```
-
-If `matplotlib` is not installed, the preview is skipped with a message.
-
-## Self-test
-
-Quick sanity check:
-
-```bash
-python tools/ml_refiner/synth/generate_dataset.py \
-  --config tools/ml_refiner/configs/synth_v2.yaml \
-  --self-test
-```
-
-## Notes
+### Notes
 
 - When homography is enabled, the patch is sampled by inverse-warping a
   canonical corner through a random projective transform; rotation is applied
   in the homography stage.
 - Homographies are centered so the canonical origin maps to the patch origin
   before applying the `(dx, dy)` shift.
-- The ideal corner is rendered as a smooth saddle pattern with a scale factor
-  that adjusts edge sharpness.
 - Gaussian blur and noise are sampled per patch; confidence is a deterministic
   function of their strengths.
-- Negatives can be enabled via `neg` in `synth_v1.yaml` to provide non-corner
-  patches with `conf=0` and `is_pos=0`.
+- Negatives (`neg` in the config) are non-corner patches with `conf=0` and
+  `is_pos=0`.
 
-## Train a baseline model
+## Train
 
 ```bash
-python tools/ml_refiner/train.py --config tools/ml_refiner/configs/train_v2.yaml
+python tools/ml_refiner/train.py --config tools/ml_refiner/configs/train_v6.yaml
 ```
 
 By default, `device: auto` selects MPS if available, otherwise CPU.
@@ -118,32 +95,22 @@ Outputs are stored under `tools/ml_refiner/runs/<timestamp>/` with:
 
 ## Evaluate a checkpoint
 
-```bash
-python tools/ml_refiner/eval.py \\
-  --config tools/ml_refiner/configs/train_v1.yaml \\
-  --checkpoint tools/ml_refiner/runs/<run>/model_best.pt
-```
-
-Optional calibration plot:
+On the training config's validation split (optional calibration plot):
 
 ```bash
-python tools/ml_refiner/eval.py \\
-  --config tools/ml_refiner/configs/train_v1.yaml \\
-  --checkpoint tools/ml_refiner/runs/<run>/model_best.pt \\
+python tools/ml_refiner/eval.py \
+  --config tools/ml_refiner/configs/train_v6.yaml \
+  --checkpoint tools/ml_refiner/runs/<run>/model_best.pt \
   --plot tools/ml_refiner/runs/<run>/calibration.png
 ```
 
-## Compare ML vs OpenCV cornerSubPix
-
-Requires `opencv-python` (see `tools/ml_refiner/requirements.txt`).
+On a held-out set, with a breakdown by cell size, blur and noise:
 
 ```bash
-python tools/ml_refiner/eval/compare_opencv.py \\
-  --config tools/ml_refiner/configs/compare_opencv_v1.yaml
+python tools/ml_refiner/eval_hardcell.py \
+  --data-dir tools/ml_refiner/data/val_hardcell_v6 \
+  --checkpoint tools/ml_refiner/runs/<run>/model_best.pt
 ```
-
-This writes a JSON summary and optional plots under
-`tools/ml_refiner/runs/compare_opencv/<timestamp>/`.
 
 ## Export to ONNX
 
@@ -152,11 +119,12 @@ Export a trained checkpoint and generate fixtures:
 ```bash
 python tools/ml_refiner/export_onnx.py \
   --checkpoint tools/ml_refiner/runs/<run>/model_best.pt \
-  --out assets/ml/chess_refiner_v1.onnx \
+  --out crates/chess-corners-ml/assets/ml/chess_refiner_v4.onnx \
   --patch-size 21 \
   --opset 17 \
   --num-fixtures 64 \
-  --fixtures-out assets/ml/fixtures
+  --dataset-dir tools/ml_refiner/data/val_hardcell_v6 \
+  --fixtures-out crates/chess-corners-ml/assets/ml/fixtures/v4
 ```
 
 If opset 17 conversion fails, the exporter may fall back to opset 18; check the

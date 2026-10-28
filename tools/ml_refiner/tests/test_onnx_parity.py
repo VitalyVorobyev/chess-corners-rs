@@ -6,9 +6,9 @@ from pathlib import Path
 
 import numpy as np
 
-ASSETS_DIR = Path(__file__).resolve().parents[3] / "assets" / "ml"
-ONNX_PATH = ASSETS_DIR / "chess_refiner_v1.onnx"
-FIXTURES_DIR = ASSETS_DIR / "fixtures"
+ASSETS_DIR = Path(__file__).resolve().parents[3] / "crates" / "chess-corners-ml" / "assets" / "ml"
+ONNX_PATH = ASSETS_DIR / "chess_refiner_v4.onnx"
+FIXTURES_DIR = ASSETS_DIR / "fixtures" / "v4"
 PATCHES_PATH = FIXTURES_DIR / "patches.npy"
 TORCH_OUT_PATH = FIXTURES_DIR / "torch_out.npy"
 

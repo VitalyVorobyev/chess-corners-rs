@@ -1,8 +1,10 @@
 """Real-data check of the position covariance: does weighting a camera
 calibration by each corner's reported covariance help?
 
-Same datasets, board identification and common-corner matching as
-``run_real.py``. Per localizer (ChESS + CenterOfMass / Förstner / SaddlePoint,
+Datasets (read-only): ``stereo_simple`` (20 views per camera, 11 x 7 inner
+corners, 30 mm squares, board IDs from ``cv2.findChessboardCornersSB``) and
+``table`` (ChArUco 22 x 22 squares, 1.35 mm, DICT_4X4_1000, non-legacy layout,
+board IDs from ``cv2.aruco.CharucoDetector``). Per localizer (ChESS + CenterOfMass / Förstner / SaddlePoint,
 the Radon peak fit, Radon + SaddlePoint; default ``Uncertainty.PROPAGATED``,
 noise sigma estimated per image), on the corners every localizer matched and
 gave a covariance:
@@ -45,9 +47,39 @@ sys.path.insert(0, str(HERE))
 
 import chess_corners as cc  # noqa: E402
 import estimators as est  # noqa: E402
-from run_real import SS, TB, ref_stereo_simple, ref_table  # noqa: E402
 
 NAMES = ["CoM", "Forstner", "SaddlePoint", "RadonPeak", "RadonSaddle"]
+SS = "/Users/vitalyvorobyev/vision/calib-examples/data/stereo_simple/imgs"
+TB = "/Users/vitalyvorobyev/vision/data/25_09_17_Table_Calibration"
+
+
+def ref_stereo_simple(img):
+    ok, c = cv2.findChessboardCornersSB(img, (11, 7))
+    if not ok:
+        return None
+    c = c.reshape(-1, 2).astype(np.float64)
+    gx, gy = np.meshgrid(np.arange(11), np.arange(7))
+    obj = np.stack([gx.ravel() * 30.0, gy.ravel() * 30.0, np.zeros(77)], 1)
+    return c, obj
+
+
+_CH = None
+
+
+def ref_table(img):
+    global _CH
+    if _CH is None:
+        d = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
+        b = cv2.aruco.CharucoBoard((22, 22), 1.35, 1.35 * 0.75, d)
+        b.setLegacyPattern(False)
+        _CH = (b, cv2.aruco.CharucoDetector(b))
+    b, det = _CH
+    cc_, ids, _mc, _mi = det.detectBoard(img)
+    if ids is None or len(ids) < 30:
+        return None
+    obj = b.getChessboardCorners()[ids.ravel()].astype(np.float64)
+    return cc_.reshape(-1, 2).astype(np.float64), obj
+
 _DETS: dict = {}
 
 
