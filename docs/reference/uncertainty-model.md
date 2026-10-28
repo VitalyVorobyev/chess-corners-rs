@@ -286,6 +286,76 @@ removed, are low by this margin wherever that term is not known (any user
 calibration). With (b), Förstner's larger floor (0.28) moves the Rx cells
 to 0.64–1.56; with (c) to 0.67–1.51.
 
+#### Cross-camera floor (UQ-44): pre-registered
+
+Written and committed before any number below it was computed.
+
+**Idea.** The target's manufacturing error is common to both cameras; a
+camera's repeatable per-corner localizer error is not. Estimating the
+per-corner target term from the *other* camera keeps the latter in the
+remainder.
+
+**Remainders** (model (a), shipped knots; per corner set **all** /
+**chess**; 5×4 lens basis):
+
+- *in-sample* `e_in`: the shipped local remainder (lens field, per-id
+  target term, per-view cubic, all fitted on both cameras).
+- *cross-camera* `e_x,B` for held-out camera B: target term fitted on
+  camera A only, B's lens field fitted on B after removing it, per-view
+  cubic per view of B; dof = the per-view cubic's share (the `UQ-37`
+  camera split of `ablation.py::held_out`).
+
+**A flaw in the plain cross-camera floor, stated beforehand.** Write the
+remainder at corner `i` of camera c as `n + b_c,i` (random, and repeatable
+per camera; the target term `t_i` and any error common to both cameras
+`a_i` cancel). Then `e_in ≈ n` (the in-sample term absorbs `b`), but
+`e_x,B ≈ n + b_B − b_A`: it carries **both** cameras' repeatable error, so a
+floor whitening it double-counts `b` when the cameras are alike. The
+estimand — what one camera's corner error is when the target is known —
+is `n + b_B`. With exchangeable cameras its variance is the midpoint of
+the two remainders' variances; the leakage of the random error into a
+per-id term (3 parameters from ~21 × 2 values: ~7% of `n`'s variance,
+taken from `e_in`, added to `e_x`) cancels there to first order. `a_i`
+(per-corner error common to both cameras, e.g. pattern bias) is not
+identifiable from target error with one board; §4 of
+[real-data validation](real-data-validation.md) bounds the pattern part at
+≤ 1% of the target term.
+
+**Floors.**
+
+- `f_x` (upper bound): σ̂₀² = 1 on `e_x` pooled over both directions.
+- `f_m` (**candidate**): ½[σ̂₀²_in(f) + σ̂₀²_x(f)] = 1, σ̂₀²_x pooled over
+  both directions.
+- Per corner set; a table's floor is the max over **all** / **chess** and,
+  for SaddlePoint, over the ChESS and Radon seeds (the shipped rule). The
+  Radon + SaddlePoint value is reported against SaddlePoint's.
+
+**Adopt `f_m` for every table only if all of the following hold;
+otherwise keep the shipped floors and document the limit.**
+
+1. *Precision.* View bootstrap (the 27 poses resampled with replacement,
+   both cameras together, every term refitted; 200 replicates; table
+   floor by the max rule per replicate): the 90% interval's half-width ≤
+   25% of `f_m`.
+2. *Direction.* With the pooled `f_m`, each held-out camera's midpoint
+   ½[σ̂₀²_in,B + σ̂₀²_x,B] lies in 0.67–1.5 on both sets; and with the
+   pooled `f_x`, each direction's σ̂₀²_x,B lies in 0.67–1.5 (the two
+   cameras must agree on the excess for the midpoint to mean anything).
+3. *Ranking and weighting.* With the new floors, the `UQ-36` gate against
+   the shipped Σ: Spearman(σ, |e|) ≥ shipped − 0.02 on the local and the
+   cross-fold remainder, Σ-whitened rig calibration's held-out CV RMS and
+   cross-fold remainder ≤ 1.005 × the shipped-Σ value, both sets.
+4. *Not lens structure.* The excess `f_x² − f_in²` must keep ≥ 50% of its
+   size when every lens field uses a 10×8 basis (~200 px knots: too coarse
+   for the 90 px corner pitch, fine enough for lens structure the 5×4
+   basis misses). Otherwise the excess is a field over the image, not a
+   corner error, and a per-corner floor should not carry it.
+
+Reported, not gating: the difference of the two cameras' target terms
+against its noise expectation and across localizers (how much of `b` is
+shared by every localizer), the per-view cubic's RMS on `e_x` vs `e_in`,
+and the `sigma0_sweep` medians with the new floors.
+
 ### End-to-end calibration (UQ-38)
 
 Rig calibration per localizer (fx ≈ 21 800 px), uniform (u) vs Σ-weighted.
