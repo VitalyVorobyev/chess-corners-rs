@@ -6,7 +6,7 @@ use pyo3::types::{PyDict, PyType};
 
 use super::parse::{
     accept_dict_or_bare_string, config_error, extract_int, json_dumps, json_loads,
-    reject_unknown_keys, require_dict,
+    reject_unknown_keys, require_dict, unknown_variant,
 };
 
 // ---------------------------------------------------------------------------
@@ -38,20 +38,19 @@ pub struct UpscaleConfig {
 }
 
 impl UpscaleConfig {
-    pub(crate) fn from_rs(v: RsUpscaleConfig) -> Self {
+    const DISABLED: Self = Self {
+        kind: UpscaleKind::Disabled,
+        factor: 1,
+    };
+
+    pub(crate) fn from_rs(v: RsUpscaleConfig) -> PyResult<Self> {
         match v {
-            RsUpscaleConfig::Disabled => Self {
-                kind: UpscaleKind::Disabled,
-                factor: 1,
-            },
-            RsUpscaleConfig::Fixed(k) => Self {
+            RsUpscaleConfig::Disabled => Ok(Self::DISABLED),
+            RsUpscaleConfig::Fixed(k) => Ok(Self {
                 kind: UpscaleKind::Fixed,
                 factor: k,
-            },
-            _ => Self {
-                kind: UpscaleKind::Disabled,
-                factor: 1,
-            },
+            }),
+            other => Err(unknown_variant("UpscaleConfig", &other)),
         }
     }
 
@@ -67,14 +66,14 @@ impl UpscaleConfig {
 impl UpscaleConfig {
     /// Default-construct: disabled (no upscaling).
     #[new]
-    fn new() -> Self {
+    fn new() -> PyResult<Self> {
         Self::from_rs(RsUpscaleConfig::default())
     }
 
     /// Disabled variant: no upscaling.
     #[classmethod]
     fn disabled(_cls: &Bound<'_, PyType>) -> Self {
-        Self::from_rs(RsUpscaleConfig::Disabled)
+        Self::DISABLED
     }
 
     /// Fixed-factor upscale. Allowed factors: 2, 3, 4. Factor is not
@@ -139,7 +138,7 @@ impl UpscaleConfig {
         //   { "fixed": 2 }      (payload variant — object only)
         if let Some(tag) = accept_dict_or_bare_string(data, &["disabled"], &["fixed"], "upscale")? {
             debug_assert_eq!(tag, "disabled");
-            return Ok(Self::from_rs(RsUpscaleConfig::Disabled));
+            return Ok(Self::DISABLED);
         }
         let dict = require_dict(data, "upscale")?;
         reject_unknown_keys(&dict, &["disabled", "fixed"], "upscale")?;
@@ -151,7 +150,7 @@ impl UpscaleConfig {
             ));
         }
         if has_disabled {
-            return Ok(Self::from_rs(RsUpscaleConfig::Disabled));
+            return Ok(Self::DISABLED);
         }
         if has_fixed {
             if let Some(v) = extract_int(&dict, "fixed", "upscale")? {

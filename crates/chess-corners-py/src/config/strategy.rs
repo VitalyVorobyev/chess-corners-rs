@@ -10,9 +10,8 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
 
 use super::parse::{
-    chess_ring_str, config_error, extract_int, extract_string, json_dumps, json_loads,
-    parse_chess_ring, parse_peak_fit_mode, peak_fit_mode_str, reject_unknown_keys, require_dict,
-    ChessRing, PeakFitMode,
+    config_error, extract_int, extract_string, json_dumps, json_loads, reject_unknown_keys,
+    require_dict, unknown_variant, ChessRing, PeakFitMode,
 };
 use super::refiners::{ChessRefiner, RadonRefiner};
 
@@ -30,7 +29,7 @@ impl ChessConfig {
     pub(crate) fn from_rs(py: Python<'_>, v: RsChessConfig) -> PyResult<Self> {
         Ok(Self {
             ring: v.ring,
-            refiner: Py::new(py, ChessRefiner::from_rs(v.refiner))?,
+            refiner: Py::new(py, ChessRefiner::from_rs(v.refiner)?)?,
         })
     }
 
@@ -50,8 +49,8 @@ impl ChessConfig {
     }
 
     #[getter]
-    fn ring(&self) -> ChessRing {
-        self.ring.into()
+    fn ring(&self) -> PyResult<ChessRing> {
+        ChessRing::from_rs(self.ring)
     }
     #[setter]
     fn set_ring(&mut self, v: ChessRing) {
@@ -69,7 +68,7 @@ impl ChessConfig {
 
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
-        d.set_item("ring", chess_ring_str(self.ring))?;
+        d.set_item("ring", ChessRing::config_str(self.ring)?)?;
         d.set_item("refiner", self.refiner.borrow(py).to_dict(py)?)?;
         Ok(d.unbind())
     }
@@ -84,7 +83,7 @@ impl ChessConfig {
         reject_unknown_keys(&dict, &["ring", "refiner"], "chess")?;
         let mut cfg = Self::from_rs(py, RsChessConfig::default())?;
         if let Some(s) = extract_string(&dict, "ring", "chess")? {
-            cfg.ring = parse_chess_ring(&s, "chess.ring")?;
+            cfg.ring = ChessRing::parse(&s, "chess.ring")?;
         }
         if let Some(value) = dict.get_item("refiner")? {
             let cls = py.get_type::<ChessRefiner>();
@@ -189,8 +188,8 @@ impl RadonConfig {
     }
 
     #[getter]
-    fn peak_fit(&self) -> PeakFitMode {
-        self.peak_fit.into()
+    fn peak_fit(&self) -> PyResult<PeakFitMode> {
+        PeakFitMode::from_rs(self.peak_fit)
     }
     #[setter]
     fn set_peak_fit(&mut self, v: PeakFitMode) {
@@ -211,7 +210,7 @@ impl RadonConfig {
         d.set_item("ray_radius", self.ray_radius)?;
         d.set_item("image_upsample", self.image_upsample)?;
         d.set_item("response_blur_radius", self.response_blur_radius)?;
-        d.set_item("peak_fit", peak_fit_mode_str(self.peak_fit))?;
+        d.set_item("peak_fit", PeakFitMode::config_str(self.peak_fit)?)?;
         d.set_item("refiner", self.refiner.borrow(py).to_dict(py)?)?;
         Ok(d.unbind())
     }
@@ -245,7 +244,7 @@ impl RadonConfig {
             cfg.response_blur_radius = v as u32;
         }
         if let Some(s) = extract_string(&dict, "peak_fit", "radon")? {
-            cfg.peak_fit = parse_peak_fit_mode(&s, "radon.peak_fit")?;
+            cfg.peak_fit = PeakFitMode::parse(&s, "radon.peak_fit")?;
         }
         if let Some(value) = dict.get_item("refiner")? {
             let cls = py.get_type::<RadonRefiner>();
@@ -417,7 +416,7 @@ impl DetectionStrategy {
                 chess: Py::new(py, ChessConfig::from_rs(py, RsChessConfig::default())?)?,
                 radon: Py::new(py, RadonConfig::from_rs(py, r)?)?,
             }),
-            _ => Self::from_rs(py, RsDetectionStrategy::default()),
+            other => Err(unknown_variant("DetectionStrategy", &other)),
         }
     }
 

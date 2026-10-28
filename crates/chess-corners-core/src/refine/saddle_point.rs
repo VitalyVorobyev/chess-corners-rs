@@ -816,6 +816,13 @@ mod tests {
         aa_chessboard, add_gaussian_noise, area_chessboard, gaussian_blur,
     };
 
+    /// A refiner reporting a covariance, which these tests examine.
+    fn propagated(cfg: SaddlePointConfig) -> SaddlePointRefiner {
+        let mut refiner = SaddlePointRefiner::new(cfg);
+        refiner.uncertainty = Uncertainty::Propagated;
+        refiner
+    }
+
     const SIZE: usize = 21;
 
     fn board(offset: (f32, f32), blur: f32) -> Vec<u8> {
@@ -828,7 +835,7 @@ mod tests {
 
     fn refine_default(img: &[u8], seed: [f32; 2]) -> RefineResult {
         let view = ImageView::from_u8_slice(SIZE, SIZE, img).unwrap();
-        SaddlePointRefiner::new(SaddlePointConfig::default()).refine(
+        propagated(SaddlePointConfig::default()).refine(
             seed,
             RefineContext {
                 image: Some(view),
@@ -978,7 +985,7 @@ mod tests {
     fn covariance_matches_finite_differences() {
         const SIDE: usize = 15;
         let centre = [7i32, 7];
-        let mut refiner = SaddlePointRefiner::new(SaddlePointConfig::default());
+        let mut refiner = propagated(SaddlePointConfig::default());
         let eps = 1.0f32;
         // (edge-normal angles rad, saddle position relative to `centre`, edge width px)
         for (angles, offset, width) in [
@@ -1057,7 +1064,7 @@ mod tests {
         let res = refine_default(&img, [2.0, 10.0]);
         assert_eq!(res.status, RefineStatus::Accepted);
         assert!(res.covariance_per_noise_variance.is_none());
-        let single = SaddlePointRefiner::new(SaddlePointConfig::default())
+        let single = propagated(SaddlePointConfig::default())
             .estimate(&view, [2, 10], [2.0, 10.0], 0, STEP_TOL)
             .unwrap();
         assert_eq!([res.x, res.y], single.xy);
@@ -1072,7 +1079,7 @@ mod tests {
     fn step_cap_returns_single_fit_without_covariance() {
         let img = board((10.4, 9.65), 0.0);
         let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
-        let mut refiner = SaddlePointRefiner::new(SaddlePointConfig::default());
+        let mut refiner = propagated(SaddlePointConfig::default());
         let (centre, seed) = ([10, 10], [10.0, 10.0]);
         let single = refiner.estimate(&view, centre, seed, 0, STEP_TOL).unwrap();
         let capped = refiner.estimate(&view, centre, seed, 1, STEP_TOL).unwrap();
@@ -1095,8 +1102,8 @@ mod tests {
     /// subpixel phase, including corners near the image border.
     #[test]
     fn convergence_does_not_depend_on_the_tier() {
-        let mut on = SaddlePointRefiner::new(SaddlePointConfig::default());
-        let mut off = SaddlePointRefiner::new(SaddlePointConfig::default());
+        let mut on = propagated(SaddlePointConfig::default());
+        let mut off = propagated(SaddlePointConfig::default());
         off.uncertainty = Uncertainty::Off;
         let mut checked = 0;
         for k in 0..60u64 {
@@ -1136,7 +1143,7 @@ mod tests {
             min_abs_det: 0.0,
             ..SaddlePointConfig::default()
         };
-        let res = SaddlePointRefiner::new(cfg).refine(
+        let res = propagated(cfg).refine(
             [10.0, 10.0],
             RefineContext {
                 image: Some(view),
@@ -1156,7 +1163,7 @@ mod tests {
                 radius,
                 ..SaddlePointConfig::default()
             };
-            let res = SaddlePointRefiner::new(cfg).refine(
+            let res = propagated(cfg).refine(
                 [10.0, 11.0],
                 RefineContext {
                     image: Some(view),
@@ -1176,7 +1183,7 @@ mod tests {
             image: Some(view),
             response: None,
         };
-        let mut refiner = SaddlePointRefiner::new(SaddlePointConfig::default());
+        let mut refiner = propagated(SaddlePointConfig::default());
         let res = refiner.refine([8.0, 9.0], ctx);
         assert_eq!(res.status, RefineStatus::Accepted);
         let true_xy = [8.2f32, 8.6f32];

@@ -94,7 +94,8 @@ assert.equal(DetectorConfig.fromJson('{"noise_sigma": 2.5}').noiseSigma, 2.5);
 assert.equal(JSON.parse(DetectorConfig.chess().withNoiseSigma(2.5).toJson()).noise_sigma, 2.5);
 
 // Position covariance: stride 3 per corner, aligned with `detect`; finite with
-// every localizer by default, NaN with `uncertainty: "off"`.
+// every localizer under `uncertainty: "propagated"`, NaN under the default
+// `"off"`.
 const size = 128;
 const board = new Uint8Array(size * size);
 let seed = 1;
@@ -107,25 +108,38 @@ for (let y = 0; y < size; y++) {
   }
 }
 const saddle = ChessDetector.withConfig(
-  DetectorConfig.fromJson('{"strategy": {"chess": {"refiner": {"saddle_point": {}}}}}'),
+  DetectorConfig.fromJson(
+    '{"strategy": {"chess": {"refiner": {"saddle_point": {}}}}, "uncertainty": "propagated"}',
+  ),
 );
 const found = saddle.detect(board, size, size);
 const cov = saddle.positionCovariance();
 assert.ok(found.length > 0);
 assert.equal(cov.length, (found.length / 7) * 3);
 assert.ok(cov.some((v) => Number.isFinite(v) && v > 0), "saddle point reports covariances");
-const plain = new ChessDetector();
+const plain = ChessDetector.withConfig(DetectorConfig.chess().withUncertainty(Uncertainty.Propagated));
 const plainFound = plain.detect(board, size, size);
 assert.equal(plain.positionCovariance().length, (plainFound.length / 7) * 3);
 assert.ok(plain.positionCovariance().every((v) => Number.isFinite(v)), "default refiner reports covariances");
-assert.equal(DetectorConfig.chess().uncertainty, Uncertainty.Propagated);
-assert.equal(JSON.parse(DetectorConfig.chess().toJson()).uncertainty, "propagated");
-assert.equal(DetectorConfig.fromJson('{"uncertainty": "off"}').uncertainty, Uncertainty.Off);
-assert.equal(JSON.parse(DetectorConfig.chess().withUncertainty(Uncertainty.Off).toJson()).uncertainty, "off");
-const quiet = ChessDetector.withConfig(DetectorConfig.chess().withUncertainty(Uncertainty.Off));
+for (const cfg of [
+  DetectorConfig.chess(),
+  DetectorConfig.chessMultiscale(),
+  DetectorConfig.radon(),
+  DetectorConfig.radonMultiscale(),
+]) {
+  assert.equal(cfg.uncertainty, Uncertainty.Off, "Off is the default tier");
+}
+assert.equal(JSON.parse(DetectorConfig.chess().toJson()).uncertainty, "off");
+assert.equal(DetectorConfig.fromJson('{"uncertainty": "propagated"}').uncertainty, Uncertainty.Propagated);
+assert.equal(DetectorConfig.fromJson("{}").uncertainty, Uncertainty.Off);
+assert.equal(
+  JSON.parse(DetectorConfig.chess().withUncertainty(Uncertainty.Propagated).toJson()).uncertainty,
+  "propagated",
+);
+const quiet = new ChessDetector();
 const quietFound = quiet.detect(board, size, size);
 assert.equal(quiet.positionCovariance().length, (quietFound.length / 7) * 3);
-assert.ok(quiet.positionCovariance().every((v) => Number.isNaN(v)), "uncertainty off reports none");
+assert.ok(quiet.positionCovariance().every((v) => Number.isNaN(v)), "the default reports none");
 assert.deepEqual(Array.from(quietFound), Array.from(plainFound), "positions identical across tiers");
 // The covariance buffer never outlives the detection it belongs to.
 assert.throws(() => saddle.detect(board, size + 1, size));
@@ -137,7 +151,7 @@ assert.equal(saddle.positionCovariance().length, 0, "cleared by applyConfig");
 
 // Radon keeps its peak fit by default, which reports a covariance as well as
 // the saddle-point refinement.
-const radonCfg = DetectorConfig.radon();
+const radonCfg = DetectorConfig.radon().withUncertainty(Uncertainty.Propagated);
 assert.equal(JSON.parse(radonCfg.toJson()).strategy.radon.refiner, "peak_fit");
 const peakFit = ChessDetector.withConfig(radonCfg);
 peakFit.detect(board, size, size);

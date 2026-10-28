@@ -11,9 +11,8 @@ use pyo3::types::{PyDict, PyString, PyType};
 
 use super::multiscale::MultiscaleConfig;
 use super::parse::{
-    config_error, extract_float, json_dumps, json_loads, orientation_method_str,
-    parse_orientation_method, parse_uncertainty, reject_unknown_keys, require_dict, uncertainty_py,
-    uncertainty_str, ChessRing, OrientationMethod, PeakFitMode, Uncertainty,
+    config_error, extract_float, json_dumps, json_loads, reject_unknown_keys, require_dict,
+    ChessRing, OrientationMethod, PeakFitMode, Uncertainty,
 };
 use super::refiners::{ChessRefiner, RadonRefiner};
 use super::strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig, StrategyKind};
@@ -42,8 +41,8 @@ impl DetectorConfig {
             strategy: Py::new(py, DetectionStrategy::from_rs(py, src.strategy)?)?,
             threshold: src.threshold,
             detection: Py::new(py, DetectionParams::from_rs(src.detection))?,
-            multiscale: Py::new(py, MultiscaleConfig::from_rs(src.multiscale))?,
-            upscale: Py::new(py, UpscaleConfig::from_rs(src.upscale))?,
+            multiscale: Py::new(py, MultiscaleConfig::from_rs(src.multiscale)?)?,
+            upscale: Py::new(py, UpscaleConfig::from_rs(src.upscale)?)?,
             orientation_method: src.orientation_method,
             merge_radius: src.merge_radius,
             noise_sigma: src.noise_sigma,
@@ -357,8 +356,10 @@ impl DetectorConfig {
     }
 
     #[getter]
-    fn orientation_method(&self) -> Option<OrientationMethod> {
-        self.orientation_method.map(Into::into)
+    fn orientation_method(&self) -> PyResult<Option<OrientationMethod>> {
+        self.orientation_method
+            .map(OrientationMethod::from_rs)
+            .transpose()
     }
     #[setter]
     fn set_orientation_method(&mut self, v: Option<OrientationMethod>) {
@@ -385,7 +386,7 @@ impl DetectorConfig {
 
     #[getter]
     fn uncertainty(&self) -> PyResult<Uncertainty> {
-        uncertainty_py(self.uncertainty)
+        Uncertainty::from_rs(self.uncertainty)
     }
     #[setter]
     fn set_uncertainty(&mut self, v: Uncertainty) {
@@ -404,12 +405,14 @@ impl DetectorConfig {
         // `None` (skip orientation) serialises to a JSON `null`.
         d.set_item(
             "orientation_method",
-            self.orientation_method.map(orientation_method_str),
+            self.orientation_method
+                .map(OrientationMethod::config_str)
+                .transpose()?,
         )?;
         d.set_item("merge_radius", self.merge_radius as f64)?;
         // `None` (estimate per image) serialises to a JSON `null`.
         d.set_item("noise_sigma", self.noise_sigma.map(f64::from))?;
-        d.set_item("uncertainty", uncertainty_str(self.uncertainty)?)?;
+        d.set_item("uncertainty", Uncertainty::config_str(self.uncertainty)?)?;
         Ok(d.unbind())
     }
 
@@ -472,7 +475,7 @@ impl DetectorConfig {
             } else if value.is_instance_of::<PyString>() {
                 let s = value.extract::<String>()?;
                 cfg.orientation_method =
-                    Some(parse_orientation_method(&s, "config.orientation_method")?);
+                    Some(OrientationMethod::parse(&s, "config.orientation_method")?);
             } else {
                 return Err(config_error(
                     "config.orientation_method must be a string or null",
@@ -493,7 +496,7 @@ impl DetectorConfig {
             let s = value
                 .extract::<String>()
                 .map_err(|_| config_error("config.uncertainty must be a string"))?;
-            cfg.uncertainty = parse_uncertainty(&s, "config.uncertainty")?;
+            cfg.uncertainty = Uncertainty::parse(&s, "config.uncertainty")?;
         }
         Ok(cfg)
     }

@@ -231,7 +231,7 @@ impl DetectorConfig {
     }
 
     /// Return a copy of this config with the position-uncertainty tier
-    /// replaced. JS: `cfg.withUncertainty(Uncertainty.Off)`.
+    /// replaced. JS: `cfg.withUncertainty(Uncertainty.Propagated)`.
     #[wasm_bindgen(js_name = withUncertainty)]
     pub fn with_uncertainty(&self, uncertainty: Uncertainty) -> Self {
         let mut out = self.deep_clone();
@@ -507,8 +507,8 @@ impl DetectorConfig {
         *self.noise_sigma.borrow_mut() = v;
     }
 
-    /// Position-uncertainty tier: `Uncertainty.Propagated` (default) reports
-    /// a position covariance per corner, `Uncertainty.Off` reports none.
+    /// Position-uncertainty tier: `Uncertainty.Off` (default) reports no
+    /// position covariance, `Uncertainty.Propagated` reports one per corner.
     /// JSON: `"uncertainty": "off" | "propagated"`.
     #[wasm_bindgen(getter)]
     pub fn uncertainty(&self) -> Result<Uncertainty, JsError> {

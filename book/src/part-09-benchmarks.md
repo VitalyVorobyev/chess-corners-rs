@@ -193,8 +193,9 @@ The Pareto frontier, fast-to-slow:
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.07 px               | OpenCV's iterative gradient refiner.                                  |
 | `ML (ONNX)`         | ~150 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row (`σ_noise = 12`).             |
 
-The times are the refinement alone. Under the default
-`Uncertainty::Propagated` each geometric refiner also computes its
+The times are the refinement alone, under the default
+`Uncertainty::Off`. Under `Uncertainty::Propagated` each geometric
+refiner also computes its
 position covariance, which brings it to about 0.5 µs per corner
 ([Part VIII §8.2.1](part-08-uncertainty.md#821-cost)).
 

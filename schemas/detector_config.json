@@ -325,7 +325,7 @@
       "type": "object"
     },
     "RadonRefiner": {
-      "description": "Final subpixel position of a Radon corner.\n\nThe Radon detector always locates its peaks with a 3-point fit on the\nresponse map (`RadonConfig::peak_fit`); this selects whether that\nposition is final or seeds a saddle-point refinement on the input\nimage. Either reports a\n`position_covariance`\nunder the default `Uncertainty` tier.",
+      "description": "Final subpixel position of a Radon corner.\n\nThe Radon detector always locates its peaks with a 3-point fit on the\nresponse map (`RadonConfig::peak_fit`); this selects whether that\nposition is final or seeds a saddle-point refinement on the input\nimage. Either reports a\n`position_covariance`\nunder `Uncertainty::Propagated`.",
       "oneOf": [
         {
           "const": "peak_fit",
@@ -392,12 +392,12 @@
       "oneOf": [
         {
           "const": "off",
-          "description": "No position covariance. Localizers skip the noise propagation and\nthe systematic model, and the detector makes no noise estimate.\nPositions are the same as under every other tier.",
+          "description": "No position covariance (the default). Localizers skip the noise\npropagation and the systematic model, and the detector makes no\nnoise estimate. Positions are the same as under every other tier.",
           "type": "string"
         },
         {
           "const": "propagated",
-          "description": "Image noise propagated through the localizer to first order, plus\nthe localizer's systematic-error model (from the corner's offset to\nthe localizer's fit window and the width of its edges). The\ndefault.\n\nThe systematic part includes a per-localizer floor measured on real\ncalibration images (about 0.05 px per axis for the saddle-point fit\nand the Radon peak fit, 0.07 center of mass, 0.11 Förstner). On\nreal, well-exposed images this floor is usually the largest part of\nthe covariance, so the reported σ varies little from corner to\ncorner there. Weighting a calibration by it has not been shown to\nbeat uniform weighting on real data. Errors shared by all corners of\nan image (defocus, lens-model error) are outside it.",
+          "description": "Image noise propagated through the localizer to first order, plus\nthe localizer's systematic-error model (from the corner's offset to\nthe localizer's fit window and the width of its edges).\n\nThe systematic part includes a per-localizer floor measured on real\ncalibration images (about 0.05 px per axis for the saddle-point fit\nand the Radon peak fit, 0.07 center of mass, 0.11 Förstner). On\nreal, well-exposed images this floor is usually the largest part of\nthe covariance, so the reported σ varies little from corner to\ncorner there. Weighting a calibration by it has not been shown to\nbeat uniform weighting on real data. Errors shared by all corners of\nan image (defocus, lens-model error) are outside it.",
           "type": "string"
         }
       ],
@@ -500,8 +500,8 @@
     },
     "uncertainty": {
       "$ref": "#/$defs/Uncertainty",
-      "default": "propagated",
-      "description": "Which position uncertainty each corner reports in\n`position_covariance`.\n`Uncertainty::Propagated` (the default) gives every localizer —\neach `ChessRefiner` except the ML refiner, the Radon peak fit, and\nsaddle-point refinement of Radon peaks — a covariance: image noise\npropagated through the localizer plus its systematic-error model.\nThe systematic part includes a per-localizer floor measured on real\ncalibration images; on real, well-exposed images it is usually the\nlargest part of the covariance, and weighting a calibration by it\nhas not been shown to beat uniform weighting on real data.\n`Uncertainty::Off` skips that work and the noise estimate; corner\npositions are the same under every tier."
+      "default": "off",
+      "description": "Which position uncertainty each corner reports in\n`position_covariance`.\n`Uncertainty::Off` (the default) reports none and makes no noise\nestimate. `Uncertainty::Propagated` gives every localizer —\neach `ChessRefiner` except the ML refiner, the Radon peak fit, and\nsaddle-point refinement of Radon peaks — a covariance: image noise\npropagated through the localizer plus its systematic-error model.\nThe systematic part includes a per-localizer floor measured on real\ncalibration images; on real, well-exposed images it is usually the\nlargest part of the covariance, and weighting a calibration by it\nhas not been shown to beat uniform weighting on real data. Corner\npositions are the same under every tier."
     },
     "upscale": {
       "$ref": "#/$defs/UpscaleConfig",

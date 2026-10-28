@@ -147,12 +147,11 @@ pub struct RefineResult {
     /// underestimate the scatter.
     ///
     /// Set on accepted corners by every refiner under
-    /// [`Uncertainty::Propagated`] (the default; see
-    /// [`Refiner::with_uncertainty`]): the saddle-point refiner when its
+    /// [`Uncertainty::Propagated`] (see [`Refiner::with_uncertainty`]): the saddle-point refiner when its
     /// re-centred refinement converged, the center-of-mass refiner when the
     /// image and a ChESS response map are both in the [`RefineContext`],
     /// and the Förstner refiner. `None` otherwise, and always under
-    /// [`Uncertainty::Off`].
+    /// [`Uncertainty::Off`] (the default).
     pub covariance_per_noise_variance: Option<PositionCovariance>,
     /// The full covariance model; `covariance_per_noise_variance` mirrors
     /// its noise term.
@@ -317,8 +316,8 @@ pub enum Refiner {
 
 impl Refiner {
     /// Construct a [`Refiner`] from the given kind, allocating scratch
-    /// buffers at the configured size. It reports position covariances
-    /// ([`Uncertainty::Propagated`]); see [`Self::with_uncertainty`].
+    /// buffers at the configured size. It reports no position covariance
+    /// ([`Uncertainty::Off`]); see [`Self::with_uncertainty`].
     pub fn from_kind(kind: RefinerKind) -> Self {
         match kind {
             RefinerKind::CenterOfMass(cfg) => Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg)),
@@ -328,10 +327,9 @@ impl Refiner {
     }
 
     /// Select which position uncertainty the refiner reports. A refiner
-    /// from [`Self::from_kind`] computes a covariance for every accepted
-    /// corner; in a custom refinement loop that does not use it, pass
-    /// [`Uncertainty::Off`] to skip that work. Refined positions do not
-    /// depend on the tier.
+    /// from [`Self::from_kind`] reports none; pass
+    /// [`Uncertainty::Propagated`] for a covariance on every accepted
+    /// corner. Refined positions do not depend on the tier.
     pub fn with_uncertainty(mut self, uncertainty: Uncertainty) -> Self {
         match &mut self {
             Refiner::CenterOfMass(r) => r.uncertainty = uncertainty,

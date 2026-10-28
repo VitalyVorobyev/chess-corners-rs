@@ -6,7 +6,7 @@ use pyo3::types::{PyDict, PyType};
 
 use super::parse::{
     accept_dict_or_bare_string, config_error, extract_int, json_dumps, json_loads,
-    reject_unknown_keys, require_dict,
+    reject_unknown_keys, require_dict, unknown_variant,
 };
 
 // ---------------------------------------------------------------------------
@@ -41,30 +41,27 @@ pub struct MultiscaleConfig {
 }
 
 impl MultiscaleConfig {
-    pub(crate) fn from_rs(v: RsMultiscaleConfig) -> Self {
+    const SINGLE_SCALE: Self = Self {
+        kind: MultiscaleKind::SingleScale,
+        levels: 3,
+        min_size: 128,
+        refinement_radius: 3,
+    };
+
+    pub(crate) fn from_rs(v: RsMultiscaleConfig) -> PyResult<Self> {
         match v {
-            RsMultiscaleConfig::SingleScale => Self {
-                kind: MultiscaleKind::SingleScale,
-                levels: 3,
-                min_size: 128,
-                refinement_radius: 3,
-            },
+            RsMultiscaleConfig::SingleScale => Ok(Self::SINGLE_SCALE),
             RsMultiscaleConfig::Pyramid {
                 levels,
                 min_size,
                 refinement_radius,
-            } => Self {
+            } => Ok(Self {
                 kind: MultiscaleKind::Pyramid,
                 levels,
                 min_size,
                 refinement_radius,
-            },
-            _ => Self {
-                kind: MultiscaleKind::SingleScale,
-                levels: 3,
-                min_size: 128,
-                refinement_radius: 3,
-            },
+            }),
+            other => Err(unknown_variant("MultiscaleConfig", &other)),
         }
     }
 
@@ -84,14 +81,14 @@ impl MultiscaleConfig {
 impl MultiscaleConfig {
     /// Default-construct: single-scale (no pyramid).
     #[new]
-    fn new() -> Self {
+    fn new() -> PyResult<Self> {
         Self::from_rs(RsMultiscaleConfig::default())
     }
 
     /// Single-scale variant: run the detector once on the full image.
     #[classmethod]
     fn single_scale(_cls: &Bound<'_, PyType>) -> Self {
-        Self::from_rs(RsMultiscaleConfig::SingleScale)
+        Self::SINGLE_SCALE
     }
 
     /// Pyramid variant with library-default parameters (levels=3, min_size=128,
@@ -229,7 +226,7 @@ impl MultiscaleConfig {
             accept_dict_or_bare_string(data, &["single_scale"], &["pyramid"], "multiscale")?
         {
             debug_assert_eq!(tag, "single_scale");
-            return Ok(Self::from_rs(RsMultiscaleConfig::SingleScale));
+            return Ok(Self::SINGLE_SCALE);
         }
         let dict = require_dict(data, "multiscale")?;
         reject_unknown_keys(&dict, &["single_scale", "pyramid"], "multiscale")?;
@@ -241,7 +238,7 @@ impl MultiscaleConfig {
             ));
         }
         if has_single {
-            return Ok(Self::from_rs(RsMultiscaleConfig::SingleScale));
+            return Ok(Self::SINGLE_SCALE);
         }
         if has_pyramid {
             let value = dict

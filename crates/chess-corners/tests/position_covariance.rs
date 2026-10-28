@@ -94,24 +94,30 @@ fn standard_image() -> &'static [u8] {
     })
 }
 
+/// `cfg` reporting a covariance, which every test here examines.
+fn propagated(cfg: DetectorConfig) -> DetectorConfig {
+    cfg.with_uncertainty(Uncertainty::Propagated)
+}
+
 fn saddle() -> DetectorConfig {
-    DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::saddle_point())
+    propagated(DetectorConfig::chess()).with_chess(|c| c.refiner = ChessRefiner::saddle_point())
 }
 
 fn radon_saddle() -> DetectorConfig {
-    DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point())
+    propagated(DetectorConfig::radon()).with_radon(|r| r.refiner = RadonRefiner::saddle_point())
 }
 
 /// Every localizer, as the facade composes them.
 fn localizers() -> [(&'static str, DetectorConfig); 5] {
     [
-        ("ChESS + CenterOfMass", DetectorConfig::chess()),
+        ("ChESS + CenterOfMass", propagated(DetectorConfig::chess())),
         (
             "ChESS + Förstner",
-            DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner()),
+            propagated(DetectorConfig::chess())
+                .with_chess(|c| c.refiner = ChessRefiner::forstner()),
         ),
         ("ChESS + SaddlePoint", saddle()),
-        ("Radon peak fit", DetectorConfig::radon()),
+        ("Radon peak fit", propagated(DetectorConfig::radon())),
         ("Radon + SaddlePoint", radon_saddle()),
     ]
 }
@@ -299,6 +305,32 @@ fn covariance_scales_with_the_supplied_noise() {
                 assert_eq!(a.position_covariance, b.position_covariance, "{name}");
             }
         }
+    }
+}
+
+/// No covariance unless asked for: `Off` is the default tier of every
+/// preset.
+#[test]
+fn covariance_is_off_by_default() {
+    assert_eq!(Uncertainty::default(), Uncertainty::Off);
+    let img = standard_image();
+    for cfg in [
+        DetectorConfig::default(),
+        DetectorConfig::chess(),
+        DetectorConfig::chess_multiscale(),
+        DetectorConfig::radon(),
+        DetectorConfig::radon_multiscale(),
+    ] {
+        assert_eq!(cfg.uncertainty, Uncertainty::Off, "{cfg:?}");
+        let corners = Detector::new(cfg)
+            .unwrap()
+            .detect_u8(img, SIZE as u32, SIZE as u32)
+            .unwrap();
+        assert!(!corners.is_empty(), "{cfg:?}");
+        assert!(
+            corners.iter().all(|c| c.position_covariance.is_none()),
+            "{cfg:?}"
+        );
     }
 }
 
@@ -512,7 +544,7 @@ fn covariance_values_are_pinned() {
     }
     let configs = localizers().into_iter().chain([(
         "ChESS + CenterOfMass, coarse-to-fine",
-        DetectorConfig::chess_multiscale(),
+        propagated(DetectorConfig::chess_multiscale()),
     )]);
     for (k, (name, cfg)) in configs.enumerate() {
         let corners = Detector::new(cfg)
@@ -557,7 +589,7 @@ fn radon_keeps_the_peak_fit_where_refinement_does_not_converge() {
             .detect_u8(img, SIZE as u32, SIZE as u32)
             .unwrap()
     };
-    let peaks = detect(DetectorConfig::radon());
+    let peaks = detect(propagated(DetectorConfig::radon()));
     let refined = detect(radon_saddle());
     assert_eq!(peaks.len(), refined.len());
     let (mut moved, mut kept) = (0, 0);

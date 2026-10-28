@@ -39,7 +39,7 @@ A `RefineResult` carries the refined `(x, y)`, a refiner-specific
 - `Rejected` — the refined offset exceeded the refiner's
   `max_offset`, or a per-refiner score threshold fired.
 
-Under the default `Uncertainty::Propagated`, an accepted result also
+Under `Uncertainty::Propagated` (the default is `Off`), an accepted result also
 carries `covariance_per_noise_variance`: the image noise propagated to
 the refined position through the refiner's exact Jacobian, per unit
 noise variance (px² per gray-level²). Every refiner except ML sets it;
@@ -84,7 +84,7 @@ detector's seeds are positive response peaks, so it never hits this.
 |------------------|-------------------------------------------------|
 | Input            | Response map                                    |
 | Default `radius` | 2 (5×5 window)                                  |
-| Typical cost     | ~20 ns per corner; ~0.5 µs with the default covariance |
+| Typical cost     | ~20 ns per corner; ~0.5 µs with the covariance |
 | Strengths        | Cheapest option in the benchmark; closed-form   |
 | Weaknesses       | Centroid bias when the response is asymmetric;  |
 |                  | fails when `radius` crosses neighboring corners |
@@ -121,7 +121,7 @@ Rejections:
 |------------------|-------------------------------------------------|
 | Input            | Image                                           |
 | Default `radius` | 2 (5×5 gradient window + 1 px halo)             |
-| Typical cost     | ~60 ns per corner; ~0.5 µs with the default covariance |
+| Typical cost     | ~60 ns per corner; ~0.5 µs with the covariance |
 | Strengths        | Cheap; uses only image gradients                |
 | Weaknesses       | Stops following the corner under blur; least accurate on real images |
 
@@ -168,7 +168,7 @@ rejects:
 |------------------|-------------------------------------------------|
 | Input            | Image                                           |
 | Default `radius` | 2 (5×5 patch)                                   |
-| Typical cost     | ~0.2 µs per corner; ~0.6 µs with the default covariance |
+| Typical cost     | ~0.2 µs per corner; ~0.6 µs with the covariance |
 | Strengths        | Lowest error of the geometric refiners, sharp or blurred, synthetic or real |
 | Weaknesses       | Biased by illumination gradients and asymmetric lens blur (0.02–0.10 px); on ~5 px cells with strong shear and blur, the window holds neighbouring corners and the re-centred position can be worse than a single fit |
 

@@ -262,7 +262,7 @@ impl ChessDetector {
     /// with stride 3 per corner, `[xx, xy, yy, ...]`, in px². All three are
     /// `NaN` for a corner without one — every localizer except the ML
     /// refiner reports it under `Uncertainty.Propagated`; none does under
-    /// `Uncertainty.Off` or on upscaled input. Empty before the first
+    /// `Uncertainty.Off` (the default) or on upscaled input. Empty before the first
     /// detection, after a failed one, and after `applyConfig`.
     #[wasm_bindgen(js_name = positionCovariance)]
     pub fn position_covariance(&self) -> js_sys::Float32Array {

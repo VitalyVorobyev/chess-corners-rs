@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The default uncertainty tier is now `Off` in every binding: corners carry
+  no `position_covariance` and no per-image noise estimate is made unless
+  you select `Uncertainty::Propagated` (Python `Uncertainty.PROPAGATED`,
+  JS `Uncertainty.Propagated`, C `CC_UNCERTAINTY_PROPAGATED`), which keeps
+  the covariance unchanged. In C, `cc_config_default()` and the strategy
+  presets return `CC_UNCERTAINTY_OFF`, while a zero-initialised `cc_config`
+  still selects `CC_UNCERTAINTY_PROPAGATED`.
+
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.

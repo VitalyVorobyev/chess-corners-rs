@@ -83,17 +83,21 @@ pub const CC_ORIENTATION_DISK_FIT: cc_orientation_method_t = 1;
 pub const CC_ORIENTATION_NONE: cc_orientation_method_t = 2;
 
 /// Position-uncertainty tier stored in `cc_config::uncertainty`.
+///
+/// Use the named constants, not the integers: the WebAssembly and Python
+/// bindings number the same tiers differently (`Off = 0`, `Propagated = 1`).
 pub type cc_uncertainty_t = u32;
-/// Every corner whose localizer supports it reports a position covariance
-/// (the default, and the value of a zero-initialised config): image noise
-/// propagated through the localizer plus its systematic error. That error
-/// includes a per-localizer floor measured on real images, usually the
-/// largest part of the covariance there; weighting by it has not been shown
-/// to beat uniform weighting on real data.
+/// Every corner whose localizer supports it reports a position covariance:
+/// image noise propagated through the localizer plus its systematic error.
+/// That error includes a per-localizer floor measured on real images,
+/// usually the largest part of the covariance there; weighting by it has not
+/// been shown to beat uniform weighting on real data. Not the default, but
+/// the value `0`, so a zero-initialised `cc_config` selects it.
 pub const CC_UNCERTAINTY_PROPAGATED: cc_uncertainty_t = 0;
 /// No position covariance and no noise estimate: every corner has
 /// `has_position_covariance == 0`. Positions are identical to
-/// `CC_UNCERTAINTY_PROPAGATED`. `noise_sigma` is ignored.
+/// `CC_UNCERTAINTY_PROPAGATED`. `noise_sigma` is ignored. The default: every
+/// preset (`cc_config_default()` and the strategy presets) selects it.
 pub const CC_UNCERTAINTY_OFF: cc_uncertainty_t = 1;
 
 /// ChESS sampling-ring tag stored in `cc_config::chess_ring`.
@@ -261,8 +265,10 @@ pub struct cc_config {
     /// `has_noise_sigma` is non-zero.
     pub noise_sigma: f32,
     /// One of the `CC_UNCERTAINTY_*` constants (any other value is
-    /// `CC_ERR_INVALID_CONFIG`). A zero-initialised config, like the
-    /// presets, selects `CC_UNCERTAINTY_PROPAGATED`.
+    /// `CC_ERR_INVALID_CONFIG`). The presets select `CC_UNCERTAINTY_OFF`;
+    /// a zero-initialised config instead selects
+    /// `CC_UNCERTAINTY_PROPAGATED` (tag `0`), so start from
+    /// `cc_config_default()` or a strategy preset rather than `{0}`.
     pub uncertainty: cc_uncertainty_t,
 }
 
@@ -294,7 +300,10 @@ pub enum cc_status {
 
 // ─── Configuration presets ──────────────────────────────────────────────
 
-/// Default configuration (single-scale ChESS).
+/// Default configuration (single-scale ChESS). Its `uncertainty` is
+/// `CC_UNCERTAINTY_OFF`, like every preset; a zero-initialised `cc_config`
+/// differs (tag `0` is `CC_UNCERTAINTY_PROPAGATED`), so start from this or
+/// a strategy preset.
 #[no_mangle]
 pub extern "C" fn cc_config_default() -> cc_config {
     config_preset(DetectorConfig::default)
@@ -697,6 +706,7 @@ mod tests {
     #[test]
     fn saddle_point_corners_carry_a_covariance() {
         let mut cfg = cc_config_chess();
+        cfg.uncertainty = CC_UNCERTAINTY_PROPAGATED;
         cfg.refiner = CC_REFINER_SADDLE_POINT;
         let corners = detect_board(&cfg).expect("detection");
         assert!(!corners.is_empty());
@@ -706,13 +716,15 @@ mod tests {
             assert!(p.xx > 0.0 && p.yy > 0.0 && p.xx * p.yy > p.xy * p.xy);
         }
         // The default refiner reports one too.
-        let plain = detect_board(&cc_config_chess()).expect("detection");
+        cfg.refiner = cc_config_chess().refiner;
+        let plain = detect_board(&cfg).expect("detection");
         assert!(plain.iter().any(|c| c.has_position_covariance == 1));
     }
 
     #[test]
     fn uncertainty_off_drops_covariance_not_positions() {
-        for base in [cc_config_chess(), cc_config_radon()] {
+        for mut base in [cc_config_chess(), cc_config_radon()] {
+            base.uncertainty = CC_UNCERTAINTY_PROPAGATED;
             let on = detect_board(&base).expect("detection");
             assert!(on.iter().any(|c| c.has_position_covariance == 1));
             let mut cfg = base;
@@ -728,15 +740,27 @@ mod tests {
     }
 
     #[test]
-    fn uncertainty_tag_is_validated_and_defaults_to_propagated() {
-        for cfg in [cc_config_default(), cc_config_chess(), cc_config_radon()] {
-            assert_eq!(cfg.uncertainty, CC_UNCERTAINTY_PROPAGATED);
+    fn uncertainty_tag_is_validated_and_defaults_to_off() {
+        for cfg in [
+            cc_config_default(),
+            cc_config_chess(),
+            cc_config_chess_multiscale(),
+            cc_config_radon(),
+            cc_config_radon_multiscale(),
+        ] {
+            assert_eq!(cfg.uncertainty, CC_UNCERTAINTY_OFF);
         }
+        let corners = detect_board(&cc_config_default()).expect("detection");
+        assert!(!corners.is_empty());
+        assert!(corners.iter().all(|c| c.has_position_covariance == 0));
         let mut cfg = cc_config_chess();
-        cfg.uncertainty = CC_UNCERTAINTY_OFF;
         let rs = convert::to_detector_config(&cfg).expect("valid");
         assert_eq!(rs.uncertainty, chess_corners::Uncertainty::Off);
-        assert_eq!(convert::flatten(&rs).uncertainty, CC_UNCERTAINTY_OFF);
+        // Tag 0, the value of a zero-initialised config, is `Propagated`.
+        cfg.uncertainty = 0;
+        let rs = convert::to_detector_config(&cfg).expect("valid");
+        assert_eq!(rs.uncertainty, chess_corners::Uncertainty::Propagated);
+        assert_eq!(convert::flatten(&rs).uncertainty, CC_UNCERTAINTY_PROPAGATED);
         cfg.uncertainty = 99;
         assert_eq!(
             convert::to_detector_config(&cfg),
@@ -788,6 +812,7 @@ mod tests {
     #[test]
     fn radon_saddle_point_corners_carry_a_covariance() {
         let mut cfg = cc_config_radon();
+        cfg.uncertainty = CC_UNCERTAINTY_PROPAGATED;
         cfg.has_noise_sigma = 1;
         cfg.noise_sigma = 2.0;
         cfg.refiner = CC_REFINER_SADDLE_POINT;

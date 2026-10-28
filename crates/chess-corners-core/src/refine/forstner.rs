@@ -286,6 +286,13 @@ mod tests {
     use super::*;
     use crate::imageview::ImageView;
 
+    /// A refiner reporting a covariance, which these tests examine.
+    fn propagated(cfg: ForstnerConfig) -> ForstnerRefiner {
+        let mut refiner = ForstnerRefiner::new(cfg);
+        refiner.uncertainty = Uncertainty::Propagated;
+        refiner
+    }
+
     /// `covariance_per_noise_variance` is `Σₚ (∂x̂/∂Iₚ)(∂x̂/∂Iₚ)ᵀ`: central
     /// differences of the full estimate over every pixel (±1 gray level;
     /// the estimate is smooth in the pixels) on skewed saddles off the
@@ -302,7 +309,7 @@ mod tests {
                 .iter()
                 .map(|v| v.round() as u8)
                 .collect();
-            let mut refiner = ForstnerRefiner::new(ForstnerConfig::default());
+            let mut refiner = propagated(ForstnerConfig::default());
             let mut refine = |img: &[u8]| {
                 let view = ImageView::from_u8_slice(SIDE, SIDE, img).unwrap();
                 refiner.refine(seed, RefineContext::new(Some(view), None))
@@ -350,7 +357,7 @@ mod tests {
             image: Some(view),
             response: None,
         };
-        let mut refiner = ForstnerRefiner::new(ForstnerConfig::default());
+        let mut refiner = propagated(ForstnerConfig::default());
         let res = refiner.refine([7.0, 8.0], ctx);
         assert_eq!(res.status, RefineStatus::Accepted);
         let true_xy = [7.35f32, 7.8f32];

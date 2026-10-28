@@ -54,9 +54,9 @@ struct Covariance {
 ///
 /// `position_covariance` is the covariance of `(x, y)` in px^2 (white-noise
 /// scatter plus the localizer's systematic error; see `cc_corner`). It is
-/// set under `CC_UNCERTAINTY_PROPAGATED` (the default) for every localizer
-/// (a ChESS saddle-point refinement only when it converged), and not under
-/// `CC_UNCERTAINTY_OFF` or on upscaled input.
+/// set under `CC_UNCERTAINTY_PROPAGATED` for every localizer (a ChESS
+/// saddle-point refinement only when it converged), and not under
+/// `CC_UNCERTAINTY_OFF` (the default) or on upscaled input.
 struct Corner {
     float x = 0.0f;
     float y = 0.0f;
@@ -109,9 +109,10 @@ private:
 /// levels, used to express position covariances in px^2; empty estimates it
 /// from each image (see `estimate_noise_sigma`).
 ///
-/// `uncertainty` is one of the `CC_UNCERTAINTY_*` tags: `CC_UNCERTAINTY_PROPAGATED`
-/// (the default) reports position covariances, `CC_UNCERTAINTY_OFF` reports
-/// none and skips the noise estimate. Positions are identical under both.
+/// `uncertainty` is one of the `CC_UNCERTAINTY_*` tags: `CC_UNCERTAINTY_OFF`
+/// (the default of every preset) reports no position covariance and skips
+/// the noise estimate, `CC_UNCERTAINTY_PROPAGATED` reports one per corner.
+/// Positions are identical under both.
 struct Config {
     cc_strategy_t strategy;
     float threshold;

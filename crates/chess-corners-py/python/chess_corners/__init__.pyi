@@ -33,10 +33,11 @@ class OrientationMethod(Enum):
     DISK_FIT = ...
 
 class Uncertainty(Enum):
-    """Position-uncertainty tier. ``PROPAGATED`` (default) propagates image
-    noise through the localizer and adds its systematic error, including a
+    """Position-uncertainty tier. ``OFF`` (default) reports no covariance
+    and makes no noise estimate. ``PROPAGATED`` propagates image noise
+    through the localizer and adds its systematic error, including a
     per-localizer floor measured on real images that usually dominates the
-    covariance there. ``OFF`` reports none."""
+    covariance there."""
 
     OFF = ...
     PROPAGATED = ...
@@ -338,8 +339,8 @@ class Detections:
         """``(N, 2, 2)`` float32 array of per-corner position covariance in px²
         (``[[xx, xy], [xy, yy]]``). Rows are ``NaN`` for corners without one:
         every localizer except the ML refiner reports it under
-        ``Uncertainty.PROPAGATED``; none does under ``Uncertainty.OFF`` or on
-        upscaled input. The covariance includes a per-localizer floor measured
+        ``Uncertainty.PROPAGATED``; none does under ``Uncertainty.OFF`` (the
+        default) or on upscaled input. The covariance includes a per-localizer floor measured
         on real images that usually dominates it there; weighting by it has
         not been shown to beat uniform weighting on real data."""
         ...

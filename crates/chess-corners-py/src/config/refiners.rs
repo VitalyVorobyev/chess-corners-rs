@@ -10,7 +10,7 @@ use pyo3::types::{PyDict, PyType};
 
 use super::parse::{
     config_error, extract_float, extract_int, json_dumps, json_loads, reject_unknown_keys,
-    require_dict,
+    require_dict, unknown_variant,
 };
 
 // ---------------------------------------------------------------------------
@@ -374,7 +374,7 @@ pub struct ChessRefiner {
 }
 
 impl ChessRefiner {
-    pub(crate) fn from_rs(v: RsChessRefiner) -> Self {
+    pub(crate) fn from_rs(v: RsChessRefiner) -> PyResult<Self> {
         let mut cfg = Self {
             kind: ChessRefinerKind::CenterOfMass,
             center_of_mass: RsCenterOfMassConfig::default(),
@@ -398,11 +398,9 @@ impl ChessRefiner {
             RsChessRefiner::Ml => {
                 cfg.kind = ChessRefinerKind::Ml;
             }
-            _ => {
-                cfg.kind = ChessRefinerKind::CenterOfMass;
-            }
+            other => return Err(unknown_variant("ChessRefiner", &other)),
         }
-        cfg
+        Ok(cfg)
     }
 
     pub(crate) fn to_rs(&self) -> RsChessRefiner {
@@ -420,7 +418,7 @@ impl ChessRefiner {
 impl ChessRefiner {
     /// Default-construct: center-of-mass with default tuning.
     #[new]
-    fn new() -> Self {
+    fn new() -> PyResult<Self> {
         Self::from_rs(RsChessRefiner::default())
     }
 
@@ -741,10 +739,11 @@ impl RadonRefiner {
 
     /// Variant tag: `"peak_fit"` or `"saddle_point"`.
     #[getter]
-    fn kind(&self) -> &'static str {
+    fn kind(&self) -> PyResult<&'static str> {
         match self.inner {
-            RsRadonRefiner::PeakFit => "peak_fit",
-            _ => "saddle_point",
+            RsRadonRefiner::PeakFit => Ok("peak_fit"),
+            RsRadonRefiner::SaddlePoint(_) => Ok("saddle_point"),
+            other => Err(unknown_variant("RadonRefiner", &other)),
         }
     }
 
@@ -757,7 +756,8 @@ impl RadonRefiner {
             RsRadonRefiner::SaddlePoint(inner) => {
                 Ok(Py::new(py, SaddlePointConfig { inner })?.into_any())
             }
-            _ => Ok(py.None()),
+            RsRadonRefiner::PeakFit => Ok(py.None()),
+            other => Err(unknown_variant("RadonRefiner", &other)),
         }
     }
 
@@ -767,7 +767,8 @@ impl RadonRefiner {
             RsRadonRefiner::SaddlePoint(inner) => {
                 d.set_item("saddle_point", SaddlePointConfig { inner }.to_dict(py)?)?;
             }
-            _ => d.set_item("peak_fit", py.None())?,
+            RsRadonRefiner::PeakFit => d.set_item("peak_fit", py.None())?,
+            other => return Err(unknown_variant("RadonRefiner", &other)),
         }
         Ok(d.unbind())
     }

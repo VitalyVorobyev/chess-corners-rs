@@ -163,11 +163,11 @@ def _detector(name: str):
 
     if name not in _DET:
         if name in ("Radon", "Radon+SP"):
-            cfg = cc.DetectorConfig.radon().without_orientation()
+            cfg = cc.DetectorConfig.radon().without_orientation().with_uncertainty(cc.Uncertainty.PROPAGATED)
             if name == "Radon+SP":
                 cfg.strategy.radon.refiner = cc.RadonRefiner.saddle_point()
         else:
-            cfg = cc.DetectorConfig.chess().without_orientation()
+            cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(cc.Uncertainty.PROPAGATED)
             cfg.strategy.chess.refiner = {
                 "CoM": cc.ChessRefiner.center_of_mass(),
                 "Forstner": cc.ChessRefiner.forstner(),
