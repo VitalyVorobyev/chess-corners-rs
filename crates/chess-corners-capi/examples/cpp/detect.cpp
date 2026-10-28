@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <optional>
 #include <vector>
 
 int main() {
@@ -42,14 +43,16 @@ int main() {
         saddle.uncertainty = CC_UNCERTAINTY_PROPAGATED;
         saddle.noise_sigma = 1.0f;
         std::size_t with_cov = 0;
+        std::optional<float> noise_sigma;
         for (const chess_corners::Corner& c :
-             chess_corners::detect(image, width, height, saddle)) {
+             chess_corners::detect(image, width, height, saddle, &noise_sigma)) {
             if (c.position_covariance) {
                 ++with_cov;
             }
         }
         std::printf("chess-corners: %zu corners with a position covariance\n", with_cov);
-        if (with_cov == 0) {
+        // The noise level behind the covariances: here the supplied one.
+        if (with_cov == 0 || noise_sigma != saddle.noise_sigma) {
             return 1;
         }
 

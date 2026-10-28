@@ -176,4 +176,17 @@ assert.throws(() => estimateNoiseSigmaRgba(board, size, size));
 assert.equal(estimateNoiseSigma(new Uint8Array(4 * 4).fill(128), 4, 4), undefined);
 assert.throws(() => estimateNoiseSigma(board, size + 1, size));
 
+// The noise σ behind a detection's covariances: estimated, supplied, or none.
+saddle.applyConfig(DetectorConfig.fromJson('{"uncertainty": "propagated"}'));
+assert.equal(saddle.noiseSigma(), undefined, "cleared by applyConfig");
+saddle.detect(board, size, size);
+assert.equal(saddle.noiseSigma(), sigma, "the per-image estimate");
+assert.throws(() => saddle.detect(board, size + 1, size));
+assert.equal(saddle.noiseSigma(), undefined, "cleared by a failed detection");
+const supplied = ChessDetector.withConfig(DetectorConfig.fromJson('{"uncertainty": "propagated", "noise_sigma": 1.25}'));
+supplied.detect(board, size, size);
+assert.equal(supplied.noiseSigma(), 1.25);
+quiet.detect(board, size, size);
+assert.equal(quiet.noiseSigma(), undefined, "none under Uncertainty.Off");
+
 console.log("chess-corners-wasm JSON smoke test: ok");

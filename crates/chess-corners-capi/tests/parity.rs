@@ -41,11 +41,21 @@ fn assert_ffi_matches_facade(cfg: &cc_config, reference: DetectorConfig) -> usiz
     let mut out = cc_result {
         corners: std::ptr::null_mut(),
         len: 0,
+        has_noise_sigma: 0,
+        noise_sigma: 0.0,
     };
     // SAFETY: `img` is valid for `w * h` bytes; `cfg` and `out` are valid.
     let status = unsafe { cc_detect_u8(img.as_ptr(), w, h, cfg, &mut out) };
     assert_eq!(status, cc_status::CC_OK);
     assert_eq!(out.len, reference.len(), "corner counts must match");
+    // The noise σ behind the covariances crosses the boundary unchanged.
+    match detector.last_noise_sigma() {
+        Some(sigma) => {
+            assert_eq!(out.has_noise_sigma, 1);
+            assert_eq!(out.noise_sigma.to_bits(), sigma.to_bits());
+        }
+        None => assert_eq!((out.has_noise_sigma, out.noise_sigma), (0, 0.0)),
+    }
     if out.len > 0 {
         assert!(!out.corners.is_null());
     }

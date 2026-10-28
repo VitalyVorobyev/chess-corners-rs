@@ -30,7 +30,7 @@ use chess_corners_core::{ChessBuffers, RadonBuffers};
 
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
-use crate::multiscale::{self, CovarianceStage};
+use crate::multiscale::{self, CovarianceStage, Frame};
 use crate::upscale::{self, UpscaleBuffers};
 use crate::{ChessError, CornerDescriptor, DetectorConfig, Roi};
 use chess_corners_core::ImageView;
@@ -45,6 +45,8 @@ pub struct Detector {
     chess_buffers: ChessBuffers,
     radon_buffers: RadonBuffers,
     upscale: UpscaleBuffers,
+    /// Noise σ of the most recent detection; see [`Detector::last_noise_sigma`].
+    last_noise_sigma: Option<f32>,
     #[cfg(feature = "ml-refiner")]
     ml: MlSlot,
 }
@@ -73,6 +75,7 @@ impl Detector {
             chess_buffers: ChessBuffers::default(),
             radon_buffers: RadonBuffers::default(),
             upscale: UpscaleBuffers::new(),
+            last_noise_sigma: None,
             #[cfg(feature = "ml-refiner")]
             ml: MlSlot {
                 state: None,
@@ -127,6 +130,19 @@ impl Detector {
         width: u32,
         height: u32,
     ) -> Result<Vec<CornerDescriptor>, ChessError> {
+        self.last_noise_sigma = None;
+        let frame = self.detect_frame_u8(img, width, height)?;
+        self.last_noise_sigma = frame.noise_sigma;
+        Ok(frame.corners)
+    }
+
+    /// [`Detector::detect_u8`] with the frame's noise σ.
+    fn detect_frame_u8(
+        &mut self,
+        img: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Result<Frame, ChessError> {
         let src_w = width as usize;
         let src_h = height as usize;
         let expected = src_w * src_h;
@@ -161,7 +177,7 @@ impl Detector {
         // Interpolation correlates the noise of neighbouring upscaled
         // pixels, so a white-noise covariance would be wrong: none is
         // reported.
-        let mut corners = Self::detect_view_inner(
+        let mut frame = Self::detect_view_inner(
             &self.cfg,
             CovarianceStage::Off,
             &mut self.pyramid,
@@ -171,8 +187,8 @@ impl Detector {
             &mut self.ml,
             upscaled,
         );
-        upscale::rescale_descriptors_to_input(&mut corners, factor);
-        Ok(corners)
+        upscale::rescale_descriptors_to_input(&mut frame.corners, factor);
+        Ok(frame)
     }
 
     /// Detect chessboard corners from an [`image::GrayImage`].
@@ -253,6 +269,7 @@ impl Detector {
         height: u32,
         roi: Roi,
     ) -> Result<Vec<CornerDescriptor>, ChessError> {
+        self.last_noise_sigma = None;
         let src_w = width as usize;
         let src_h = height as usize;
         let expected = src_w * src_h;
@@ -272,13 +289,15 @@ impl Detector {
 
         let view =
             ImageView::from_u8_slice(src_w, src_h, img).expect("dimensions were checked above");
-        Ok(multiscale::detect_roi_with_buffers(
+        let frame = multiscale::detect_roi_with_buffers(
             view,
             roi,
             &self.cfg,
             &mut self.chess_buffers,
             &mut self.radon_buffers,
-        ))
+        );
+        self.last_noise_sigma = frame.noise_sigma;
+        Ok(frame.corners)
     }
 
     /// Detect chessboard corners inside a rectangular region `roi` of an
@@ -298,6 +317,26 @@ impl Detector {
         roi: Roi,
     ) -> Result<Vec<CornerDescriptor>, ChessError> {
         self.detect_u8_roi(img.as_raw(), img.width(), img.height(), roi)
+    }
+
+    /// The image noise σ, in gray levels, that the position covariances of
+    /// the most recent detection were computed with.
+    ///
+    /// It describes the frame the last [`detect_u8`](Self::detect_u8),
+    /// [`detect`](Self::detect), [`detect_u8_roi`](Self::detect_u8_roi) or
+    /// [`detect_roi`](Self::detect_roi) call returned: the supplied
+    /// [`DetectorConfig::noise_sigma`], or the per-image estimate (the value
+    /// [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8) returns
+    /// for the same image). Use it to audit the covariances or to re-scale
+    /// their noise term with another σ.
+    ///
+    /// `None` when that frame has no position covariance: under
+    /// [`Uncertainty::Off`](crate::Uncertainty::Off) (the default), on
+    /// upscaled input, with the ML refiner, when no corner's localizer
+    /// reported one, or when the estimate declined. Also `None` before the
+    /// first detection and after a detection that returned an error.
+    pub fn last_noise_sigma(&self) -> Option<f32> {
+        self.last_noise_sigma
     }
 
     /// Borrow a detector-bound diagnostics accessor.
@@ -327,7 +366,7 @@ impl Detector {
         radon_buffers: &mut RadonBuffers,
         #[cfg(feature = "ml-refiner")] ml: &mut MlSlot,
         view: ImageView<'_>,
-    ) -> Vec<CornerDescriptor> {
+    ) -> Frame {
         #[cfg(feature = "ml-refiner")]
         if Self::is_ml_refiner(cfg) {
             if ml.state.is_none() {

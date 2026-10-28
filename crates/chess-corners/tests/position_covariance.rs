@@ -681,6 +681,50 @@ fn invalid_noise_sigma_is_rejected() {
 }
 
 #[test]
+fn detector_reports_the_frame_noise_sigma() {
+    let img = standard_image();
+    let (w, h) = (SIZE as u32, SIZE as u32);
+    let roi = Roi::new(60, 60, 140, 140).unwrap();
+    let estimate = estimate_noise_sigma_u8(img, SIZE, SIZE).expect("estimate");
+    for (name, cfg) in localizers() {
+        for cfg in [
+            cfg,
+            cfg.with_multiscale(MultiscaleConfig::pyramid_default()),
+        ] {
+            // Estimated per image: the value the public estimator returns.
+            let mut det = Detector::new(cfg).unwrap();
+            assert_eq!(det.last_noise_sigma(), None, "{name}: before detection");
+            det.detect_u8(img, w, h).unwrap();
+            assert_eq!(det.last_noise_sigma(), Some(estimate), "{name}");
+            det.detect_u8_roi(img, w, h, roi).unwrap();
+            assert_eq!(det.last_noise_sigma(), Some(estimate), "{name} roi");
+            // A failed detection leaves no stale value.
+            assert!(det.detect_u8(&img[1..], w, h).is_err());
+            assert_eq!(det.last_noise_sigma(), None, "{name}: after an error");
+
+            // Supplied: returned as given.
+            let mut det = Detector::new(cfg.with_noise_sigma(1.25)).unwrap();
+            det.detect_u8(img, w, h).unwrap();
+            assert_eq!(det.last_noise_sigma(), Some(1.25), "{name}");
+            det.detect_u8_roi(img, w, h, roi).unwrap();
+            assert_eq!(det.last_noise_sigma(), Some(1.25), "{name} roi");
+
+            // No covariance, no σ: the Off tier and upscaled input.
+            for quiet in [
+                cfg.with_uncertainty(Uncertainty::Off)
+                    .with_noise_sigma(1.25),
+                cfg.with_upscale(UpscaleConfig::Fixed(2)),
+            ] {
+                let mut det = Detector::new(quiet).unwrap();
+                let corners = det.detect_u8(img, w, h).unwrap();
+                assert!(!corners.is_empty(), "{name}");
+                assert_eq!(det.last_noise_sigma(), None, "{name}: {quiet:?}");
+            }
+        }
+    }
+}
+
+#[test]
 #[ignore = "measurement: σ̂₀² of the reported covariance per localizer"]
 fn position_covariance_calibration() {
     // (label, cell, rotation°, axis angle°, dark, bright)

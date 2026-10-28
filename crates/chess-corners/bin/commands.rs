@@ -100,6 +100,9 @@ pub struct DetectionDump {
     pub width: u32,
     pub height: u32,
     pub algorithm: DetectorConfig,
+    /// Image noise σ (gray levels) the position covariances were computed
+    /// with; `null` when no corner carries one.
+    pub noise_sigma: Option<f32>,
     pub corners: Vec<CornerOut>,
 }
 
@@ -144,6 +147,7 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
         width: img.width(),
         height: img.height(),
         algorithm: cfg.algorithm,
+        noise_sigma: detector.last_noise_sigma(),
         corners: corners.iter().map(CornerOut::from).collect(),
     };
     write_json(&json_out, &dump)?;

@@ -265,7 +265,10 @@ zero-initialised `cc_config` selects `CC_UNCERTAINTY_PROPAGATED` (tag
 ([Part VIII](part-08-uncertainty.md) covers its meaning and use).
 `cc_estimate_noise_sigma_u8` (`chess_corners::estimate_noise_sigma`,
 returning `std::optional<float>`, in C++) returns the per-image noise
-estimate detection uses when `noise_sigma` is unset. See
+estimate detection uses when `noise_sigma` is unset; `cc_result`'s
+`has_noise_sigma` / `noise_sigma` report the σ a detection's covariances
+were computed with (in C++, pass a `std::optional<float>*` as the last
+argument of `chess_corners::detect`). See
 [Part I §1.4](part-01-orientation.md#14-the-cornerdescriptor-output)
 for the field semantics and
 [Part III §3.4](part-03-chess-detector.md#34-corner-descriptors) for

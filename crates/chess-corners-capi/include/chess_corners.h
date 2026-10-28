@@ -288,7 +288,8 @@ typedef struct cc_corner {
 } cc_corner;
 
 /**
- * Owned array of detected corners returned by `cc_detect_u8`.
+ * Owned array of detected corners returned by `cc_detect_u8`, with the
+ * image noise level behind their position covariances.
  *
  * The library allocates `corners`; release it with `cc_result_free`.
  */
@@ -301,6 +302,19 @@ typedef struct cc_result {
    * Number of corners pointed to by `corners`.
    */
   size_t len;
+  /**
+   * `1` when `noise_sigma` is set: at least one corner has a position
+   * covariance. `0` under `CC_UNCERTAINTY_OFF`, on upscaled input, or
+   * when the noise estimate declined.
+   */
+  uint32_t has_noise_sigma;
+  /**
+   * Image noise σ in gray levels the corners' position covariances were
+   * computed with: `cc_config::noise_sigma` when supplied, otherwise the
+   * per-image estimate (what `cc_estimate_noise_sigma_u8` returns for the
+   * same image). `0` when `has_noise_sigma` is `0`.
+   */
+  float noise_sigma;
 } cc_result;
 
 /**
@@ -446,7 +460,7 @@ enum cc_status cc_detect_u8(const uint8_t *pixels,
  * Release a `cc_result` previously written by `cc_detect_u8`.
  *
  * Null-safe and idempotent: after the call `r->corners` is null and
- * `r->len` is zero.
+ * `r->len`, `r->has_noise_sigma` and `r->noise_sigma` are zero.
  *
  * # Safety
  *

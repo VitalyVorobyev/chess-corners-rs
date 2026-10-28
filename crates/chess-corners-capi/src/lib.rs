@@ -182,7 +182,8 @@ pub struct cc_corner {
     pub has_position_covariance: u8,
 }
 
-/// Owned array of detected corners returned by `cc_detect_u8`.
+/// Owned array of detected corners returned by `cc_detect_u8`, with the
+/// image noise level behind their position covariances.
 ///
 /// The library allocates `corners`; release it with `cc_result_free`.
 #[repr(C)]
@@ -192,6 +193,15 @@ pub struct cc_result {
     pub corners: *mut cc_corner,
     /// Number of corners pointed to by `corners`.
     pub len: usize,
+    /// `1` when `noise_sigma` is set: at least one corner has a position
+    /// covariance. `0` under `CC_UNCERTAINTY_OFF`, on upscaled input, or
+    /// when the noise estimate declined.
+    pub has_noise_sigma: u32,
+    /// Image noise σ in gray levels the corners' position covariances were
+    /// computed with: `cc_config::noise_sigma` when supplied, otherwise the
+    /// per-image estimate (what `cc_estimate_noise_sigma_u8` returns for the
+    /// same image). `0` when `has_noise_sigma` is `0`.
+    pub noise_sigma: f32,
 }
 
 // ─── Flat configuration (C writes) ──────────────────────────────────────
@@ -416,6 +426,7 @@ unsafe fn detect_impl(
         Ok(c) => c,
         Err(e) => return convert::map_error(&e),
     };
+    let noise_sigma = detector.last_noise_sigma();
 
     // The lib allocates the array (as a `Box<[cc_corner]>`) so the matching
     // `cc_result_free` can release it with the same allocator.
@@ -428,6 +439,8 @@ unsafe fn detect_impl(
         *out = cc_result {
             corners: corners_ptr,
             len: out_len,
+            has_noise_sigma: u32::from(noise_sigma.is_some()),
+            noise_sigma: noise_sigma.unwrap_or(0.0),
         };
     }
     cc_status::CC_OK
@@ -436,7 +449,7 @@ unsafe fn detect_impl(
 /// Release a `cc_result` previously written by `cc_detect_u8`.
 ///
 /// Null-safe and idempotent: after the call `r->corners` is null and
-/// `r->len` is zero.
+/// `r->len`, `r->has_noise_sigma` and `r->noise_sigma` are zero.
 ///
 /// # Safety
 ///
@@ -472,6 +485,8 @@ unsafe fn free_impl(r: *mut cc_result) {
     }
     result.corners = ptr::null_mut();
     result.len = 0;
+    result.has_noise_sigma = 0;
+    result.noise_sigma = 0.0;
 }
 
 // ─── Noise estimate ─────────────────────────────────────────────────────
@@ -563,7 +578,7 @@ pub extern "C" fn cc_status_str(status: cc_status) -> *const c_char {
 /// ABI version of this library. Bumped manually on any breaking ABI change.
 #[no_mangle]
 pub extern "C" fn cc_abi_version() -> u32 {
-    6
+    7
 }
 
 #[cfg(test)]
@@ -628,6 +643,8 @@ mod tests {
         let mut out = cc_result {
             corners: ptr::null_mut(),
             len: 0,
+            has_noise_sigma: 0,
+            noise_sigma: 0.0,
         };
         let cfg = cc_config_chess();
         // SAFETY: passing a null pixel pointer is exactly the contract
@@ -638,7 +655,7 @@ mod tests {
 
     #[test]
     fn abi_version_is_stable() {
-        assert_eq!(cc_abi_version(), 6);
+        assert_eq!(cc_abi_version(), 7);
     }
 
     #[test]
@@ -675,10 +692,11 @@ mod tests {
         }
     }
 
-    /// Detect on a noisy 8 px-cell board through the C entry point and
-    /// return the corners (freed before returning).
-    fn detect_board(cfg: &cc_config) -> Result<Vec<cc_corner>, cc_status> {
-        let size = 96u32;
+    /// A noisy 8 px-cell board, `BOARD × BOARD` pixels.
+    const BOARD: u32 = 96;
+
+    fn board() -> Vec<u8> {
+        let size = BOARD;
         let mut img = vec![0u8; (size * size) as usize];
         let mut state = 7u32;
         for y in 0..size {
@@ -689,9 +707,23 @@ mod tests {
                 img[(y * size + x) as usize] = if bright { 197 } else { 37 } + noise as u8;
             }
         }
+        img
+    }
+
+    /// Detect on [`board`] through the C entry point and return the corners
+    /// (freed before returning).
+    fn detect_board(cfg: &cc_config) -> Result<Vec<cc_corner>, cc_status> {
+        detect_board_frame(cfg).map(|(corners, _)| corners)
+    }
+
+    /// [`detect_board`] with the result's noise σ (`None` when unset).
+    fn detect_board_frame(cfg: &cc_config) -> Result<(Vec<cc_corner>, Option<f32>), cc_status> {
+        let (img, size) = (board(), BOARD);
         let mut out = cc_result {
             corners: ptr::null_mut(),
             len: 0,
+            has_noise_sigma: 0,
+            noise_sigma: 0.0,
         };
         // SAFETY: `img` holds `size * size` bytes; `cfg` and `out` are valid.
         let status = unsafe { cc_detect_u8(img.as_ptr(), size, size, cfg, &mut out) };
@@ -700,9 +732,36 @@ mod tests {
         }
         // SAFETY: on success `out` describes `len` initialised corners.
         let corners = unsafe { slice::from_raw_parts(out.corners, out.len) }.to_vec();
+        let sigma = (out.has_noise_sigma == 1).then_some(out.noise_sigma);
         // SAFETY: `out` came from `cc_detect_u8` and is freed exactly once.
         unsafe { cc_result_free(&mut out) };
-        Ok(corners)
+        assert_eq!((out.has_noise_sigma, out.noise_sigma), (0, 0.0));
+        Ok((corners, sigma))
+    }
+
+    #[test]
+    fn result_reports_the_noise_sigma() {
+        let img = board();
+        let (mut estimate, mut has) = (0.0f32, 0u32);
+        // SAFETY: `img` holds `BOARD * BOARD` bytes; both outputs are writable.
+        let status = unsafe {
+            cc_estimate_noise_sigma_u8(img.as_ptr(), BOARD, BOARD, &mut estimate, &mut has)
+        };
+        assert_eq!((status, has), (cc_status::CC_OK, 1));
+        for base in [cc_config_chess(), cc_config_radon()] {
+            let mut cfg = base;
+            cfg.uncertainty = CC_UNCERTAINTY_PROPAGATED;
+            let (_, sigma) = detect_board_frame(&cfg).expect("detection");
+            assert_eq!(sigma, Some(estimate), "estimated per image");
+            cfg.has_noise_sigma = 1;
+            cfg.noise_sigma = 1.25;
+            let (_, sigma) = detect_board_frame(&cfg).expect("detection");
+            assert_eq!(sigma, Some(1.25), "supplied");
+            cfg.uncertainty = CC_UNCERTAINTY_OFF;
+            let (corners, sigma) = detect_board_frame(&cfg).expect("detection");
+            assert!(!corners.is_empty());
+            assert_eq!(sigma, None, "no covariance, no noise level");
+        }
     }
 
     #[test]

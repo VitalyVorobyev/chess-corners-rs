@@ -35,7 +35,7 @@ int main(void) {
     }
 
     cc_config cfg = cc_config_chess();
-    cc_result out = {NULL, 0};
+    cc_result out = {NULL, 0, 0, 0.0f};
     cc_status st = cc_detect_u8(img, w, h, &cfg, &out);
     if (st != CC_OK) {
         fprintf(stderr, "cc_detect_u8 failed: %s\n", cc_status_str(st));
@@ -63,7 +63,7 @@ int main(void) {
      * CC_ERR_UPSCALE; an unknown ring tag with CC_ERR_INVALID_CONFIG. */
     cc_config bad_upscale = cc_config_chess();
     bad_upscale.upscale_factor = 5; /* only 0 (off) and 2..4 are valid */
-    cc_result ignored = {NULL, 0};
+    cc_result ignored = {NULL, 0, 0, 0.0f};
     if (cc_detect_u8(img, w, h, &bad_upscale, &ignored) != CC_ERR_UPSCALE) {
         fprintf(stderr, "invalid upscale factor was not rejected\n");
         free(img);
@@ -86,7 +86,7 @@ int main(void) {
     saddle.uncertainty = CC_UNCERTAINTY_PROPAGATED;
     saddle.has_noise_sigma = 1;
     saddle.noise_sigma = 1.0f;
-    cc_result cov_out = {NULL, 0};
+    cc_result cov_out = {NULL, 0, 0, 0.0f};
     if (cc_detect_u8(img, w, h, &saddle, &cov_out) != CC_OK) {
         fprintf(stderr, "saddle-point detection failed\n");
         free(img);
@@ -128,7 +128,7 @@ int main(void) {
     plain.uncertainty = CC_UNCERTAINTY_PROPAGATED;
     plain.has_noise_sigma = 1;
     plain.noise_sigma = 1.0f;
-    cc_result plain_out = {NULL, 0};
+    cc_result plain_out = {NULL, 0, 0, 0.0f};
     if (cc_detect_u8(img, w, h, &plain, &plain_out) != CC_OK) {
         fprintf(stderr, "default-refiner detection failed\n");
         free(img);
@@ -138,16 +138,30 @@ int main(void) {
     for (size_t i = 0; i < plain_out.len; ++i) {
         plain_cov += plain_out.corners[i].has_position_covariance ? 1u : 0u;
     }
+    /* The result carries the supplied noise level behind the covariances. */
+    const int plain_sigma_ok =
+        plain_out.has_noise_sigma == 1 && plain_out.noise_sigma == 1.0f;
     cc_result_free(&plain_out);
     if (plain_cov == 0) {
         fprintf(stderr, "default refiner carried no position covariance\n");
         free(img);
         return 10;
     }
+    if (!plain_sigma_ok) {
+        fprintf(stderr, "result did not carry the supplied noise sigma\n");
+        free(img);
+        return 10;
+    }
     plain.uncertainty = CC_UNCERTAINTY_OFF;
-    cc_result off_out = {NULL, 0};
+    cc_result off_out = {NULL, 0, 0, 0.0f};
     if (cc_detect_u8(img, w, h, &plain, &off_out) != CC_OK) {
         fprintf(stderr, "uncertainty-off detection failed\n");
+        free(img);
+        return 11;
+    }
+    if (off_out.has_noise_sigma != 0) {
+        fprintf(stderr, "uncertainty off still reported a noise sigma\n");
+        cc_result_free(&off_out);
         free(img);
         return 11;
     }

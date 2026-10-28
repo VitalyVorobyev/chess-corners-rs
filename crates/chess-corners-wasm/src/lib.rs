@@ -155,6 +155,8 @@ pub struct ChessDetector {
     /// Position covariance of the corners returned by the most recent
     /// `detect` call, stride [`COVARIANCE_STRIDE`].
     last_position_covariance: Vec<f32>,
+    /// Image noise σ behind `last_position_covariance`.
+    last_noise_sigma: Option<f32>,
 }
 
 impl Default for ChessDetector {
@@ -175,6 +177,7 @@ impl ChessDetector {
             last_radon_response: None,
             last_radon_scale: 0,
             last_position_covariance: Vec::new(),
+            last_noise_sigma: None,
         }
     }
 
@@ -187,6 +190,7 @@ impl ChessDetector {
             last_radon_response: None,
             last_radon_scale: 0,
             last_position_covariance: Vec::new(),
+            last_noise_sigma: None,
         }
     }
 
@@ -203,6 +207,7 @@ impl ChessDetector {
             last_radon_response: None,
             last_radon_scale: 0,
             last_position_covariance: Vec::new(),
+            last_noise_sigma: None,
         })
     }
 
@@ -224,6 +229,7 @@ impl ChessDetector {
         // Covariances of a detection under the previous config no longer
         // describe this detector's output.
         self.last_position_covariance.clear();
+        self.last_noise_sigma = None;
         self.inner
             .set_config(snapshot)
             .map_err(|e| JsValue::from_str(&e.to_string()))
@@ -249,11 +255,13 @@ impl ChessDetector {
     ) -> Result<js_sys::Float32Array, JsValue> {
         // Cleared first, so a failed detection leaves no stale covariances.
         self.last_position_covariance.clear();
+        self.last_noise_sigma = None;
         let corners = self
             .inner
             .detect_u8(pixels, width, height)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         flatten_covariances(&corners, &mut self.last_position_covariance);
+        self.last_noise_sigma = self.inner.last_noise_sigma();
         Ok(corners_to_f32_array(&corners))
     }
 
@@ -269,6 +277,18 @@ impl ChessDetector {
         let arr = js_sys::Float32Array::new_with_length(self.last_position_covariance.len() as u32);
         arr.copy_from(&self.last_position_covariance);
         arr
+    }
+
+    /// Image noise σ in gray levels that [`Self::position_covariance`] was
+    /// computed with: `noiseSigma` from the config when set, otherwise the
+    /// per-image estimate (what `estimateNoiseSigma` returns for the same
+    /// image). `undefined` when no corner of the most recent detection has a
+    /// covariance (`Uncertainty.Off`, the default, or upscaled input) or the
+    /// estimate declined; also before the first detection, after a failed
+    /// one, and after `applyConfig`.
+    #[wasm_bindgen(js_name = noiseSigma)]
+    pub fn noise_sigma(&self) -> Option<f32> {
+        self.last_noise_sigma
     }
 
     /// Detect corners from RGBA pixels (e.g. from canvas `getImageData`).
