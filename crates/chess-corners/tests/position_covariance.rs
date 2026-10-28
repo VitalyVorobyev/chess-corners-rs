@@ -155,6 +155,20 @@ impl Whitened {
     fn sigma0_sq(&self) -> f64 {
         self.sum / (2.0 * self.n as f64)
     }
+
+    /// The covariance is conservative (σ̂₀² < 1) but not grossly inflated:
+    /// σ̂₀² is at least half `measured`, its value when the bound was set,
+    /// so a covariance more than twice as large fails. The real-image floor
+    /// dominates the covariance on these ideal boards, so σ̂₀² scales as
+    /// 1/floor²: re-measure it when a floor changes.
+    fn assert_conservative(&self, measured: f64) {
+        let s0 = self.sigma0_sq();
+        assert!(
+            (0.5 * measured..1.0).contains(&s0),
+            "σ̂₀² = {s0:.4} over {} corners (measured {measured})",
+            self.n
+        );
+    }
 }
 
 /// Subpixel phase of board `k`: a 5×5 grid, so grid-aligned boards see
@@ -225,12 +239,7 @@ fn saddle_point_covariance_is_conservative_on_ideal_boards() {
     assert_eq!(declined, 0);
     assert!(w.n > 300, "too few corners with a covariance: {}", w.n);
     assert_eq!(w.unmatched, 0);
-    let s0 = w.sigma0_sq();
-    assert!(
-        (0.03..1.0).contains(&s0),
-        "σ̂₀² = {s0:.3} over {} corners",
-        w.n
-    );
+    w.assert_conservative(0.0848);
 }
 
 /// On a board rotated off the pixel grid, where the re-centred fit keeps a
@@ -242,12 +251,7 @@ fn covariance_is_conservative_on_a_rotated_board() {
     assert_eq!(declined, 0);
     assert!(w.n > 300, "too few corners with a covariance: {}", w.n);
     assert_eq!(w.unmatched, 0);
-    let s0 = w.sigma0_sq();
-    assert!(
-        (0.03..1.0).contains(&s0),
-        "σ̂₀² = {s0:.3} over {} corners",
-        w.n
-    );
+    w.assert_conservative(0.0574);
 }
 
 /// `Σ = max(σ², 1/12)·C + Σ_sys` for every localizer: affine in the
@@ -621,12 +625,7 @@ fn radon_covariance_is_conservative_on_ideal_boards() {
     }
     assert!(w.n > 600, "too few corners with a covariance: {}", w.n);
     assert_eq!(w.unmatched, 0);
-    let s0 = w.sigma0_sq();
-    assert!(
-        (0.03..1.0).contains(&s0),
-        "σ̂₀² = {s0:.3} over {} corners",
-        w.n
-    );
+    w.assert_conservative(0.0803);
 }
 
 #[test]

@@ -840,8 +840,9 @@ mod tests {
     /// covariance); at least 90% of the draws must be.
     fn scatter(noise: f32, blur: f32, offset: (f32, f32), draws: u64) -> ([f64; 2], [f64; 2]) {
         let clean = board(offset, blur);
-        // Gaussian noise plus the 8-bit rounding (variance 1/12).
-        let noise_var = f64::from(noise * noise) + 1.0 / 12.0;
+        // The total noise of the 8-bit image, Gaussian plus rounding: the σ²
+        // `position_covariance` takes.
+        let noise_var = f64::from(noise * noise) + f64::from(crate::uncertainty::ROUNDING_VAR);
         let mut xs = Vec::new();
         let mut pred = [0.0f64; 2];
         for seed in 0..draws {
