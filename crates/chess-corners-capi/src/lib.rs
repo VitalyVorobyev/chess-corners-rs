@@ -85,7 +85,11 @@ pub const CC_ORIENTATION_NONE: cc_orientation_method_t = 2;
 /// Position-uncertainty tier stored in `cc_config::uncertainty`.
 pub type cc_uncertainty_t = u32;
 /// Every corner whose localizer supports it reports a position covariance
-/// (the default, and the value of a zero-initialised config).
+/// (the default, and the value of a zero-initialised config): image noise
+/// propagated through the localizer plus its systematic error. That error
+/// includes a per-localizer floor measured on real images, usually the
+/// largest part of the covariance there; weighting by it has not been shown
+/// to beat uniform weighting on real data.
 pub const CC_UNCERTAINTY_PROPAGATED: cc_uncertainty_t = 0;
 /// No position covariance and no noise estimate: every corner has
 /// `has_position_covariance == 0`. Positions are identical to
@@ -115,13 +119,15 @@ pub const CC_PEAK_FIT_GAUSSIAN: cc_peak_fit_t = 1;
 
 // ─── Result types (library writes, C reads) ─────────────────────────────
 
-/// One local grid-axis direction with its 1σ angular uncertainty.
+/// One local grid-axis direction with a fit-quality score.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct cc_axis {
     /// Axis direction in radians.
     pub angle: f32,
-    /// 1σ angular uncertainty in radians.
+    /// Fit-quality score in radians: larger means a less reliable axis. Not a
+    /// calibrated 1σ; it ignores the noise level and `cc_uncertainty_t`.
+    /// Use it for ranking and gating.
     pub sigma: f32,
 }
 

@@ -205,7 +205,7 @@ for c in &corners {
 
 The `axes` field is `Option<[AxisEstimate; 2]>`. `Some([a0, a1])`
 gives **two** directions, both in radians and not assumed orthogonal,
-with `a0.sigma` / `a1.sigma` their 1σ angular uncertainties. It is
+with `a0.sigma` / `a1.sigma` their fit-quality scores in radians (larger means a less reliable axis; not a calibrated 1σ). It is
 `None` when the orientation fit was disabled with
 `without_orientation()` (see
 [Part VI §6.5](part-06-orientation-methods.md#65-choosing-a-method)).
@@ -264,7 +264,7 @@ print(det.response.shape) # (N,)  float32
 - `det.xy` — `(N, 2)` float32, subpixel corner positions (x, y) in input pixels
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
-- `det.sigmas` — `(N, 2)` float32, 1σ uncertainty per axis in radians, or `None` when orientation is disabled
+- `det.sigmas` — `(N, 2)` float32, per-axis fit-quality score in radians (larger means a less reliable axis; not a calibrated 1σ), or `None` when orientation is disabled
 - `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.OFF`, the ML refiner, or upscaling)
 
 When the orientation fit is skipped (`cfg.without_orientation()`),

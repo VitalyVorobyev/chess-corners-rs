@@ -198,7 +198,7 @@ typedef struct cc_config {
 } cc_config;
 
 /**
- * One local grid-axis direction with its 1σ angular uncertainty.
+ * One local grid-axis direction with a fit-quality score.
  */
 typedef struct cc_axis {
   /**
@@ -206,7 +206,9 @@ typedef struct cc_axis {
    */
   float angle;
   /**
-   * 1σ angular uncertainty in radians.
+   * Fit-quality score in radians: larger means a less reliable axis. Not a
+   * calibrated 1σ; it ignores the noise level and `cc_uncertainty_t`.
+   * Use it for ranking and gating.
    */
   float sigma;
 } cc_axis;
@@ -345,7 +347,11 @@ typedef struct cc_result {
 
 /**
  * Every corner whose localizer supports it reports a position covariance
- * (the default, and the value of a zero-initialised config).
+ * (the default, and the value of a zero-initialised config): image noise
+ * propagated through the localizer plus its systematic error. That error
+ * includes a per-localizer floor measured on real images, usually the
+ * largest part of the covariance there; weighting by it has not been shown
+ * to beat uniform weighting on real data.
  */
 #define CC_UNCERTAINTY_PROPAGATED 0
 

@@ -106,18 +106,23 @@ Each detection is a `CornerDescriptor` with:
 - `response` — raw unnormalized detector response (the ChESS paper's
   score for ChESS, `(max α S_α − min α S_α)²` for Radon).
 - `axes` — `Some([axis0, axis1])` carries the two local grid axes with
-  per-axis 1σ angular uncertainty estimate. For the default `RingFit`
-  method it is the Gauss-Newton covariance
+  per-axis angular fit-quality score in radians (larger means a less
+  reliable axis; not a calibrated 1σ, and independent of the noise level
+  and `Uncertainty`). For the default `RingFit` method it is the
+  Gauss-Newton covariance
   (`σθᵢ = √((SSR / 12) · (JᵀJ)⁻¹[i,i])`) scaled by an empirical
-  calibration factor; `DiskFit` reports a residual-based estimate. Axes are not assumed
+  factor; `DiskFit` reports a residual-based heuristic. Use it for
+  ranking and gating. Axes are not assumed
   orthogonal; `axis0.angle ∈ [0, π)` and `axis1.angle ∈
   (axis0.angle, axis0.angle + π)`, with the CCW arc between them
   spanning a dark sector. It is `None` when the orientation fit is
   disabled.
 - `position_covariance` — `Some` 2×2 covariance of `(x, y)` in px², for
   weighting the corner in a calibration: the scatter due to white pixel
-  noise plus the localizer's systematic error (see
-  `Corner::position_covariance` in `chess-corners-core`). Every localizer
+  noise plus the localizer's systematic error, which includes a floor
+  measured on real images that usually dominates there (see
+  `Corner::position_covariance` in `chess-corners-core`; weighting by it
+  has not been shown to beat uniform weighting on real data). Every localizer
   except the ML refiner reports it under the default
   `DetectorConfig::uncertainty` (`Uncertainty::Propagated`); `Off` skips
   it. The noise level is estimated from each image

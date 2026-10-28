@@ -1,8 +1,8 @@
 //! Two-axis projective orientation fit at a chessboard corner.
 //!
 //! The detector lifts each subpixel corner to an [`AxisFitResult`] that
-//! carries the two local grid-axis directions, their per-axis 1σ angular
-//! uncertainties, and a residual RMS. The actual fit is pluggable via
+//! carries the two local grid-axis directions, their per-axis angular
+//! fit-quality scores, and a residual RMS. The actual fit is pluggable via
 //! [`OrientationMethod`].
 //!
 //! [`fit_axes_at_point`] is the public entry point: it samples the
@@ -54,9 +54,10 @@ pub enum OrientationMethod {
     /// radius-10 detector ring is used and the fit still looks
     /// suspicious, the canonical radius-5 ring is sampled as a cheap
     /// safety check and used when it produces a valid contrast/residual
-    /// fit. Per-axis 1σ uncertainties are calibrated by a
+    /// fit. Per-axis sigmas are fit-quality scores, not calibrated
+    /// 1σ values: the fit's Gauss-Newton covariance, corrected by a
     /// piecewise-linear lookup table keyed on the contrast-relative
-    /// residual, bringing reported sigmas closer to the empirical RMSE.
+    /// residual.
     ///
     /// This is the **default** method. Suitable for the full range of
     /// standard chessboard images.

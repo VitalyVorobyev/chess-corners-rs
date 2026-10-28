@@ -33,8 +33,8 @@ arrays:
 - `det.xy` — `(N, 2)` float32, subpixel corner positions (x, y) in input pixels
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
-- `det.sigmas` — `(N, 2)` float32, 1σ uncertainty per axis in radians, or `None` when orientation is disabled
-- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (every localizer except the ML refiner reports it under the default `Uncertainty.PROPAGATED`; none does under `Uncertainty.OFF` or on upscaled input); `chess_corners.estimate_noise_sigma(img)` returns the noise level behind it
+- `det.sigmas` — `(N, 2)` float32, per-axis fit-quality score in radians (larger means a less reliable axis; not a calibrated 1σ), or `None` when orientation is disabled
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (every localizer except the ML refiner reports it under the default `Uncertainty.PROPAGATED`; none does under `Uncertainty.OFF` or on upscaled input); `chess_corners.estimate_noise_sigma(img)` returns the noise level behind it. The covariance includes a per-localizer floor measured on real images that usually dominates it there; weighting by it has not been shown to beat uniform weighting on real data
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` (by less than π)
 traverses a **dark** sector of the corner; the two grid axes are **not**

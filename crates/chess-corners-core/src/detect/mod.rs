@@ -96,6 +96,10 @@ impl Corner {
     ///   (about 0.05 px per axis for the saddle-point fit and the Radon peak
     ///   fit, 0.07 for the center of mass, 0.11 for Förstner); on
     ///   ideal synthetic corners the covariance is therefore conservative.
+    ///   On real, well-exposed images this floor is usually the largest
+    ///   part of `Σ`, so the reported σ varies little from corner to
+    ///   corner there, and weighting a calibration by it has not been
+    ///   shown to beat uniform weighting on real data.
     ///
     /// Known limits: the systematic model cannot see the board's rotation,
     /// so the center of mass is overconfident on sharp boards rotated a few
@@ -120,7 +124,7 @@ impl Corner {
     }
 }
 
-/// Direction of one local grid axis with its 1σ angular uncertainty.
+/// Direction of one local grid axis with a fit-quality score.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct AxisEstimate {
@@ -128,12 +132,15 @@ pub struct AxisEstimate {
     ///
     /// See [`CornerDescriptor`] for the joint polarity convention.
     pub angle: f32,
-    /// 1σ angular uncertainty estimate (radians).
+    /// Fit-quality score in radians: larger means a less reliable axis
+    /// estimate. It is not a calibrated 1σ.
     ///
     /// How it is derived depends on the orientation method. `RingFit`
-    /// scales the Gauss-Newton covariance of the fit by the residual
-    /// variance and an empirical calibration factor; `DiskFit` reports a
-    /// residual-based estimate, never below a method-specific floor.
+    /// scales the Gauss-Newton covariance of the fit by the residual and
+    /// an empirical factor; `DiskFit` reports a residual-based heuristic
+    /// with a method-specific floor. Neither uses the image noise level or
+    /// [`Uncertainty`](crate::Uncertainty), and it is computed whenever
+    /// orientation is enabled. Use it for ranking and gating corners.
     pub sigma: f32,
 }
 
@@ -204,7 +211,8 @@ pub struct CornerDescriptor {
     /// a contrast, or a normalized strength.
     pub response: f32,
 
-    /// The two local grid axis directions with per-axis 1σ precision, or
+    /// The two local grid axis directions with per-axis fit-quality scores
+    /// ([`AxisEstimate::sigma`], not a calibrated 1σ), or
     /// `None` when the orientation fit was skipped (orientation disabled in
     /// the detector configuration).
     pub axes: Option<[AxisEstimate; 2]>,

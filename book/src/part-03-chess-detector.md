@@ -266,7 +266,7 @@ Raw corners (position + strength) are enough for many applications,
 but the core crate also offers a richer `CornerDescriptor` that fits
 a parametric intensity model to the 16-sample ring around each corner.
 The fit yields both local grid axes **independently** and their
-per-axis 1σ angular uncertainty — all in one pass.
+per-axis angular fit-quality score — all in one pass.
 
 Both the ChESS detector and the Radon detector produce
 `CornerDescriptor` values via the same `describe_corners`
@@ -299,7 +299,7 @@ Fields:
   sums; a real corner clears the acceptance floor (`threshold`,
   default `30`) from §3.3.1.
 - `axes` – `Some([axis0, axis1])` carries the two local grid axis
-  directions and their 1σ uncertainties, or `None` when the
+  directions and their fit-quality scores, or `None` when the
   orientation fit was disabled (§3.4.6).
 - `position_covariance` – the 2×2 covariance `{ xx, xy, yy }` of
   `(x, y)` in px²: the scatter due to white pixel noise plus the
@@ -366,11 +366,11 @@ magnitude below `10⁻⁴`) short‑circuit to a degenerate fit:
 `A = 0`, `θ₁ = 0`, `θ₂ = π/2`, and `σ = π` on both axes so downstream
 consumers can detect the "no signal" case via the uncertainty field.
 
-### 3.4.4 Per‑axis 1σ uncertainty
+### 3.4.4 Per‑axis fit-quality score
 
-The `sigma` field on each `AxisEstimate` is the standard 1σ angular
-uncertainty from the linearised Gauss–Newton covariance at the
-optimum:
+The `sigma` field on each `AxisEstimate` is a fit-quality score in
+radians, not a calibrated 1σ: larger means a less reliable axis. It
+is built from the linearised Gauss–Newton covariance at the optimum:
 
 1. The sum of squared residuals is `SSR = Σᵢ (sᵢ − I(φᵢ))²`.
 2. The unbiased residual variance is
@@ -381,11 +381,11 @@ optimum:
    `σθ₁ = √Σ[2,2]`, `σθ₂ = √Σ[3,3]` (clamped to ≥ 0, capped at π).
 5. Both sigmas are multiplied by an empirical calibration factor. It is
    1.25 for clean fits and falls to 1.0 as the residual grows relative
-   to the fitted amplitude, so `sigma` matches the angle error measured
+   to the fitted amplitude, so `sigma` tracks the angle error measured
    on synthetic corners.
 
-This is the textbook Cramér–Rao‑style uncertainty for nonlinear
-least squares — it assumes residuals are approximately iid Gaussian
+This follows the textbook Cramér–Rao‑style covariance for nonlinear
+least squares, which assumes residuals are approximately iid Gaussian
 and the linearisation around the optimum is adequate. It does **not**
 account for model mismatch (e.g. a corner that is not well described
 by a separable two‑axis tanh product), but it scales correctly with
@@ -393,8 +393,8 @@ SNR: noisier rings produce proportionally larger `sigma`.
 
 Practically, `sigma` is useful for:
 
-- Weighting corners in downstream grid fitting (inverse‑variance
-  weights, or rejecting corners whose axes are too uncertain).
+- Ranking corners in downstream grid fitting, or rejecting corners
+  whose axes are too uncertain (it is not an inverse‑variance weight).
 - Flagging degenerate fits: `sigma ≈ π` means the fit did not lock
   onto a well‑defined grid.
 

@@ -512,6 +512,11 @@ calibration images (§8.5); the covariance earns its place there by
 flagging poorly localised corners and by putting the residuals on a
 known scale.
 
+On real, well-exposed images each localizer's floor (§8.3.3) is usually
+the largest part of \\(\Sigma\\), so the reported σ varies little from
+corner to corner, and weighting by it has not been shown to beat
+uniform weighting (§8.5).
+
 The covariance describes the position in the image the detector saw.
 If you undistort or otherwise transform corner positions before
 fitting, transform the covariance with the Jacobian \\(G\\) of that
@@ -558,8 +563,10 @@ Jacobians (§8.2.1) and returns the same positions.
 
 ## 8.7 Orientation uncertainty
 
-Each axis in `axes` carries a `sigma`, a 1σ angular uncertainty in
-radians. It is not a calibrated covariance:
+Each axis in `axes` carries a `sigma`: a fit-quality score in radians,
+where larger means a less reliable axis estimate. It is not a calibrated
+1σ or a covariance, uses neither the image noise level nor the
+`Uncertainty` setting, and is computed whenever orientation is enabled:
 
 - `RingFit` takes the Gauss–Newton covariance of its ring fit, scales it
   by the fit's residual variance, and multiplies it by an empirical

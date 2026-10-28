@@ -35,6 +35,15 @@ pub enum Uncertainty {
     /// the localizer's systematic-error model (from the corner's offset to
     /// the localizer's fit window and the width of its edges). The
     /// default.
+    ///
+    /// The systematic part includes a per-localizer floor measured on real
+    /// calibration images (about 0.05 px per axis for the saddle-point fit
+    /// and the Radon peak fit, 0.07 center of mass, 0.11 Förstner). On
+    /// real, well-exposed images this floor is usually the largest part of
+    /// the covariance, so the reported σ varies little from corner to
+    /// corner there. Weighting a calibration by it has not been shown to
+    /// beat uniform weighting on real data. Errors shared by all corners of
+    /// an image (defocus, lens-model error) are outside it.
     #[default]
     Propagated,
 }
