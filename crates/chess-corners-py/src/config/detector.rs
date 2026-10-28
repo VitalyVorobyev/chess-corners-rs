@@ -153,7 +153,9 @@ impl DetectorConfig {
     }
 
     /// Return a new `DetectorConfig` that uses a known image noise level
-    /// (gray levels) instead of estimating it per image.
+    /// instead of estimating it per image: the total noise standard
+    /// deviation of the 8-bit image in gray levels, rounding included (what
+    /// `estimate_noise_sigma` measures).
     fn with_noise_sigma(&self, py: Python<'_>, sigma: f32) -> PyResult<Self> {
         let mut cfg = self.clone_inner(py)?;
         cfg.noise_sigma = Some(sigma);

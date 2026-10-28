@@ -187,9 +187,11 @@ typedef struct cc_config {
    */
   uint32_t has_noise_sigma;
   /**
-   * Standard deviation of the image's pixel noise in gray levels
-   * (finite, `>= 0`; otherwise `CC_ERR_INVALID_CONFIG`). Read only when
-   * `has_noise_sigma` is non-zero.
+   * Standard deviation of the image's pixel noise in gray levels: the
+   * total noise of the 8-bit image, rounding included, as
+   * `cc_estimate_noise_sigma_u8` measures it (finite, `>= 0`; otherwise
+   * `CC_ERR_INVALID_CONFIG`). Read only when `has_noise_sigma` is
+   * non-zero.
    */
   float noise_sigma;
   /**

@@ -221,7 +221,9 @@ impl DetectorConfig {
     }
 
     /// Return a copy of this config that uses a known image noise level
-    /// (gray levels) instead of estimating it per image.
+    /// instead of estimating it per image: the total noise standard
+    /// deviation of the 8-bit image in gray levels, rounding included (what
+    /// `estimateNoiseSigma` measures).
     /// JS: `cfg.withNoiseSigma(2.0)`.
     #[wasm_bindgen(js_name = withNoiseSigma)]
     pub fn with_noise_sigma(&self, sigma: f32) -> Self {
@@ -495,9 +497,10 @@ impl DetectorConfig {
         *self.merge_radius.borrow_mut() = v;
     }
 
-    /// Standard deviation of the image's pixel noise in gray levels, used to
-    /// express each corner's position covariance in px²; `undefined`
-    /// estimates it from each image.
+    /// Standard deviation of the image's pixel noise in gray levels (the
+    /// total noise of the 8-bit image, rounding included), used to express
+    /// each corner's position covariance in px²; `undefined` estimates it
+    /// from each image.
     #[wasm_bindgen(getter, js_name = noiseSigma)]
     pub fn noise_sigma(&self) -> Option<f32> {
         *self.noise_sigma.borrow()

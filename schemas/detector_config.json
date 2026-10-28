@@ -456,7 +456,7 @@
     },
     "noise_sigma": {
       "default": null,
-      "description": "Standard deviation of the image's pixel noise, in gray levels\n(`>= 0`), used to express each corner's\n`position_covariance`\nin px². `None` (the default) estimates it from each image with\n`estimate_noise_sigma_u8`; set it\nwhen the sensor noise is known, for example from a flat-field\nmeasurement.\nIt is the noise as it appears in the 8-bit image, rounding included\n(rounding adds `1/12` gray level², which matters only below about\n1 gray level). The covariance never uses a variance below that\n`1/12`.\n\nIgnored, and no estimate is made, when\n`uncertainty` is `Uncertainty::Off`, when no\ncorner carries a covariance, and when `upscale` is\nactive (no covariance is reported there: interpolation correlates the\nnoise of neighbouring pixels).",
+      "description": "Standard deviation of the image's pixel noise, in gray levels\n(`>= 0`), used to express each corner's\n`position_covariance`\nin px². `None` (the default) estimates it from each image with\n`estimate_noise_sigma_u8`; set it\nwhen the noise is known, for example as the standard deviation of the\ndifference of two frames of a static scene, divided by `√2`.\nIt is the total noise as it appears in the 8-bit image, rounding\nincluded (rounding adds `1/12` gray level² to the sensor noise, which\nmatters only below about 1 gray level). The covariance never uses a\nvariance below that `1/12`.\n\nIgnored, and no estimate is made, when\n`uncertainty` is `Uncertainty::Off`, when no\ncorner carries a covariance, and when `upscale` is\nactive (no covariance is reported there: interpolation correlates the\nnoise of neighbouring pixels).",
       "format": "float",
       "minimum": 0.0,
       "type": [

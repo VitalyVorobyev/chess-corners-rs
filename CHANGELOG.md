@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `PositionCovariance` implements `Add`: the covariance of the sum of two
+  independent position errors.
+
 ### Changed
 
 - The default uncertainty tier is now `Off` in every binding: corners carry
@@ -16,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the covariance unchanged. In C, `cc_config_default()` and the strategy
   presets return `CC_UNCERTAINTY_OFF`, while a zero-initialised `cc_config`
   still selects `CC_UNCERTAINTY_PROPAGATED`.
+
+### Documentation
+
+- `noise_sigma` (Rust, Python, WASM, C) is the total noise of the 8-bit
+  image, rounding included: what `estimate_noise_sigma_u8` measures, or the
+  standard deviation of the difference of two frames of a static scene
+  divided by √2.
 
 ## Past releases
 

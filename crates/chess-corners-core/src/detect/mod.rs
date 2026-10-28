@@ -73,8 +73,11 @@ impl Corner {
     }
 
     /// Position covariance in px² for an image whose pixels carry white
-    /// noise of standard deviation `noise_sigma` gray levels (for example
-    /// from [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8)):
+    /// noise of standard deviation `noise_sigma` gray levels: the total
+    /// noise of the 8-bit image, rounding included, as
+    /// [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8) measures
+    /// it (or the standard deviation of the difference of two frames of a
+    /// static scene, divided by `√2`):
     ///
     /// `Σ = max(σₙ², 1/12)·C + Σ_sys`
     ///

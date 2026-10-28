@@ -10,7 +10,7 @@
 //! directory (`UQ24_SYNTH_DIR`); tests that need them skip when it is unset.
 
 use crate::detect::radon::{detect_peaks_from_radon, radon_response_u8, RadonBuffers};
-use crate::uncertainty::{edge_width, PixelTile};
+use crate::uncertainty::{edge_width, PixelTile, ROUNDING_VAR};
 use crate::{
     chess_response_u8, detect_peaks_from_response_with_refine_radius, CenterOfMassConfig,
     ChessParams, Corner, CornerRefiner, DenseDetector, ForstnerConfig, ImageView,
@@ -310,7 +310,8 @@ pub(crate) fn interior(xy: [f32; 2], size: (usize, usize), margin: f32) -> bool 
 
 /// Monte Carlo noise scatter of one scene and localizer: over `draws`
 /// noisy copies, each truth corner's estimates about their own mean,
-/// whitened by the predicted noise term at `σ² + 1/12` (with any
+/// whitened by the predicted noise term at `σ² + 1/12`, the total noise
+/// of the 8-bit image (with any
 /// second-order growth). Returns the
 /// std of the whitened components (1 when the noise term is right) and the
 /// number of corner-draws.
@@ -340,8 +341,9 @@ pub(crate) fn mc_z_std(
             let Some(model) = det.corner.model else {
                 continue;
             };
-            // The noise term at the draw's noise (Gaussian plus rounding).
-            let c = model.noise_at((sigma * sigma + 1.0 / 12.0).sqrt());
+            // The noise term at the draw's total 8-bit noise (Gaussian plus
+            // rounding): the σ production takes, so `noise_at`'s clamp is idle.
+            let c = model.noise_at((sigma * sigma + ROUNDING_VAR).sqrt());
             if !interior(det.xy(), (w, h), 12.0) {
                 continue;
             }

@@ -13,7 +13,8 @@ use crate::detect::{count_positive_neighbors, is_local_max, Corner};
 use crate::imageview::ImageView;
 use crate::refine::PositionCovariance;
 use crate::uncertainty::{
-    edge_width, knot, CovarianceModel, PixelGradients, PixelTile, SystematicModel,
+    gram, knot, CovarianceModel, PixelGradients, PixelTile, SystematicModel, EDGE_REACH,
+    ROUNDING_VAR,
 };
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -326,15 +327,14 @@ impl PeakSupport {
 /// Propagate the gradient of a quantity with respect to the five blurred
 /// fit samples (`samples`: offset from the peak pixel and the 2-vector of
 /// derivatives) back to the input pixels; returns `Σₚ gₚgₚᵀ` over the input
-/// pixels and, separately, over the working samples (for their 8-bit
-/// rounding when the input is upsampled).
+/// pixels and leaves the gradient per working sample in `work_grad`.
 fn backprop(
     sup: PeakSupport,
     samples: &[([i32; 2], [f32; 2]); 5],
     rays: &[(f32, u8, u8)],
     work_grad: &mut Vec<[f32; 2]>,
     grads: &mut PixelGradients,
-) -> Option<(PositionCovariance, PositionCovariance)> {
+) -> Option<PositionCovariance> {
     let (rs, ws) = (sup.rs(), sup.ws());
     let (blur_r, ray_r, work_k, resp_k) = (sup.blur_r, sup.ray_r, sup.work_k, sup.resp_k);
     let blur_n = ((2 * blur_r + 1) * (2 * blur_r + 1)) as f32;
@@ -369,17 +369,12 @@ fn backprop(
     let lo = [peak[0] - work_k, peak[1] - work_k].map(|v| v.div_euclid(up));
     let side = ((2 * work_k) / up + 2) as usize;
     grads.reset(lo, side);
-    let (mut qxx, mut qxy, mut qyy) = (0.0f64, 0.0f64, 0.0f64);
     for j in 0..ws as i32 {
         for i in 0..ws as i32 {
             let g = work_grad[j as usize * ws + i as usize];
             if g == [0.0, 0.0] {
                 continue;
             }
-            let (gx, gy) = (f64::from(g[0]), f64::from(g[1]));
-            qxx += gx * gx;
-            qxy += gx * gy;
-            qyy += gy * gy;
             let (wx, wy) = (peak[0] - work_k + i, peak[1] - work_k + j);
             if up == 1 {
                 grads.add(wx, wy, g);
@@ -400,8 +395,7 @@ fn backprop(
             }
         }
     }
-    let working = PositionCovariance::new(qxx as f32, qxy as f32, qyy as f32);
-    Some((grads.covariance()?, working))
+    grads.covariance()
 }
 
 /// Covariance model of a Radon peak at `xy` (input pixels, as
@@ -415,11 +409,11 @@ fn backprop(
 /// `R = (S_max − S_min)²` with the arg-max and arg-min rays held fixed, the
 /// ray sums, and the bilinear 2× upsampling of the input, so the gradient is
 /// accumulated over the input pixels. The upsampled samples are rounded to
-/// 8 bits; that rounding enters as independent noise of variance 1/12 per
-/// working sample, in the systematic term. The fit divides by the curvature
-/// `D` of `R̄` (or `ln R̄`) across the peak; where the response is flat, the
-/// noise in `D` is not small next to `D`, and the noise term grows by the
-/// second-order factor `1 + 3·var(D)/D²` per axis.
+/// 8 bits; that rounding enters as independent noise of variance
+/// [`ROUNDING_VAR`] per working sample, in the systematic term. The fit
+/// divides by the curvature `D` of `R̄` (or `ln R̄`) across the peak; where
+/// the response is flat, the noise in `D` is not small next to `D`, and the
+/// noise term grows by the second-order factor `1 + 3·var(D)/D²` per axis.
 pub(crate) fn peak_fit_covariance(
     image: &ImageView<'_>,
     xy: [f32; 2],
@@ -453,15 +447,19 @@ pub(crate) fn peak_fit_covariance(
         grads,
         tile,
     } = scratch;
+    // One copy of the input pixels the working samples and the edge width
+    // read: the samples reach `work_k / up` from the peak, plus the
+    // interpolation's neighbour and the rounding of the peak.
+    let centre = xy.map(|v| v.round() as i32);
+    tile.load(image, centre, (work_k / up + 3).max(EDGE_REACH));
     work.clear();
     for j in -work_k..=work_k {
         for i in -work_k..=work_k {
             let (wx, wy) = (sup.peak[0] + i, sup.peak[1] + j);
             let v = if up == 1 {
-                image.sample(wx, wy)
+                tile.at(wx, wy)
             } else {
-                image
-                    .sample_bilinear(wx as f32 / upf, wy as f32 / upf)
+                tile.bilinear(wx as f32 / upf, wy as f32 / upf)
                     .round()
                     .clamp(0.0, 255.0)
             };
@@ -526,29 +524,24 @@ pub(crate) fn peak_fit_covariance(
         ]
     };
     // Position: ∂x̂ = ∂f / up.
-    let (noise, working) = backprop(sup, &samples(gx, gy, 1.0 / upf), rays, work_grad, grads)?;
+    let noise = backprop(sup, &samples(gx, gy, 1.0 / upf), rays, work_grad, grads)?;
+    // The rounding of the upsampled working samples.
+    let rounding = match up {
+        1 => None,
+        _ => Some(gram(work_grad)?.scaled(ROUNDING_VAR)),
+    };
     // Curvature of the fit on each axis, for the second-order growth.
     let (dx, cx) = fit_peak_curvature_grad(bxm, bc, bxp, mode);
     let (dy, cy) = fit_peak_curvature_grad(bym, bc, byp, mode);
-    let (curv, _) = backprop(sup, &samples(cx, cy, 1.0), rays, work_grad, grads)?;
+    let curv = backprop(sup, &samples(cx, cy, 1.0), rays, work_grad, grads)?;
     let growth = [(curv.xx, dx), (curv.yy, dy)].map(|(v, d)| (3.0 * v / (d * d)).sqrt());
 
     let offset = frac.map(|f| f / upf);
-    let centre = xy.map(|v| v.round() as i32);
-    let mut systematic = SYSTEMATIC.covariance(offset, edge_width(image, centre, tile), 1.0 / upf);
-    if up > 1 {
-        let q = 1.0 / 12.0;
-        systematic = PositionCovariance::new(
-            systematic.xx + q * working.xx,
-            systematic.xy + q * working.xy,
-            systematic.yy + q * working.yy,
-        );
+    let mut model = SYSTEMATIC.model(noise, offset, tile.edge_width(centre), 1.0 / upf);
+    if let Some(rounding) = rounding {
+        model.systematic = model.systematic + rounding;
     }
-    Some(CovarianceModel {
-        noise,
-        systematic,
-        growth,
-    })
+    Some(CovarianceModel { growth, ..model })
 }
 
 /// Attach the Radon peak-fit covariance to `corner`, a peak of

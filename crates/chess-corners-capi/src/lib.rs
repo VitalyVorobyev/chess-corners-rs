@@ -260,9 +260,11 @@ pub struct cc_config {
     /// value uses `noise_sigma`. The noise level turns each corner's
     /// position covariance into px².
     pub has_noise_sigma: u32,
-    /// Standard deviation of the image's pixel noise in gray levels
-    /// (finite, `>= 0`; otherwise `CC_ERR_INVALID_CONFIG`). Read only when
-    /// `has_noise_sigma` is non-zero.
+    /// Standard deviation of the image's pixel noise in gray levels: the
+    /// total noise of the 8-bit image, rounding included, as
+    /// `cc_estimate_noise_sigma_u8` measures it (finite, `>= 0`; otherwise
+    /// `CC_ERR_INVALID_CONFIG`). Read only when `has_noise_sigma` is
+    /// non-zero.
     pub noise_sigma: f32,
     /// One of the `CC_UNCERTAINTY_*` constants (any other value is
     /// `CC_ERR_INVALID_CONFIG`). The presets select `CC_UNCERTAINTY_OFF`;

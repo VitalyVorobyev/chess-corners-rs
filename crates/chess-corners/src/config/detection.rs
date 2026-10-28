@@ -172,12 +172,12 @@ pub struct DetectorConfig {
     /// [`position_covariance`](crate::CornerDescriptor::position_covariance)
     /// in px². `None` (the default) estimates it from each image with
     /// [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8); set it
-    /// when the sensor noise is known, for example from a flat-field
-    /// measurement.
-    /// It is the noise as it appears in the 8-bit image, rounding included
-    /// (rounding adds `1/12` gray level², which matters only below about
-    /// 1 gray level). The covariance never uses a variance below that
-    /// `1/12`.
+    /// when the noise is known, for example as the standard deviation of the
+    /// difference of two frames of a static scene, divided by `√2`.
+    /// It is the total noise as it appears in the 8-bit image, rounding
+    /// included (rounding adds `1/12` gray level² to the sensor noise, which
+    /// matters only below about 1 gray level). The covariance never uses a
+    /// variance below that `1/12`.
     ///
     /// Ignored, and no estimate is made, when
     /// [`uncertainty`](Self::uncertainty) is [`Uncertainty::Off`], when no

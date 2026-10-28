@@ -14,9 +14,7 @@
 
 use super::{CornerRefiner, PositionCovariance, RefineContext, RefineResult, RefineStatus};
 use crate::imageview::ImageView;
-use crate::uncertainty::{
-    edge_width, knot, CovarianceModel, PixelTile, SystematicModel, Uncertainty,
-};
+use crate::uncertainty::{edge_width, knot, PixelTile, SystematicModel, Uncertainty};
 use serde::{Deserialize, Serialize};
 
 /// Systematic error of the converged, re-centred estimate by edge width
@@ -227,11 +225,7 @@ impl CornerRefiner for SaddlePointRefiner {
                 if let Some(noise) = est.covariance {
                     let at = est.xy.map(|v| v.round() as i32);
                     let width = edge_width(&img, at, &mut self.scratch.tile);
-                    res.set_model(Some(CovarianceModel {
-                        noise,
-                        systematic: SYSTEMATIC.covariance([0.0; 2], width, 1.0),
-                        growth: [0.0; 2],
-                    }));
+                    res.set_model(Some(SYSTEMATIC.model(noise, [0.0; 2], width, 1.0)));
                 }
                 res
             }
@@ -686,11 +680,7 @@ fn covariance(
     }
 
     let ak = a.map(|row| -> Coefs { std::array::from_fn(|s| dot(&row, &k.map(|kr| kr[s]))) });
-    let cov = PositionCovariance::new(dot(&ak[0], &a[0]), dot(&ak[0], &a[1]), dot(&ak[1], &a[1]));
-    [cov.xx, cov.xy, cov.yy]
-        .iter()
-        .all(|v| v.is_finite())
-        .then_some(cov)
+    PositionCovariance::new(dot(&ak[0], &a[0]), dot(&ak[0], &a[1]), dot(&ak[1], &a[1])).finite()
 }
 
 /// Regressors of the surface `a x² + b x y + c y² + d x + e y + f`.
@@ -850,8 +840,9 @@ mod tests {
     /// covariance); at least 90% of the draws must be.
     fn scatter(noise: f32, blur: f32, offset: (f32, f32), draws: u64) -> ([f64; 2], [f64; 2]) {
         let clean = board(offset, blur);
-        // Gaussian noise plus the 8-bit rounding (variance 1/12).
-        let noise_var = f64::from(noise * noise) + 1.0 / 12.0;
+        // The total noise of the 8-bit image, Gaussian plus rounding: the σ²
+        // `position_covariance` takes.
+        let noise_var = f64::from(noise * noise) + f64::from(crate::uncertainty::ROUNDING_VAR);
         let mut xs = Vec::new();
         let mut pred = [0.0f64; 2];
         for seed in 0..draws {

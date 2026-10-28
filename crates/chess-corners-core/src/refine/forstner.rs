@@ -167,17 +167,12 @@ impl ForstnerRefiner {
                 self.grads.add_at(at - row, vy.map(|v| -v));
             }
         }
-        let noise = self.grads.covariance()?;
         let offset = [
             seed[0] + u[0] - centre[0] as f32,
             seed[1] + u[1] - centre[1] as f32,
         ];
-        let systematic = SYSTEMATIC.covariance(offset, self.tile.edge_width(centre), 1.0);
-        Some(CovarianceModel {
-            noise,
-            systematic,
-            growth: [0.0; 2],
-        })
+        let width = self.tile.edge_width(centre);
+        Some(SYSTEMATIC.model(self.grads.covariance()?, offset, width, 1.0))
     }
 }
 
