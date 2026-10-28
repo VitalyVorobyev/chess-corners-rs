@@ -356,6 +356,74 @@ against its noise expectation and across localizers (how much of `b` is
 shared by every localizer), the per-view cubic's RMS on `e_x` vs `e_in`,
 and the `sigma0_sweep` medians with the new floors.
 
+#### Cross-camera floor (UQ-44): results
+
+Tool: `real_validation/crossfloor.py` (reuses `ablation.py`'s records and
+`analyze.py`'s decomposition). `f_in` reproduces the shipped floors.
+
+| localizer | set | shipped | f_in | f_x | f_m | σ̂₀²_x(f_x) cam1 / cam2 | midpoint(f_m) cam1 / cam2 |
+|---|---|---|---|---|---|---|---|
+| CoM | all | .074 | .074 | .112 | .095 | 1.29 / 0.69 | 1.29 / 0.69 |
+| CoM | chess | | .074 | .105 | .091 | 1.27 / 0.71 | 1.28 / 0.71 |
+| Förstner | all | .110 | .096 | .140 | .119 | 1.10 / 0.89 | 1.12 / 0.87 |
+| Förstner | chess | | .110 | .163 | .139 | 1.09 / 0.90 | 1.10 / 0.90 |
+| SaddlePoint | all | .053 | .038 | .079 | .062 | **1.38 / 0.59** | **1.35 / 0.63** |
+| SaddlePoint | chess | | .053 | .083 | .070 | 1.31 / 0.68 | 1.28 / 0.71 |
+| Radon peak | all | .045 | .045 | .085 | .068 | 1.29 / 0.69 | 1.25 / 0.73 |
+| Radon + SP | all | (SP) | .038 | .079 | .062 | **1.38 / 0.59** | **1.35 / 0.62** |
+
+Table floors (max rule): `f_x` CoM .112, Förstner .163, SP .083, Radon
+.084; `f_m` CoM .095, Förstner .139, SP .070, Radon .068. Radon + SP's
+values match SaddlePoint's to 0.0002, so one SaddlePoint floor serves both.
+
+| condition | result |
+|---|---|
+| 1. precision (90% half-width / point) | `f_m` 5–10%, `f_x` 7–15% ✓. The percentile intervals sit above the point estimates (SP `f_m` .068–.076, Förstner .146–.174): resampling whole views repeats them, so each per-id term averages fewer independent views |
+| 2. direction | ✗ SaddlePoint and Radon + SP on **all**: 1.38 / 0.59 (`f_x`), 1.35 / 0.63 (midpoint) |
+| 3. ranking and weighting | ✓ Spearman unchanged (≤ 0.001; a common floor per table does not reorder σ); CV RMS ship → new .3542 → .3542 (SP all), .4093 → .4090 (SP chess), .4267 → .4262 / .5901 → .5883 (Förstner), others within ±.0002; cross-fold remainder never higher by > .0001 |
+| 4. not lens structure | ✓ a 10×8 lens basis keeps 82–103% of the excess `f_x² − f_in²` |
+
+**Verdict: keep the shipped floors.** Condition 2 fails for the
+SaddlePoint table. Other findings:
+
+- *The cameras differ, not the method.* Each camera's own in-sample floor
+  differs: SaddlePoint .042 / .033, CoM .093 / .045, Förstner .109 / .080
+  (cam1 / cam2, **all**). Camera 1's corners are noisier for every
+  localizer, so the direction asymmetry is real camera dependence. One
+  rig cannot fix a constant floor more tightly than its two cameras
+  disagree.
+- *Leakage is larger than assumed.* The 3-D per-id term fitted on one
+  camera carries that camera's random error into the other at 0.027 /
+  0.032 px per axis (SaddlePoint), 1.5× what it absorbs on its own camera
+  (0.018 / 0.020). The out-of-plane component is poorly determined from
+  one camera, and the 24° convergence magnifies it in the other camera. So
+  the midpoint does not cancel the leakage, and `f_m` is biased upward.
+  With an in-plane-only target term, leakage and absorption agree
+  (0.0145 / 0.0144), but the target term then misses out-of-plane error:
+  SP `f_m` .058 (**all**) / .065 (**chess**), CoM .090 / .086, Förstner
+  .109 / .120, Radon .064. The directions are unchanged (SP 1.36 / 0.62).
+- *The camera-specific term exists and is common to all localizers.*
+  The two cameras' in-plane target terms differ by 1.53 µm RMS
+  (SaddlePoint) against 0.98 µm expected from noise, an excess of ~1.2 µm
+  (~0.055 px per axis summed over both cameras). Radon's difference
+  explains 0.82 of SaddlePoint's, CoM's 0.69 and Förstner's 0.42. The
+  excess is mostly an imaging property of each camera at each corner,
+  shared by every localizer, and not lens structure (condition 4). A
+  user's calibration sees it. Its size is about that of the in-sample
+  floor, so the shipped floors are low by roughly √2 on optics like
+  these. That factor cannot be pinned down from two cameras.
+- The per-view cubic takes .096 px on `e_x` vs .082 on `e_in`
+  (SaddlePoint **all**): it absorbs a little of the cross-camera excess
+  as well, so the excess above is a lower bound.
+- Synthetic `sigma0_sweep` medians (re-scored from the `UQ-36` dump),
+  shipped → `f_m` → `f_x`: CoM 0.41 → 0.32 → 0.26, Förstner 0.59 → 0.49 →
+  0.45, SP 0.30 → 0.18 → 0.13, Radon 0.80 → 0.64 → 0.50; cells > 2: SP
+  2 → 0, Radon 20 → 17 → 12, Förstner 3 → 2 → 0.
+
+A second real dataset with different optics is what would settle the
+floor (`UQ-45`). Until then the shipped values stay, documented as
+in-sample on one rig.
+
 ### End-to-end calibration (UQ-38)
 
 Rig calibration per localizer (fx ≈ 21 800 px), uniform (u) vs Σ-weighted.
@@ -415,7 +483,8 @@ negative mid cost above).
 ## Limits
 
 One real set for the floor (narrow-field stereo ChArUco), and it does not
-transfer across that set's two cameras (`UQ-37` above); the floor is a
+transfer across that set's two cameras (`UQ-37` above; `UQ-44`: the
+cameras' own floors differ by up to 2×, so one rig cannot fix it); the floor is a
 constant, while the blurred corners there need more (SaddlePoint 0.053 vs
 0.038). The width observable cannot see rotation, so CoM and Radon tables
 are averages over rotations.

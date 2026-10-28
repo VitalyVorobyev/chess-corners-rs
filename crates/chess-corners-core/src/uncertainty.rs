@@ -43,7 +43,9 @@ pub enum Uncertainty {
     /// the covariance, so the reported σ varies little from corner to
     /// corner there. Weighting a calibration by it has not been shown to
     /// beat uniform weighting on real data. Errors shared by all corners of
-    /// an image (defocus, lens-model error) are outside it.
+    /// an image (defocus, lens-model error) are outside it. The floor was
+    /// fitted on one camera pair and is likely low for other optics. Within
+    /// that pair the two cameras' own floors differed by up to 2×.
     Propagated,
 }
 

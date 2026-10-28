@@ -445,6 +445,13 @@ covariance carries best.
   about 0.06 px per axis on the real set of §8.4.2, beyond any per-corner
   covariance. It shows up in the downstream \\(\hat\sigma_0^2\\), not in
   \\(\Sigma\\).
+- **Optics other than those the floor was fitted on.** The floors come
+  from one stereo rig. The fit removed a per-corner target term, and that
+  term also absorbs each camera's repeatable corner error. When the
+  target term comes from the other camera, that error roughly doubles the
+  excess variance: the floors would be about 1.2–1.5× larger, and the
+  rig's two cameras disagree by up to 2× (CenterOfMass). Expect
+  \\(\hat\sigma_0^2\\) above 1 on other optics.
 - **Weighting is neutral on real data.** Weighting the real calibration
   of §8.4.2 by these covariances did not lower its held-out error
   (SaddlePoint: unchanged within 0.1%; Förstner: 0.4% higher, 2% with

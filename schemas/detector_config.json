@@ -397,7 +397,7 @@
         },
         {
           "const": "propagated",
-          "description": "Image noise propagated through the localizer to first order, plus\nthe localizer's systematic-error model (from the corner's offset to\nthe localizer's fit window and the width of its edges).\n\nThe systematic part includes a per-localizer floor measured on real\ncalibration images (about 0.05 px per axis for the saddle-point fit\nand the Radon peak fit, 0.07 center of mass, 0.11 Förstner). On\nreal, well-exposed images this floor is usually the largest part of\nthe covariance, so the reported σ varies little from corner to\ncorner there. Weighting a calibration by it has not been shown to\nbeat uniform weighting on real data. Errors shared by all corners of\nan image (defocus, lens-model error) are outside it.",
+          "description": "Image noise propagated through the localizer to first order, plus\nthe localizer's systematic-error model (from the corner's offset to\nthe localizer's fit window and the width of its edges).\n\nThe systematic part includes a per-localizer floor measured on real\ncalibration images (about 0.05 px per axis for the saddle-point fit\nand the Radon peak fit, 0.07 center of mass, 0.11 Förstner). On\nreal, well-exposed images this floor is usually the largest part of\nthe covariance, so the reported σ varies little from corner to\ncorner there. Weighting a calibration by it has not been shown to\nbeat uniform weighting on real data. Errors shared by all corners of\nan image (defocus, lens-model error) are outside it. The floor was\nfitted on one camera pair and is likely low for other optics. Within\nthat pair the two cameras' own floors differed by up to 2×.",
           "type": "string"
         }
       ],
