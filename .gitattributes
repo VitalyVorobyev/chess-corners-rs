@@ -2,9 +2,12 @@
 # Keep this first: later rules (LFS `-text`) must override it.
 * text=auto eol=lf
 
-testimages/ filter=lfs diff=lfs merge=lfs -text
 *.png filter=lfs diff=lfs merge=lfs -text
 *.jpg filter=lfs diff=lfs merge=lfs -text
 *.jpeg filter=lfs diff=lfs merge=lfs -text
 *.bmp filter=lfs diff=lfs merge=lfs -text
 book/src/img/*.png filter=lfs diff=lfs merge=lfs -text
+
+# The test images are plain blobs: CI's test jobs check out without LFS.
+# Keep this after the `*.png` rule so it wins.
+testimages/** -filter -diff -merge -text
