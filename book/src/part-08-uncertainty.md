@@ -539,7 +539,8 @@ When the sensor noise is known, for example from two frames of a
 static scene, \\(\sigma_n = \operatorname{std}(I_1 - I_2)/\sqrt{2}\\),
 supply it instead of estimating it per frame. Always supply it for
 demosaiced or JPEG input (§8.3.2). Give the noise as it appears in the
-8-bit image the detector receives, after any gain or processing.
+8-bit image the detector receives, after any gain or processing and with
+the rounding to 8 bits included, as the two-frame difference measures it.
 
 ```rust
 let cfg = DetectorConfig::chess()

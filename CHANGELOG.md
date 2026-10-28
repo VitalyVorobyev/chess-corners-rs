@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   presets return `CC_UNCERTAINTY_OFF`, while a zero-initialised `cc_config`
   still selects `CC_UNCERTAINTY_PROPAGATED`.
 
+### Documentation
+
+- `noise_sigma` (Rust, Python, WASM, C) is the total noise of the 8-bit
+  image, rounding included: what `estimate_noise_sigma_u8` measures, or the
+  standard deviation of the difference of two frames of a static scene
+  divided by √2.
+
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.
