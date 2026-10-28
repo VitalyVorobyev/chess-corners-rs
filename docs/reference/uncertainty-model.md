@@ -115,7 +115,17 @@ audit's PSF / illumination conditions. Median / 90th pct / max: SaddlePoint
 (only 8°, blur 0.5), Förstner 0.59 / 1.38 / 3.5 (45° blur 1.5, coma,
 perspective), Radon peak 0.80 / 2.09 / 9.3 (29 cells: 45° blur 1.5–2.5 up
 to ~4, coma / decentred defocus up to 9). Estimated σₙ gives the same
-medians.
+medians. Harness: `sigma0_sweep` (core localizers, 0.75 px match radius);
+re-measured with the shipped model in `UQ-36` (identical). Book Part VIII
+quotes different medians (SP 0.14, CoM 0.37, Förstner 0.58, Radon 0.64)
+from another harness, `tools/render_uncertainty_overlays.py` (bindings,
+2 px match radius, 95–98 cells: lens-blur 8 px boards incl. 60° shear, the
+`synth.py` Gaussian grid, and 8 other-optics conditions at σₙ 2 only);
+re-run with the shipped model it reproduces them exactly. Both are right
+for their mix: here 81 of the 189 cells are the audit's other-optics
+conditions at three noise levels, whose medians are higher (SP 0.47, CoM
+0.53, Förstner 0.84, Radon 1.02); on the Gaussian grids alone this harness
+gives SP 0.14–0.15, CoM 0.29–0.32, Förstner 0.49–0.51, Radon 0.59–0.60.
 
 ## Systematic-model ablation and held-out floor (UQ-36, UQ-37, UQ-38)
 
@@ -179,6 +189,131 @@ remainder by ≥ 0.5% against uniform for a localizer on either set.
 **Synthetic medians (UQ-41).** The σ̂₀² medians of (a) are re-measured on
 the grid above and the harness behind each published median named.
 
+### Results
+
+Tools: `uncertainty_eval.rs` `dump_ablation_real` / `dump_ablation_synth`
+(per corner: noise term, shipped systematic term, window offset, edge
+width; `--ignored`), `real_validation/ablation.py` (re-scoring, floors,
+held-out floor, weighted calibrations), `calibrate.py` (fold intrinsics).
+The core dump matches the bindings' detections on 99.93–100% of the
+observations, and Σ(a) equals the bindings' covariance to 1e-7 relative
+(one CoM corner of 13 433: 3%). The uniform and (a)-weighted rig
+calibrations reproduce the tables above. Python reproduces
+`SystematicModel::covariance` to 1e-6 px² on every row except the Radon
+peak fit's rounding term, which (b) and (c) keep. Constant models for (c),
+all widths pooled: CoM g 1, ρ 0.069; Förstner g 0.39, ρ 0.116; Radon peak
+g 0.82, ρ 0.050; SaddlePoint g 1, ρ 0.007.
+
+**Floors** (px per axis, local-remainder σ̂₀² = 1, max of **all** /
+**chess**): (a) CoM 0.074, Förstner 0.110, SP 0.0525, Radon 0.045 — the
+shipped values reproduce; (b) CoM 0.105, Förstner 0.277, SP 0.053, Radon
+0.057; (c) CoM 0.078, Förstner 0.157, SP 0.052, Radon 0.006.
+
+**Gate.** ✗ marks a failed condition.
+
+| localizer | set | Spearman local a / b / c | Spearman x-fold a / b / c | weighted CV a / b / c | weighted x-fold rem a / b / c |
+|---|---|---|---|---|---|
+| CoM | all | .129 / .016 ✗ / −.070 ✗ | .038 / .105 / −.042 ✗ | .3788 / .3788 / .3788 | .1785 / .1787 / .1787 |
+| CoM | chess | .225 / −.088 ✗ / −.088 ✗ | .103 / .041 ✗ / −.013 ✗ | .4217 / .4213 / .4213 | .1782 / .1783 / .1784 |
+| Förstner | all | .564 / .059 ✗ / .512 ✗ | .553 / .124 ✗ / .440 ✗ | .4267 / .4252 / .4251 | .2719 / .2701 / .2701 |
+| Förstner | chess | .718 / .509 ✗ / .521 ✗ | .701 / .506 ✗ / .494 ✗ | .5901 / .5778 / .5780 | .4519 / .4465 / .4469 |
+| SaddlePoint | all | .187 / .128 ✗ / .128 ✗ | .278 / .224 ✗ / .224 ✗ | .3542 / .3542 / .3542 | .1062 / .1062 / .1062 |
+| SaddlePoint | chess | .359 / .356 / .356 | .349 / .345 / .345 | .4093 / .4093 / .4093 | .1371 / .1371 / .1371 |
+| Radon peak | all | .149 / .178 / .214 | .223 / .274 / .288 | .3597 / .3595 / .3595 | .1246 / .1241 / .1241 |
+| Radon + SP | all | .192 / .132 ✗ / .132 ✗ | .281 / .227 ✗ / .227 ✗ | .3537 / .3537 / .3537 | .1044 / .1044 / .1044 |
+
+| localizer | synthetic median a / b / c | worst \|ln σ̂₀²\| a / b / c | cells > 2 a / b / c (new) |
+|---|---|---|---|
+| CoM | 0.41 / 0.38 / 0.38 | 3.37 / 3.77 ✗ / 3.75 ✗ | 0 / 0 / 0 |
+| Förstner | 0.59 / 0.52 / 0.56 | 1.74 / 2.85 ✗ / 2.84 ✗ | 3 / 3 (3 ✗) / 3 (3 ✗) |
+| SaddlePoint | 0.30 / 0.31 / 0.31 | 4.08 / 4.07 / 4.07 | 2 / 2 / 2 |
+| Radon peak | 0.80 / 0.90 / 0.91 | 4.01 / 4.09 / 4.09 | 20 / 30 (10 ✗) / 30 (10 ✗) |
+| Radon + SP | 0.30 / 0.31 / 0.31 | 4.08 / 4.07 / 4.07 | 2 / 2 / 2 |
+
+Synthetic (a) uses the shipped floors. CoM's |ln| failure is on the
+conservative side (its smallest σ̂₀² falls). Förstner's new cells are cell
+12, blur 2.5 at σₙ 1–2 (0.45–0.68 → 2.1–2.6): the gain that turns negative
+at wide edges is what its knots model. Radon's are 45° blur 1.5 on both
+generators and mild coma (1.2–1.9 → 2.0–2.7).
+
+**Verdict: keep the shipped model.** Every localizer fails at least one
+pre-registered condition with both (b) and (c), so `edge_width` and the
+knot tables stay. The edge width is not idle on real images: it is the
+only source of CoM's ranking (local Spearman .13 / .23 with it, .02 / −.09
+from the noise term alone) and most of Förstner's (.56 / .72 against
+.06 / .51). For SaddlePoint it moves σ by ≤ 2% (ρ 0.004–0.011 under a
+0.053 floor), yet that still carries .06 of Spearman on the **all** set;
+weighting cannot tell (b) from (a) there. The Radon peak fit is the one
+localizer whose real-data ranking and weighting improve without the knots
+(Spearman +.03 to +.06; x-fold remainder .1241 vs .1246), but dropping them
+adds 10 synthetic cells above 2. Weighting with (b) or (c) is never worse
+than with (a) by more than 0.1%; for Förstner it is better (CV .4252 vs
+.4267, .5778 vs .5901).
+
+**Edge width of the real corners** (SaddlePoint windows, p5 / p25 / p50 /
+p75 / p95, px): **all** 1.15 / 1.18 / 1.21 / 1.26 / 1.35 on both cameras,
+none outside 1.09–1.68; **chess** 1.15–1.16 / 1.19 / 1.25 / 1.40–1.42 /
+1.69–1.70, 5.8–6.3% above 1.68 (held at the last knot), none below.
+
+### Held-out floor (UQ-37)
+
+Floor fitted on the training part; σ̂₀² of the held-out part's local
+remainder, smooth and target terms from the training part. Model (a); (b)
+and (c) are within ±0.13 of it except Förstner (below).
+
+| localizer | set | floors fitted px | cam1→cam2 / cam2→cam1 | 2-fold split | leave one Rx level out (−14 / −9 / 0 / +9 / +14) |
+|---|---|---|---|---|---|
+| CoM | all | .046–.093 | 0.89 / **3.07** | 1.16 / 1.14 | 1.00 / 1.01 / 1.05 / 1.14 / 1.38 |
+| CoM | chess | .051–.091 | 0.87 / **2.78** | 1.00 / 1.24 | 1.02 / 1.26 / 1.08 / 1.07 / 1.29 |
+| Förstner | all | .080–.109 | 1.23 / **2.20** | 1.18 / 1.14 | 0.84 / 0.82 / 1.04 / 1.28 / **1.60** |
+| Förstner | chess | .097–.121 | 1.24 / **1.92** | 1.14 / 1.13 | 1.01 / 1.04 / 1.11 / 1.16 / 1.35 |
+| SaddlePoint | all | .038–.044 | **1.85** / **5.51** | 1.16 / 0.97 | 1.28 / 0.88 / 1.16 / 1.30 / 1.44 |
+| SaddlePoint | chess | .046–.059 | 1.28 / **3.79** | 0.89 / 1.27 | 1.42 / **1.73** / 1.47 / 0.70 / 0.77 |
+| Radon peak | all | .044–.050 | 1.50 / **3.40** | 1.17 / 1.08 | 1.29 / 1.06 / 1.11 / 1.15 / 1.24 |
+| Radon + SP | all | .038–.044 | **1.86** / **5.51** | 1.16 / 0.97 | 1.29 / 0.88 / 1.16 / 1.30 / 1.43 |
+
+Not transferable by the pre-registered rule (bold: outside 0.67–1.5).
+Across views of one camera the floor mostly holds (0.70–1.73; 54 of 56
+cells inside the band). Across cameras it does not, and not because the
+floor moves (the floors fitted on either camera differ by ≤ 0.02 px): the
+held-out camera's remainder is larger when the per-corner target term
+comes from the other camera. The held-out camera alone would need
+SaddlePoint 0.061 / 0.093 px against 0.04 in-sample, CoM 0.084 / 0.13,
+Förstner 0.13–0.18, Radon 0.067 / 0.098. Part of what the target term
+absorbs in-sample is repeatable per camera — localizer error tied to how
+that camera images each corner — so the shipped floors, fitted after it is
+removed, are low by this margin wherever that term is not known (any user
+calibration). With (b), Förstner's larger floor (0.28) moves the Rx cells
+to 0.64–1.56; with (c) to 0.67–1.51.
+
+### End-to-end calibration (UQ-38)
+
+Rig calibration per localizer (fx ≈ 21 800 px), uniform (u) vs Σ-weighted.
+σ̂₀² = Σ rᵀΣ⁻¹r / (2N − p) of the weighted fit (in brackets: uniform, px²
+per axis).
+
+| localizer | set | CV RMS u / a / b | x-fold rem u / a / b | σ̂₀² fit a / b (u) | fold \|Δfx\| cam1/cam2 px, u · a · b |
+|---|---|---|---|---|---|
+| CoM | all | .3788 / .3788 / .3788 | .1787 / .1785 / .1787 | 6.6 / 6.5 (.072) | 80/75 · 82/72 · 80/75 |
+| CoM | chess | .4213 / .4217 / .4213 | .1781 / .1782 / .1783 | 9.0 / 7.9 (.089) | 54/44 · 54/40 · 52/43 |
+| Förstner | all | .4252 / .4267 / .4252 | .2701 / .2719 / .2701 | 3.6 / 1.2 (.091) | 94/89 · 58/98 · 94/90 |
+| Förstner | chess | .5778 / .5901 / .5778 | .4464 / .4519 / .4465 | 3.2 / 2.1 (.167) | 41/122 · 46/58 · 36/119 |
+| SaddlePoint | all | .3542 / .3542 / .3542 | .1061 / .1062 / .1062 | 21.8 / 22.2 (.063) | 91/55 · 91/55 · 91/55 |
+| SaddlePoint | chess | .4088 / .4093 / .4093 | .1348 / .1371 / .1371 | 27.2 / 27.7 (.084) | 29/46 · 35/43 · 35/43 |
+| Radon peak | all | .3595 / .3597 / .3595 | .1239 / .1246 / .1241 | 19.4 / 19.5 (.065) | 87/60 · 76/60 · 85/60 |
+| Radon + SP | all | .3537 / .3537 / .3537 | .1043 / .1044 / .1044 | 21.8 / 22.2 (.063) | 90/55 · 89/55 · 90/55 |
+
+(c) is within 0.0005 of (b) in CV and cross-fold remainder. No weighting
+lowers the held-out CV RMS or the cross-fold remainder by 0.5% anywhere
+(best: CoM cross-fold −0.1%); the shipped Σ makes Förstner worse (CV
++0.35% / +2.1%) and SaddlePoint **chess** (cross-fold +1.7%). The weighted
+fit's σ̂₀² is 3–28, not 1: the shipped per-corner Σ (0.05–0.11 px) carries
+4–31% of the residual variance of a full calibration, the rest being
+lens-model, target and per-view error. Fold-to-fold |Δfx| (0.13–0.56% of
+fx) moves with weighting as much as it differs between folds; no
+consistent gain. By the pre-registered rule weighting brings no benefit on
+this set.
+
 ## Cost
 
 Per corner, 512² board (Off → Propagated): CoM 19 → 526 ns, Förstner 57 →
@@ -209,7 +344,8 @@ negative mid cost above).
 
 ## Limits
 
-One real set for the floor (narrow-field mono ChArUco); the floor is a
+One real set for the floor (narrow-field stereo ChArUco), and it does not
+transfer across that set's two cameras (`UQ-37` above); the floor is a
 constant, while the blurred corners there need more (SaddlePoint 0.053 vs
 0.038). The width observable cannot see rotation, so CoM and Radon tables
 are averages over rotations.
