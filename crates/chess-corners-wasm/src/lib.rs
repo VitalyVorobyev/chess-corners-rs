@@ -236,6 +236,8 @@ impl ChessDetector {
     /// Returns a `Float32Array` with stride 7 per corner:
     /// `[x, y, response,
     ///   axis0_angle, axis0_sigma, axis1_angle, axis1_sigma, ...]`.
+    /// Each `*_sigma` is a fit-quality score in radians (larger means a less
+    /// reliable axis), not a calibrated 1σ.
     ///
     /// Throws a JS error string if the pixel buffer length does not match
     /// `width * height` or if the upscale configuration is invalid.
@@ -526,7 +528,8 @@ impl ChessDetector {
 }
 
 /// Flat array stride per corner: `[x, y, response,
-/// axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`.
+/// axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`. Each `*_sigma` is a
+/// fit-quality score in radians, not a calibrated 1σ.
 ///
 /// When the orientation fit is skipped (`orientationMethod` is `undefined`),
 /// the four axis values are `NaN` for every corner; the stride is unchanged.

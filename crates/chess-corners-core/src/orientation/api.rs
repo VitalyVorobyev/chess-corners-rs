@@ -28,9 +28,10 @@ pub struct AxisFitResult {
     pub theta1: f32,
     /// Second axis direction, radians in `(theta1, theta1 + π) ⊂ [0, 2π)`.
     pub theta2: f32,
-    /// 1σ angular uncertainty for `theta1` (radians).
+    /// Fit-quality score for `theta1` in radians (larger is less reliable;
+    /// not a calibrated 1σ).
     pub sigma_theta1: f32,
-    /// 1σ angular uncertainty for `theta2` (radians).
+    /// Fit-quality score for `theta2` in radians (see `sigma_theta1`).
     pub sigma_theta2: f32,
     /// RMS fit residual of the two-axis intensity model (gray levels).
     pub rms: f32,

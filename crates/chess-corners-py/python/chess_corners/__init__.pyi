@@ -33,6 +33,11 @@ class OrientationMethod(Enum):
     DISK_FIT = ...
 
 class Uncertainty(Enum):
+    """Position-uncertainty tier. ``PROPAGATED`` (default) propagates image
+    noise through the localizer and adds its systematic error, including a
+    per-localizer floor measured on real images that usually dominates the
+    covariance there. ``OFF`` reports none."""
+
     OFF = ...
     PROPAGATED = ...
 
@@ -322,8 +327,10 @@ class Detections:
 
     @property
     def sigmas(self) -> np.ndarray | None:
-        """``(N, 2)`` float32 array of per-axis angle uncertainty (1σ, radians),
-        or ``None`` when orientation estimation was disabled."""
+        """``(N, 2)`` float32 array of per-axis fit-quality scores in radians
+        (larger means a less reliable axis; not a calibrated 1σ, and
+        independent of the noise level and ``Uncertainty``), or ``None`` when
+        orientation estimation was disabled. Use it for ranking and gating."""
         ...
 
     @property
@@ -332,7 +339,9 @@ class Detections:
         (``[[xx, xy], [xy, yy]]``). Rows are ``NaN`` for corners without one:
         every localizer except the ML refiner reports it under
         ``Uncertainty.PROPAGATED``; none does under ``Uncertainty.OFF`` or on
-        upscaled input."""
+        upscaled input. The covariance includes a per-localizer floor measured
+        on real images that usually dominates it there; weighting by it has
+        not been shown to beat uniform weighting on real data."""
         ...
 
     def __len__(self) -> int: ...

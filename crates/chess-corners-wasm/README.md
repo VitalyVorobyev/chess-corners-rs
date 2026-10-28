@@ -276,15 +276,15 @@ visualization. They are not part of the normal detection result.
 | `i + 1` | `y` | Subpixel y coordinate |
 | `i + 2` | `response` | ChESS response strength |
 | `i + 3` | `axis0_angle` | First grid axis, radians in `[0, π)` |
-| `i + 4` | `axis0_sigma` | 1σ uncertainty of `axis0_angle` |
+| `i + 4` | `axis0_sigma` | fit-quality score of `axis0_angle` in radians (larger is less reliable; not a calibrated 1σ) |
 | `i + 5` | `axis1_angle` | Second grid axis, radians in `(axis0, axis0 + π)` |
-| `i + 6` | `axis1_sigma` | 1σ uncertainty of `axis1_angle` |
+| `i + 6` | `axis1_sigma` | fit-quality score of `axis1_angle` in radians (see `axis0_sigma`) |
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector of the corner. The two grid axes are not assumed orthogonal, so the layout can represent projective warp instead of forcing a right-angle model.
 
 The orientation fit is the dominant per-corner cost, and it is optional. When it is skipped — `const bare = cfg.withoutOrientation()` — the four axis values (`axis0_angle`, `axis0_sigma`, `axis1_angle`, `axis1_sigma`) are `NaN` for every corner and the stride stays 7. Skip it when a downstream stage recovers board geometry from corner positions alone.
 
-**Position covariance** (`positionCovariance()`): `Float32Array` with stride 3 per corner, `[xx, xy, yy]` in px², in the order of the corners returned by the most recent `detect` / `detectRgba` call. All three are `NaN` for a corner without one: every localizer reports it under the default `Uncertainty.Propagated`, none does under `cfg.withUncertainty(Uncertainty.Off)` (JSON `"uncertainty": "off"`) or on upscaled input. The image noise level behind it is estimated per image, or set with `cfg.withNoiseSigma(sigma)` / `cfg.noiseSigma`; positions are identical under both tiers.
+**Position covariance** (`positionCovariance()`): `Float32Array` with stride 3 per corner, `[xx, xy, yy]` in px², in the order of the corners returned by the most recent `detect` / `detectRgba` call. All three are `NaN` for a corner without one: every localizer reports it under the default `Uncertainty.Propagated`, none does under `cfg.withUncertainty(Uncertainty.Off)` (JSON `"uncertainty": "off"`) or on upscaled input. The image noise level behind it is estimated per image, or set with `cfg.withNoiseSigma(sigma)` / `cfg.noiseSigma`; positions are identical under both tiers. The covariance includes a per-localizer floor measured on real images that usually dominates it there; weighting by it has not been shown to beat uniform weighting on real data.
 
 **Response map** (`diagnosticsResponse` / `diagnosticsResponseRgba`): `Float32Array` in row-major order, dimensions available via `diagnosticsResponseWidth()` / `diagnosticsResponseHeight()`.
 

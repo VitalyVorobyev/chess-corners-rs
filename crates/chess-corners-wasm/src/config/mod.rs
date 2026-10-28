@@ -179,7 +179,11 @@ impl From<RsOrientationMethod> for OrientationMethod {
 /// covariance values are `NaN`.
 ///
 /// `Propagated` *(default, = 1)* — every corner whose localizer supports it
-/// reports a position covariance. Positions are identical under both tiers.
+/// reports a position covariance: image noise propagated through the
+/// localizer plus its systematic error, including a per-localizer floor
+/// measured on real images that usually dominates it there (weighting by it
+/// has not been shown to beat uniform weighting on real data). Positions are
+/// identical under both tiers.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Uncertainty {

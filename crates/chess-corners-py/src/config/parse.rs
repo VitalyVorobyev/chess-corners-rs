@@ -221,7 +221,7 @@ py_enum!(
     ///
     /// `RING_FIT` *(default)* — fits the parametric two-axis chessboard
     /// intensity model to the 16-sample ring via Gauss-Newton, with
-    /// per-axis 1σ uncertainties calibrated by a piecewise-linear lookup
+    /// per-axis fit-quality scores corrected by a piecewise-linear lookup
     /// table. Suitable for the full range of standard chessboard images.
     ///
     /// `DISK_FIT` — full-disk crossing-line estimator. Samples all image

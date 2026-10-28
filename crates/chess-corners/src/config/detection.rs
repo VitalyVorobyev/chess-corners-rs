@@ -119,7 +119,7 @@ impl Default for DetectionStrategy {
 /// - [`merge_radius`](DetectorConfig::merge_radius) — duplicate-suppression
 ///   radius across pyramid levels. See the field docs below.
 /// - [`noise_sigma`](DetectorConfig::noise_sigma) — image noise level used
-///   to express each corner's position covariance in px².
+///   to express the noise part of each corner's position covariance in px².
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
@@ -193,6 +193,10 @@ pub struct DetectorConfig {
     /// each [`ChessRefiner`] except the ML refiner, the Radon peak fit, and
     /// saddle-point refinement of Radon peaks — a covariance: image noise
     /// propagated through the localizer plus its systematic-error model.
+    /// The systematic part includes a per-localizer floor measured on real
+    /// calibration images; on real, well-exposed images it is usually the
+    /// largest part of the covariance, and weighting a calibration by it
+    /// has not been shown to beat uniform weighting on real data.
     /// [`Uncertainty::Off`] skips that work and the noise estimate; corner
     /// positions are the same under every tier.
     pub uncertainty: Uncertainty,

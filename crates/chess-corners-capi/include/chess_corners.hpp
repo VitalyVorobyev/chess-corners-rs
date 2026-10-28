@@ -27,9 +27,10 @@ namespace chess_corners {
 /// incompatible and detection throws rather than reading a stale layout.
 inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 6;
 
-/// One local grid-axis direction with its 1-sigma angular uncertainty.
+/// One local grid-axis direction with a fit-quality score.
 ///
-/// `angle` and `sigma` are in radians, matching `cc_axis`.
+/// `angle` and `sigma` are in radians, matching `cc_axis`. `sigma` is a
+/// fit-quality score (larger is less reliable), not a calibrated 1-sigma.
 struct Axis {
     float angle = 0.0f;
     float sigma = 0.0f;

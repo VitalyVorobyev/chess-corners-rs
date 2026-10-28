@@ -4,7 +4,7 @@ Both the [ChESS detector](part-03-chess-detector.md) and the
 [Radon detector](part-04-radon-detector.md) produce a list of corner
 candidates with subpixel positions. The descriptor pipeline lifts each
 position to a richer record that includes two grid-axis directions and
-their per-axis 1σ uncertainties. The "orientation method" is the
+their per-axis fit-quality scores (not calibrated 1σ values). The "orientation method" is the
 algorithm that fits those axes from local image evidence — and because
 both detectors feed the same descriptor pipeline, the orientation
 method is detector-agnostic.
@@ -19,7 +19,7 @@ The `orientation_method` field on `DetectorConfig` (and the
 
 | Method       | JSON key     | Notes                                                                        |
 |--------------|--------------|------------------------------------------------------------------------------|
-| `RingFit`    | `"ring_fit"` | **Default.** 16-sample ring Gauss-Newton fit with calibrated σ.              |
+| `RingFit`    | `"ring_fit"` | **Default.** 16-sample ring Gauss-Newton fit with a residual-scaled σ.              |
 | `DiskFit`    | `"disk_fit"` | Full-disk crossing-line estimator. Falls back to `RingFit` on weak evidence. |
 | *(disabled)* | `null`       | Skip the fit entirely. `without_orientation()` (Rust/Python), `withoutOrientation()` (JS), `CC_ORIENTATION_NONE` (C). Each descriptor's `axes` is then `None`. |
 
@@ -40,9 +40,10 @@ I(\varphi) = \mu + A \cdot \tanh\bigl(\beta \sin(\varphi - \theta_1)\bigr) \cdot
 
 via Gauss-Newton, seeded from the 2nd-harmonic orientation of the ring
 samples. The slope \\(\beta\\) is fixed; the four free parameters are
-\\(\mu, A, \theta_1, \theta_2\\). Per-axis 1σ uncertainties are calibrated
-by a piecewise-linear LUT keyed on the contrast-relative residual,
-bringing reported sigmas closer to the empirical RMSE.
+\\(\mu, A, \theta_1, \theta_2\\). The per-axis sigmas are fit-quality
+scores, not calibrated 1σ values: the fit's Gauss-Newton covariance,
+corrected by a piecewise-linear LUT keyed on the contrast-relative
+residual.
 
 `RingFit` is suitable for the full range of standard chessboard images.
 It is the default and should be left in place unless you have a

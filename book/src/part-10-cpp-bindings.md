@@ -248,7 +248,7 @@ and [Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline).
 **Corner fields.** `cc_corner` (and the C++ `Corner`) mirror the Rust
 `CornerDescriptor`: a subpixel `x`, `y` in full-resolution input
 pixels, a raw detector `response`, and two local grid `axes`, each
-carrying an `angle` and its 1σ angular uncertainty `sigma`, both in
+carrying an `angle` and a fit-quality score `sigma` (not a calibrated 1σ), both in
 radians. The polarity convention is identical on every binding:
 `axes[0].angle` lies in `[0, π)` and `axes[1].angle` in
 `(axes[0].angle, axes[0].angle + π)`, with the counter-clockwise arc
