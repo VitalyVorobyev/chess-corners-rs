@@ -159,6 +159,23 @@ The per-corner output stays one total `position_covariance`.
 - *Off within 2% of 1.5.0:* see `reference/uncertainty-model.md` §Cost for
   the code-layout evidence on the Radon path.
 
+**Goal 3 not met (post-release review).** Weighting by the shipped Σ did not
+improve a held-out calibration on the real sets (neutral to slightly worse,
+SP CV +0.1%); `Propagated` shipped as the default on the strength of the
+synthetic gates and the conservative real-data floor. Three things in this
+section are weaker than they read:
+
+- The floor is fitted in-sample on one dataset, against a remainder whose
+  per-corner-id target term already absorbs repeatable localizer bias, so
+  its σ̂₀² ≈ 1 holds by construction (`UQ-37`).
+- On real images the predicted σ sits at that floor, so the per-corner
+  systematic model (edge width + knot tables, ~half the per-corner cost) is
+  untested against the simpler noise + floor (`UQ-36`).
+- The σ̂₀² tests bound only from above, and the Monte Carlo harness predicts
+  with `σ² + 1/12` where the model uses `max(σ², 1/12)` (`UQ-39`).
+
+The default tier is to be decided on downstream evidence (`UQ-08`, `UQ-38`).
+
 ## 8. Decision gates
 
 - **UQ-26 (asymmetry):** synthetic part passed (§4.2); correction and

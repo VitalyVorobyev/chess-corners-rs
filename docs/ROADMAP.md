@@ -56,8 +56,9 @@ job's `package:` filter had always been malformed, so it had never actually
 checked anything.
 
 **`1.2.0` and `1.3.0` are released on every channel** — `v1.2.0`,
-`wasm-v1.2.0`, `v1.3.0` and `wasm-v1.3.0` are tagged; crates.io, PyPI and npm
-`latest` are at `1.6.0` (`chess-corners-ml` unchanged at `0.13.0`). See
+`wasm-v1.2.0`, `v1.3.0` and `wasm-v1.3.0` are tagged, as are the releases
+through `1.6.0`, the current `latest` on crates.io, PyPI and npm
+(`chess-corners-ml` unchanged at `0.13.0`). See
 [`changelog/1.2.0.md`](changelog/1.2.0.md),
 [`changelog/1.3.0.md`](changelog/1.3.0.md),
 [`changelog/1.3.1.md`](changelog/1.3.1.md),
@@ -101,10 +102,23 @@ from a measured bias/precision split, not ahead of it.
 | decision | `UQ-01` found SaddlePoint bias (~0.12 px on sharp corners) far above noise scatter, removable by re-centred refitting: reduce bias first, then expose the covariance | — |
 | `1.5.0` | SaddlePoint re-centred refit (default) with a validated covariance; per-image noise estimate (px² output); SaddlePoint covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; CenterOfMass non-refinement fix; a book Part on uncertainty; camera-formed (lens blur before pixel integration) evidence fixtures and the floor tuned on rotated boards | `UQ-03`, `UQ-05`, `UQ-07`, `UQ-09`, `UQ-15` |
 | `1.6.0` (shipped) | Position covariance for every localizer behind `Uncertainty { Off, Propagated }` (noise through each localizer's Jacobian plus a per-localizer systematic term with a real-data floor); opt-in SaddlePoint refinement of Radon corners (`RadonRefiner`; default stays the peak fit, `UQ-22`); per-image noise estimate public in every binding; robustness audit and real-data validation; book Part VIII rewritten on that evidence | `UQ-18`, `UQ-23`–`UQ-28`, `UQ-30` |
-| `1.6.0+` | One noise model for orientation σ (RingFit, DiskFit); per-corner systematic term that sees board rotation and Radon peak switching; cubic re-centring for SaddlePoint; a noise estimate for correlated noise | `UQ-06`, `UQ-16`, `UQ-32` |
+| `1.6.x` | Doc honesty: `Propagated` is dominated by an empirical floor on real images; orientation σ is a fit-quality score | `UQ-41` |
+| `1.7.0` | Evidence before more API: ablation of the per-corner systematic model against noise + floor; held-out test of the real-data floor; end-to-end σ̂₀ in calibration-rs; default tier decided on that evidence. Hardening: two-sided σ̂₀² tests and one noise convention, frame σₙ in the output, binding consistency, covariance code DRY, a perf guard for the default-on cost; one orientation σ definition coordinated with calib-targets-rs | `UQ-36`–`UQ-40`, `UQ-42`, `UQ-06`, `UQ-08`, `SOLID-06`, `PERF-16` |
+| later | Per-corner systematic term that sees board rotation and Radon peak switching; cubic re-centring for SaddlePoint; a noise estimate for correlated noise | `UQ-16`, `UQ-32` |
+| `2.0.0` | Uncertainty API: noise level inside the tier, no public covariance mirror field, one noise-estimate signature, no hidden public helpers; refiner lifted to one stage | `UQ-43`, `UQ-19` |
 | ongoing | Realistic ground truth (calib-synth / etendue renders; end-to-end σ̂₀ check in calibration-rs) | `UQ-08`, `ML-01`, `ML-02` |
 
 **Known gaps.**
+- The usefulness goal is not met: weighting a calibration by Σ is neutral to
+  slightly worse on the real data measured so far, and the end-to-end σ̂₀
+  check in calibration-rs (`UQ-08`) has not been run, yet `Propagated` is the
+  default (`UQ-38`).
+- On real images the predicted σ sits at the per-localizer floor; whether the
+  per-corner systematic model adds anything over noise + floor is untested
+  (`UQ-36`). The floor itself is fitted in-sample on one dataset (`UQ-37`).
+- The statistical tests catch overconfidence only, and the Monte Carlo
+  harness predicts with a different noise convention than the shipped model
+  (`UQ-39`). The default-on cost has no regression guard (`PERF-16`).
 - The systematic term models a window-offset pull in an edge-width
   observable plus a constant floor fitted on one real calibration set; it
   cannot see board rotation (CenterOfMass and Förstner per-condition
