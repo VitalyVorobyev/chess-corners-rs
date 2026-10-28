@@ -102,38 +102,33 @@ from a measured bias/precision split, not ahead of it.
 | decision | `UQ-01` found SaddlePoint bias (~0.12 px on sharp corners) far above noise scatter, removable by re-centred refitting: reduce bias first, then expose the covariance | — |
 | `1.5.0` | SaddlePoint re-centred refit (default) with a validated covariance; per-image noise estimate (px² output); SaddlePoint covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; CenterOfMass non-refinement fix; a book Part on uncertainty; camera-formed (lens blur before pixel integration) evidence fixtures and the floor tuned on rotated boards | `UQ-03`, `UQ-05`, `UQ-07`, `UQ-09`, `UQ-15` |
 | `1.6.0` (shipped) | Position covariance for every localizer behind `Uncertainty { Off, Propagated }` (noise through each localizer's Jacobian plus a per-localizer systematic term with a real-data floor); opt-in SaddlePoint refinement of Radon corners (`RadonRefiner`; default stays the peak fit, `UQ-22`); per-image noise estimate public in every binding; robustness audit and real-data validation; book Part VIII rewritten on that evidence | `UQ-18`, `UQ-23`–`UQ-28`, `UQ-30` |
-| `1.6.x` | Doc honesty: `Propagated` is dominated by an empirical floor on real images; orientation σ is a fit-quality score | `UQ-41` |
-| `1.7.0` | Evidence before more API: ablation of the per-corner systematic model against noise + floor; held-out test of the real-data floor; end-to-end σ̂₀ in calibration-rs; default tier decided on that evidence. Hardening: two-sided σ̂₀² tests and one noise convention, frame σₙ in the output, binding consistency, covariance code DRY, a perf guard for the default-on cost; one orientation σ definition coordinated with calib-targets-rs | `UQ-36`–`UQ-40`, `UQ-42`, `UQ-06`, `UQ-08`, `SOLID-06`, `PERF-16` |
+| `1.7.0` (on main, unreleased) | Evidence first, then hardening. The per-corner systematic model is kept: dropping it loses the ranking on real data (`UQ-36`). The floor is not transferable across cameras, and a cross-camera refit failed its pre-registered rule, so the shipped values stay with the limit documented (`UQ-37`, `UQ-44`). Weighting by Σ never helped, so `Off` is now the default (`UQ-38`). Also: honest docs for `Propagated` and orientation σ (`UQ-41`), two-sided σ̂₀² tests (`UQ-39`), the frame σₙ in every binding (`UQ-40`, C ABI 7), binding consistency (`UQ-42`), covariance code DRY (`SOLID-06`), a perf guard for the opt-in cost (`PERF-16`/`17`), and redundant tooling removed (`SOLID-07`) | `UQ-36`–`UQ-42`, `UQ-44`, `SOLID-06`/`07`, `PERF-16`/`17` |
+| next | A second real dataset to settle the floor (`UQ-45`); end-to-end σ̂₀ in calibration-rs (`UQ-08`); one orientation σ definition, coordinated with calib-targets-rs, which gates and weights on it (`UQ-06`) | `UQ-45`, `UQ-08`, `UQ-06` |
 | later | Per-corner systematic term that sees board rotation and Radon peak switching; cubic re-centring for SaddlePoint; a noise estimate for correlated noise | `UQ-16`, `UQ-32` |
-| `2.0.0` | Uncertainty API: noise level inside the tier, no public covariance mirror field, one noise-estimate signature, no hidden public helpers; refiner lifted to one stage | `UQ-43`, `UQ-19` |
+| `2.0.0` | Uncertainty API: noise level inside the tier (`Propagated { noise }`), no public covariance mirror fields, no hidden public helpers (both deprecated in 1.7.0); refiner lifted to one stage | `UQ-43`, `UQ-19` |
 | ongoing | Realistic ground truth (calib-synth / etendue renders; end-to-end σ̂₀ check in calibration-rs) | `UQ-08`, `ML-01`, `ML-02` |
 
 **Known gaps.**
-- The usefulness goal is not met: weighting a calibration by Σ is neutral to
-  slightly worse on the real data measured so far, and the end-to-end σ̂₀
-  check in calibration-rs (`UQ-08`) has not been run, yet `Propagated` is the
-  default (`UQ-38`).
-- On real images the predicted σ sits at the per-localizer floor; whether the
-  per-corner systematic model adds anything over noise + floor is untested
-  (`UQ-36`). The floor itself is fitted in-sample on one dataset (`UQ-37`).
-- The statistical tests catch overconfidence only, and the Monte Carlo
-  harness predicts with a different noise convention than the shipped model
-  (`UQ-39`). The default-on cost has no regression guard (`PERF-16`).
+- Weighting a calibration by Σ has not beaten uniform weighting on real data,
+  so the covariance is opt-in (`Off` by default from 1.7.0). The end-to-end
+  σ̂₀ check in calibration-rs (`UQ-08`) has not been run.
+- The real-data floor is fitted on one camera pair and does not transfer
+  across cameras (held-out σ̂₀² 1.5–5.5); a second dataset decides it
+  (`UQ-45`).
 - The systematic term models a window-offset pull in an edge-width
   observable plus a constant floor fitted on one real calibration set; it
   cannot see board rotation (CenterOfMass and Förstner per-condition
   calibration) or the Radon peak fit's switching on flat-topped responses
   (σ̂₀² up to ~6 on blurred near-45° corners).
 - Per-view errors common to all corners of an image (defocus, tilt: ~0.06 px
-  per axis on the real set) are outside any per-corner covariance, and
-  weighting a calibration by Σ is neutral on the real data measured so far.
+  per axis on the real set) are outside any per-corner covariance.
 - The noise estimate misreads demosaiced images and declines on JPEG;
   users must supply σ there (`UQ-32`).
 - Real-data evidence comes from one stereo ChArUco set; no repeated-capture
   or stage-truth data yet (`UQ-30`).
-- Orientation σ mixes methods: RingFit scales a Gauss-Newton covariance by
-  the fit residual plus a calibration factor; DiskFit is a heuristic that is
-  overcautious on clean corners.
+- Orientation σ is a fit-quality score, not a calibrated 1σ: RingFit scales a
+  Gauss-Newton covariance by the fit residual plus a calibration factor;
+  DiskFit is a heuristic. calib-targets-rs gates and weights on it (`UQ-06`).
 - The detector drops refine score and status before `CornerDescriptor`
   (`detect/chess/detect.rs`, `refine_corners_on_image`); the covariance is
   carried (`UQ-05`).
