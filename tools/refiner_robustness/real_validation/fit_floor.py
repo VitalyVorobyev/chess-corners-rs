@@ -20,7 +20,6 @@ import argparse
 import pickle
 
 import numpy as np
-from scipy.optimize import brentq
 from scipy.stats import spearmanr
 
 import analyze as A
@@ -46,23 +45,15 @@ def main() -> None:
         L = d["locs"][loc]
         P = o["xy"][loc]
         oo = dict(P=P, cam=o["cam"], id=o["id"], shape=o["shape"])
-        dec = A.decompose(oo, L["rig"]["res"], L["rig"]["Jb"], allm, nb)
-        pvs = A.per_view_smooth(o, P, dec["rem"])
-        e = dec["rem"] - pvs["fit"]
-        dof = pvs["dof_frac"]
+        e, dof_row = A.local_remainder(oo, o, L["rig"]["res"], L["rig"]["Jb"], allm, nb)
+        dof = float(dof_row.mean())
         ok = np.isfinite(S).all(axis=(1, 2))
         e, S = e[ok], S[ok]
-
-        def s0(f):
-            Sf = S + f * f * np.eye(2)[None]
-            q = np.einsum("ni,nij,nj->n", e, np.linalg.inv(Sf), e)
-            return q.mean() / 2 / (1 - dof)
-
-        s_rep = s0(0.0)
-        f = brentq(lambda f: s0(f) - 1.0, 0.0, 1.0) if s_rep > 1 else 0.0
+        s_rep = C.sigma0_sq(e, S, dof)
+        f = C.fit_floor(e, S, dof)
         ps = np.sqrt(0.5 * (S[:, 0, 0] + S[:, 1, 1]))
         rho = spearmanr(ps, np.linalg.norm(e, axis=1))[0]
-        print(f"| {loc} | {np.sqrt((e ** 2).mean() / (1 - dof)):.4f} | {np.median(ps):.4f} | {s_rep:.2f} | {f:.4f} | {s0(f):.2f} | {rho:.3f} |")
+        print(f"| {loc} | {np.sqrt((e ** 2).mean() / (1 - dof)):.4f} | {np.median(ps):.4f} | {s_rep:.2f} | {f:.4f} | {C.sigma0_sq(e, S + f * f * np.eye(2)[None], dof):.2f} | {rho:.3f} |")
 
 
 if __name__ == "__main__":

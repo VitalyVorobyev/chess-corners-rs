@@ -309,18 +309,20 @@ def rig_fit_cv(obs, P, free, W=None):
         m = obs["cam"] == c
         Jb[m] = C.board_jacobian(T[m, :3, :3], T[m, :3, 3], obs["X"][m], p[9 * c : 9 * c + 9])
     cv = np.full_like(P, np.nan)
+    fold_p = []
     for fold in (0, 1):
         tr = np.where(obs["fold"][obs["view"]] != fold)[0]
         te_views = [v for v in allv if obs["fold"][v] == fold]
         trv = sorted(set(obs["view"][tr]))
         pt0 = np.r_[p[:24], np.concatenate([p[24 + 6 * allv.index(v) : 30 + 6 * allv.index(v)] for v in trv])]
         pt = Joint(obs, P, tr, "rig", W).fit(pt0)
+        fold_p.append(pt[:24])
         for v in te_views:
             s = np.where(obs["view"] == v)[0]
             T0 = C.rt_to_T(p[24 + 6 * allv.index(v) : 27 + 6 * allv.index(v)], p[27 + 6 * allv.index(v) : 30 + 6 * allv.index(v)])
             Tv = fit_view_pose(pt, obs["cam"][s], obs["X"][s], P[s], None if W is None else W[s], T0)
             cv[s] = P[s] - project_obs(pt, np.repeat(Tv[None], len(s), 0), obs["cam"][s], obs["X"][s])[0]
-    return dict(p=p, res=fitted, cv=cv, Jb=Jb)
+    return dict(p=p, res=fitted, cv=cv, Jb=Jb, fold_p=fold_p)
 
 
 # ---------------------------------------------------------------------------

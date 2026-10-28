@@ -114,6 +114,15 @@ def board_term(ids, Jb, r, fit_mask, nid):
     return beta, ok
 
 
+def xfold_remainder(o, r, Jb, fold, nb, dims=3):
+    """Remainder of each fold with the smooth and board terms estimated on
+    the other fold."""
+    out = np.full_like(r, np.nan)
+    for f in np.unique(fold):
+        out[fold == f] = decompose(o, r, Jb, fold != f, nb, dims=dims)["rem"][fold == f]
+    return out
+
+
 def decompose(o, r, Jb, fit_mask, nb, order="smooth", dims=3):
     Jb = Jb[:, :, :dims]
     u, cam, ids = o["P"], o["cam"], o["id"]
@@ -178,6 +187,7 @@ def per_view_smooth(o, P, e, deg=3):
     view): returns (RMS of the fitted part, RMS expected from white noise of
     the same size)."""
     fit = np.zeros_like(e)
+    dof_row = np.zeros(len(e))
     frac = []
     for c in (0, 1):
         for v in np.unique(o["view"]):
@@ -189,11 +199,23 @@ def per_view_smooth(o, P, e, deg=3):
             A = np.stack([x**i * y**j for i in range(deg + 1) for j in range(deg + 1 - i)], 1)
             coef, *_ = np.linalg.lstsq(A, e[s], rcond=None)
             fit[s] = A @ coef
+            dof_row[s] = A.shape[1] / len(s)
             frac.append((A.shape[1], len(s)))
     k = np.array(frac, float)
     # white noise: a k-term fit to n points captures k / n of its energy
     white = np.sqrt(k[:, 0].sum() / k[:, 1].sum())
-    return dict(fitted=rms(fit), white_expected=float(white * rms(e)), fit=fit, dof_frac=float(k[:, 0].sum() / k[:, 1].sum()))
+    # dof_row: per observation, its view's share k / n; its mean over any set
+    # of whole views is that set's dof fraction.
+    return dict(fitted=rms(fit), white_expected=float(white * rms(e)), fit=fit, dof_frac=float(k[:, 0].sum() / k[:, 1].sum()), dof_row=dof_row)
+
+
+def local_remainder(oo, o, r, Jb, fit_mask, nb):
+    """Local remainder (smooth and board terms fitted on ``fit_mask``, then
+    the per-view smooth pattern removed) and each observation's per-view
+    dof share (``per_view_smooth``)."""
+    dec = decompose(oo, r, Jb, fit_mask, nb)
+    pvs = per_view_smooth(o, oo["P"], dec["rem"])
+    return dec["rem"] - pvs["fit"], pvs["dof_row"]
 
 
 def rem_by_tilt(o, e):
@@ -218,9 +240,8 @@ def stereo_scatter(T21: dict):
 
 def cov_stats(e, S):
     ok = np.isfinite(S).all(axis=(1, 2)) & np.isfinite(e[:, 0])
-    q = np.einsum("ni,nij,nj->n", e[ok], np.linalg.inv(S[ok]), e[ok])
     ps = np.sqrt(0.5 * (S[ok, 0, 0] + S[ok, 1, 1]))
-    return dict(s0=float(q.mean() / 2), spearman=float(spearmanr(ps, np.linalg.norm(e[ok], axis=1))[0]), pred_sigma_med=float(np.median(ps)), frac=float(ok.mean()))
+    return dict(s0=C.sigma0_sq(e[ok], S[ok]), spearman=float(spearmanr(ps, np.linalg.norm(e[ok], axis=1))[0]), pred_sigma_med=float(np.median(ps)), frac=float(ok.mean()))
 
 
 def main() -> None:
@@ -320,6 +341,7 @@ def main() -> None:
         betas[loc] = (dec["beta"][:, :2], dec["beta_ok"])
         pvs = per_view_smooth(o, P, dec["rem"])
         local = dec["rem"] - pvs.pop("fit")
+        pvs.pop("dof_row")
         rems[loc] = (dec["rem"], xrem, local)
         row["local"] = rms(local)
         # neighbourhood correlation of the in-plane board component
@@ -332,9 +354,7 @@ def main() -> None:
             row["cov"] = dict(raw=cov_stats(r, S), rem=cov_stats(dec["rem"], S), rem_xfold=cov_stats(xrem, S), local=cov_stats(local, S))
             if "rig_w" in L:
                 rw = L["rig_w"]
-                xw = np.full_like(r, np.nan)
-                for f in (0, 1):
-                    xw[fold == f] = decompose(oo, rw["res"], rw["Jb"], fold != f, nb)["rem"][fold == f]
+                xw = xfold_remainder(oo, rw["res"], rw["Jb"], fold, nb)
                 row["weighted"] = dict(fit=rms(rw["res"]), cv=rms(rw["cv"]), rem_xfold=rms(xw))
             row["pred_var_mean"] = float(np.nanmean(0.5 * (S[:, 0, 0] + S[:, 1, 1])))
         summ["locs"][loc] = row

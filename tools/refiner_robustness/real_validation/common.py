@@ -15,7 +15,7 @@ cameras by the token. Target: ChArUco 22 x 22 squares, 1.35 mm squares,
 1.0125 mm markers, DICT_4X4_1000, non-legacy layout.
 
 Everything derived from the images is written to ``out/`` next to this file
-(gitignored).
+(gitignored), or to ``$RV_OUT`` when set.
 
 Conventions: image pixels with the origin at the top-left pixel *centre*
 (OpenCV, and the chess-corners detector); board frame from
@@ -24,6 +24,7 @@ Conventions: image pixels with the origin at the top-left pixel *centre*
 """
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -33,7 +34,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE / "out"
+OUT = Path(os.environ.get("RV_OUT", HERE / "out"))
 sys.path.insert(0, str(HERE.parent))
 
 SQUARE = 1.35
@@ -203,3 +204,28 @@ def match(xy: np.ndarray, ref: np.ndarray, radius: float = 2.0) -> np.ndarray:
 
     d, j = cKDTree(xy).query(ref)
     return np.where(d <= radius, j, -1)
+
+
+# ---------------------------------------------------------------------------
+# Covariance scoring
+# ---------------------------------------------------------------------------
+
+
+def sigma0_sq(e: np.ndarray, S: np.ndarray, dof: float = 0.0) -> float:
+    """``mean(e' S^-1 e) / 2 / (1 - dof)`` over the rows where ``e`` (N, 2) and
+    ``S`` (N, 2, 2) are finite; ``dof`` is the fraction of the residual's
+    degrees of freedom a fit already absorbed."""
+    ok = np.isfinite(S).all(axis=(1, 2)) & np.isfinite(e).all(1)
+    q = np.einsum("ni,nij,nj->n", e[ok], np.linalg.inv(S[ok]), e[ok])
+    return float(q.mean() / 2 / (1 - dof))
+
+
+def fit_floor(e: np.ndarray, S: np.ndarray, dof: float = 0.0) -> float:
+    """Isotropic floor ``f`` (px per axis) for which ``S + f^2 I`` whitens
+    ``e`` to sigma0^2 = 1; 0 when ``S`` alone is already conservative."""
+    from scipy.optimize import brentq
+
+    def s0(f):
+        return sigma0_sq(e, S + f * f * np.eye(2)[None], dof)
+
+    return float(brentq(lambda f: s0(f) - 1.0, 0.0, 1.0)) if s0(0.0) > 1 else 0.0

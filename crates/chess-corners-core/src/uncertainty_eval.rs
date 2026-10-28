@@ -639,6 +639,155 @@ mod tests {
         }
     }
 
+    /// Header of the per-corner covariance records of [`write_records`].
+    const RECORD_HEADER: &str =
+        "generator,condition,localizer,sigma,draw,x,y,ex,ey,nxx,nxy,nyy,sxx,sxy,syy,ux,uy,width,grid";
+
+    /// One CSV row per corner `img` yields under every localizer: the
+    /// position, its error against `scene`'s truth (NaN without a scene),
+    /// the noise term at `sigma` (with any growth), the shipped systematic
+    /// term, the offset from the fit-window centre, the edge width and the
+    /// window grid spacing — everything needed to re-score the covariance
+    /// under another systematic model offline.
+    fn write_records(
+        out: &mut impl Write,
+        tag: [&str; 2],
+        img: &[u8],
+        (w, h): (usize, usize),
+        sigma: f32,
+        draw: u64,
+        scene: Option<&dyn Scene>,
+    ) {
+        let up = RadonDetectorParams::default().image_upsample_clamped() as f32;
+        for loc in Localizer::ALL {
+            let grid = if matches!(loc, Localizer::RadonPeak | Localizer::RadonSaddle) {
+                1.0 / up
+            } else {
+                1.0
+            };
+            for det in localize(img, w, h, loc, Uncertainty::Propagated) {
+                let Some(model) = det.corner.model else {
+                    continue;
+                };
+                let mut e = [f32::NAN; 2];
+                if let Some(scene) = scene {
+                    if !interior(det.xy(), (w, h), 12.0) {
+                        continue;
+                    }
+                    let Some(t) = scene.truth(det.xy(), 0.75) else {
+                        continue;
+                    };
+                    e = [det.corner.x - t[0], det.corner.y - t[1]];
+                }
+                let (n, s) = (model.noise_at(sigma), model.systematic);
+                writeln!(
+                    out,
+                    "{},{},{},{sigma},{draw},{},{},{},{},{},{},{},{},{},{},{},{},{},{grid}",
+                    tag[0],
+                    tag[1],
+                    loc.name(),
+                    det.corner.x,
+                    det.corner.y,
+                    e[0],
+                    e[1],
+                    n.xx,
+                    n.xy,
+                    n.yy,
+                    s.xx,
+                    s.xy,
+                    s.yy,
+                    det.corner.x - det.centre[0],
+                    det.corner.y - det.centre[1],
+                    det.width.unwrap_or(f32::NAN),
+                )
+                .unwrap();
+            }
+        }
+    }
+
+    /// Per-corner covariance records on the `sigma0_sweep` grid (same
+    /// boards, noise draws and seeds), for scoring alternative systematic
+    /// models offline (`tools/refiner_robustness/real_validation/
+    /// ablation.py`): `UQ24_SYNTH_DIR=… cargo test -p chess-corners-core
+    /// --release dump_ablation_synth -- --ignored`; writes
+    /// `bench_results/uq24/ablation_synth.csv`.
+    #[test]
+    #[ignore]
+    fn dump_ablation_synth() {
+        let file = std::fs::File::create(out_dir().join("ablation_synth.csv")).unwrap();
+        let mut out = std::io::BufWriter::new(file);
+        writeln!(out, "{RECORD_HEADER}").unwrap();
+        let mut run = |gen: &str, cond: &str, scene: &dyn Scene, draws: u64| {
+            let (w, h) = scene.size();
+            for &sigma in &[1.0f32, 2.0, 8.0] {
+                // `sigma0_sq`'s draws: seed 5.
+                for d in 0..draws {
+                    let img = noisy(scene.image(), sigma, 5 * 1_000 + d + 1);
+                    write_records(&mut out, [gen, cond], &img, (w, h), sigma, d, Some(scene));
+                }
+            }
+        };
+        for &cell in &[8.0f32, 12.0] {
+            for &rot in &[0.0f32, 8.0, 45.0] {
+                for &blur in &[0.5f32, 1.5, 2.5] {
+                    let scene = optical(128, cell, rot, 90.0, blur, 11);
+                    run(
+                        "optical",
+                        &format!("cell{cell}_rot{rot}_blur{blur}"),
+                        &scene,
+                        6,
+                    );
+                }
+            }
+        }
+        if let Some(scenes) = exported_scenes(|n| n.starts_with("s0_")) {
+            for scene in &scenes {
+                run("synth", &scene.name.clone(), scene, 6);
+            }
+        }
+    }
+
+    /// Per-corner covariance records of real 8-bit images: every
+    /// `<name>.u8` (row-major) with `<name>.json` (`{"w", "h"}`) in
+    /// `UQ36_REAL_DIR`, noise σ estimated per image as the detector does.
+    /// Writes `$UQ24_OUT/ablation_real.csv` (keep it outside the
+    /// repository for private data). `cargo test -p chess-corners-core
+    /// --release dump_ablation_real -- --ignored`.
+    #[test]
+    #[ignore]
+    fn dump_ablation_real() {
+        let Some(dir) = std::env::var_os("UQ36_REAL_DIR").map(PathBuf::from) else {
+            return;
+        };
+        let mut names: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| {
+                let p = e.ok()?.path();
+                (p.extension()? == "u8").then(|| p.file_stem()?.to_str().map(String::from))?
+            })
+            .collect();
+        names.sort();
+        let file = std::fs::File::create(out_dir().join("ablation_real.csv")).unwrap();
+        let mut out = std::io::BufWriter::new(file);
+        writeln!(out, "{RECORD_HEADER}").unwrap();
+        for name in names {
+            let meta: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(dir.join(format!("{name}.json"))).unwrap(),
+            )
+            .unwrap();
+            let (w, h) = (
+                meta["w"].as_u64().unwrap() as usize,
+                meta["h"].as_u64().unwrap() as usize,
+            );
+            let img = std::fs::read(dir.join(format!("{name}.u8"))).unwrap();
+            assert_eq!(img.len(), w * h, "{name}");
+            let Some(sigma) = crate::estimate_noise_sigma_u8(&img, w, h) else {
+                continue;
+            };
+            write_records(&mut out, ["real", &name], &img, (w, h), sigma, 0, None);
+        }
+    }
+
     /// Noise-free per-corner records for calibrating the systematic models:
     /// `cargo test -p chess-corners-core --release dump_systematic -- --ignored`.
     /// Writes `bench_results/uq24/systematic.csv` with, per localized
