@@ -117,6 +117,68 @@ perspective), Radon peak 0.80 / 2.09 / 9.3 (29 cells: 45° blur 1.5–2.5 up
 to ~4, coma / decentred defocus up to 9). Estimated σₙ gives the same
 medians.
 
+## Systematic-model ablation and held-out floor (UQ-36, UQ-37, UQ-38)
+
+### Pre-registered criteria
+
+Written and committed before any number of this section was computed.
+
+**Variants** (per localizer: CenterOfMass, Förstner, SaddlePoint, Radon
+peak fit, Radon + SaddlePoint), all with the same noise term
+`max(σₙ², 1/12)·C·(growth)` and, for the Radon peak fit, the same 8-bit
+rounding term of the upsampled samples:
+
+- **(a)** `Propagated` as shipped (knot tables over edge width, window
+  offset, shipped floor).
+- **(b)** noise term + isotropic floor `f_b²I`; no knots, no edge width.
+- **(c)** noise term + the window-offset model with one constant
+  `(g, ρ)` per localizer (all edge widths pooled in the synthetic
+  calibration of `fit_systematic.py`; no edge width) + floor `f_c²I`.
+
+`f_b`, `f_c` (and a refitted `f_a`, to check the shipped value reproduces)
+are refitted by the shipped rule: the value making the local-remainder
+σ̂₀² 1 on the `UQ-30` decomposition of the stereo ChArUco set, max over the
+**all** and **chess** corner sets. Per-corner records come from a test-only
+dump through the core localizers on the same images (positions must match
+the bindings' detections).
+
+**Gate for adopting a simpler variant for a localizer** (all required):
+
+1. *Ranking.* Spearman(√(tr Σ/2), |e|) of the variant ≥ that of (a) − 0.02
+   on the local **and** the cross-fold remainder, on both corner sets.
+2. *Weighting.* Σ-whitened rig calibration with the variant: held-out
+   2-fold CV residual RMS and cross-fold remainder RMS each ≤ 1.005 × the
+   value with (a), on both sets.
+3. *Synthetic.* On the existing σ̂₀² grid (`sigma0_sweep`: lens-blur
+   renderer and `synth.py` `s0_grid_*` + `s0_audit_*`, σₙ 1/2/8, σ
+   supplied, 0.75 px match radius; 189 cells), with the variant's real-data
+   floor: worst |ln σ̂₀²| over the cells ≤ that of (a) + 0.2, and no cell
+   with σ̂₀² > 2 under the variant unless it is > 2 under (a) too.
+
+(b) is preferred over (c) when both pass. `edge_width` and the knot tables
+are deletable only if every localizer passes with (b) or (c); otherwise the
+report names the localizers that need them.
+
+**Held-out floor (UQ-37).** For (a), (b), (c): the floor is fitted on a
+training part (its own decomposition) and σ̂₀² is evaluated on the held-out
+part's local remainder with the smooth and per-corner target terms
+estimated on the training part only (the per-view smooth pattern is fitted
+per held-out view; for a held-out camera, its smooth lens field is fitted
+on that camera, the target term comes from the other). Splits: leave one
+camera out (2), the 2-fold view split of the harness, leave one commanded
+Rx level out (5). The floor is called transferable if every held-out
+σ̂₀² lies within [0.67, 1.5] (|ln σ̂₀²| ≤ 0.4).
+
+**End-to-end (UQ-38, evidence only).** Per variant and uniform: the rig
+calibration's held-out CV RMS, cross-fold remainder RMS, fold-to-fold
+|Δfx| per camera, and σ̂₀² = Σ rᵀΣ⁻¹r / (2N − p) of the weighted fit
+(in-sample) and of the CV residuals. Weighting counts as a benefit if a
+weighted calibration lowers the held-out CV RMS or the cross-fold
+remainder by ≥ 0.5% against uniform for a localizer on either set.
+
+**Synthetic medians (UQ-41).** The σ̂₀² medians of (a) are re-measured on
+the grid above and the harness behind each published median named.
+
 ## Cost
 
 Per corner, 512² board (Off → Propagated): CoM 19 → 526 ns, Förstner 57 →
