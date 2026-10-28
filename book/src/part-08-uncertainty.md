@@ -94,16 +94,21 @@ between the C API and the Python and WASM enums; use the named constants.
 
 ### 8.2.1 Cost
 
-`Propagated` costs a per-frame noise estimate (43–55 µs on the
-test images) and about 0.5 µs per refined corner (2.6 µs per Radon
+`Propagated` costs a per-frame noise estimate (47–60 µs on the
+test images) and about 0.5 µs per refined corner (2.4 µs per Radon
 peak that keeps its peak fit). Frame time on the three test images
-(small / mid / large, default build, mean):
+(small / mid / large, default build, median):
 
 | Configuration      | `Off`                    | `Propagated`             | Cost               |
 |--------------------|--------------------------|--------------------------|--------------------|
-| ChESS single scale | 3.77 / 4.15 / 22.80 ms   | 4.02 / 4.23 / 23.22 ms   | +6.7 / +2.1 / +1.8% |
-| ChESS multiscale   | 0.79 / 0.80 / 5.66 ms    | 0.89 / 0.89 / 5.93 ms    | +13 / +11 / +4.8%  |
-| Radon single scale | 12.7 / 28.5 / 146.5 ms   | 13.0 / 27.8 / 147.4 ms   | within ±2.5%       |
+| ChESS single scale | 3.87 / 4.22 / 23.2 ms    | 4.14 / 4.31 / 23.6 ms    | +6.9 / +2.1 / +1.5% |
+| ChESS multiscale   | 0.80 / 0.82 / 5.77 ms    | 0.90 / 0.91 / 6.04 ms    | +13.5 / +10.7 / +4.5% |
+| Radon single scale | 13.2 / 28.1 / 148 ms     | 13.4 / 28.4 / 149 ms     | +1.7 / +0.9 / +0.7% |
+
+With `rayon` the dense response shrinks while the per-corner covariance
+stays sequential, so its share grows: ChESS single scale +32 / +11 / +11%,
+multiscale +17 / +15 / +6.7%. A 2048×1536 board with 1376 corners costs
++3.3% single-threaded and +15% with `rayon`.
 
 The share is largest on small, sparse frames, where the noise estimate
 is a larger part of the work. The default, `Off`, does not pay it.

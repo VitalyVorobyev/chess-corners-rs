@@ -459,32 +459,47 @@ Per corner, 512² board (Off → Propagated): CoM 19 → 526 ns, Förstner 57 �
 ~90 ns of it the selection of the eight largest gradients, whose summation
 order (and so the width's last bit) follows `select_nth_unstable`; the CoM
 Jacobian is ~220 ns. Radon peak covariance 2.6 µs per peak, only for peaks
-that keep the peak fit. Per frame, the noise estimate costs 43–55 µs on the
+that keep the peak fit. Per frame, the noise estimate costs 47–60 µs on the
 test images. Every refined corner is reported (≥ 99%: merge and the frame
 filters drop almost none), so computing covariances later would save
 nothing.
 
-Noise-estimate bench (`cargo bench -p chess-corners --bench noise_estimate`,
-release build, Apple M4 Pro, 12 cores, single-threaded call, nightly rustc
-1.101): 62 / 49 / 59 µs per frame on small / mid / large. Measured while the
-machine was busy (load average 9 to 15), so read it as an upper bound with
-±10% scatter. The table below predates this bench and was not re-measured.
+Conditions: Criterion medians (`cargo bench -p chess-corners --bench
+chess_pipeline -- chess_pipeline_real`, `--bench radon_pipeline`,
+`--bench noise_estimate`, `-p chess-corners-core --bench refiners`), release
+build, Apple M4 Pro (12 cores), rustc 1.101.0-nightly (2026-10-02), 1-minute
+load 1.1 to 1.8 before each run (self-induced up to 4 during the `rayon`
+runs), one bench at a time. The default is `Uncertainty::Off`; the table is
+the cost of opting in to `Propagated`. Noise estimate per frame
+(single-threaded call): 60 / 47 / 56 µs on small / mid / large. Per corner
+(Off to Propagated, 1024² board): CoM 18 to 526 ns, Förstner 57 to 478 ns,
+SaddlePoint 222 to 569 ns.
 
-Frame time, `testimages/` small / mid / large, default build, mean (the p95
-cost is within about a point of it):
+Frame time, `testimages/` small / mid / large, median:
 
-| config | Off | Propagated | default-on cost |
+| config | Off | Propagated | cost of opting in |
 |---|---|---|---|
-| ChESS single scale | 3.77 / 4.15 / 22.80 ms | 4.02 / 4.23 / 23.22 ms | +6.7 / +2.1 / +1.8% |
-| ChESS multiscale | 0.79 / 0.80 / 5.66 ms | 0.89 / 0.89 / 5.93 ms | +13.4 / +11.1 / +4.8% |
-| Radon single scale | 12.69 / 28.46 / 146.5 ms | 12.95 / 27.75 / 147.4 ms | +2.0 / −2.5 / +0.6% |
+| ChESS single scale | 3.87 / 4.22 / 23.2 ms | 4.14 / 4.31 / 23.6 ms | +6.9 / +2.1 / +1.5% |
+| ChESS multiscale | 0.80 / 0.82 / 5.77 ms | 0.90 / 0.91 / 6.04 ms | +13.5 / +10.7 / +4.5% |
+| Radon single scale | 13.2 / 28.1 / 148 ms | 13.4 / 28.4 / 149 ms | +1.7 / +0.9 / +0.7% |
+| ChESS single, `rayon` | 0.85 / 0.90 / 4.44 ms | 1.12 / 1.00 / 4.95 ms | +32 / +11 / +11% |
+| ChESS multiscale, `rayon` | 0.67 / 0.59 / 4.26 ms | 0.79 / 0.68 / 4.54 ms | +17 / +15 / +6.7% |
+| Radon single, `rayon` | 4.36 / 14.8 / 78.7 ms | 4.69 / 15.0 / 78.7 ms | +7.6 / +1.3 / +0.0% |
+
+Dense board (synthetic anti-aliased board, 2048×1536, 48 px cells, 1376
+corners, ChESS single scale, SaddlePoint): 22.70 to 23.45 ms single-threaded
+(+3.3%, 546 ns per corner for the covariance and the noise estimate), 4.44
+to 5.11 ms with `rayon` (+15%, 485 ns per corner). The per-corner covariance
+runs sequentially, so under `rayon` the dense response shrinks around it and
+the share of the covariance grows. WASM (node, `testimages/mid.png`, median
+of 40 runs): single scale 5.09 to 5.27 ms (+3.5%), multiscale 1.18 to 1.36 ms
+(+15%).
 
 The cost is the noise estimate plus ~0.5 µs per corner, so it is largest
 on small, sparse frames: on small multiscale the noise estimate alone is
 ~7% of the frame. Off vs 1.5.0, p95, default build: ChESS single −4.5 /
 −0.7 / −0.9%, multiscale −1.7 / −0.6 / −1.2%; Radon −0.8 / −1.7 / 0.0%.
-The Radon kernel moves by a few percent with code layout alone (the
-negative mid cost above).
+The Radon kernel moves by a few percent with code layout alone.
 
 ## Limits
 
