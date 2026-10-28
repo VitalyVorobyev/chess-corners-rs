@@ -234,7 +234,7 @@ mod tests {
         [sx / sw, sy / sw]
     }
 
-    /// `covariance_per_noise_variance` is `Σₚ (∂x̂/∂Iₚ)(∂x̂/∂Iₚ)ᵀ` over the
+    /// `noise_covariance_per_unit_variance()` is `Σₚ (∂x̂/∂Iₚ)(∂x̂/∂Iₚ)ᵀ` over the
     /// image pixels: central differences (±0.01 gray level, inside the
     /// linear piece of every `|·|` of the response) of the centroid of a
     /// float re-implementation of the response, on 8-bit saddles off the
@@ -267,7 +267,7 @@ mod tests {
                 RefineContext::new(Some(view), Some(&resp)),
             );
             assert_eq!(res.status, RefineStatus::Accepted);
-            let cov = res.covariance_per_noise_variance.unwrap();
+            let cov = res.noise_covariance_per_unit_variance().unwrap();
 
             let mut f: Vec<f64> = img.iter().map(|&v| f64::from(v)).collect();
             let base = centroid_f64(&f, SIDE, centre);
@@ -328,19 +328,19 @@ mod tests {
         let view = ImageView::from_u8_slice(SIDE, SIDE, &img).unwrap();
         let mut refiner = propagated(CenterOfMassConfig::default());
         let with = refiner.refine([10.0, 10.0], RefineContext::new(Some(view), Some(&resp)));
-        assert!(with.covariance_per_noise_variance.is_some());
+        assert!(with.noise_covariance_per_unit_variance().is_some());
         for ctx in [
             RefineContext::new(None, Some(&resp)),
             RefineContext::new(Some(view), Some(&plain)),
         ] {
             let res = refiner.refine([10.0, 10.0], ctx);
             assert_eq!([res.x, res.y], [with.x, with.y]);
-            assert!(res.covariance_per_noise_variance.is_none());
+            assert!(res.noise_covariance_per_unit_variance().is_none());
         }
         refiner.uncertainty = Uncertainty::Off;
         let off = refiner.refine([10.0, 10.0], RefineContext::new(Some(view), Some(&resp)));
         assert_eq!([off.x, off.y], [with.x, with.y]);
-        assert!(off.covariance_per_noise_variance.is_none());
+        assert!(off.noise_covariance_per_unit_variance().is_none());
     }
 
     #[test]
@@ -394,6 +394,6 @@ mod tests {
         assert_eq!(res.status, RefineStatus::IllConditioned);
         assert_eq!([res.x, res.y], [3.2, 2.9]);
         assert_eq!(res.score, 0.0);
-        assert!(res.covariance_per_noise_variance.is_none());
+        assert!(res.noise_covariance_per_unit_variance().is_none());
     }
 }

@@ -24,7 +24,7 @@ pub use forstner::{ForstnerConfig, ForstnerRefiner};
 pub use saddle_point::{SaddlePointConfig, SaddlePointRefiner};
 
 /// Symmetric 2×2 covariance of a refined corner position, in px² (px² per
-/// gray-level² in [`RefineResult::covariance_per_noise_variance`]).
+/// gray-level² in [`RefineResult::noise_covariance_per_unit_variance`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct PositionCovariance {
@@ -173,7 +173,9 @@ pub struct RefineResult {
     /// re-centred refinement converged, the center-of-mass refiner when the
     /// image and a ChESS response map are both in the [`RefineContext`],
     /// and the Förstner refiner. `None` otherwise, and always under
-    /// [`Uncertainty::Off`] (the default).
+    /// [`Uncertainty::Off`] (the default). Read it with
+    /// [`RefineResult::noise_covariance_per_unit_variance`]. Changing this
+    /// field drops the systematic term.
     pub covariance_per_noise_variance: Option<PositionCovariance>,
     /// The full covariance model; `covariance_per_noise_variance` mirrors
     /// its noise term.
@@ -213,16 +215,25 @@ impl RefineResult {
     /// Position covariance in px² for an image whose pixels carry white
     /// noise of standard deviation `noise_sigma` gray levels:
     /// `max(σₙ², 1/12)·C + Σ_sys`, with `C` =
-    /// [`covariance_per_noise_variance`](Self::covariance_per_noise_variance)
+    /// [`noise_covariance_per_unit_variance`](Self::noise_covariance_per_unit_variance)
     /// and `Σ_sys` the refiner's systematic term. The model and its
     /// accuracy are described on
     /// [`Corner::position_covariance`](crate::Corner::position_covariance).
     /// `None` when the result carries no covariance. A result whose
-    /// `covariance_per_noise_variance` was set or changed by the caller
-    /// carries that noise term only, without a systematic part.
+    /// `covariance_per_noise_variance` field was set or changed by the
+    /// caller carries that noise term only, without a systematic part.
     #[inline]
     pub fn position_covariance(&self, noise_sigma: f32) -> Option<PositionCovariance> {
         self.covariance_model().map(|m| m.total(noise_sigma))
+    }
+
+    /// The noise term of the position covariance per unit image-noise
+    /// variance, px² per gray-level²: `C` in
+    /// [`position_covariance`](Self::position_covariance). `None` when the
+    /// result carries no covariance.
+    #[inline]
+    pub fn noise_covariance_per_unit_variance(&self) -> Option<PositionCovariance> {
+        self.covariance_model().map(|m| m.noise)
     }
 
     /// Attach `model`, mirroring its noise term in the public field.
@@ -245,7 +256,7 @@ impl RefineResult {
 /// Callers pass whichever sources the active refiner requires:
 /// - [`CenterOfMassRefiner`] reads `response`; its position covariance
 ///   also needs `image`, the image that ChESS response was computed from
-///   (see [`RefineResult::covariance_per_noise_variance`]).
+///   (see [`RefineResult::noise_covariance_per_unit_variance`]).
 /// - [`ForstnerRefiner`] and [`SaddlePointRefiner`] read `image`;
 ///   they ignore `response`.
 ///

@@ -39,17 +39,20 @@ pub struct Corner {
     pub y: f32,
     /// Raw detector response at the integer peak (before refinement).
     pub strength: f32,
-    /// The refiner's position covariance per unit image-noise variance (px²
-    /// per gray-level²), copied from
-    /// [`RefineResult::covariance_per_noise_variance`](crate::RefineResult::covariance_per_noise_variance)
-    /// by [`refine_corners_on_image`] and by the Radon detector's image
-    /// refinement ([`DenseDetector::refine_peaks_on_image`](crate::DenseDetector::refine_peaks_on_image));
-    /// `None` when the refiner reports none.
-    /// [`Corner::position_covariance`] turns it into px².
+    /// The noise term of the position covariance per unit image-noise
+    /// variance (px² per gray-level²); `None` when the corner carries no
+    /// covariance. Read it with
+    /// [`Corner::noise_covariance_per_unit_variance`]; the full covariance
+    /// in px² is [`Corner::position_covariance`]. Changing this field drops
+    /// the systematic term.
     pub covariance_per_noise_variance: Option<PositionCovariance>,
     /// The full covariance model; `covariance_per_noise_variance` mirrors
     /// its noise term.
     pub(crate) model: Option<CovarianceModel>,
+    /// The position is the detector's own subpixel peak fit (a Radon peak
+    /// no image refiner moved), so the peak fit's covariance applies to it
+    /// (see [`DenseDetector::attach_peak_covariance`](crate::DenseDetector::attach_peak_covariance)).
+    pub(crate) at_peak_fit: bool,
 }
 
 impl Corner {
@@ -62,6 +65,7 @@ impl Corner {
             strength,
             covariance_per_noise_variance: None,
             model: None,
+            at_peak_fit: false,
         }
     }
 
@@ -70,6 +74,23 @@ impl Corner {
     pub(crate) fn set_model(&mut self, model: Option<CovarianceModel>) {
         self.covariance_per_noise_variance = model.map(|m| m.noise);
         self.model = model;
+    }
+
+    /// The covariance model this corner carries (see
+    /// [`CovarianceModel::effective`]).
+    #[inline]
+    pub(crate) fn covariance_model(&self) -> Option<CovarianceModel> {
+        CovarianceModel::effective(self.model, self.covariance_per_noise_variance)
+    }
+
+    /// The noise term of the position covariance per unit image-noise
+    /// variance, px² per gray-level²: `C` in
+    /// [`position_covariance`](Self::position_covariance)'s
+    /// `Σ = max(σₙ², 1/12)·C + Σ_sys`, the first-order scatter that white
+    /// pixel noise causes. `None` when the corner carries no covariance.
+    #[inline]
+    pub fn noise_covariance_per_unit_variance(&self) -> Option<PositionCovariance> {
+        self.covariance_model().map(|m| m.noise)
     }
 
     /// Position covariance in px² for an image whose pixels carry white
@@ -81,7 +102,7 @@ impl Corner {
     ///
     /// `Σ = max(σₙ², 1/12)·C + Σ_sys`
     ///
-    /// - `C` = [`covariance_per_noise_variance`](Self::covariance_per_noise_variance)
+    /// - `C` = [`noise_covariance_per_unit_variance`](Self::noise_covariance_per_unit_variance)
     ///   is the first-order scatter that white pixel noise causes, per unit
     ///   noise variance. `σₙ²` is at least `1/12` gray level², the variance
     ///   of rounding to 8 bits, so a smoothed or compressed image whose
@@ -112,9 +133,9 @@ impl Corner {
     /// under asymmetric blur). Error that every corner of an image shares
     /// (defocus, depth, lens-model error) is outside any single-corner
     /// covariance; it shows up in a downstream calibration's variance
-    /// factor. A corner whose `covariance_per_noise_variance` was set or
-    /// changed by the caller carries that noise term only. Valid only for
-    /// the image the corner was refined on. With
+    /// factor. A corner whose `covariance_per_noise_variance` field was set
+    /// or changed by the caller carries that noise term only.
+    /// Valid only for the image the corner was refined on. With
     /// spatially correlated noise (demosaiced, compressed or resampled
     /// images) [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8)
     /// is not reliable: pass a `σₙ` measured on the delivered images, and
@@ -122,8 +143,7 @@ impl Corner {
     /// covariance.
     #[inline]
     pub fn position_covariance(&self, noise_sigma: f32) -> Option<PositionCovariance> {
-        CovarianceModel::effective(self.model, self.covariance_per_noise_variance)
-            .map(|m| m.total(noise_sigma))
+        self.covariance_model().map(|m| m.total(noise_sigma))
     }
 }
 

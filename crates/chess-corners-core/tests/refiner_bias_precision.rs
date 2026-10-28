@@ -5,7 +5,7 @@
 //! error of the noise-free estimate (the model does not match the corner,
 //! the window is asymmetric about it). *Precision* is the scatter that pixel
 //! noise adds around that biased estimate. A noise-only covariance (the
-//! saddle-point refiner's `covariance_per_noise_variance`) describes the
+//! saddle-point refiner's `noise_covariance_per_unit_variance()`) describes the
 //! second part only. This sweep measures both, per refiner and condition,
 //! and checks the predicted saddle-point σ against the scatter about the
 //! per-phase mean (`z_prec`) and against the truth (`z_total`), and the
@@ -167,7 +167,7 @@ struct PhaseStats {
 }
 
 /// Saddle-point prediction checks at one phase. `σ_pred` is
-/// `sqrt(v · covariance_per_noise_variance)` with `v` the true per-pixel
+/// `sqrt(v · noise_covariance_per_unit_variance())` with `v` the true per-pixel
 /// noise variance.
 #[derive(Clone, Debug, Default)]
 struct ZStats {
@@ -341,7 +341,7 @@ fn run_item(item: usize, fx: Fixture, phase: (usize, usize)) -> Vec<[PhaseStats;
                 for (ri, res) in refiners.run(&img, seed).into_iter().enumerate() {
                     let Some(res) = res else { continue };
                     let err = [f64::from(res.x - truth.0), f64::from(res.y - truth.1)];
-                    let cov = match (var, res.covariance_per_noise_variance) {
+                    let cov = match (var, res.noise_covariance_per_unit_variance()) {
                         (Some(v), Some(c)) => Some([
                             v * f64::from(c.xx),
                             v * f64::from(c.xy),
