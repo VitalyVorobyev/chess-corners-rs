@@ -84,13 +84,16 @@ built-in 3-point Gaussian peak fit configured via
 
 `RefineResult` reports the refined point, a refiner-specific score,
 `RefineStatus` (`Accepted`, `Rejected`, `OutOfBounds`, or
-`IllConditioned`), and `covariance_per_noise_variance:
+`IllConditioned`), and `noise_covariance_per_unit_variance() ->
 Option<PositionCovariance>` — the first-order position covariance per
-unit image-noise variance (px² per gray-level²), set only by the
-saddle-point refiner on accepted corners. `Corner` carries it through
+unit image-noise variance (px² per gray-level²), set by every non-ML
+refiner on accepted corners under `Uncertainty::Propagated`. `Corner` carries it through
 merging; the facade turns it into `CornerDescriptor::position_covariance`
 in px² (`max(σₙ², 1/12)·C + f²I`, `f` = `POSITION_FLOOR_PX`) after `describe_corners`, with σₙ
-from `noise_sigma` or `estimate_noise_sigma_u8` on the refinement image.
+from `noise_sigma` or `estimate_noise_sigma_u8` on the refinement image
+(returned per frame by `Detector::last_noise_sigma`). The Radon peak fit's
+own covariance is attached in core (`DenseDetector::attach_peak_covariance`)
+to the peaks no image refiner moved.
 Final refinement always runs on the detector's input image (pyramid seeds
 are refined into the base level), so no rescaling is needed; on upscaled
 input the noise is spatially correlated and no covariance is reported. Runtime refiners own their
@@ -135,7 +138,7 @@ for JavaScript and TypeScript, returning a flat stride-7 `Float32Array`
 (`x, y, response, axis0_angle, axis0_sigma, axis1_angle, axis1_sigma`; the
 four axis values are `NaN` when orientation is disabled), plus a stride-3
 `positionCovariance()` accessor for the last detection. The C ABI
-(`cc_abi_version` 5) carries the covariance in `cc_corner` with a
-presence flag.
+(`cc_abi_version` 7) carries the covariance in `cc_corner` and the frame's
+noise σ in `cc_result`, each with a presence flag.
 
 The exact per-binding shapes are the rustdoc/book reference.
