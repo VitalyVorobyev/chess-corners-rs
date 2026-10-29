@@ -225,7 +225,7 @@ impl CornerRefiner for SaddlePointRefiner {
                 if let Some(noise) = est.covariance {
                     let at = est.xy.map(|v| v.round() as i32);
                     let width = edge_width(&img, at, &mut self.scratch.tile);
-                    res.set_model(Some(SYSTEMATIC.model(noise, [0.0; 2], width, 1.0)));
+                    res.model = Some(SYSTEMATIC.model(noise, [0.0; 2], width, 1.0));
                 }
                 res
             }

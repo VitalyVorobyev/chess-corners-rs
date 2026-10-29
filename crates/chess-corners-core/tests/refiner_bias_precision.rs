@@ -30,11 +30,9 @@
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
-#[allow(deprecated)]
 use chess_corners_core::{
     chess_response_u8, CenterOfMassConfig, CenterOfMassRefiner, ChessParams, CornerRefiner,
-    ForstnerConfig, ForstnerRefiner, ImageView, RefineContext, RefineResult, RefineStatus,
-    SaddlePointConfig, SaddlePointRefiner,
+    ImageView, RefineContext, RefineResult, RefineStatus, SaddlePointConfig, SaddlePointRefiner,
 };
 use chess_corners_testutil::{
     aa_chessboard, add_gaussian_noise, add_signal_dependent_noise, area_chessboard, gaussian_blur,
@@ -134,8 +132,8 @@ impl Noise {
     }
 }
 
-const REFINERS: [&str; 3] = ["CenterOfMass", "Forstner", "SaddlePoint"];
-const SADDLE: usize = 2;
+const REFINERS: [&str; 2] = ["CenterOfMass", "SaddlePoint"];
+const SADDLE: usize = 1;
 
 /// One clean fixture: everything but the phase and the noise.
 #[derive(Clone, Copy, Debug)]
@@ -259,33 +257,28 @@ fn accepted<R: CornerRefiner>(
     (res.status == RefineStatus::Accepted).then_some(res)
 }
 
-/// The three refiners at their default configs.
-#[allow(deprecated)]
+/// The refiners at their default configs.
 struct Refiners {
     center: CenterOfMassRefiner,
-    forstner: ForstnerRefiner,
     saddle: SaddlePointRefiner,
 }
 
 impl Refiners {
-    #[allow(deprecated)]
     fn new() -> Self {
         Self {
             center: CenterOfMassRefiner::new(CenterOfMassConfig::default()),
-            forstner: ForstnerRefiner::new(ForstnerConfig::default()),
             saddle: SaddlePointRefiner::new(SaddlePointConfig::default()),
         }
     }
 
     /// Accepted results of each refiner on `img`, seeded at `seed`.
-    fn run(&mut self, img: &[u8], seed: [f32; 2]) -> [Option<RefineResult>; 3] {
+    fn run(&mut self, img: &[u8], seed: [f32; 2]) -> [Option<RefineResult>; 2] {
         let view = ImageView::from_u8_slice(SIZE, SIZE, img).unwrap();
         let response = chess_response_u8(img, SIZE, SIZE, &ChessParams::default());
         let image_ctx = RefineContext::new(Some(view), None);
         let resp_ctx = RefineContext::new(None, Some(&response));
         [
             accepted(&mut self.center, seed, resp_ctx),
-            accepted(&mut self.forstner, seed, image_ctx),
             accepted(&mut self.saddle, seed, image_ctx),
         ]
     }
@@ -322,7 +315,7 @@ fn render(fx: Fixture, phase: (usize, usize)) -> (Vec<u8>, (f32, f32)) {
 
 /// Every refiner × noise model at one fixture and phase:
 /// `out[noise][refiner]`.
-fn run_item(item: usize, fx: Fixture, phase: (usize, usize)) -> Vec<[PhaseStats; 3]> {
+fn run_item(item: usize, fx: Fixture, phase: (usize, usize)) -> Vec<[PhaseStats; 2]> {
     let (clean, truth) = render(fx, phase);
     let seed = [truth.0.round(), truth.1.round()];
     let seed_px = (seed[0] as i32, seed[1] as i32);
@@ -334,7 +327,7 @@ fn run_item(item: usize, fx: Fixture, phase: (usize, usize)) -> Vec<[PhaseStats;
         .map(|(ni, &noise)| {
             let draws = if noise.is_zero() { 1 } else { DRAWS };
             let var = (!noise.is_zero()).then(|| noise.patch_variance(&clean, seed_px));
-            let mut samples: [Vec<Sample>; 3] = Default::default();
+            let mut samples: [Vec<Sample>; 2] = Default::default();
             for d in 0..draws {
                 img.copy_from_slice(&clean);
                 noise.apply(
@@ -544,7 +537,7 @@ fn linear_gain(phases: &[&PhaseStats]) -> Option<([[f64; 2]; 2], f64)> {
 struct Results {
     fixtures: Vec<Fixture>,
     /// `stats[fixture][phase][noise][refiner]`.
-    stats: Vec<Vec<Vec<[PhaseStats; 3]>>>,
+    stats: Vec<Vec<Vec<[PhaseStats; 2]>>>,
 }
 
 impl Results {
@@ -597,7 +590,7 @@ fn run_grid() -> Results {
     // Work items are independent and seeded by index, so the split across
     // threads does not change any number.
     let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
-    let mut slots: Vec<Option<Vec<[PhaseStats; 3]>>> = vec![None; items.len()];
+    let mut slots: Vec<Option<Vec<[PhaseStats; 2]>>> = vec![None; items.len()];
     std::thread::scope(|scope| {
         let handles: Vec<_> = (0..threads)
             .map(|t| {
@@ -632,7 +625,7 @@ fn renderer_check() -> Vec<Value> {
     let mut refiners = Refiners::new();
     for &cell in &CELLS {
         for &blur in &[0.0f32, 1.5] {
-            let mut errs: [[Vec<[f64; 2]>; 3]; 2] = Default::default();
+            let mut errs: [[Vec<[f64; 2]>; 2]; 2] = Default::default();
             for p in 0..PHASES * PHASES {
                 let truth = truth_of(phase_of(p));
                 let seed = [truth.0.round(), truth.1.round()];

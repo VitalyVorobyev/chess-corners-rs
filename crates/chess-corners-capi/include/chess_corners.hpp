@@ -25,7 +25,7 @@ namespace chess_corners {
 /// Checked against `cc_abi_version()` before each detection (see
 /// `check_abi()`); a mismatch means the header and the linked library are
 /// incompatible and detection throws rather than reading a stale layout.
-inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 7;
+inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 8;
 
 /// One local grid-axis direction with a fit-quality score.
 ///
@@ -102,7 +102,7 @@ private:
 /// are ignored.
 ///
 /// `refiner` is one of the `CC_REFINER_*` tags valid for `strategy`: ChESS
-/// takes center-of-mass, Förstner or saddle-point; Radon takes
+/// takes center-of-mass or saddle-point; Radon takes
 /// `CC_REFINER_PEAK_FIT` (its default) or saddle-point.
 ///
 /// `noise_sigma` is the image's pixel-noise standard deviation in gray

@@ -2,7 +2,7 @@
 //!
 //! Both `tests/refiner_benchmark.rs` (the accuracy/throughput table) and
 //! `examples/bench_sweep.rs` (the JSON sweep behind the book plots) drive the
-//! same three built-in refiners over a grid of subpixel offsets. They differ
+//! same built-in refiners over a grid of subpixel offsets. They differ
 //! only in how they *aggregate* the per-sample results, so the refiner
 //! plumbing lives here and each driver provides its own aggregator through
 //! the [`RefineSampleSink`] trait.
@@ -14,10 +14,9 @@
 
 use std::time::Instant;
 
-#[allow(deprecated)]
 use chess_corners_core::{
-    CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
-    ImageView, RefineContext, RefineStatus, ResponseMap, SaddlePointConfig, SaddlePointRefiner,
+    CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ImageView, RefineContext, RefineStatus,
+    ResponseMap, SaddlePointConfig, SaddlePointRefiner,
 };
 
 /// Sink for the two per-refiner measurements a driver records: one accuracy
@@ -32,23 +31,18 @@ pub trait RefineSampleSink {
     fn record_timing(&mut self, iters: u64, elapsed_ns: u128);
 }
 
-/// The three classic (non-ML) refiners, constructed once at their default
+/// The classic (non-ML) refiners, constructed once at their default
 /// configs and reused across the whole sweep so the per-refiner numbers are
 /// directly comparable.
-#[allow(deprecated)]
 pub struct ClassicRefiners {
     pub center: CenterOfMassRefiner,
-    pub forstner: ForstnerRefiner,
     pub saddle: SaddlePointRefiner,
 }
 
-#[allow(deprecated)]
 impl ClassicRefiners {
-    #[allow(deprecated)]
     pub fn new() -> Self {
         Self {
             center: CenterOfMassRefiner::new(CenterOfMassConfig::default()),
-            forstner: ForstnerRefiner::new(ForstnerConfig::default()),
             saddle: SaddlePointRefiner::new(SaddlePointConfig::default()),
         }
     }

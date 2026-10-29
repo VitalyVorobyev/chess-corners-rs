@@ -28,7 +28,7 @@ pub enum ChessError {
     /// refiner runs a whole-frame model pipeline that the ROI path does
     /// not carry; the refiner selection is never silently downgraded, so
     /// this variant is returned instead. Select a built-in refiner
-    /// (center-of-mass, Förstner, or saddle-point) for ROI detection, or
+    /// (center-of-mass or saddle-point) for ROI detection, or
     /// use the whole-image [`Detector::detect_u8`](crate::Detector::detect_u8)
     /// / [`Detector::detect`](crate::Detector::detect) entry points for ML
     /// refinement.
@@ -51,7 +51,7 @@ impl fmt::Display for ChessError {
             Self::RoiRefinerUnsupported => write!(
                 f,
                 "configured refiner is not supported on the ROI detection path; \
-                 select center-of-mass, Förstner, or saddle-point, or use the \
+                 select center-of-mass or saddle-point, or use the \
                  whole-image detect entry point"
             ),
         }

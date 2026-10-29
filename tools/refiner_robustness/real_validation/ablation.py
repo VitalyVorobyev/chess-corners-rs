@@ -56,12 +56,11 @@ CORE = C.HERE.parents[2] / "crates" / "chess-corners-core" / "src"
 # single definition of the knots and floors).
 TABLES = {
     "CoM": "refine/center_of_mass.rs",
-    "Forstner": "refine/forstner.rs",
     "SaddlePoint": "refine/saddle_point.rs",
     "RadonPeak": "detect/radon/detect.rs",
 }
 # Harness localizer -> dump localizer.
-DUMP = {"CoM": "CoM", "Forstner": "Forstner", "SaddlePoint": "SaddlePoint", "Radon": "RadonPeak", "Radon+SP": "RadonSaddle"}
+DUMP = {"CoM": "CoM", "SaddlePoint": "SaddlePoint", "Radon": "RadonPeak", "Radon+SP": "RadonSaddle"}
 VARIANTS = ("a", "b", "c")
 EYE = np.eye(2)[None]
 
@@ -350,7 +349,7 @@ def main() -> None:
     # A table's floor: the max over the harness localizers that use it
     # (SaddlePoint's from both seeds, the Radon peak fit's from the peak fit).
     for v in VARIANTS:
-        for t, locs in {"CoM": ["CoM"], "Forstner": ["Forstner"], "SaddlePoint": ["SaddlePoint", "Radon+SP"], "RadonPeak": ["Radon"]}.items():
+        for t, locs in {"CoM": ["CoM"], "SaddlePoint": ["SaddlePoint", "Radon+SP"], "RadonPeak": ["Radon"]}.items():
             floors[v][t] = max(per[(loc, v)] for loc in locs)
     summ["floors"] = floors
     print("\nper table:", json.dumps(floors))

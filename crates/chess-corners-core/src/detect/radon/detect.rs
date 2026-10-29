@@ -562,24 +562,7 @@ pub(crate) fn attach_peak_fit_covariance(
         params,
         &mut buffers.peak_scratch,
     );
-    corner.set_model(model);
-}
-
-/// Attach the Radon peak-fit covariance to `corner`, a peak of
-/// [`detect_peaks_from_radon`] on `image` that keeps its peak-fit position,
-/// using `buffers`' scratch.
-#[doc(hidden)]
-#[deprecated(
-    since = "1.7.0",
-    note = "use `DenseDetector::attach_peak_covariance` on `RadonDetector`"
-)]
-pub fn attach_radon_peak_covariance(
-    corner: &mut Corner,
-    image: ImageView<'_>,
-    params: &RadonDetectorParams,
-    buffers: &mut super::RadonBuffers,
-) {
-    attach_peak_fit_covariance(corner, image, params, buffers);
+    corner.model = model;
 }
 
 #[cfg(test)]

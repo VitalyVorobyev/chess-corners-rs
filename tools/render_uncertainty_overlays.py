@@ -111,11 +111,10 @@ class Localizer:
 
 
 COM = Localizer("CenterOfMass", False, "center_of_mass", AQUA)
-FORSTNER = Localizer("Förstner", False, "forstner", ORANGE)
 SADDLE = Localizer("SaddlePoint", False, "saddle_point", BLUE)
 RADON = Localizer("Radon peak fit", True, "peak_fit", RED)
 RADON_SP = Localizer("Radon + SaddlePoint", True, "saddle_point", VIOLET)
-LOCALIZERS = [COM, FORSTNER, SADDLE, RADON]
+LOCALIZERS = [COM, SADDLE, RADON]
 
 
 # ---------------------------------------------------------------------------
@@ -337,7 +336,7 @@ def fig_bias_precision(out: Path, draws: int) -> None:
 
     # Every localizer on the same axes, so cloud sizes, offsets and ellipses
     # compare directly; small clouds get a marked, magnified inset.
-    fig, axes = plt.subplots(1, 4, figsize=(17.0, 5.4), sharex=True, sharey=True)
+    fig, axes = plt.subplots(1, len(LOCALIZERS), figsize=(13.0, 5.4), sharex=True, sharey=True)
     lim = 0.62
     for ax, loc in zip(axes, LOCALIZERS):
         det = loc.detector(noise_sigma=noise)
@@ -431,7 +430,7 @@ def fig_board_ellipses(out: Path) -> None:
     img = quantize(clean, noise, rng)
     truth = board.corners(w, h, margin=8)
     scale = 30.0
-    rows = [SADDLE, FORSTNER]
+    rows = [SADDLE, RADON]
 
     fig, axes = plt.subplots(len(rows), 1, figsize=(10.5, 4.3 * len(rows)))
     for ax, loc in zip(axes, rows):
@@ -576,10 +575,10 @@ def fig_calibration(out: Path, boards: int, draws: int, replot: bool) -> None:
         "B": ("perspective boards, Gaussian PSF (second generator)", ORANGE, "^"),
         "C": ("other PSFs, illumination, distortion (second generator)", INK2, "D"),
     }
-    fig, axes = plt.subplots(2, 2, figsize=(10.5, 11.0), sharex=True, sharey=True)
+    fig, axes = plt.subplots(1, len(LOCALIZERS), figsize=(15.0, 6.2), sharex=True, sharey=True)
     lo, hi = 0.005, 1.0
     xs = np.array([lo, hi])
-    for ax, loc in zip(axes.ravel(), LOCALIZERS):
+    for ax, loc in zip(axes, LOCALIZERS):
         rows = results.get(loc.name, [])
         for g, (label, color, marker) in groups.items():
             pts = np.array([(r[2], r[3]) for r in rows if r[0] == g])
@@ -601,14 +600,13 @@ def fig_calibration(out: Path, boards: int, draws: int, replot: bool) -> None:
             axis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
             axis.set_minor_formatter(NullFormatter())
             axis.set_tick_params(labelbottom=True, labelleft=True)
-    for ax in axes[1]:
+    for ax in axes:
         ax.set_xlabel("measured RMS error per axis (px)")
-    for ax in axes[:, 0]:
-        ax.set_ylabel("predicted σ per axis, median (px)")
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=2, fontsize=9, frameon=False, bbox_to_anchor=(0.5, 0.0))
+    axes[0].set_ylabel("predicted σ per axis, median (px)")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=3, fontsize=9, frameon=False, bbox_to_anchor=(0.5, 0.0))
     fig.suptitle("Predicted against measured error, one point per imaging condition (noise σ supplied)", fontsize=11)
-    fig.tight_layout(rect=(0, 0.07, 1, 0.98), h_pad=2.0)
+    fig.tight_layout(rect=(0, 0.1, 1, 0.97))
     fig.savefig(out, dpi=130)
     plt.close(fig)
     for name, rows in results.items():
@@ -637,7 +635,6 @@ REAL_LOCAL = [  # (localizer, corner-local RMS per axis, colour)
     ("cv2.cornerSubPix 11×11", 0.045, GRAY),
     ("Radon peak fit", 0.056, RED),
     ("CenterOfMass", 0.103, AQUA),
-    ("Förstner", 0.164, ORANGE),
 ]
 
 
@@ -663,7 +660,7 @@ def fig_real_data(out: Path) -> None:
         axr.text(v + 0.003, yy, f"{v:.3f}", va="center", fontsize=9, color=INK2)
     axr.set_yticks(y)
     axr.set_yticklabels(names, fontsize=9)
-    axr.set_xlim(0, 0.19)
+    axr.set_xlim(0, 0.125)
     axr.set_xlabel("corner-local error, RMS per axis (px)")
     axr.set_title("Corner-local error per localizer")
     axr.grid(axis="y", visible=False)

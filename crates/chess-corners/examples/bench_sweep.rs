@@ -8,7 +8,7 @@
 //!
 //! ```json
 //! {
-//!   "refiners": ["CenterOfMass", "Forstner", "SaddlePoint", "ML"],
+//!   "refiners": ["CenterOfMass", "SaddlePoint", "ML"],
 //!   "results": [
 //!     {
 //!       "refiner": "CenterOfMass",
@@ -136,7 +136,6 @@ fn run_condition(
 
     let mut classic = ClassicRefiners::new();
     let mut b_center = Bucket::default();
-    let mut b_forstner = Bucket::default();
     let mut b_saddle = Bucket::default();
     #[cfg(feature = "ml-refiner")]
     let mut ml_refiner = harness::ml::MlRefiner::load();
@@ -166,15 +165,6 @@ fn run_condition(
                 &mut b_center,
             );
             bench_refiner(
-                &mut classic.forstner,
-                ITERS_FAST,
-                view,
-                None,
-                seed,
-                (ox, oy),
-                &mut b_forstner,
-            );
-            bench_refiner(
                 &mut classic.saddle,
                 ITERS_FAST,
                 view,
@@ -194,7 +184,6 @@ fn run_condition(
     #[cfg_attr(not(feature = "ml-refiner"), allow(unused_mut))]
     let mut rows = vec![
         ("CenterOfMass", b_center.stats()),
-        ("Forstner", b_forstner.stats()),
         ("SaddlePoint", b_saddle.stats()),
     ];
     #[cfg(feature = "ml-refiner")]

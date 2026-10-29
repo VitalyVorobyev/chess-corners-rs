@@ -13,7 +13,7 @@ The crate exposes three orthogonal components via its crate root:
     summed-area-table ray sums (`radon_response_u8`,
     `detect_peaks_from_radon`, and friends).
 - **Refinement** — pluggable subpixel-refinement backends:
-  center-of-mass, Förstner, saddle-point, and Radon-peak
+  center-of-mass, saddle-point, and Radon-peak
   (`refine_corners_on_image`, `Refiner`, `RefinerKind`).
 - **Orientation** — two-axis orientation fit at each detected corner:
   ring-fit (parametric tanh model with robust seeding and σ-LUT) and

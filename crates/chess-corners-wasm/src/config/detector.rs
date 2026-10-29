@@ -245,7 +245,7 @@ impl DetectorConfig {
     ///
     /// Use this instead of the `refiner` key in `withChess({})` — wasm-bindgen
     /// Rust structs cannot be passed through plain `js_sys::Object` iteration.
-    /// JS: `cfg.withChessRefiner(ChessRefiner.withForstner(new ForstnerConfig()))`.
+    /// JS: `cfg.withChessRefiner(ChessRefiner.withSaddlePoint(new SaddlePointConfig()))`.
     #[wasm_bindgen(js_name = withChessRefiner)]
     pub fn with_chess_refiner(&self, refiner: &ChessRefiner) -> Self {
         let mut out = self.deep_clone();

@@ -108,15 +108,9 @@ fn radon_saddle() -> DetectorConfig {
 }
 
 /// Every localizer, as the facade composes them.
-#[allow(deprecated)]
-fn localizers() -> [(&'static str, DetectorConfig); 5] {
+fn localizers() -> [(&'static str, DetectorConfig); 4] {
     [
         ("ChESS + CenterOfMass", propagated(DetectorConfig::chess())),
-        (
-            "ChESS + Förstner",
-            propagated(DetectorConfig::chess())
-                .with_chess(|c| c.refiner = ChessRefiner::forstner()),
-        ),
         ("ChESS + SaddlePoint", saddle()),
         ("Radon peak fit", propagated(DetectorConfig::radon())),
         ("Radon + SaddlePoint", radon_saddle()),
@@ -430,7 +424,7 @@ fn positions_do_not_depend_on_the_tier() {
 fn covariance_values_are_pinned() {
     const NOISE_SIGMA: f32 = 1.9993361;
     // Per configuration and point: x, y, Σxx, Σxy, Σyy.
-    const PINNED: [(&str, [[f32; 5]; 3]); 6] = [
+    const PINNED: [(&str, [[f32; 5]; 3]); 5] = [
         (
             "ChESS + CenterOfMass",
             [
@@ -449,14 +443,6 @@ fn covariance_values_are_pinned() {
                     -0.00023072022,
                     0.010869775,
                 ],
-            ],
-        ),
-        (
-            "ChESS + Förstner",
-            [
-                [99.20676, 99.7532, 0.036144298, -0.024723655, 0.04496824],
-                [59.17938, 139.71475, 0.027122717, -0.020824092, 0.047181513],
-                [139.17358, 59.75105, 0.027476914, -0.01871596, 0.041276004],
             ],
         ),
         (

@@ -166,7 +166,7 @@ no iteration. Implementation: `radon::fit_peak_frac` in
 
 7. **Saddle-point refinement** (optional). With
    `RadonConfig.refiner = RadonRefiner::SaddlePoint(_)`, each peak seeds
-   the `SaddlePoint` refiner of [Part V §5.4](part-05-refiners.md#54-saddlepoint)
+   the `SaddlePoint` refiner of [Part V §5.3](part-05-refiners.md#53-saddlepoint)
    on the input image, which re-centres a quadratic fit on the corner
    ([Part VIII](part-08-uncertainty.md)). A corner whose refinement does
    not converge keeps its peak-fit position and covariance; no

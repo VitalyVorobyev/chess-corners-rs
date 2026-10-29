@@ -9,7 +9,7 @@
     "warmup": 8,
     "generated": "2026-06-29",
     "source": "scripts/gen-perf-data.sh",
-    "note": "Public testimages/ only. Each figure is the p50 over the measured iterations, decomposed into four stages: response (dense response map), detection (threshold + non-maximum suppression + cluster filter; for Radon this also runs the 3-point Gaussian peak fit, its only subpixel step), refinement (image-domain subpixel), and orientation (two-axis fit + descriptor assembly). total_ms is the sum of the four stage p50s; throughput is whole-pipeline megapixels per second. Per image we measure a matrix: ChESS over refiner {center_of_mass, forstner, saddle_point} x orientation {ring_fit, disk_fit, off}, and Radon over orientation {ring_fit, disk_fit, off} (its subpixel is the built-in Gaussian peak fit, not a pluggable refiner). The orientation=off rows isolate the per-corner orientation cost, which is the single largest stage on corner-dense frames. ChESS reads the threshold as an absolute response floor (default 30) and Radon as a fraction of the per-frame maximum (default 0.28); the two response scores are defined on different scales, so the detectors' corner counts are not directly comparable. The Radon strategy's image-domain refinement is a no-op, so its refinement stage reads zero. Built with the simd feature, single-threaded.",
+    "note": "Public testimages/ only. Each figure is the p50 over the measured iterations, decomposed into four stages: response (dense response map), detection (threshold + non-maximum suppression + cluster filter; for Radon this also runs the 3-point Gaussian peak fit, its only subpixel step), refinement (image-domain subpixel), and orientation (two-axis fit + descriptor assembly). total_ms is the sum of the four stage p50s; throughput is whole-pipeline megapixels per second. Per image we measure a matrix: ChESS over refiner {center_of_mass, saddle_point} x orientation {ring_fit, disk_fit, off}, and Radon over orientation {ring_fit, disk_fit, off} (its subpixel is the built-in Gaussian peak fit, not a pluggable refiner). The orientation=off rows isolate the per-corner orientation cost, which is the single largest stage on corner-dense frames. ChESS reads the threshold as an absolute response floor (default 30) and Radon as a fraction of the per-frame maximum (default 0.28); the two response scores are defined on different scales, so the detectors' corner counts are not directly comparable. The Radon strategy's image-domain refinement is a no-op, so its refinement stage reads zero. Built with the simd feature, single-threaded.",
     "matrix_note": "Compare the orientation column across ring_fit / disk_fit / off to read the per-corner orientation cost, and across ChESS / Radon to compare detectors. Refiner and orientation method do not visibly move corners, so a single overlay per detector (default refiner + ring_fit) is shown."
   },
   "images": [
@@ -62,51 +62,6 @@
           },
           "total_ms": 0.5101,
           "throughput_mpix_s": 762.2
-        },
-        {
-          "id": "chess__forstner__ring_fit",
-          "detector": "chess",
-          "refiner": "forstner",
-          "orientation": "ring_fit",
-          "corner_count": 379,
-          "stages": {
-            "detection": 0.1496,
-            "orientation": 1.3455,
-            "refinement": 0.0208,
-            "response": 0.3601
-          },
-          "total_ms": 1.876,
-          "throughput_mpix_s": 207.25
-        },
-        {
-          "id": "chess__forstner__disk_fit",
-          "detector": "chess",
-          "refiner": "forstner",
-          "orientation": "disk_fit",
-          "corner_count": 379,
-          "stages": {
-            "detection": 0.1659,
-            "orientation": 16.2447,
-            "refinement": 0.0226,
-            "response": 0.3445
-          },
-          "total_ms": 16.7777,
-          "throughput_mpix_s": 23.17
-        },
-        {
-          "id": "chess__forstner__off",
-          "detector": "chess",
-          "refiner": "forstner",
-          "orientation": "off",
-          "corner_count": 379,
-          "stages": {
-            "detection": 0.1739,
-            "orientation": 0.0003,
-            "refinement": 0.0227,
-            "response": 0.3663
-          },
-          "total_ms": 0.5632,
-          "throughput_mpix_s": 690.34
         },
         {
           "id": "chess__saddle_point__ring_fit",
@@ -257,51 +212,6 @@
           "throughput_mpix_s": 843.69
         },
         {
-          "id": "chess__forstner__ring_fit",
-          "detector": "chess",
-          "refiner": "forstner",
-          "orientation": "ring_fit",
-          "corner_count": 81,
-          "stages": {
-            "detection": 0.1585,
-            "orientation": 0.2202,
-            "refinement": 0.0048,
-            "response": 0.5411
-          },
-          "total_ms": 0.9246,
-          "throughput_mpix_s": 637.92
-        },
-        {
-          "id": "chess__forstner__disk_fit",
-          "detector": "chess",
-          "refiner": "forstner",
-          "orientation": "disk_fit",
-          "corner_count": 81,
-          "stages": {
-            "detection": 0.2088,
-            "orientation": 13.7365,
-            "refinement": 0.0048,
-            "response": 0.5485
-          },
-          "total_ms": 14.4986,
-          "throughput_mpix_s": 40.68
-        },
-        {
-          "id": "chess__forstner__off",
-          "detector": "chess",
-          "refiner": "forstner",
-          "orientation": "off",
-          "corner_count": 81,
-          "stages": {
-            "detection": 0.1622,
-            "orientation": 0.0001,
-            "refinement": 0.0048,
-            "response": 0.5491
-          },
-          "total_ms": 0.7162,
-          "throughput_mpix_s": 823.55
-        },
-        {
           "id": "chess__saddle_point__ring_fit",
           "detector": "chess",
           "refiner": "saddle_point",
@@ -448,51 +358,6 @@
           },
           "total_ms": 3.8998,
           "throughput_mpix_s": 806.64
-        },
-        {
-          "id": "chess__forstner__ring_fit",
-          "detector": "chess",
-          "refiner": "forstner",
-          "orientation": "ring_fit",
-          "corner_count": 584,
-          "stages": {
-            "detection": 0.948,
-            "orientation": 1.6539,
-            "refinement": 0.0348,
-            "response": 2.9471
-          },
-          "total_ms": 5.5838,
-          "throughput_mpix_s": 563.37
-        },
-        {
-          "id": "chess__forstner__disk_fit",
-          "detector": "chess",
-          "refiner": "forstner",
-          "orientation": "disk_fit",
-          "corner_count": 584,
-          "stages": {
-            "detection": 0.9395,
-            "orientation": 14.7498,
-            "refinement": 0.0348,
-            "response": 2.9521
-          },
-          "total_ms": 18.6762,
-          "throughput_mpix_s": 168.44
-        },
-        {
-          "id": "chess__forstner__off",
-          "detector": "chess",
-          "refiner": "forstner",
-          "orientation": "off",
-          "corner_count": 584,
-          "stages": {
-            "detection": 0.9484,
-            "orientation": 0.0003,
-            "refinement": 0.0349,
-            "response": 2.9615
-          },
-          "total_ms": 3.9451,
-          "throughput_mpix_s": 797.38
         },
         {
           "id": "chess__saddle_point__ring_fit",

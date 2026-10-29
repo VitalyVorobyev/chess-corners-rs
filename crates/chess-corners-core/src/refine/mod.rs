@@ -6,8 +6,6 @@
 //!
 //! - [`center_of_mass`] — 5×5 weighted centroid on the response
 //!   map. Cheap; the library default.
-//! - [`forstner`] — gradient structure-tensor refinement on the image
-//!   intensity patch.
 //! - [`saddle_point`] — quadratic surface fit on the image patch.
 
 use crate::imageview::ImageView;
@@ -16,12 +14,9 @@ use crate::ResponseMap;
 use serde::{Deserialize, Serialize};
 
 pub mod center_of_mass;
-pub mod forstner;
 pub mod saddle_point;
 
 pub use center_of_mass::{CenterOfMassConfig, CenterOfMassRefiner};
-#[allow(deprecated)]
-pub use forstner::{ForstnerConfig, ForstnerRefiner};
 pub use saddle_point::{SaddlePointConfig, SaddlePointRefiner};
 
 /// Symmetric 2×2 covariance of a refined corner position, in px² (px² per
@@ -43,12 +38,6 @@ impl PositionCovariance {
     pub fn new(xx: f32, xy: f32, yy: f32) -> Self {
         Self { xx, xy, yy }
     }
-
-    pub(crate) const ZERO: Self = Self {
-        xx: 0.0,
-        xy: 0.0,
-        yy: 0.0,
-    };
 
     /// Every entry multiplied by `k`.
     #[inline]
@@ -88,17 +77,17 @@ mod private {
 /// - [`Accepted`](RefineStatus::Accepted) — refinement converged; use
 ///   `RefineResult::x` and `y`.
 /// - [`Rejected`](RefineStatus::Rejected) — the refiner ran but the
-///   result did not pass an acceptance criterion (e.g. the computed
-///   displacement exceeded [`ForstnerConfig::max_offset`]). Fall back to
-///   the original seed or skip this candidate.
+///   result did not pass an acceptance criterion (e.g. the saddle-point
+///   fit moved farther than [`SaddlePointConfig::max_offset`]). Fall back
+///   to the original seed or skip this candidate.
 /// - [`OutOfBounds`](RefineStatus::OutOfBounds) — the seed is too close
 ///   to the image border for the refiner's patch window. The seed
 ///   coordinates in `RefineResult` are unchanged from the input.
 /// - [`IllConditioned`](RefineStatus::IllConditioned) — the patch does
 ///   not contain enough structure for the refiner to produce a reliable
 ///   estimate (e.g. no positive response in the center-of-mass window,
-///   a too-flat gradient for Förstner, or a degenerate Hessian for
-///   saddle-point). The seed coordinates are unchanged.
+///   or a degenerate Hessian for saddle-point). The seed coordinates are
+///   unchanged.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RefineStatus {
@@ -134,10 +123,6 @@ pub enum RefineStatus {
 ///   stronger; units match the ChESS response scale. A window with no
 ///   positive response yields [`RefineStatus::IllConditioned`] and a
 ///   score of `0.0`.
-/// - **Förstner**: `score` is `det(T) / (trace(T)² + ε)` where `T` is
-///   the structure tensor. Ranges roughly in `(0, 0.25]`; higher means
-///   the patch has balanced gradient energy in both directions (closer to
-///   a true corner). The value `0.0` is returned on all failure paths.
 /// - **SaddlePoint**: `score` is `sqrt(|det(H)|)` where `H` is the
 ///   fitted quadratic Hessian. Larger magnitude indicates a sharper
 ///   saddle (steeper curvature); no absolute scale is defined.
@@ -160,30 +145,9 @@ pub struct RefineResult {
     /// Whether the refiner accepted, rejected, or could not process this
     /// candidate. See [`RefineStatus`].
     pub status: RefineStatus,
-    /// First-order covariance of the refined position per unit image-noise
-    /// variance, in px² per gray-level²: the noise part of the position
-    /// covariance. [`position_covariance`](Self::position_covariance) scales
-    /// it by the image's noise variance and adds the refiner's systematic
-    /// term. A first-order approximation that assumes independent,
-    /// identically distributed per-pixel noise; spatially correlated noise
-    /// (upscaling, demosaicing, JPEG, blur applied after the noise) makes it
-    /// underestimate the scatter.
-    ///
-    /// Set on accepted corners by every refiner under
-    /// [`Uncertainty::Propagated`] (see [`Refiner::with_uncertainty`]): the saddle-point refiner when its
-    /// re-centred refinement converged, the center-of-mass refiner when the
-    /// image and a ChESS response map are both in the [`RefineContext`],
-    /// and the Förstner refiner. `None` otherwise, and always under
-    /// [`Uncertainty::Off`] (the default). Read it with
-    /// [`RefineResult::noise_covariance_per_unit_variance`]. Changing this
-    /// field drops the systematic term.
-    #[deprecated(
-        since = "1.7.0",
-        note = "read `noise_covariance_per_unit_variance()`, or `position_covariance(noise_sigma)` for the full covariance in px²; writing this field drops the systematic term"
-    )]
-    pub covariance_per_noise_variance: Option<PositionCovariance>,
-    /// The full covariance model; `covariance_per_noise_variance` mirrors
-    /// its noise term.
+    /// The position-covariance model, read through
+    /// [`position_covariance`](Self::position_covariance) and
+    /// [`noise_covariance_per_unit_variance`](Self::noise_covariance_per_unit_variance).
     pub(crate) model: Option<CovarianceModel>,
     /// The refiner reached its own fixed point: the saddle-point refiner's
     /// re-centring converged; always `true` for the single-shot refiners'
@@ -195,14 +159,12 @@ pub struct RefineResult {
 impl RefineResult {
     /// Build a [`RefineStatus::Accepted`] result at `xy` with the given `score`.
     #[inline]
-    #[allow(deprecated)]
     pub fn accepted(xy: [f32; 2], score: f32) -> Self {
         Self {
             x: xy[0],
             y: xy[1],
             score,
             status: RefineStatus::Accepted,
-            covariance_per_noise_variance: None,
             model: None,
             converged: true,
         }
@@ -225,37 +187,28 @@ impl RefineResult {
     /// and `Σ_sys` the refiner's systematic term. The model and its
     /// accuracy are described on
     /// [`Corner::position_covariance`](crate::Corner::position_covariance).
-    /// `None` when the result carries no covariance. A result whose
-    /// `covariance_per_noise_variance` field was set or changed by the
-    /// caller carries that noise term only, without a systematic part.
+    /// `None` when the result carries no covariance.
     #[inline]
     pub fn position_covariance(&self, noise_sigma: f32) -> Option<PositionCovariance> {
-        self.covariance_model().map(|m| m.total(noise_sigma))
+        self.model.map(|m| m.total(noise_sigma))
     }
 
     /// The noise term of the position covariance per unit image-noise
     /// variance, px² per gray-level²: `C` in
-    /// [`position_covariance`](Self::position_covariance). `None` when the
-    /// result carries no covariance.
+    /// [`position_covariance`](Self::position_covariance), the first-order
+    /// scatter that independent, identically distributed per-pixel noise
+    /// causes. Spatially correlated noise (upscaling, demosaicing, JPEG,
+    /// blur applied after the noise) makes it underestimate the scatter.
+    ///
+    /// Set on accepted corners by every refiner under
+    /// [`Uncertainty::Propagated`] (see [`Refiner::with_uncertainty`]): the
+    /// saddle-point refiner when its re-centred refinement converged, and
+    /// the center-of-mass refiner when the image and a ChESS response map
+    /// are both in the [`RefineContext`]. `None` otherwise, and always under
+    /// [`Uncertainty::Off`] (the default).
     #[inline]
     pub fn noise_covariance_per_unit_variance(&self) -> Option<PositionCovariance> {
-        self.covariance_model().map(|m| m.noise)
-    }
-
-    /// Attach `model`, mirroring its noise term in the public field.
-    #[inline]
-    #[allow(deprecated)]
-    pub(crate) fn set_model(&mut self, model: Option<CovarianceModel>) {
-        self.covariance_per_noise_variance = model.map(|m| m.noise);
-        self.model = model;
-    }
-
-    /// The covariance model this result carries (see
-    /// [`CovarianceModel::effective`]).
-    #[inline]
-    #[allow(deprecated)]
-    pub(crate) fn covariance_model(&self) -> Option<CovarianceModel> {
-        CovarianceModel::effective(self.model, self.covariance_per_noise_variance)
+        self.model.map(|m| m.noise)
     }
 }
 
@@ -265,16 +218,14 @@ impl RefineResult {
 /// - [`CenterOfMassRefiner`] reads `response`; its position covariance
 ///   also needs `image`, the image that ChESS response was computed from
 ///   (see [`RefineResult::noise_covariance_per_unit_variance`]).
-/// - [`ForstnerRefiner`] and [`SaddlePointRefiner`] read `image`;
-///   they ignore `response`.
+/// - [`SaddlePointRefiner`] reads `image`; it ignores `response`.
 ///
 /// Passing `None` for a required source causes the refiner to return
 /// [`RefineStatus::Rejected`] without moving the seed.
 #[derive(Copy, Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct RefineContext<'a> {
-    /// Grayscale image view. Required by image-patch refiners
-    /// (Förstner, SaddlePoint).
+    /// Grayscale image view. Required by the SaddlePoint refiner.
     pub image: Option<ImageView<'a>>,
     /// Dense ChESS response map. Required by the CenterOfMass refiner.
     pub response: Option<&'a ResponseMap>,
@@ -294,8 +245,8 @@ impl<'a> RefineContext<'a> {
 ///
 /// This trait is **sealed** via a private supertrait bound and cannot
 /// be implemented outside this crate. The built-in implementors are
-/// [`CenterOfMassRefiner`], [`ForstnerRefiner`], [`SaddlePointRefiner`],
-/// and the [`Refiner`] dispatcher. It is not a public extension point:
+/// [`CenterOfMassRefiner`], [`SaddlePointRefiner`], and the [`Refiner`]
+/// dispatcher. It is not a public extension point:
 /// select a backend through [`RefinerKind`] rather than implementing
 /// this trait.
 pub trait CornerRefiner: private::Sealed {
@@ -322,16 +273,9 @@ pub trait CornerRefiner: private::Sealed {
 /// backend is instantiated into a [`Refiner`] via [`Refiner::from_kind`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
-#[allow(deprecated)]
 pub enum RefinerKind {
     /// 5×5 weighted centroid on the response map.
     CenterOfMass(CenterOfMassConfig),
-    /// Gradient structure-tensor refinement on the image patch.
-    #[deprecated(
-        since = "1.7.0",
-        note = "use the saddle-point refiner (`RefinerKind::SaddlePoint`), which is more accurate on every tested condition"
-    )]
-    Forstner(ForstnerConfig),
     /// Quadratic surface fit on the image patch.
     SaddlePoint(SaddlePointConfig),
 }
@@ -351,16 +295,9 @@ impl Default for RefinerKind {
 /// reallocated on each call.
 #[derive(Debug)]
 #[non_exhaustive]
-#[allow(deprecated)]
 pub enum Refiner {
     /// 5×5 weighted centroid on the response map.
     CenterOfMass(CenterOfMassRefiner),
-    /// Gradient structure-tensor refinement on the image patch.
-    #[deprecated(
-        since = "1.7.0",
-        note = "use the saddle-point refiner (`Refiner::SaddlePoint`), which is more accurate on every tested condition"
-    )]
-    Forstner(ForstnerRefiner),
     /// Quadratic surface fit on the image patch.
     SaddlePoint(SaddlePointRefiner),
 }
@@ -369,11 +306,9 @@ impl Refiner {
     /// Construct a [`Refiner`] from the given kind, allocating scratch
     /// buffers at the configured size. It reports no position covariance
     /// ([`Uncertainty::Off`]); see [`Self::with_uncertainty`].
-    #[allow(deprecated)]
     pub fn from_kind(kind: RefinerKind) -> Self {
         match kind {
             RefinerKind::CenterOfMass(cfg) => Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg)),
-            RefinerKind::Forstner(cfg) => Refiner::Forstner(ForstnerRefiner::new(cfg)),
             RefinerKind::SaddlePoint(cfg) => Refiner::SaddlePoint(SaddlePointRefiner::new(cfg)),
         }
     }
@@ -382,11 +317,9 @@ impl Refiner {
     /// from [`Self::from_kind`] reports none; pass
     /// [`Uncertainty::Propagated`] for a covariance on every accepted
     /// corner. Refined positions do not depend on the tier.
-    #[allow(deprecated)]
     pub fn with_uncertainty(mut self, uncertainty: Uncertainty) -> Self {
         match &mut self {
             Refiner::CenterOfMass(r) => r.uncertainty = uncertainty,
-            Refiner::Forstner(r) => r.uncertainty = uncertainty,
             Refiner::SaddlePoint(r) => r.uncertainty = uncertainty,
         }
         self
@@ -395,29 +328,23 @@ impl Refiner {
 
 impl CornerRefiner for Refiner {
     #[inline]
-    #[allow(deprecated)]
     fn radius(&self) -> i32 {
         match self {
             Refiner::CenterOfMass(r) => r.radius(),
-            Refiner::Forstner(r) => r.radius(),
             Refiner::SaddlePoint(r) => r.radius(),
         }
     }
 
     #[inline]
-    #[allow(deprecated)]
     fn refine(&mut self, seed_xy: [f32; 2], ctx: RefineContext<'_>) -> RefineResult {
         match self {
             Refiner::CenterOfMass(r) => r.refine(seed_xy, ctx),
-            Refiner::Forstner(r) => r.refine(seed_xy, ctx),
             Refiner::SaddlePoint(r) => r.refine(seed_xy, ctx),
         }
     }
 }
 
 impl private::Sealed for CenterOfMassRefiner {}
-#[allow(deprecated)]
-impl private::Sealed for ForstnerRefiner {}
 impl private::Sealed for SaddlePointRefiner {}
 impl private::Sealed for Refiner {}
 

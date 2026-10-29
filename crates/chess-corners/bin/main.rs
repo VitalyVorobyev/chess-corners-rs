@@ -70,7 +70,7 @@ enum Commands {
         #[arg(long)]
         min_cluster_size: Option<u32>,
         /// Override the ChESS subpixel refiner (`center_of_mass`,
-        /// `forstner`, `saddle_point`). Has no effect when the active
+        /// `saddle_point`). Has no effect when the active
         /// strategy is Radon.
         #[arg(long)]
         chess_refiner: Option<String>,

@@ -7,13 +7,13 @@ pixel. A **refiner** takes one seed `(x₀, y₀)` plus a local view into
 either the image or the response map and returns a refined
 `(x, y)` in subpixel coordinates.
 
-The library ships five refiners with one trait and one configuration
+The library ships four refiners with one trait and one configuration
 enum, so swapping between them is a one-line change. The ChESS
 detector always runs one of these refiners to reach subpixel accuracy.
 The Radon detector already locates its peaks to a fraction of a pixel
 with a 3-point peak fit (see
 [Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline)), and can
-refine them with `SaddlePoint` (§5.4).
+refine them with `SaddlePoint` (§5.3).
 
 ## 5.1 The refiner trait
 
@@ -49,7 +49,7 @@ systematic term to give each corner's `position_covariance`
 ([Part VIII](part-08-uncertainty.md)).
 
 The user-facing selector for ChESS is `ChessRefiner` (carrying
-`CenterOfMass`, `Forstner`, `SaddlePoint`, and optionally `Ml`),
+`CenterOfMass`, `SaddlePoint`, and optionally `Ml`),
 nested inside `ChessConfig`. Each enum variant carries its tuning
 struct as a payload, so a refiner kind change cannot leave a stale
 per-refiner config field behind. At runtime the facade stores an owned
@@ -61,9 +61,8 @@ The Radon selector is `RadonRefiner`, nested inside `RadonConfig`:
 (`RadonConfig.peak_fit`) as the final position, or
 `SaddlePoint(SaddlePointConfig)`.
 `CenterOfMass` reads the ChESS response map and cannot refine Radon
-peaks; `Förstner` and ML are not offered, since `SaddlePoint` measures
-more accurate on synthetic boards and on real calibration images. A Radon corner whose saddle-point refinement
-does not converge keeps its peak-fit position.
+peaks, and ML is not offered. A Radon corner whose saddle-point
+refinement does not converge keeps its peak-fit position.
 
 ## 5.2 CenterOfMass
 
@@ -92,59 +91,7 @@ detector's seeds are positive response peaks, so it never hits this.
 Use when throughput matters more than sub-0.1 px accuracy, or when
 the ChESS response is the only signal you want the refinement to see.
 
-## 5.3 Förstner
-
-> **Deprecated since 1.7.0.** `SaddlePoint` is more accurate on every tested
-> condition; the Förstner refiner will be removed in 2.0.
-
-Gradient-based. Solves a weighted least-squares system for the point
-closest (in a Mahalanobis sense) to all image-gradient lines in a
-local window. The structure tensor
-
-\\[
-M = \sum_p w_p \begin{bmatrix} g_x^2 & g_x g_y \\\\ g_x g_y & g_y^2 \end{bmatrix}
-\\]
-
-is assembled with `3×3` central-difference gradients and radial
-weights `w_p = 1 / (1 + 0.5·‖p − seed‖²)`. The refined position is
-
-\\[
-u = M^{-1} \sum_p w_p \, (p - \mathrm{seed}) \, [g_x\ g_y]^{\mathsf T}
-\\]
-
-Rejections:
-
-- `trace(M) < min_trace` — low-gradient region.
-- `det(M) < min_det` — singular structure tensor.
-- `λ_max / λ_min > max_condition_number` — one dominant direction
-  (an edge, not a corner).
-- `‖u‖ > max_offset` — extrapolating beyond a trusted neighborhood.
-
-| Property         | Value                                           |
-|------------------|-------------------------------------------------|
-| Input            | Image                                           |
-| Default `radius` | 2 (5×5 gradient window + 1 px halo)             |
-| Typical cost     | ~60 ns per corner; ~0.5 µs with the covariance |
-| Strengths        | Cheap; uses only image gradients                |
-| Weaknesses       | Stops following the corner under blur; least accurate on real images |
-
-Förstner fits once, on a window centred on the seed pixel, and its
-estimate moves by only a fraction \\(g\\) of the corner's offset from
-that pixel: about 0.8 on sharp edges. Blur lowers the gain until it
-passes through zero (near a lens blur σ of 2–2.5 px); there the estimate
-no longer depends on where the corner is, and its error grows to the
-size of the corner's offset from the seed. Its reported covariance
-grows with it
-([Part VIII §8.3.3](part-08-uncertainty.md#833-the-systematic-term)).
-On real calibration images it has the largest error of the built-in
-refiners, on sharp views as well as blurred ones
-([Part IX §9.6](part-09-benchmarks.md#96-accuracy-on-real-calibration-images)).
-
-Reference: Förstner & Gülch, 1987, *"A fast operator for detection
-and precise location of distinct points, corners and centres of
-circular features."*
-
-## 5.4 SaddlePoint
+## 5.3 SaddlePoint
 
 Fits a 2D quadratic `f(x, y) = a·x² + b·x·y + c·y² + d·x + e·y + g`
 to a `(2r + 1)²` image patch and returns the saddle point (the
@@ -180,7 +127,7 @@ sweeps it has the lowest mean error of the built-in refiners on every
 clean, blurred and noisy row up to `σ_noise = 8`, and is within 0.003 px
 of (or below) `cv2.cornerSubPix` on the blurred rows.
 
-## 5.5 ML (ONNX model)
+## 5.4 ML (ONNX model)
 
 A learned refiner. Feeds a 21×21 normalized grayscale patch into a
 small CNN and takes `[dx, dy, conf_logit]` back out. The ChESS path
@@ -192,7 +139,7 @@ Available behind the `ml-refiner` feature. The default model
 [`chess-corners-ml`](https://docs.rs/chess-corners-ml) crate at
 `crates/chess-corners-ml/assets/ml/`.
 
-### 5.5.1 Architecture
+### 5.4.1 Architecture
 
 The shipped model is `CornerRefinerNet`, a CoordConv CNN with a
 flatten + MLP head. About 180 K parameters:
@@ -230,7 +177,7 @@ path. The shipped model is the small variant — the larger and
 softargmax variants did not move the held-out error meaningfully in
 our sweeps.
 
-### 5.5.2 Training data and loss
+### 5.4.2 Training data and loss
 
 The training pipeline lives in `tools/ml_refiner/`; the shipped model's
 synthetic dataset is generated by the config at
@@ -258,7 +205,7 @@ Loss: Huber on `(dx, dy)` for positives, binary cross-entropy on
 confidence for all samples. The regression loss is weighted up on
 positives only via `is_pos` (negatives have no valid target).
 
-### 5.5.3 Designing the training distribution
+### 5.4.3 Designing the training distribution
 
 A subpixel ML refiner is only as good as the patches it trains on, and
 synthetic training data has two failure modes that pull in opposite
@@ -275,7 +222,7 @@ directions:
   still feed it (~0.6 px on `tanh` inputs). Neither distribution alone
   spans the range of edge profiles a refiner meets in practice.
 
-The shipped dataset avoids both by mixing the two modes 50/50 (§5.5.2)
+The shipped dataset avoids both by mixing the two modes 50/50 (§5.4.2)
 and augmenting with sensor noise. Two lessons carry over into the
 Part IX benchmark. Noise augmentation is what lets the model take the
 heaviest-noise row (`σ = 12` gray levels), where it posts the lowest
@@ -285,7 +232,7 @@ mildly blurred data the geometric refiners still win (`SaddlePoint`
 on both), so ML earns its cost only
 when noise dominates.
 
-### 5.5.4 ONNX export and inference
+### 5.4.4 ONNX export and inference
 
 The export step (`tools/ml_refiner/export_onnx.py`) writes an ONNX
 graph at opset 17 (falling back to 18 if a conversion is unsupported).
@@ -300,17 +247,15 @@ Rust inference is `chess_corners_ml::MlModel::infer_batch`. It wraps
 `SymbolScope`, so a single loaded model can handle variable-batch
 calls without re-optimization.
 
-## 5.6 Picking a refiner
+## 5.5 Picking a refiner
 
 The measurement-driven comparison lives in Part IX. In short:
 
-- Budget matters more than anything else: the structure-tensor
-  refiners are orders of magnitude faster than ML per corner.
+- Budget matters more than anything else: the geometric refiners
+  are orders of magnitude faster than ML per corner.
 - `SaddlePoint` has the lowest mean error of the built-in refiners on
   clean and blurred synthetic frames and on real calibration images, and
   is the default choice for image-patch refinement.
-- `Förstner` is about 3× cheaper, but under blur it stops following the
-  corner, and on real calibration images it has the largest error.
 - ML has the lowest mean error on the heaviest synthetic noise row.
 
 The ChESS refiner is selected through `ChessConfig.refiner`:
@@ -320,7 +265,7 @@ The Radon refiner through `RadonConfig.refiner`:
 refines the peaks
 ([Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)).
 Switching is a single-line change, and the comparison numbers
-in Part IX come from running all four ChESS refiners on the same
+in Part IX come from running all three ChESS refiners on the same
 fixture at a single build.
 
 ---

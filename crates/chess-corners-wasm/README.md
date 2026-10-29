@@ -153,11 +153,11 @@ import init, {
   ChessRefiner,
   ChessRing,
   DetectionStrategy,
-  ForstnerConfig,
   MultiscaleConfig,
   OrientationMethod,
   PeakFitMode,
   RadonConfig,
+  SaddlePointConfig,
   UpscaleConfig,
 } from '@vitavision/chess-corners';
 
@@ -177,7 +177,7 @@ cfg.mergeRadius = 2.5;
 const chess = new ChessConfig();
 chess.ring = ChessRing.Broad;
 chess.nmsRadius = 3;
-chess.refiner = ChessRefiner.withForstner(new ForstnerConfig()); // deprecated since 1.7.0: use withSaddlePoint
+chess.refiner = ChessRefiner.withSaddlePoint(new SaddlePointConfig());
 cfg.strategy = DetectionStrategy.fromChess(chess);
 
 const detector = ChessDetector.withConfig(cfg);
@@ -190,7 +190,7 @@ mutation works without a round-trip:
 
 ```ts
 cfg.strategy.chess.ring = ChessRing.Broad;
-cfg.strategy.chess.refiner.forstner.maxOffset = 2.0;
+cfg.strategy.chess.refiner.saddlePoint.maxOffset = 2.0;
 cfg.strategy.chess.nmsRadius = 3;
 cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3);
 ```

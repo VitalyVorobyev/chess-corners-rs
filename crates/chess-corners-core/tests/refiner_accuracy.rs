@@ -1,10 +1,9 @@
-//! Cross-refiner accuracy benchmark on synthetic chessboards.
+//! Image-space refiner accuracy on synthetic chessboards.
 //!
-//! This integration test compares the image-space refiners
-//! (`Forstner`, `SaddlePoint`) on a grid of subpixel offsets and prints
-//! a summary table when run with `--nocapture`. It also enforces a floor
-//! assertion on the clean-data accuracy of the SaddlePoint fit — a guard
-//! against regressions in the fit math, not the full paper contract.
+//! This integration test runs the `SaddlePoint` refiner on a grid of
+//! subpixel offsets and prints a summary when run with `--nocapture`. It
+//! enforces a floor assertion on the clean-data accuracy of the fit — a
+//! guard against regressions in the fit math, not the full paper contract.
 //!
 //! Run with:
 //!
@@ -12,10 +11,8 @@
 //! cargo test -p chess-corners-core --test refiner_accuracy -- --nocapture
 //! ```
 
-#[allow(deprecated)]
 use chess_corners_core::{
-    CornerRefiner, ForstnerConfig, ForstnerRefiner, ImageView, RefineContext, RefineStatus,
-    SaddlePointConfig, SaddlePointRefiner,
+    CornerRefiner, ImageView, RefineContext, RefineStatus, SaddlePointConfig, SaddlePointRefiner,
 };
 use chess_corners_testutil::aa_chessboard;
 
@@ -60,12 +57,11 @@ fn refine_err<R: CornerRefiner>(
     Some((dx * dx + dy * dy).sqrt())
 }
 
-/// Contract test: on anti-aliased, clean input the image-space refiners
+/// Contract test: on anti-aliased, clean input the saddle-point refiner
 /// must achieve a good mean error over a full sub-pixel sweep. If this
 /// ever regresses, the fit math in the refiner or the renderer needs
 /// attention.
 #[test]
-#[allow(deprecated)]
 fn clean_subpixel_sweep_mean_accuracy() {
     const SIZE: usize = 35;
     const CELL: usize = 6;
@@ -73,10 +69,8 @@ fn clean_subpixel_sweep_mean_accuracy() {
     const N: usize = 8;
 
     let mut saddle = SaddlePointRefiner::new(SaddlePointConfig::default());
-    let mut forstner = ForstnerRefiner::new(ForstnerConfig::default());
 
     let mut s_saddle = Stats::default();
-    let mut s_forstner = Stats::default();
 
     for kx in 0..N {
         for ky in 0..N {
@@ -86,15 +80,17 @@ fn clean_subpixel_sweep_mean_accuracy() {
             let view = ImageView::from_u8_slice(SIZE, SIZE, &img).unwrap();
             let seed = [ox.round(), oy.round()];
             s_saddle.push(refine_err(&mut saddle, view, seed, (ox, oy)));
-            s_forstner.push(refine_err(&mut forstner, view, seed, (ox, oy)));
         }
     }
 
     eprintln!(
-        "CLEAN SWEEP ({}×{} offsets)  saddle: mean={:.4} worst={:.4} ok={}/{}   forstner: mean={:.4} worst={:.4} ok={}/{}",
-        N, N,
-        s_saddle.mean(), s_saddle.worst, s_saddle.accepts, s_saddle.total,
-        s_forstner.mean(), s_forstner.worst, s_forstner.accepts, s_forstner.total,
+        "CLEAN SWEEP ({}×{} offsets)  saddle: mean={:.4} worst={:.4} ok={}/{}",
+        N,
+        N,
+        s_saddle.mean(),
+        s_saddle.worst,
+        s_saddle.accepts,
+        s_saddle.total,
     );
     // Floor: the re-centred SaddlePoint fit lands within a few 10⁻⁴ px on
     // these clean fixtures and should accept every candidate on the full

@@ -14,7 +14,7 @@
 //!
 //! ```ignore
 //! cfg.strategy.chess.ring = ChessRing.Broad;             // propagates
-//! cfg.strategy.chess.refiner.forstner.maxOffset = 2.0;   // propagates
+//! cfg.strategy.chess.refiner.saddlePoint.maxOffset = 2.0; // propagates
 //! cfg.strategy.chess.nmsRadius = 3;                      // propagates
 //! cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3);   // propagates
 //! ```
@@ -43,8 +43,8 @@ use wasm_bindgen::prelude::*;
 
 pub use crate::config::{
     CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy,
-    DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig,
-    RadonRefiner, SaddlePointConfig, Uncertainty, UpscaleConfig,
+    DetectorConfig, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig, RadonRefiner,
+    SaddlePointConfig, Uncertainty, UpscaleConfig,
 };
 
 /// Default detector configuration as a JSON string, in the same shape as

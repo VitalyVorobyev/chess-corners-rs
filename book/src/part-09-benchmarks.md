@@ -1,7 +1,7 @@
 # Part IX: Benchmarks and performance
 
 This chapter measures what the library does on controlled synthetic
-fixtures and on real calibration frames. It covers the four refiners
+fixtures and on real calibration frames. It covers the three refiners
 of [Part V](part-05-refiners.md), the full detector pipeline with
 and without optional features, and a comparison against OpenCV's
 corner pipeline. All plots are reproducible from the commands at the
@@ -54,7 +54,7 @@ resemble sensor output.
 
 ![Hard cells vs tanh saddle](img/bench/synth_modes.png)
 
-We use hard cells as the primary fixture. [Part V §5.5.3](part-05-refiners.md#553-designing-the-training-distribution) discusses
+We use hard cells as the primary fixture. [Part V §5.4.3](part-05-refiners.md#543-designing-the-training-distribution) discusses
 what happens when an ML refiner is trained on `tanh` data only.
 
 ## 9.2 Accuracy on clean cells
@@ -74,8 +74,8 @@ Reading the CDF:
   0.06 px worst. It refits on a patch re-centred at its own estimate,
   so it carries no pull toward the seed pixel; what remains is this
   fixture's 1/8 px supersampling of the edges.
-- **Förstner** and **cv2.cornerSubPix** follow, with mean around
-  0.06 px and `p95` around 0.12–0.13 px.
+- **cv2.cornerSubPix** follows, with mean around 0.06 px and `p95`
+  around 0.12–0.13 px.
 - **CenterOfMass** and **ML (ONNX)** land around 0.08–0.09 px mean /
   0.12–0.15 px `p95`.
 
@@ -86,14 +86,7 @@ where a refiner is usable without per-scene tuning.
 
 ![Accuracy vs Gaussian blur σ](img/bench/accuracy_vs_blur.png)
 
-- **Förstner** loses its hold on the corner as the blur grows. Its
-  estimate moves by only a fraction \\(g\\) of the corner's offset from
-  the seed pixel, about 0.8 on sharp edges; blur lowers that gain until
-  it passes through zero (near a lens blur σ of 2–2.5 px), where the
-  estimate no longer depends on where the corner is. Its error grows
-  roughly linearly in `σ_blur`
-  ([Part VIII §8.3.3](part-08-uncertainty.md#833-the-systematic-term)).
-- Every other refiner stays inside the plotted 0.05–0.10 px band up to
+- Every refiner stays inside the plotted 0.05–0.10 px band up to
   `σ_blur = 2.5 px` on this fixture.
 - **SaddlePoint** stays at about 0.045 px at every `σ_blur` from 0 to
   2.5 px, the lowest of the built-in refiners. `cv2.cornerSubPix` falls
@@ -138,10 +131,10 @@ Largest operational plot. Two refiners break on small cells:
   error. At cell = 6 the crossover is minimal and the refiner
   recovers.
 
-**Förstner**, **SaddlePoint**, and **ML** look at a 2–3 px local
-neighborhood and are cell-size-agnostic down to 4 px.
-For dense targets (ChArUco, compact calibration boards) pick from
-those three.
+**SaddlePoint** and **ML** look at a 2–3 px local neighborhood and
+are cell-size-agnostic down to 4 px.
+For dense targets (ChArUco, compact calibration boards) pick one of
+those two.
 
 ## 9.6 Accuracy on real calibration images
 
@@ -163,15 +156,12 @@ every localizer; the last ranks them
 | `cv2.cornerSubPix`, 11×11 window    | 0.045 px | +0.16 px |
 | Radon peak fit                      | 0.056 px | — |
 | `CenterOfMass`                      | 0.103 px | +0.07 px |
-| `Förstner`                          | 0.164 px | +0.29 px |
 
 The first column covers the corners every localizer finds, about 70%
 of the board corners; the Radon detector misses the most blurred ones.
 The second adds them for the ChESS refiners and `cornerSubPix` (error
 over SaddlePoint, \\(\sqrt{\text{rms}^2 - \text{rms}_{SP}^2}\\) per
-axis). The synthetic ranking holds on real data, and Förstner, which
-is competitive on the sharp synthetic fixture, is the least accurate on
-real images, sharp or blurred. This is one dataset, one camera type and
+axis). The synthetic ranking holds on real data. This is one dataset, one camera type and
 one target; treat the sizes as indicative and the ordering as the
 finding.
 
@@ -188,7 +178,6 @@ The Pareto frontier, fast-to-slow:
 | Refiner             | Time / corner | Clean-data mean error | Notes                                                                 |
 |---------------------|---------------|-----------------------|-----------------------------------------------------------------------|
 | `CenterOfMass`      | ~16 ns        | 0.08 px               | Unmatched throughput; fails at cell ≤ 5 (see §9.5).                   |
-| `Förstner`          | ~60 ns        | 0.06 px               | Degrades with blur.                                                   |
 | `SaddlePoint`       | ~180 ns       | 0.045 px              | Lowest mean error among the built-in refiners on every row up to `σ_noise = 8`. |
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.07 px               | OpenCV's iterative gradient refiner.                                  |
 | `ML (ONNX)`         | ~150 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row (`σ_noise = 12`).             |
@@ -227,7 +216,7 @@ Observations:
 - Refinement dominates: the coarse detect stage takes 0.08–0.75 ms
   across these sizes; merge is a negligible fraction.
 - Picking ML at batch = 1 adds ~15 ms per 100 corners; the geometric
-  refiners (SaddlePoint, Förstner) add under 1 µs per corner.
+  refiners (CenterOfMass, SaddlePoint) add under 1 µs per corner.
 
 **Feature flag guidance:**
 
@@ -356,7 +345,7 @@ When a frame returns fewer corners than expected:
    (e.g. raise `SaddlePointConfig.max_offset`).
 3. If accuracy is fine but wall time is large, inspect the `refine`
    span. On the measured refiner benchmark, replacing ML
-   with a structure-tensor refiner (SaddlePoint or Förstner) is much
+   with a geometric refiner (SaddlePoint or CenterOfMass) is much
    cheaper per corner, with the accuracy tradeoff shown in §9.2–§9.7.
 
 ## 9.11 Integration recipes

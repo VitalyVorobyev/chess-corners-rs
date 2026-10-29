@@ -35,7 +35,7 @@ import common as C
 
 EYE = np.eye(2)[None]
 # Harness localizer -> systematic table whose floor it sets (max rule).
-TABLE_OF = {"CoM": "CoM", "Forstner": "Forstner", "SaddlePoint": "SaddlePoint", "Radon+SP": "SaddlePoint", "Radon": "RadonPeak"}
+TABLE_OF = {"CoM": "CoM", "SaddlePoint": "SaddlePoint", "Radon+SP": "SaddlePoint", "Radon": "RadonPeak"}
 BAND = (0.67, 1.5)
 
 
