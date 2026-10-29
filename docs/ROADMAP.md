@@ -21,10 +21,12 @@ shipped on every channel, followed by `1.3.1` (maintenance), `1.4.0`
 (saddle-point position covariance, `UQ-00`), `1.5.0` (per-corner position
 covariance on the detector output, `UQ-05`) `1.6.0` (per-localizer position
 covariance behind `Uncertainty`, Radon refiner choice, public noise estimate,
-Radon false-detection fixes) and `1.7.0` (default tier `Off`, frame noise σ in
-every binding, covariance field deprecations), the current version on crates.io,
-PyPI and npm
-(`chess-corners-ml` stays at `0.13.0`). The only open release residual is
+Radon false-detection fixes), `1.7.0` (default tier `Off`, frame noise σ in
+every binding, covariance field deprecations), `1.7.1` (patch) and `2.0.0`
+(the uncertainty tier carries its noise level, one image-refinement stage,
+Förstner and ML refiners removed, orientation reports `fit_std_error`, strict
+config loading). Current version: `2.0.0`. 1.x maintenance lives on the
+`release/1.7` branch; `chess-corners-ml` is no longer released. The only open release residual is
 `CPP-05`: the vcpkg port still targets `1.1.0` and has never been
 install-verified.
 
@@ -58,15 +60,17 @@ checked anything.
 
 **`1.2.0` and `1.3.0` are released on every channel** — `v1.2.0`,
 `wasm-v1.2.0`, `v1.3.0` and `wasm-v1.3.0` are tagged, as are the releases
-through `1.7.0`, the current `latest` on crates.io, PyPI and npm
-(`chess-corners-ml` unchanged at `0.13.0`). See
+through `2.0.0`, the current `latest` on crates.io, PyPI and npm
+(`chess-corners-ml` is no longer released). See
 [`changelog/1.2.0.md`](changelog/1.2.0.md),
 [`changelog/1.3.0.md`](changelog/1.3.0.md),
 [`changelog/1.3.1.md`](changelog/1.3.1.md),
 [`changelog/1.4.0.md`](changelog/1.4.0.md),
 [`changelog/1.5.0.md`](changelog/1.5.0.md),
-[`changelog/1.6.0.md`](changelog/1.6.0.md) and
-[`changelog/1.7.0.md`](changelog/1.7.0.md).
+[`changelog/1.6.0.md`](changelog/1.6.0.md),
+[`changelog/1.7.0.md`](changelog/1.7.0.md),
+[`changelog/1.7.1.md`](changelog/1.7.1.md) and
+[`changelog/2.0.0.md`](changelog/2.0.0.md).
 
 One residual stays open: **`CPP-05`**. The vcpkg port targets `1.1.0` with
 the real source-tarball SHA512, so it is installable, but it was not bumped
@@ -105,9 +109,9 @@ from a measured bias/precision split, not ahead of it.
 | `1.5.0` | SaddlePoint re-centred refit (default) with a validated covariance; per-image noise estimate (px² output); SaddlePoint covariance on `CornerDescriptor` and in the Python / WASM / C APIs and the JSON schema; CenterOfMass non-refinement fix; a book Part on uncertainty; camera-formed (lens blur before pixel integration) evidence fixtures and the floor tuned on rotated boards | `UQ-03`, `UQ-05`, `UQ-07`, `UQ-09`, `UQ-15` |
 | `1.6.0` (shipped) | Position covariance for every localizer behind `Uncertainty { Off, Propagated }` (noise through each localizer's Jacobian plus a per-localizer systematic term with a real-data floor); opt-in SaddlePoint refinement of Radon corners (`RadonRefiner`; default stays the peak fit, `UQ-22`); per-image noise estimate public in every binding; robustness audit and real-data validation; book Part VIII rewritten on that evidence | `UQ-18`, `UQ-23`–`UQ-28`, `UQ-30` |
 | `1.7.0` (shipped) | Evidence first, then hardening. The per-corner systematic model is kept: dropping it loses the ranking on real data (`UQ-36`). The floor is not transferable across cameras, and a cross-camera refit failed its pre-registered rule, so the shipped values stay with the limit documented (`UQ-37`, `UQ-44`). Weighting by Σ never helped, so `Off` is now the default (`UQ-38`). Also: honest docs for `Propagated` and orientation σ (`UQ-41`), two-sided σ̂₀² tests (`UQ-39`), the frame σₙ in every binding (`UQ-40`, C ABI 7), binding consistency (`UQ-42`), covariance code DRY (`SOLID-06`), a perf guard for the opt-in cost (`PERF-16`/`17`), and redundant tooling removed (`SOLID-07`) | `UQ-36`–`UQ-42`, `UQ-44`, `SOLID-06`/`07`, `PERF-16`/`17` |
-| next | A second real dataset to settle the floor (`UQ-45`); end-to-end σ̂₀ in calibration-rs (`UQ-08`); one orientation σ definition, coordinated with calib-targets-rs, which gates and weights on it (`UQ-06`) | `UQ-45`, `UQ-08`, `UQ-06` |
-| later | Per-corner systematic term that sees board rotation and Radon peak switching; cubic re-centring for SaddlePoint; a noise estimate for correlated noise; RingFit axis accuracy on real images | `UQ-16`, `UQ-32`, `UQ-47` |
-| `2.0.0` (in development on `main`) | Uncertainty API: noise level inside the tier (`Propagated { noise }`), no public covariance mirror fields, no hidden public helpers (both deprecated in 1.7.0), Förstner removed; one image-refinement stage (done: `DetectorConfig::refiner`); orientation σ renamed to `fit_std_error` (`UQ-06`); the ML refiner removed, dominated by SaddlePoint (`ML-04`; the `chess-corners-ml` crate is no longer released). Design: [`design/api-v2.0.md`](design/api-v2.0.md) | `UQ-43`, `UQ-19`, `UQ-46`, `UQ-06`, `ML-04` |
+| next | A second real dataset to settle the floor (`UQ-45`); end-to-end σ̂₀ in calibration-rs (`UQ-08`); RingFit axis accuracy on real images (`UQ-47`); re-measured book perf tables (`PERF-15`); vcpkg port bump and install-verify (`CPP-05`); cubic re-centring for SaddlePoint (`UQ-16`); noise estimate for correlated noise (`UQ-32`) | `UQ-45`, `UQ-08`, `UQ-47`, `PERF-15`, `CPP-05`, `UQ-16`, `UQ-32` |
+| later | Per-corner systematic term that sees board rotation and Radon peak switching | — |
+| `2.0.0 (shipped)` | Uncertainty API: noise level inside the tier (`Propagated { noise }`), no public covariance mirror fields, no hidden public helpers (both deprecated in 1.7.0), Förstner removed; one image-refinement stage (done: `DetectorConfig::refiner`); orientation σ renamed to `fit_std_error` (`UQ-06`); the ML refiner removed, dominated by SaddlePoint (`ML-04`; the `chess-corners-ml` crate is no longer released). Design: [`design/api-v2.0.md`](design/api-v2.0.md) | `UQ-43`, `UQ-19`, `UQ-46`, `UQ-06`, `ML-04` |
 | ongoing | Realistic ground truth (calib-synth / etendue renders; end-to-end σ̂₀ check in calibration-rs) | `UQ-08` |
 
 **Known gaps.**

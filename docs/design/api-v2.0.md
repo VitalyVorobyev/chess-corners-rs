@@ -1,6 +1,6 @@
 # API 2.0 — refinement stage, uncertainty tier, removals
 
-Status: accepted · Workstream: API / UQ · Target: 2.0.0 (breaking) ·
+Status: shipped in 2.0.0 · Workstream: API / UQ · Target: 2.0.0 (breaking) ·
 Tasks: `UQ-43`, `UQ-19`, `UQ-06`, Förstner and ML-refiner removal.
 
 ## 1. Why a major release
