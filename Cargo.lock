@@ -154,7 +154,7 @@ checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
 
 [[package]]
 name = "box-image-pyramid"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "criterion",
  "fast_image_resize",
@@ -232,7 +232,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "chess-corners"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "box-image-pyramid",
@@ -252,7 +252,7 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-capi"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "cbindgen",
  "chess-corners",
@@ -260,7 +260,7 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-core"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "chess-corners-testutil",
  "criterion",
@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-py"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "chess-corners",
  "numpy",
@@ -285,11 +285,11 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-testutil"
-version = "2.0.0"
+version = "2.1.0"
 
 [[package]]
 name = "chess-corners-wasm"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "chess-corners",
  "js-sys",

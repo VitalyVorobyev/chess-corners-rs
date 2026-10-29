@@ -25,7 +25,8 @@ Radon false-detection fixes), `1.7.0` (default tier `Off`, frame noise σ in
 every binding, covariance field deprecations), `1.7.1` (patch) and `2.0.0`
 (the uncertainty tier carries its noise level, one image-refinement stage,
 Förstner and ML refiners removed, orientation reports `fit_std_error`, strict
-config loading). Current version: `2.0.0`. 1.x maintenance lives on the
+config loading) and `2.1.0` (`ChessConfig::on_refiner_reject`, C ABI 9).
+Current version: `2.1.0`. 1.x maintenance lives on the
 `release/1.7` branch; `chess-corners-ml` is no longer released. The only open release residual is
 `CPP-05`: the vcpkg port still targets `1.1.0` and has never been
 install-verified.
@@ -60,7 +61,7 @@ checked anything.
 
 **`1.2.0` and `1.3.0` are released on every channel** — `v1.2.0`,
 `wasm-v1.2.0`, `v1.3.0` and `wasm-v1.3.0` are tagged, as are the releases
-through `2.0.0`, the current `latest` on crates.io, PyPI and npm
+through `2.1.0`, the current `latest` on crates.io, PyPI and npm
 (`chess-corners-ml` is no longer released). See
 [`changelog/1.2.0.md`](changelog/1.2.0.md),
 [`changelog/1.3.0.md`](changelog/1.3.0.md),
@@ -69,8 +70,9 @@ through `2.0.0`, the current `latest` on crates.io, PyPI and npm
 [`changelog/1.5.0.md`](changelog/1.5.0.md),
 [`changelog/1.6.0.md`](changelog/1.6.0.md),
 [`changelog/1.7.0.md`](changelog/1.7.0.md),
-[`changelog/1.7.1.md`](changelog/1.7.1.md) and
-[`changelog/2.0.0.md`](changelog/2.0.0.md).
+[`changelog/1.7.1.md`](changelog/1.7.1.md),
+[`changelog/2.0.0.md`](changelog/2.0.0.md) and
+[`changelog/2.1.0.md`](changelog/2.1.0.md).
 
 One residual stays open: **`CPP-05`**. The vcpkg port targets `1.1.0` with
 the real source-tarball SHA512, so it is installable, but it was not bumped
