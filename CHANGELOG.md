@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The uncertainty setting carries its noise level:
+  `Uncertainty::{Off, Propagated { noise: NoiseLevel }}` with
+  `NoiseLevel::{Estimate, Known(f32)}` (both now in `chess-corners`).
+  `DetectorConfig::noise_sigma` and `with_noise_sigma` are removed; a
+  `Known(σ)` that is negative or not finite is still rejected by
+  `Detector::new` (`ChessError::InvalidNoiseSigma`). Positions and
+  covariances are unchanged. Migration:
+  - Rust: `.with_uncertainty(Uncertainty::Propagated)` →
+    `.with_uncertainty(Uncertainty::Propagated { noise: NoiseLevel::Estimate })`;
+    adding `.with_noise_sigma(σ)` → `noise: NoiseLevel::Known(σ)`.
+  - JSON config: `"uncertainty": "propagated"` →
+    `{"propagated": {"noise": "estimate"}}`; with `"noise_sigma": σ` →
+    `{"propagated": {"noise": {"known": σ}}}`. `"off"` is unchanged.
+  - Python: `Uncertainty` is an immutable value: `Uncertainty.OFF` →
+    `Uncertainty.off()`, `Uncertainty.PROPAGATED` →
+    `Uncertainty.propagated()`, plus `with_noise_sigma(σ)` /
+    `cfg.noise_sigma = σ` → `Uncertainty.propagated(noise_sigma=σ)`.
+    `DetectorConfig.from_dict` rejects the removed `noise_sigma` key.
+  - JS: `Uncertainty.Off` → `Uncertainty.off()`, `Uncertainty.Propagated`
+    → `Uncertainty.propagated()`, plus `withNoiseSigma(σ)` /
+    `cfg.noiseSigma = σ` → `Uncertainty.propagated(σ)`.
+  - C: `CC_UNCERTAINTY_OFF` is now `0` and `CC_UNCERTAINTY_PROPAGATED` `1`,
+    so a zero-initialised `cc_config` selects off, like every preset.
+    `has_noise_sigma` / `noise_sigma` are read only under
+    `CC_UNCERTAINTY_PROPAGATED`. C++: `Config::uncertainty` is a
+    `chess_corners::Uncertainty` (`Uncertainty::off()`,
+    `Uncertainty::propagated(sigma)`) in place of the tag plus
+    `Config::noise_sigma`.
+  - `chess-corners-core`: `Uncertainty` moved to `chess-corners`;
+    `Refiner::with_uncertainty(tier)` → `Refiner::with_covariance(bool)`.
 - C ABI: `cc_abi_version` is 8. The `CC_REFINER_*` tags are renumbered to
   stay contiguous: `CC_REFINER_CENTER_OF_MASS = 0`,
   `CC_REFINER_SADDLE_POINT = 1`, `CC_REFINER_PEAK_FIT = 2`. Rebuild against

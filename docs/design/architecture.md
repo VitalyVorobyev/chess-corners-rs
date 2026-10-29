@@ -57,8 +57,11 @@ at the top level:
   (`without_orientation()`), which skips the fit and leaves `axes` as
   `None`.
 - `merge_radius`: duplicate-suppression distance in input pixels.
-- `noise_sigma`: image pixel-noise σ in gray levels, or `None` to estimate
-  it per image; scales refiner covariances to px².
+- `uncertainty`: `Off`, or `Propagated { noise }` with `noise` either
+  `NoiseLevel::Estimate` (per-image estimate) or `NoiseLevel::Known(σ)`
+  (gray levels); the noise level scales localizer covariances to px².
+  Core refiners only take the on/off switch (`Refiner::with_covariance`);
+  the facade lowers `DetectorConfig::uncertainty` in one place.
 
 Detector-specific fields live inside the active strategy. This avoids
 parallel knobs such as "detector mode" plus a stale strategy-specific
@@ -87,7 +90,8 @@ built-in 3-point Gaussian peak fit configured via
 `IllConditioned`), and `noise_covariance_per_unit_variance() ->
 Option<PositionCovariance>` — the first-order position covariance per
 unit image-noise variance (px² per gray-level²), set by every non-ML
-refiner on accepted corners under `Uncertainty::Propagated`. `Corner` carries it through
+refiner on accepted corners when it reports a covariance
+(`Refiner::with_covariance(true)`, set under `Uncertainty::Propagated`). `Corner` carries it through
 merging; the facade turns it into `CornerDescriptor::position_covariance`
 in px² (`max(σₙ², 1/12)·C + f²I`, `f` = `POSITION_FLOOR_PX`) after `describe_corners`, with σₙ
 from `noise_sigma` or `estimate_noise_sigma_u8` on the refinement image

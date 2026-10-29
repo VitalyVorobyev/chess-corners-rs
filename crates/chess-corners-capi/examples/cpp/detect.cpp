@@ -35,13 +35,12 @@ int main() {
         std::printf("chess-corners: detected %zu corners\n", corners.size());
 
         // Every localizer reports each corner's position covariance (px^2)
-        // when the uncertainty tier is propagated (the default is off). This
+        // under `Uncertainty::propagated` (the default is off). This
         // synthetic board has no noise to estimate, so supply the sensor
         // noise level.
         chess_corners::Config saddle = chess_corners::Config::chess();
         saddle.refiner = CC_REFINER_SADDLE_POINT;
-        saddle.uncertainty = CC_UNCERTAINTY_PROPAGATED;
-        saddle.noise_sigma = 1.0f;
+        saddle.uncertainty = chess_corners::Uncertainty::propagated(1.0f);
         std::size_t with_cov = 0;
         std::optional<float> noise_sigma;
         for (const chess_corners::Corner& c :
@@ -52,23 +51,22 @@ int main() {
         }
         std::printf("chess-corners: %zu corners with a position covariance\n", with_cov);
         // The noise level behind the covariances: here the supplied one.
-        if (with_cov == 0 || noise_sigma != saddle.noise_sigma) {
+        if (with_cov == 0 || noise_sigma != saddle.uncertainty.noise_sigma()) {
             return 1;
         }
 
         // Radon keeps its peak fit by default; refining its peaks with the
-        // saddle point is opt-in. Switching the uncertainty tier off drops
+        // saddle point is opt-in. Switching the uncertainty off drops
         // the covariances and leaves positions unchanged.
         chess_corners::Config radon = chess_corners::Config::radon();
         radon.refiner = CC_REFINER_SADDLE_POINT;
-        radon.uncertainty = CC_UNCERTAINTY_PROPAGATED;
-        radon.noise_sigma = 1.0f;
+        radon.uncertainty = chess_corners::Uncertainty::propagated(1.0f);
         const std::vector<chess_corners::Corner> radon_corners =
             chess_corners::detect(image, width, height, radon);
         std::printf("chess-corners: Radon detected %zu corners\n", radon_corners.size());
 
         chess_corners::Config quiet = saddle;
-        quiet.uncertainty = CC_UNCERTAINTY_OFF;
+        quiet.uncertainty = chess_corners::Uncertainty::off();
         for (const chess_corners::Corner& c :
              chess_corners::detect(image, width, height, quiet)) {
             if (c.position_covariance) {

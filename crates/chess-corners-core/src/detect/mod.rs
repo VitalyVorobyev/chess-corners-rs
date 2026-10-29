@@ -139,7 +139,7 @@ pub struct AxisEstimate {
     /// scales the Gauss-Newton covariance of the fit by the residual and
     /// an empirical factor; `DiskFit` reports a residual-based heuristic
     /// with a method-specific floor. Neither uses the image noise level or
-    /// [`Uncertainty`](crate::Uncertainty), and it is computed whenever
+    /// the position-uncertainty setting, and it is computed whenever
     /// orientation is enabled. Use it for ranking and gating corners.
     pub sigma: f32,
 }
@@ -191,9 +191,9 @@ impl AxisEstimate {
 /// [`position_covariance`](Self::position_covariance) is the 2×2 covariance
 /// of `(x, y)` in px², for whitening the corner's residuals in a
 /// calibration. The `chess-corners` `Detector` fills it for every localizer
-/// except the ML refiner when its uncertainty tier is
-/// [`Uncertainty::Propagated`](crate::Uncertainty::Propagated) (the default
-/// tier is off), and [`describe_corners`] leaves it `None` because it needs the image noise
+/// except the ML refiner when its uncertainty setting is
+/// `Uncertainty::Propagated` (it is off by default), and
+/// [`describe_corners`] leaves it `None` because it needs the image noise
 /// level (see [`Corner::position_covariance`]).
 ///
 /// [`describe_corners`]: crate::describe_corners

@@ -80,23 +80,21 @@ pub const CC_ORIENTATION_DISK_FIT: cc_orientation_method_t = 1;
 /// `cc_corner::has_orientation == 0` and a zeroed `axes` array.
 pub const CC_ORIENTATION_NONE: cc_orientation_method_t = 2;
 
-/// Position-uncertainty tier stored in `cc_config::uncertainty`.
-///
-/// Use the named constants, not the integers: the WebAssembly and Python
-/// bindings number the same tiers differently (`Off = 0`, `Propagated = 1`).
+/// Position-uncertainty tag stored in `cc_config::uncertainty`.
 pub type cc_uncertainty_t = u32;
+/// No position covariance and no noise estimate: every corner has
+/// `has_position_covariance == 0`. The default: every preset
+/// (`cc_config_default()` and the strategy presets) and a zero-initialised
+/// `cc_config` select it. `has_noise_sigma` and `noise_sigma` are not read.
+pub const CC_UNCERTAINTY_OFF: cc_uncertainty_t = 0;
 /// Every corner whose localizer supports it reports a position covariance:
 /// image noise propagated through the localizer plus its systematic error.
 /// That error includes a per-localizer floor measured on real images,
 /// usually the largest part of the covariance there; weighting by it has not
-/// been shown to beat uniform weighting on real data. Not the default, but
-/// the value `0`, so a zero-initialised `cc_config` selects it.
-pub const CC_UNCERTAINTY_PROPAGATED: cc_uncertainty_t = 0;
-/// No position covariance and no noise estimate: every corner has
-/// `has_position_covariance == 0`. Positions are identical to
-/// `CC_UNCERTAINTY_PROPAGATED`. `noise_sigma` is ignored. The default: every
-/// preset (`cc_config_default()` and the strategy presets) selects it.
-pub const CC_UNCERTAINTY_OFF: cc_uncertainty_t = 1;
+/// been shown to beat uniform weighting on real data. The noise level comes
+/// from `cc_config::has_noise_sigma` / `cc_config::noise_sigma`. Positions
+/// are identical to `CC_UNCERTAINTY_OFF`.
+pub const CC_UNCERTAINTY_PROPAGATED: cc_uncertainty_t = 1;
 
 /// ChESS sampling-ring tag stored in `cc_config::chess_ring`.
 ///
@@ -264,21 +262,20 @@ pub struct cc_config {
     /// One of the `CC_PEAK_FIT_*` constants. Applies to the Radon strategy
     /// only; ignored for ChESS.
     pub peak_fit: cc_peak_fit_t,
-    /// `0` estimates the image noise level from each image; any non-zero
-    /// value uses `noise_sigma`. The noise level turns each corner's
-    /// position covariance into px².
+    /// The noise level of `CC_UNCERTAINTY_PROPAGATED`, which turns each
+    /// corner's position covariance into px²: `0` estimates it from each
+    /// image; any non-zero value uses `noise_sigma`. Read only under
+    /// `CC_UNCERTAINTY_PROPAGATED`.
     pub has_noise_sigma: u32,
     /// Standard deviation of the image's pixel noise in gray levels: the
     /// total noise of the 8-bit image, rounding included, as
     /// `cc_estimate_noise_sigma_u8` measures it (finite, `>= 0`; otherwise
-    /// `CC_ERR_INVALID_CONFIG`). Read only when `has_noise_sigma` is
-    /// non-zero.
+    /// `CC_ERR_INVALID_CONFIG`). Read only under `CC_UNCERTAINTY_PROPAGATED`
+    /// when `has_noise_sigma` is non-zero.
     pub noise_sigma: f32,
     /// One of the `CC_UNCERTAINTY_*` constants (any other value is
-    /// `CC_ERR_INVALID_CONFIG`). The presets select `CC_UNCERTAINTY_OFF`;
-    /// a zero-initialised config instead selects
-    /// `CC_UNCERTAINTY_PROPAGATED` (tag `0`), so start from
-    /// `cc_config_default()` or a strategy preset rather than `{0}`.
+    /// `CC_ERR_INVALID_CONFIG`). The presets and a zero-initialised config
+    /// select `CC_UNCERTAINTY_OFF`.
     pub uncertainty: cc_uncertainty_t,
 }
 
@@ -311,9 +308,9 @@ pub enum cc_status {
 // ─── Configuration presets ──────────────────────────────────────────────
 
 /// Default configuration (single-scale ChESS). Its `uncertainty` is
-/// `CC_UNCERTAINTY_OFF`, like every preset; a zero-initialised `cc_config`
-/// differs (tag `0` is `CC_UNCERTAINTY_PROPAGATED`), so start from this or
-/// a strategy preset.
+/// `CC_UNCERTAINTY_OFF`, like every preset. Start from this or a strategy
+/// preset rather than a zero-initialised `cc_config`, whose threshold and
+/// NMS fields are zero.
 #[no_mangle]
 pub extern "C" fn cc_config_default() -> cc_config {
     config_preset(DetectorConfig::default)
@@ -755,7 +752,10 @@ mod tests {
             cfg.noise_sigma = 1.25;
             let (_, sigma) = detect_board_frame(&cfg).expect("detection");
             assert_eq!(sigma, Some(1.25), "supplied");
+            // The noise level is not read under `CC_UNCERTAINTY_OFF`, not
+            // even to validate it.
             cfg.uncertainty = CC_UNCERTAINTY_OFF;
+            cfg.noise_sigma = -1.0;
             let (corners, sigma) = detect_board_frame(&cfg).expect("detection");
             assert!(!corners.is_empty());
             assert_eq!(sigma, None, "no covariance, no noise level");
@@ -815,11 +815,25 @@ mod tests {
         let mut cfg = cc_config_chess();
         let rs = convert::to_detector_config(&cfg).expect("valid");
         assert_eq!(rs.uncertainty, chess_corners::Uncertainty::Off);
-        // Tag 0, the value of a zero-initialised config, is `Propagated`.
-        cfg.uncertainty = 0;
-        let rs = convert::to_detector_config(&cfg).expect("valid");
-        assert_eq!(rs.uncertainty, chess_corners::Uncertainty::Propagated);
-        assert_eq!(convert::flatten(&rs).uncertainty, CC_UNCERTAINTY_PROPAGATED);
+        // Tag 0, the value of a zero-initialised config, is `Off`.
+        assert_eq!(CC_UNCERTAINTY_OFF, 0);
+        // `Propagated` carries its noise level both ways.
+        use chess_corners::{NoiseLevel, Uncertainty};
+        cfg.uncertainty = CC_UNCERTAINTY_PROPAGATED;
+        for (has, sigma, noise) in [
+            (0, 0.0, NoiseLevel::Estimate),
+            (1, 1.5, NoiseLevel::Known(1.5)),
+        ] {
+            cfg.has_noise_sigma = has;
+            cfg.noise_sigma = sigma;
+            let rs = convert::to_detector_config(&cfg).expect("valid");
+            assert_eq!(rs.uncertainty, Uncertainty::Propagated { noise });
+            let flat = convert::flatten(&rs);
+            assert_eq!(
+                (flat.uncertainty, flat.has_noise_sigma, flat.noise_sigma),
+                (CC_UNCERTAINTY_PROPAGATED, has, sigma)
+            );
+        }
         cfg.uncertainty = 99;
         assert_eq!(
             convert::to_detector_config(&cfg),
@@ -828,17 +842,19 @@ mod tests {
     }
 
     #[test]
-    fn noise_sigma_round_trips_and_is_validated() {
+    fn noise_sigma_is_read_only_under_propagated() {
         let mut cfg = cc_config_chess();
         assert_eq!(cfg.has_noise_sigma, 0);
         cfg.has_noise_sigma = 1;
-        cfg.noise_sigma = 2.5;
-        let rs = convert::to_detector_config(&cfg).expect("valid");
-        assert_eq!(rs.noise_sigma, Some(2.5));
-        let back = convert::flatten(&rs);
-        assert_eq!((back.has_noise_sigma, back.noise_sigma), (1, 2.5));
-
         cfg.noise_sigma = -1.0;
+        // Off: not read, so neither validated nor carried.
+        let rs = convert::to_detector_config(&cfg).expect("valid");
+        assert_eq!(rs.uncertainty, chess_corners::Uncertainty::Off);
+        let back = convert::flatten(&rs);
+        assert_eq!((back.has_noise_sigma, back.noise_sigma), (0, 0.0));
+        assert!(detect_board(&cfg).is_ok());
+        // Propagated: validated when the detector is built.
+        cfg.uncertainty = CC_UNCERTAINTY_PROPAGATED;
         assert_eq!(
             detect_board(&cfg).map(|c| c.len()),
             Err(cc_status::CC_ERR_INVALID_CONFIG)

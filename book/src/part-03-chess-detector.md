@@ -306,9 +306,9 @@ Fields:
   localizer's systematic error (the `Corner::position_covariance` rustdoc
   gives the model). Every refiner except the ML one reports it when
   `DetectorConfig::uncertainty` is `Propagated` (the default is `Off`); the
-  detector scales it by the image noise level,
-  estimated per image or set with `DetectorConfig::noise_sigma`, and
-  leaves it `None` on upscaled input. [Part VIII](part-08-uncertainty.md)
+  detector scales it by the image noise level that `Propagated` carries,
+  estimated per image or supplied, and leaves it `None` on upscaled
+  input. [Part VIII](part-08-uncertainty.md)
   covers what it describes and how to use it.
 
 The axis convention:

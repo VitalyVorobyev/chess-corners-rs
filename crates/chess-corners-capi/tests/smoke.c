@@ -107,10 +107,9 @@ int main(void) {
         return 7;
     }
 
-    /* The presets default to CC_UNCERTAINTY_OFF; a zero-initialised config
-     * selects tag 0, CC_UNCERTAINTY_PROPAGATED. Propagated reports a
-     * covariance for the center-of-mass refiner too; CC_UNCERTAINTY_OFF
-     * reports none, and an unknown tag is rejected. */
+    /* The presets and a zero-initialised config select CC_UNCERTAINTY_OFF.
+     * Propagated reports a covariance for the center-of-mass refiner too;
+     * CC_UNCERTAINTY_OFF reports none, and an unknown tag is rejected. */
     if (cc_config_default().uncertainty != CC_UNCERTAINTY_OFF ||
         cc_config_chess().uncertainty != CC_UNCERTAINTY_OFF ||
         cc_config_radon().uncertainty != CC_UNCERTAINTY_OFF) {
@@ -119,8 +118,8 @@ int main(void) {
         return 10;
     }
     cc_config zeroed = {0};
-    if (zeroed.uncertainty != CC_UNCERTAINTY_PROPAGATED) {
-        fprintf(stderr, "zero-initialised config is not tag 0 (propagated)\n");
+    if (zeroed.uncertainty != CC_UNCERTAINTY_OFF) {
+        fprintf(stderr, "zero-initialised config is not uncertainty off\n");
         free(img);
         return 10;
     }
@@ -152,7 +151,9 @@ int main(void) {
         free(img);
         return 10;
     }
+    /* Under CC_UNCERTAINTY_OFF the noise level is not read. */
     plain.uncertainty = CC_UNCERTAINTY_OFF;
+    plain.noise_sigma = -1.0f;
     cc_result off_out = {NULL, 0, 0, 0.0f};
     if (cc_detect_u8(img, w, h, &plain, &off_out) != CC_OK) {
         fprintf(stderr, "uncertainty-off detection failed\n");

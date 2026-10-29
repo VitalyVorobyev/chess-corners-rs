@@ -124,10 +124,11 @@ Each detection is a `CornerDescriptor` with:
   `Corner::position_covariance` in `chess-corners-core`; weighting by it
   has not been shown to beat uniform weighting on real data). Every localizer
   except the ML refiner reports it when `DetectorConfig::uncertainty` is
-  `Uncertainty::Propagated`; it is `None` under the default `Off`. The
-  noise level is estimated from each image
-  (`estimate_noise_sigma_u8` returns the same estimate), or set with
-  `DetectorConfig::with_noise_sigma`; it is `None` on upscaled input.
+  `Uncertainty::Propagated { noise }`; it is `None` under the default
+  `Off`. The noise level is estimated from each image with
+  `NoiseLevel::Estimate` (`estimate_noise_sigma_u8` returns the same
+  estimate), or supplied with `NoiseLevel::Known(σ)`; it is `None` on
+  upscaled input.
   `Detector::last_noise_sigma` returns the σ the most recent detection
   used.
 

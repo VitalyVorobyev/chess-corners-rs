@@ -1,8 +1,8 @@
 """Python-first public API for the chess_corners detector.
 
 The config classes (`DetectorConfig`, `ChessConfig`, `RadonConfig`,
-`ChessRefiner`, `RadonRefiner`, ...) and enums (`ChessRing`,
-`PeakFitMode`, `OrientationMethod`, `Uncertainty`) are native PyO3
+`ChessRefiner`, `RadonRefiner`, `Uncertainty`, ...) and enums
+(`ChessRing`, `PeakFitMode`, `OrientationMethod`) are native PyO3
 types defined in the compiled `_native` extension. They expose
 attribute access, classmethod factories
 (`DetectorConfig.multiscale()`, `MultiscaleConfig.pyramid(...)`,

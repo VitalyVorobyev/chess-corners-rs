@@ -7,7 +7,9 @@
 //! exercised with a non-default value against the equivalent
 //! `DetectorConfig`, so the flat → facade lowering is proven end-to-end.
 
-use chess_corners::{ChessRing, Detector, DetectorConfig, PeakFitMode, Uncertainty, UpscaleConfig};
+use chess_corners::{
+    ChessRing, Detector, DetectorConfig, NoiseLevel, PeakFitMode, Uncertainty, UpscaleConfig,
+};
 use chess_corners_capi::{
     cc_config, cc_config_chess, cc_config_radon, cc_detect_u8, cc_result, cc_result_free,
     cc_status, CC_CHESS_RING_BROAD, CC_PEAK_FIT_PARABOLIC, CC_UNCERTAINTY_PROPAGATED,
@@ -121,9 +123,9 @@ fn ffi_propagated_covariance_matches_reference() {
     cfg.has_noise_sigma = 1;
     cfg.noise_sigma = 1.0;
 
-    let reference = DetectorConfig::chess()
-        .with_uncertainty(Uncertainty::Propagated)
-        .with_noise_sigma(1.0);
+    let reference = DetectorConfig::chess().with_uncertainty(Uncertainty::Propagated {
+        noise: NoiseLevel::Known(1.0),
+    });
     let (img, w, h) = synthetic_checkerboard();
     let corners = Detector::new(reference)
         .and_then(|mut d| d.detect_u8(&img, w, h))

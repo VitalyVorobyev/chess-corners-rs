@@ -1,7 +1,6 @@
-//! Position-uncertainty stage: the tier selector, and the pieces every
-//! localizer shares to report a covariance — the per-pixel gradient
-//! accumulator for noise propagation, the edge-width observable, and the
-//! systematic-error model.
+//! Position-uncertainty stage: the pieces every localizer shares to report
+//! a covariance — the per-pixel gradient accumulator for noise propagation,
+//! the edge-width observable, and the systematic-error model.
 //!
 //! A localizer's position covariance is
 //!
@@ -16,46 +15,6 @@
 
 use crate::imageview::ImageView;
 use crate::refine::PositionCovariance;
-use serde::{Deserialize, Serialize};
-
-/// Which position uncertainty the detector reports for each corner.
-///
-/// Detector-independent: it applies to every localizer (the ChESS
-/// refiners and the Radon peak fit) the same way.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum Uncertainty {
-    /// No position covariance (the default). Localizers skip the noise
-    /// propagation and the systematic model, and the detector makes no
-    /// noise estimate. Positions are the same as under every other tier.
-    #[default]
-    Off,
-    /// Image noise propagated through the localizer to first order, plus
-    /// the localizer's systematic-error model (from the corner's offset to
-    /// the localizer's fit window and the width of its edges).
-    ///
-    /// The systematic part includes a per-localizer floor measured on real
-    /// calibration images (about 0.05 px per axis for the saddle-point fit
-    /// and the Radon peak fit, 0.07 center of mass). On
-    /// real, well-exposed images this floor is usually the largest part of
-    /// the covariance, so the reported σ varies little from corner to
-    /// corner there. Weighting a calibration by it has not been shown to
-    /// beat uniform weighting on real data. Errors shared by all corners of
-    /// an image (defocus, lens-model error) are outside it. The floor was
-    /// fitted on one camera pair and is likely low for other optics. Within
-    /// that pair the two cameras' own floors differed by up to 2×.
-    Propagated,
-}
-
-impl Uncertainty {
-    /// Whether this tier reports a covariance.
-    #[inline]
-    pub(crate) fn reports(self) -> bool {
-        !matches!(self, Uncertainty::Off)
-    }
-}
 
 /// Variance of a quantity spread uniformly over an interval `width` long:
 /// `width²/12`.

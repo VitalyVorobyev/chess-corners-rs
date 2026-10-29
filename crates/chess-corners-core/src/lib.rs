@@ -95,7 +95,6 @@ pub use crate::refine::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, PositionCovariance, RefineContext,
     RefineResult, RefineStatus, Refiner, RefinerKind, SaddlePointConfig, SaddlePointRefiner,
 };
-pub use crate::uncertainty::Uncertainty;
 pub use imageview::ImageView;
 
 /// Dense response map in row-major layout.

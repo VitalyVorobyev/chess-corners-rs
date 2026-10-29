@@ -76,7 +76,7 @@ export function defaultSettings(): DetectorSettings {
     orientation: "ringFit",
     chessRefiner: mapChessRefiner(chess.strategy.chess.refiner.kind),
     radonRefiner: "peakFit",
-    uncertainty: chess.uncertainty === Uncertainty.Propagated ? "propagated" : "off",
+    uncertainty: chess.uncertainty.kind === "propagated" ? "propagated" : "off",
     noiseSigma: null,
     nmsRadius: chess.detection.nmsRadius,
     minClusterSize: chess.detection.minClusterSize,
@@ -126,8 +126,9 @@ function buildConfig(s: DetectorSettings): DetectorConfig {
     s.strategy === "radon"
       ? cfg.withRadonRefiner(buildRadonRefiner(s.radonRefiner))
       : cfg.withChessRefiner(buildChessRefiner(s.chessRefiner));
-  cfg = cfg.withUncertainty(s.uncertainty === "off" ? Uncertainty.Off : Uncertainty.Propagated);
-  if (s.noiseSigma !== null) cfg = cfg.withNoiseSigma(s.noiseSigma);
+  cfg = cfg.withUncertainty(
+    s.uncertainty === "off" ? Uncertainty.off() : Uncertainty.propagated(s.noiseSigma ?? undefined),
+  );
   cfg = cfg.withDetection({
     nmsRadius: s.nmsRadius,
     minClusterSize: s.minClusterSize,
