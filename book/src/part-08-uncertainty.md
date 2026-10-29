@@ -105,10 +105,11 @@ peak that keeps its peak fit). Frame time on the three test images
 | ChESS multiscale   | 0.80 / 0.82 / 5.77 ms    | 0.90 / 0.91 / 6.04 ms    | +13.5 / +10.7 / +4.5% |
 | Radon single scale | 13.2 / 28.1 / 148 ms     | 13.4 / 28.4 / 149 ms     | +1.7 / +0.9 / +0.7% |
 
-With `rayon` the dense response shrinks while the per-corner covariance
-stays sequential, so its share grows: ChESS single scale +32 / +11 / +11%,
-multiscale +17 / +15 / +6.7%. A 2048×1536 board with 1376 corners costs
-+3.3% single-threaded and +15% with `rayon`.
+With `rayon` the refinement and its covariance run in parallel too, but
+the per-frame noise estimate does not, and the frames are shorter: ChESS
+single scale costs +20 / +10 / +5.2%, multiscale (0.27 / 0.28 / 1.40 ms
+with `Off`) +47 / +35 / +8.4%, about 0.1 ms per frame. A 2048×1536 board
+with 1376 corners costs +3.3% single-threaded and +5.1% with `rayon`.
 
 The share is largest on small, sparse frames, where the noise estimate
 is a larger part of the work. The default, `Off`, does not pay it.

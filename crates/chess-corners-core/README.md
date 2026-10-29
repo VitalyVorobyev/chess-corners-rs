@@ -31,7 +31,8 @@ Feature flags:
 - `std` *(default)* – compatibility feature reserved for future use.
   The current detector implementation requires the Rust standard
   library.
-- `rayon` – parallelize response computation over image rows.
+- `rayon` – parallelize response computation over image rows and the
+  refinement of large corner sets.
 - `simd` – portable-SIMD acceleration of the response kernel
   (nightly only).
 - `tracing` – emit structured spans around response and detector code

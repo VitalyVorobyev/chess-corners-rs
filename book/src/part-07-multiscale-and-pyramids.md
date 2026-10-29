@@ -344,7 +344,9 @@ The final `describe_corners` step honours the top-level
 carries `axes = None`.
 
 When the `rayon` feature is enabled, the refinement step processes
-coarse corners in parallel; otherwise it uses a straightforward loop.
+coarse corners in parallel, each worker with its own scratch, and
+collects the results in seed order, so the output is the same as the
+straightforward loop used without it.
 
 ### 7.2.3 Buffer reuse across frames
 

@@ -34,14 +34,14 @@ use super::{
         response::{chess_response_u8, chess_response_u8_patch, Roi},
     },
     radon::{
-        detect::{attach_peak_fit_covariance, retain_above_relative_threshold},
+        detect::{attach_peak_fit_covariances, retain_above_relative_threshold},
         detect_peaks_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
         RadonResponseView,
     },
     Corner,
 };
 use crate::imageview::ImageView;
-use crate::refine::{CornerRefiner, RefineContext, RefineStatus};
+use crate::refine::{refine_each, CornerRefiner, RefineContext, RefineStatus};
 use crate::{ChessParams, ResponseMap};
 
 /// Sealing supertrait for [`DenseDetector`]. Implemented only for the
@@ -436,8 +436,8 @@ impl DenseDetector for RadonDetector {
         // (re-centring did not converge) is less accurate than the peak
         // fit it would replace.
         let ctx = RefineContext::new(Some(image), None);
-        for c in &mut corners {
-            let res = refiner.refine([c.x, c.y], ctx);
+        let results = refine_each(refiner, ctx, &corners);
+        for (c, res) in corners.iter_mut().zip(results) {
             if res.status == RefineStatus::Accepted && res.converged {
                 c.x = res.x;
                 c.y = res.y;
@@ -455,9 +455,7 @@ impl DenseDetector for RadonDetector {
         params: &Self::Params,
         buffers: &mut Self::Buffers,
     ) {
-        for c in corners.iter_mut().filter(|c| c.at_peak_fit) {
-            attach_peak_fit_covariance(c, image, params, buffers);
-        }
+        attach_peak_fit_covariances(corners, image, params, buffers);
     }
 }
 
@@ -588,10 +586,14 @@ mod tests {
         let mut fit_only = peaks.clone();
         RadonDetector.attach_peak_covariance(&mut fit_only, view, &params, &mut buffers);
         for (p, a) in peaks.iter().zip(&fit_only) {
-            let mut single = p.clone();
-            attach_peak_fit_covariance(&mut single, view, &params, &mut buffers);
+            let single = crate::detect::radon::detect::peak_fit_covariance(
+                &view,
+                [p.x, p.y],
+                &params,
+                &mut crate::detect::radon::detect::PeakFitScratch::default(),
+            );
             assert!(a.model.is_some());
-            assert_eq!(a.model, single.model);
+            assert_eq!(a.model, single);
         }
 
         let chess_params = ChessParams::default();

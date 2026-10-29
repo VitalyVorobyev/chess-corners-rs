@@ -547,22 +547,35 @@ pub(crate) fn peak_fit_covariance(
     Some(CovarianceModel { growth, ..model })
 }
 
-/// Attach the Radon peak-fit covariance to `corner`, a peak of
-/// [`detect_peaks_from_radon`] on `image` that keeps its peak-fit position,
-/// using `buffers`' scratch.
-pub(crate) fn attach_peak_fit_covariance(
-    corner: &mut Corner,
+/// Peaks per parallel job in [`attach_peak_fit_covariances`]: about 20 µs
+/// of work at 2.6 µs per peak, well above the cost of waking a worker.
+const PEAK_COVARIANCE_MIN_LEN: usize = 8;
+
+/// Attach the Radon peak-fit covariance to every corner of `corners` that
+/// keeps its peak-fit position (`at_peak_fit`: a peak of
+/// [`detect_peaks_from_radon`] on `image`), using `buffers`' scratch; under
+/// `rayon`, large sets run on several threads with scratch of their own.
+pub(crate) fn attach_peak_fit_covariances(
+    corners: &mut [Corner],
     image: ImageView<'_>,
     params: &RadonDetectorParams,
     buffers: &mut super::RadonBuffers,
 ) {
-    let model = peak_fit_covariance(
-        &image,
-        [corner.x, corner.y],
-        params,
+    let models = crate::par::map_with_scratch(
+        corners,
+        PEAK_COVARIANCE_MIN_LEN,
         &mut buffers.peak_scratch,
+        |_| PeakFitScratch::default(),
+        |scratch, c| {
+            c.at_peak_fit
+                .then(|| peak_fit_covariance(&image, [c.x, c.y], params, scratch))
+        },
     );
-    corner.model = model;
+    for (c, model) in corners.iter_mut().zip(models) {
+        if let Some(model) = model {
+            c.model = model;
+        }
+    }
 }
 
 #[cfg(test)]

@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stay contiguous: `CC_REFINER_CENTER_OF_MASS = 0`,
   `CC_REFINER_SADDLE_POINT = 1`, `CC_REFINER_PEAK_FIT = 2`. Rebuild against
   the new header; code that uses the named constants needs no other change.
+- With the `rayon` feature, the subpixel refinement and position covariance
+  of large corner sets, the Radon peak-fit covariance, and the multiscale
+  per-seed refinement run in parallel. Results are unchanged bit for bit;
+  multiscale ChESS frames take about half the time or less.
 
 ### Removed
 

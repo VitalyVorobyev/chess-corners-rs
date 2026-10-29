@@ -164,7 +164,7 @@ type Coefs = [f32; 5];
 
 /// Rows `a..e` of the least-squares fit operator `R`, stored by sample
 /// (`columns[k] = Rₖ`), and its shifted self-overlaps.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct FitOperator {
     columns: Vec<Coefs>,
     /// `K(δ) = Σₖ Rₖ Rₖ₊δᵀ` over the samples `k` with `k + δ` on the grid,
@@ -181,18 +181,35 @@ struct Scratch {
     tile: PixelTile,
 }
 
+impl Scratch {
+    fn new(radius: i32) -> Self {
+        let side = (2 * radius.max(0) + 1) as usize;
+        Self {
+            patch: vec![0.0; side * side],
+            tile: PixelTile::default(),
+        }
+    }
+}
+
 impl SaddlePointRefiner {
     /// Construct a refiner with the given configuration.
     pub fn new(cfg: SaddlePointConfig) -> Self {
-        let side = (2 * cfg.radius.max(0) + 1) as usize;
         Self {
             cfg,
             reports_covariance: false,
             fit_op: fit_operator(cfg.radius),
-            scratch: Scratch {
-                patch: vec![0.0; side * side],
-                tile: PixelTile::default(),
-            },
+            scratch: Scratch::new(cfg.radius),
+        }
+    }
+
+    /// The same configuration and covariance setting with fresh scratch; shares nothing
+    /// mutable, and copies the fit operator rather than rebuilding it.
+    pub(crate) fn fork(&self) -> Self {
+        Self {
+            cfg: self.cfg,
+            reports_covariance: self.reports_covariance,
+            fit_op: self.fit_op.clone(),
+            scratch: Scratch::new(self.cfg.radius),
         }
     }
 }

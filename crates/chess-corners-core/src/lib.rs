@@ -27,7 +27,9 @@
 //! - `std` *(default)* – compatibility feature reserved for future use.
 //!   The current detector implementation requires the Rust standard library.
 //! - `rayon` – parallelizes the dense response computation and Radon accumulation
-//!   over image rows using the `rayon` crate. Does not change numerical results.
+//!   over image rows, and the subpixel refinement (with its position
+//!   covariance) of large corner sets, using the `rayon` crate. Does not
+//!   change numerical results.
 //! - `simd` – enables a SIMD‑accelerated inner loop for the ChESS response
 //!   kernel, based on `portable_simd`. Requires a nightly compiler; the
 //!   scalar path remains the reference implementation.
@@ -38,7 +40,8 @@
 //! Feature combinations:
 //!
 //! - no features / `std` only – single‑threaded scalar implementation.
-//! - `rayon` – same scalar math, but rows are processed in parallel.
+//! - `rayon` – same scalar math, but rows and corners are processed in
+//!   parallel.
 //! - `simd` – single‑threaded, but the inner ring computation is vectorized.
 //! - `rayon + simd` – rows are processed in parallel *and* each row uses the
 //!   SIMD‑accelerated inner loop.
@@ -61,6 +64,7 @@ mod detect;
 mod imageview;
 mod noise;
 mod orientation;
+mod par;
 mod params;
 mod refine;
 mod uncertainty;

@@ -194,9 +194,10 @@
 //!
 //! - `image` *(default)* – enables [`Detector::detect`] and
 //!   `image::GrayImage` integration.
-//! - `rayon` – parallelizes response computation and multiscale
-//!   refinement over image rows. Combine with `par_pyramid` to
-//!   parallelize pyramid downsampling as well.
+//! - `rayon` – parallelizes response computation over image rows, the
+//!   refinement of large corner sets, and the multiscale per-seed
+//!   refinement. Combine with `par_pyramid` to parallelize pyramid
+//!   downsampling as well.
 //! - `ml-refiner` – enables the ML-backed refiner entry points via the
 //!   `chess-corners-ml` crate and embedded ONNX model.
 //! - `simd` – enables portable-SIMD accelerated inner loops for the
