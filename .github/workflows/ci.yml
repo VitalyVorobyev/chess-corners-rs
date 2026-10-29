@@ -240,7 +240,7 @@ jobs:
           grep -q 'default_detector_config_json' "$PKG/chess_corners_wasm.d.ts"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
 
