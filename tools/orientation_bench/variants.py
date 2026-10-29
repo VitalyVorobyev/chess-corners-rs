@@ -16,7 +16,7 @@ def _build_permissive_cfg():
     """
     import chess_corners  # local import: only needed when running detection
 
-    cfg = chess_corners.DetectorConfig.single_scale()
+    cfg = chess_corners.DetectorConfig.chess()
     chess = chess_corners.ChessConfig()
     chess.ring = chess_corners.ChessRing.BROAD
     cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
