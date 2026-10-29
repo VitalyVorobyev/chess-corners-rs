@@ -134,8 +134,14 @@ pub(super) fn fit_with_seed(
 
     let rms = (ssr / 16.0).sqrt();
 
-    let (theta1_c, theta2_c, amp_c) = canonicalize(theta1, theta2, amp);
+    let (theta1_c, theta2_c, amp_c, swapped) = canonicalize_tracking_swap(theta1, theta2, amp);
     let _ = mu;
+    // Canonicalisation may exchange the two axes; the sigmas follow their axis.
+    let (sigma_t1, sigma_t2) = if swapped {
+        (sigma_t2, sigma_t1)
+    } else {
+        (sigma_t1, sigma_t2)
+    };
 
     TwoAxisFit {
         amp: amp_c,
@@ -191,6 +197,13 @@ pub(super) fn degenerate_fit(centered_var: f32) -> TwoAxisFit {
 /// sector for the antipodal branch. Finally `θ₁` is folded into `[0, π)`
 /// via the symmetric-shift symmetry.
 pub(crate) fn canonicalize(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32) {
+    let (t1, t2, a, _) = canonicalize_tracking_swap(theta1, theta2, amp);
+    (t1, t2, a)
+}
+
+/// [`canonicalize`] that also reports whether the two axes were exchanged,
+/// i.e. whether the returned `θ₁` is the line of the input `θ₂`.
+fn canonicalize_tracking_swap(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32, bool) {
     let mut t1 = wrap_to_tau(theta1);
     let mut t2 = wrap_to_tau(theta2);
     let mut a = amp;
@@ -210,7 +223,8 @@ pub(crate) fn canonicalize(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32
     // ring fit's canonical seed but with `(t1, t2)` arriving in
     // descending order — see `crate::orientation::tests::
     // canonical_axes_match_across_methods`.
-    if diff >= PI {
+    let swapped = diff >= PI;
+    if swapped {
         core::mem::swap(&mut t1, &mut t2);
         diff = (t2 - t1).rem_euclid(TAU);
     }
@@ -218,7 +232,7 @@ pub(crate) fn canonicalize(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32
     t1 = t1.rem_euclid(PI);
     t2 = t1 + diff;
 
-    (t1, t2, a)
+    (t1, t2, a, swapped)
 }
 
 #[inline]
@@ -283,4 +297,49 @@ fn invert_4x4(a: &[[f32; 4]; 4]) -> Option<[[f32; 4]; 4]> {
         }
     }
     Some(inv)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::detect::chess::ring::ring_offsets;
+    use crate::orientation::descriptor::ring_angles;
+
+    /// When canonicalisation exchanges the two axes, each sigma stays with
+    /// its axis: seeding the fit with the axes in either order converges to
+    /// the same model, so the canonical result must be the same.
+    #[test]
+    fn sigmas_follow_their_axis_through_canonicalisation() {
+        let phi = ring_angles(ring_offsets(5));
+        let (t1, t2) = (20f32.to_radians(), 85f32.to_radians());
+        let h = |p: f32, t: f32| (TANH_BETA * (p - t).sin()).tanh();
+        let mut samples = [0.0f32; 16];
+        for (i, s) in samples.iter_mut().enumerate() {
+            let noise = ((i as f32 * 2.399).sin() * 4.0).round();
+            *s = 120.0 + 70.0 * h(phi[i], t1) * h(phi[i], t2) + noise;
+        }
+        let mean = samples.iter().sum::<f32>() / 16.0;
+        let var = samples.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / 16.0;
+
+        let direct = fit_with_seed(&samples, &phi, t1, t2, 70.0, mean, var);
+        let exchanged = fit_with_seed(&samples, &phi, t2, t1, 70.0, mean, var);
+        assert!((direct.theta1 - t1).abs() < 0.05, "direct {direct:?}");
+        assert!(
+            (exchanged.theta1 - t1).abs() < 0.05,
+            "exchanged {exchanged:?}"
+        );
+        assert!(
+            (direct.sigma_theta1 - direct.sigma_theta2).abs() > 0.05 * direct.sigma_theta1,
+            "the two axes must differ for this check: {direct:?}"
+        );
+        for (a, b) in [
+            (direct.sigma_theta1, exchanged.sigma_theta1),
+            (direct.sigma_theta2, exchanged.sigma_theta2),
+        ] {
+            assert!(
+                (a - b).abs() <= 0.02 * a,
+                "direct {direct:?} exchanged {exchanged:?}"
+            );
+        }
+    }
 }
