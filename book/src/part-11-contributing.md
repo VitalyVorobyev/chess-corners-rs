@@ -37,3 +37,8 @@ mdbook build book
 
 See `CLAUDE.md` for the full set of workspace conventions, including
 the layering rules between the core, facade, and pyramid crates.
+
+---
+
+Next: [Part XII](part-12-migrating-to-2.0.md) — updating code written
+for 1.x.

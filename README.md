@@ -64,6 +64,8 @@ chess-corners = "2.0"
 image = "0.25"
 ```
 
+Upgrading from 1.x? See [Migrating from 1.x to 2.0](book/src/part-12-migrating-to-2.0.md).
+
 ```rust
 use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 use image::ImageReader;
