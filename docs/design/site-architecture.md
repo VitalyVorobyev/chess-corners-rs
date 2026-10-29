@@ -22,7 +22,9 @@ sibling `calib-targets-rs` so the projects share an identity.
 
 ## Build pipeline
 
-`.github/workflows/docs.yml` (`SITE-02`) builds and assembles `public/`:
+`.github/workflows/docs.yml` (`SITE-02`) runs on `v*` release tags (and by hand),
+not on pushes to `main`, so the site always documents the released API. It
+builds and assembles `public/`:
 
 1. `cargo doc --workspace --all-features --no-deps` → `/api/` (+ `chess_corners`
    redirect).

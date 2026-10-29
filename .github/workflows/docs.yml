@@ -1,10 +1,12 @@
 name: Publish Rust Docs
 
+# The site documents the released version: it deploys on release tags only,
+# not on pushes to main (main may carry unreleased, breaking API). Run it by
+# hand on a release tag to republish a docs fix.
 on:
   push:
-    branches: [ main ]
-    tags: [ '*' ]        # also publish on tag push
-  workflow_dispatch:     # allow manual trigger
+    tags: [ 'v*' ]
+  workflow_dispatch:
 
 permissions:
   contents: read
