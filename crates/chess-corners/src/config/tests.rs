@@ -278,10 +278,7 @@ fn multiscale_config_round_trips_with_externally_tagged_payload() {
 
 #[test]
 fn image_refiner_round_trips_each_variant() {
-    #[allow(unused_mut)]
-    let mut variants = vec![(ImageRefiner::saddle_point(), r#"{"saddle_point":"#)];
-    #[cfg(feature = "ml-refiner")]
-    variants.push((ImageRefiner::Ml, r#""ml""#));
+    let variants = [(ImageRefiner::saddle_point(), r#"{"saddle_point":"#)];
     for (v, prefix) in variants {
         let json = serde_json::to_string(&v).expect("serialize image refiner");
         assert!(json.starts_with(prefix), "{json}");

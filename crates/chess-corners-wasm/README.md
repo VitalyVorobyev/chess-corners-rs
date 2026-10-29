@@ -192,15 +192,13 @@ const detector = ChessDetector.withConfig(cfg);
 ```
 
 `ImageRefiner` is an immutable value: `ImageRefiner.saddlePoint()` (default
-tuning), `ImageRefiner.saddlePointWith(cfg)` (a copy of a `SaddlePointConfig`),
-and `ImageRefiner.ml()` in builds with the `ml-refiner` feature. Its `kind`
-is `"saddle_point"` or `"ml"`; `saddlePointConfig` returns a copy of the payload
-(`undefined` for `ml`). `cfg.refiner` is the current refiner or `undefined`.
-On ChESS the refiner replaces the center of mass, starts from the integer
-response peak and drops the corners it rejects; on Radon it starts from the
-peak fit and keeps the peak fit where it does not converge. The ML refiner
-rejects no corner and reports no covariance. JSON: `"refiner"` absent or `null`,
-`{"saddle_point": {...}}` or `"ml"`.
+tuning) or `ImageRefiner.saddlePointWith(cfg)` (a copy of a
+`SaddlePointConfig`). Its `kind` is `"saddle_point"`; `saddlePointConfig`
+returns a copy of the payload. `cfg.refiner` is the current refiner or
+`undefined`. On ChESS the refiner replaces the center of mass, starts from the
+integer response peak and drops the corners it rejects; on Radon it starts from
+the peak fit and keeps the peak fit where it does not converge. JSON:
+`"refiner"` absent or `null`, or `{"saddle_point": {...}}`.
 
 ### Nested edits propagate
 
@@ -245,8 +243,7 @@ const roundTrip = JSON.parse(cfg.toJson());
 ```
 
 Every key is optional; omitted fields take their defaults, so `'{}'` is the
-default config. Unknown keys are ignored. The schema describes the default
-build (no ML refiner). In a bundler the schema file can be imported from
+default config. Unknown keys are ignored. In a bundler the schema file can be imported from
 `@vitavision/chess-corners/schemas/detector_config.json`; the package has
 no `exports` map, so any deep import path works.
 

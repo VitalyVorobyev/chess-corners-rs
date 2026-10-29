@@ -193,23 +193,13 @@ def test_refiner_defaults_to_null_and_round_trips_both_variants():
     back = chess_corners.DetectorConfig.from_json(cfg.to_json())
     assert back.refiner.kind == "saddle_point"
     assert back.refiner.payload.max_offset == pytest.approx(0.75)
-
-    cfg = cfg.with_refiner(chess_corners.ImageRefiner.ml())
-    assert json.loads(cfg.to_json())["refiner"] == {"ml": None}
-    back = chess_corners.DetectorConfig.from_dict(cfg.to_dict())
-    assert back.refiner == chess_corners.ImageRefiner.ml()
-    assert back.refiner.payload is None
+    assert chess_corners.DetectorConfig.from_dict(cfg.to_dict()).refiner == cfg.refiner
 
 
 def test_image_refiner_dict_shapes():
-    ml = chess_corners.ImageRefiner.ml()
     sp = chess_corners.ImageRefiner.saddle_point()
-    assert chess_corners.ImageRefiner.from_dict("ml") == ml
-    assert chess_corners.ImageRefiner.from_dict({"ml": None}) == ml
     assert chess_corners.ImageRefiner.from_dict(sp.to_dict()) == sp
     assert chess_corners.ImageRefiner.from_dict({"saddle_point": {}}) == sp
-    assert ml.to_dict() == {"ml": None}
-    assert repr(ml) == "ImageRefiner.ml()"
     assert repr(sp).startswith("ImageRefiner.saddle_point(")
 
 
@@ -220,6 +210,7 @@ def test_image_refiner_dict_shapes():
         "center_of_mass",
         "peak_fit",
         "bogus",
+        "ml",
         {"center_of_mass": {}},
         {"peak_fit": None},
         {"ml": {}},

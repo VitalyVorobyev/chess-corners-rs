@@ -62,8 +62,7 @@ how far the reported `(x, y)` is likely to be from the true corner,
 from noise and from the localizer's systematic error together. It is
 reported by every localizer that produces a corner's final position:
 the ChESS center of mass, the Radon peak fit, and the `SaddlePoint`
-image refiner on either detector. The ML refiner reports none; a Radon
-corner it does not move keeps the peak fit's.
+image refiner on either detector.
 
 `DetectorConfig::uncertainty` selects it, together with the image noise
 level that expresses it in px²:
@@ -122,7 +121,7 @@ is a larger part of the work. The default, `Off`, does not pay it.
 
 | Cause | What to do |
 |-------|------------|
-| `uncertainty` is `Off`, or the ML refiner placed the corner | Use `Uncertainty::Propagated` and a classic localizer. |
+| `uncertainty` is `Off` | Use `Uncertainty::Propagated`. |
 | ChESS `SaddlePoint` re-centring did not converge for this corner | The position is the single integer-grid fit, which is biased. Leave the corner out, or give it a weight well below its neighbours'. A Radon corner keeps its peak fit and that fit's covariance instead. |
 | The noise estimate declined (too few edge-free areas, or JPEG input; §8.3.2) | Every corner of the frame lacks a covariance. Supply the noise level (`NoiseLevel::Known`, §8.6.2). |
 | `upscale` is active | Interpolation correlates the noise of the upscaled pixels, so no covariance is reported. |
@@ -487,7 +486,7 @@ fn whiten(r: [f32; 2], c: &PositionCovariance) -> [f32; 2] {
     [w0, (r[1] - l21 * w0) / l22]
 }
 
-// Any classic localizer reports a covariance; SaddlePoint is the most accurate.
+// Every localizer reports a covariance; SaddlePoint is the most accurate.
 let cfg = DetectorConfig::chess()
     .with_refiner(ImageRefiner::saddle_point())
     .with_uncertainty(Uncertainty::Propagated { noise: NoiseLevel::Estimate });

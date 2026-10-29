@@ -23,7 +23,6 @@ that drive the CLI need it built first (`cargo build -p chess-corners --release`
 | `profile.sh` | `cargo-flamegraph` / `samply` wrapper for hot-path profiling. |
 | `check_doc_versions.py` | Checks install-snippet versions in the docs against the workspace version (CI; `--fix` rewrites). |
 | `orientation_bench/` | Orientation-fit benchmark; see its README. |
-| `ml_refiner/` | Training pipeline for the shipped ML refiner; see its README. |
 | `refiner_robustness/` | Refiner-robustness and uncertainty research harnesses; results in `docs/reference/`. |
 | `orientation_sigma/` | Orientation-σ study: `synth.py` grid and real-data truth for the `orientation_sigma_study` example, and the z / Spearman analysis; results in `docs/reference/orientation-sigma.md`. |
 | `detection/`, `plotting/` | Internal modules used by `detect.py` and `plot_output.py`. |

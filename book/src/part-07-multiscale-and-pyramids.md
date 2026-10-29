@@ -70,7 +70,7 @@ pub trait DenseDetector {
 `DenseDetector` and its two implementors are public re-exports of
 `chess-corners-core`, so the trait is available to downstream crates
 that want to extend the pipeline with a custom response kernel.
-Subpixel image-domain refinement (saddle-point, ML) is
+Subpixel image-domain refinement (saddle-point) is
 **not** part of the trait — it runs detector-agnostically via
 `chess_corners_core::refine_corners_on_image`.
 

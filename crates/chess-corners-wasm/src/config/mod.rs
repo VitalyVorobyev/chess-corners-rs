@@ -587,16 +587,10 @@ mod tests {
         saddle.set_max_offset(4.0);
         let refiner = ImageRefiner::saddle_point_with(&saddle);
         assert_eq!(refiner.kind(), "saddle_point");
-        assert_eq!(
-            refiner.get_saddle_point().map(|s| s.max_offset()),
-            Some(4.0)
-        );
+        assert_eq!(refiner.get_saddle_point().max_offset(), 4.0);
         // The payload is a copy: later edits do not leak in.
         saddle.set_max_offset(1.0);
-        assert_eq!(
-            refiner.get_saddle_point().map(|s| s.max_offset()),
-            Some(4.0)
-        );
+        assert_eq!(refiner.get_saddle_point().max_offset(), 4.0);
 
         for base in [RsDetectorConfig::chess(), RsDetectorConfig::radon()] {
             let cfg = DetectorConfig::from_value_pub(base);

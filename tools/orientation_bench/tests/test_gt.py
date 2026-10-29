@@ -65,10 +65,8 @@ def test_homography_identity_basis():
 
 
 def _local_jacobian_fd(H: np.ndarray, u: float, v: float, eps: float = 1e-3) -> np.ndarray:
-    """Local copy of the FD helper from tools/ml_refiner/synth/homography.py.
-
-    We import a fresh implementation rather than reach into ml_refiner so this
-    test does not depend on the bench's path bootstrap.
+    """An independent finite-difference Jacobian, so the test checks `gt`
+    against a second implementation rather than shared code.
     """
 
     def project(uu: float, vv: float) -> tuple[float, float]:

@@ -33,15 +33,6 @@ pub enum ImageRefiner {
     /// neighbouring corners. Reports a position covariance on the corners it
     /// refines to convergence.
     SaddlePoint(SaddlePointConfig),
-    /// ML-backed subpixel refinement: a small ONNX model predicts the corner
-    /// offset from a normalized 21×21 intensity patch around each corner. It
-    /// rejects no corner: one it cannot refine (its patch leaves the image,
-    /// or inference fails) keeps its seed. Reports no position covariance (a
-    /// Radon corner it leaves in place keeps the peak fit's).
-    /// Requires the `ml-refiner` feature; not supported by
-    /// [`Detector::detect_u8_roi`](crate::Detector::detect_u8_roi).
-    #[cfg(feature = "ml-refiner")]
-    Ml,
 }
 
 impl ImageRefiner {

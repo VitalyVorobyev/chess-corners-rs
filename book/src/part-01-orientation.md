@@ -45,9 +45,8 @@ same [multiscale pipeline](part-07-multiscale-and-pyramids.md).
 
 Each detector brings its peaks under a pixel with its own localizer on
 its response map: the ChESS center of mass, the Radon peak fit. An
-optional image refiner — `SaddlePoint` or an ONNX-backed `ML` model,
-set on the top-level `refiner` field — refines the corners of either
-detector further on the image. Localizers and refiners are described in
+optional image refiner — `SaddlePoint`, set on the top-level `refiner`
+field — refines the corners of either detector further on the image. Localizers and refiners are described in
 [Part V](part-05-refiners.md) and benchmarked in
 [Part IX](part-09-benchmarks.md).
 
@@ -92,11 +91,8 @@ below the facade.
 ├─ chess-corners-core    (low-level algorithms: ChESS + Radon detectors,
 │                         refiners, descriptors)
 │
-├─ box-image-pyramid     (standalone u8 pyramid builder, fully
-│                         independent — no chess-specific coupling)
-│
-└─ chess-corners-ml      (optional ONNX refiner; gated behind
-                          `ml-refiner` feature)
+└─ box-image-pyramid     (standalone u8 pyramid builder, fully
+                          independent — no chess-specific coupling)
 ```
 
 Layering rules enforced by CI:
@@ -112,8 +108,7 @@ Support directories:
 
 - `config/` — example CLI JSON configs.
 - `testdata/` — sample images used by tests, examples, and book plots.
-- `tools/` — Python scripts for plotting, benchmarking, and the
-  ML refiner training pipeline.
+- `tools/` — Python scripts for plotting and benchmarking.
 - `docs/` — design notes, proposals, and backlog.
 - `book/` — this book (mdBook source under `book/src/`).
 
@@ -128,7 +123,7 @@ facade. Fields:
 | `x`, `y`        | `f32`                       | Subpixel position in input image pixels.                                |
 | `response`      | `f32`                       | Raw detector response at the peak. Scale is detector-specific.          |
 | `axes`          | `Option<[AxisEstimate; 2]>` | The two local grid axis directions, each with the standard error of its fit in radians (a fit-quality score, not a calibrated error bound) — or `None` when the orientation fit is disabled. |
-| `position_covariance` | `Option<PositionCovariance>` | 2×2 covariance of `(x, y)` in px² — or `None`; every localizer except the ML refiner reports one when `DetectorConfig::uncertainty` is `Propagated` (the default is `Off`; [Part VIII](part-08-uncertainty.md)). |
+| `position_covariance` | `Option<PositionCovariance>` | 2×2 covariance of `(x, y)` in px² — or `None`; every localizer reports one when `DetectorConfig::uncertainty` is `Propagated` (the default is `Off`; [Part VIII](part-08-uncertainty.md)). |
 
 The two axes are **not** assumed orthogonal — projective warp or
 lens distortion tilts the sectors independently, and the fit
@@ -166,7 +161,6 @@ at the same site:
 - [`chess-corners` API reference](../api/chess_corners/index.html)
 - [`chess-corners-core` API reference](../api/chess_corners_core/index.html)
 - [`box-image-pyramid` API reference](../api/box_image_pyramid/index.html)
-- [`chess-corners-ml` API reference](../api/chess_corners_ml/index.html)
 
 ## 1.6 Installation and features
 
@@ -187,7 +181,6 @@ Feature flags on the `chess-corners` facade:
 | `simd`        | Optional high-performance path: `std::simd` for the ChESS kernel. Nightly only. |
 | `par_pyramid` | SIMD / Rayon acceleration inside the pyramid downsampler.              |
 | `tracing`     | Structured `tracing` spans for the detector pipeline.                  |
-| `ml-refiner`  | Enable the ONNX-backed refiner (`chess-corners-ml` dependency).        |
 | `cli`         | Build the `chess-corners` binary.                                      |
 
 The `image` feature only wires up in-memory buffer types (`GrayImage`,

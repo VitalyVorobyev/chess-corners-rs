@@ -492,8 +492,8 @@ impl DetectorConfig {
 
     /// Optional image refiner, or `undefined` when each detector keeps its
     /// own subpixel localizer (the default). Independent of the detection
-    /// strategy. JSON: `"refiner": null`, `{"saddle_point": {...}}` or
-    /// `"ml"`.  Set it with `withRefiner` / `withoutRefiner`.
+    /// strategy. JSON: `"refiner": null` or `{"saddle_point": {...}}`. Set
+    /// it with `withRefiner` / `withoutRefiner`.
     #[wasm_bindgen(getter)]
     pub fn refiner(&self) -> Result<Option<ImageRefiner>, JsError> {
         (*self.refiner.borrow())

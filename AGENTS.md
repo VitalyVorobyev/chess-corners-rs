@@ -1,11 +1,10 @@
 # AGENTS.md — chess-corners
 
-This repository contains **four published crates**:
+This repository contains **three published crates**:
 
 * **`chess-corners`** — the *public*, user-facing API crate (stable surface, ergonomic types).
 * **`chess-corners-core`** — a *low-level*, performance-oriented core crate (almost internal; minimal deps; sharper edges).
 * **`box-image-pyramid`** — a small standalone crate for fixed 2x grayscale pyramid construction with reusable buffers.
-* **`chess-corners-ml`** — an *advanced, optional* crate providing ONNX-based ML refiner inference, reached through the facade's `ml-refiner` feature. Published for callers who opt into ML refinement; it pulls in the ONNX runtime, so it is not part of a default install. Keep its surface narrow and semver-clean.
 
 The remaining crates — **`chess-corners-py`**, **`chess-corners-wasm`**, **`chess-corners-capi`**, and **`chess-corners-testutil`** — are **not** published to crates.io (`publish = false`) and carry no crates.io semver contract. `-py` and `-wasm` ship as a Python wheel and an npm package; `-capi` is the C-ABI marshalling layer (a `cbindgen`-generated header + static/dynamic lib) distributed to C/C++ consumers via CMake / vcpkg; `-testutil` is a dev-only, zero-dependency crate of shared test fixtures consumed via other crates' `[dev-dependencies]`.
 
@@ -74,7 +73,7 @@ camera calibration — those are downstream concerns. The pipeline:
 3. **Refinement** — each detector's own localizer (ChESS center of
    mass, Radon peak fit), optionally replaced/refined by one
    detector-independent image refiner, `DetectorConfig::refiner`:
-   SaddlePoint (core's `RefinerKind`) or the facade's ML refiner (see §6).
+   SaddlePoint (core's `RefinerKind`; see §6).
 4. **Orientation** — two-axis grid-direction fit per corner (`RingFit`
    default, or `DiskFit`) with calibrated per-axis uncertainty.
 5. **Descriptors** — the output `CornerDescriptor { x, y, response, axes }`.
@@ -96,7 +95,6 @@ run under the same orchestrator. See
 
 * Board topology / grid fitting, ChArUco decoding, or full camera
   calibration (downstream concerns).
-* Heavy ML dependencies in default builds (`ml-refiner` is opt-in).
 * Non-deterministic outputs.
 * Adding bulky dependencies to `chess-corners-core`.
 
@@ -213,7 +211,6 @@ The built-in refiners:
 
 * **CenterOfMass** (the ChESS localizer; response-map centroid)
 * **SaddlePoint** (image refiner; quadratic Hessian fit)
-* **Ml** (image refiner; ONNX patch model, facade `ImageRefiner::Ml`, `ml-refiner` feature)
 
 **Rule:** default settings must reproduce existing behavior unless the user opts in.
 

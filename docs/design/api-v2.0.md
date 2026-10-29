@@ -1,7 +1,7 @@
 # API 2.0 — refinement stage, uncertainty tier, removals
 
 Status: accepted · Workstream: API / UQ · Target: 2.0.0 (breaking) ·
-Tasks: `UQ-43`, `UQ-19`, `UQ-06`, Förstner removal.
+Tasks: `UQ-43`, `UQ-19`, `UQ-06`, Förstner and ML-refiner removal.
 
 ## 1. Why a major release
 
@@ -74,8 +74,8 @@ map; image refinement is one optional, detector-independent stage:
 
 | | Response-map localizer (strategy config) | Image refiner (`DetectorConfig::refiner`) |
 |---|---|---|
-| ChESS | center of mass (`ChessConfig::center_of_mass`) | `None` (default) · `SaddlePoint(SaddlePointConfig)` · `Ml` |
-| Radon | peak fit (`RadonConfig::peak_fit`) | `None` (default) · `SaddlePoint(SaddlePointConfig)` · `Ml` |
+| ChESS | center of mass (`ChessConfig::center_of_mass`) | `None` (default) · `SaddlePoint(SaddlePointConfig)` |
+| Radon | peak fit (`RadonConfig::peak_fit`) | `None` (default) · `SaddlePoint(SaddlePointConfig)` |
 
 ```rust
 pub struct DetectorConfig { /* … */ pub refiner: Option<ImageRefiner>, /* … */ }
@@ -83,8 +83,6 @@ pub struct DetectorConfig { /* … */ pub refiner: Option<ImageRefiner>, /* … 
 #[non_exhaustive]
 pub enum ImageRefiner {
     SaddlePoint(SaddlePointConfig),
-    #[cfg(feature = "ml-refiner")]
-    Ml,
 }
 ```
 
@@ -128,6 +126,21 @@ independent of `Uncertainty`. calib-targets-rs gates and weights on it, so
 the 2.0 changelog states the scale change and the threshold mapping
 (×0.65 keeps a gate's rejection rate).
 
+### 2.6 The ML refiner is removed
+
+`ImageRefiner::Ml` is dominated by `SaddlePoint`. It costs about 151 µs
+per corner against 0.18 µs, and on rotated boards (0.3 rad) its RMS error is
+0.64–0.90 px against at most 0.057 px for SaddlePoint. On the Part IX
+synthetic sweep (axis-aligned, 16 conditions) SaddlePoint has the lower mean
+error on 15; the exception is the heaviest noise row (`σ_noise = 12`), where
+the model's 0.093 px beats SaddlePoint's 0.100 px, a margin that does not
+justify a ~800× cost or the rotation failure. The `ml-refiner` feature, the
+`chess-corners-ml` crate (left at 0.13.0 on crates.io, not yanked), the
+training tools under `tools/ml_refiner/` and every binding's `ml()` go.
+`ImageRefiner` stays a `#[non_exhaustive]` enum with one variant: it is the
+public type of `DetectorConfig::refiner` and the JSON shape
+`{"saddle_point": {...}}`, so a later image refiner is an additive variant.
+
 ## 3. Versioning while 2.0 is developed
 
 After `v1.7.0` is tagged, `main` is 2.0 development: the first breaking PR
@@ -144,6 +157,7 @@ once the major version moves). A 1.7.x fix, if one is needed, is cut from a
 | 2 | §2.1 in every binding, the schema and the book; C tags renumbered |
 | 3 | §2.3 in core, facade, every binding, the schema and the book |
 | 4 | §2.5 after the evidence |
+| 4b | §2.6: remove the ML refiner everywhere (facade, bindings, CLI, crate, tools, CI, book) |
 | 5 | Migration guide (book + `docs/changelog/2.0.0.md`), release |
 
 Each PR runs the full gate set plus Python, WASM and C header checks, and

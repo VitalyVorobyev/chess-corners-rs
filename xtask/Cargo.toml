@@ -10,8 +10,6 @@ publish = false
 anyhow.workspace = true
 schemars.workspace = true
 serde_json.workspace = true
-# Default features only (no `ml-refiner`): the committed schema must match
-# the npm (wasm) build, which does not enable the ONNX refiner.
 chess-corners = { workspace = true, features = ["schemars"] }
 
 [dev-dependencies]

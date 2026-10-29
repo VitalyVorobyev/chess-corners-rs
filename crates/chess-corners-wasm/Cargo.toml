@@ -11,10 +11,6 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[features]
-default = []
-ml-refiner = ["chess-corners/ml-refiner"]
-
 [dependencies]
 chess-corners.workspace = true
 serde-wasm-bindgen.workspace = true

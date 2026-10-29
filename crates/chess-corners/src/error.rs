@@ -22,18 +22,6 @@ pub enum ChessError {
     /// A known noise level ([`NoiseLevel::Known`](crate::NoiseLevel::Known))
     /// is negative or not finite.
     InvalidNoiseSigma(f32),
-    /// The configured refiner is not available on the single-scale ROI
-    /// detection path ([`Detector::detect_u8_roi`](crate::Detector::detect_u8_roi)
-    /// / [`Detector::detect_roi`](crate::Detector::detect_roi)). The ML
-    /// refiner runs a whole-frame model pipeline that the ROI path does
-    /// not carry; the refiner selection is never silently downgraded, so
-    /// this variant is returned instead. Select a built-in refiner
-    /// (center-of-mass or saddle-point) for ROI detection, or
-    /// use the whole-image [`Detector::detect_u8`](crate::Detector::detect_u8)
-    /// / [`Detector::detect`](crate::Detector::detect) entry points for ML
-    /// refinement.
-    #[cfg(feature = "ml-refiner")]
-    RoiRefinerUnsupported,
 }
 
 impl fmt::Display for ChessError {
@@ -47,13 +35,6 @@ impl fmt::Display for ChessError {
             Self::InvalidNoiseSigma(s) => {
                 write!(f, "known noise sigma must be finite and >= 0, got {s}")
             }
-            #[cfg(feature = "ml-refiner")]
-            Self::RoiRefinerUnsupported => write!(
-                f,
-                "configured refiner is not supported on the ROI detection path; \
-                 select center-of-mass or saddle-point, or use the \
-                 whole-image detect entry point"
-            ),
         }
     }
 }

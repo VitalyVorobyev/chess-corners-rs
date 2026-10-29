@@ -3,15 +3,10 @@ testdata
 .DS_Store
 config/config.json
 config/config_single.json
-config/config_single_noml.json
 output.json
 trace.json
 book/book
 *.pyc
-tools/ml_refiner/data/
-tools/ml_refiner/runs/
-tools/ml_refiner/data/**/*.npz
-tools/ml_refiner/runs/**/*.npz
 *.so
 REVIEW.md
 out

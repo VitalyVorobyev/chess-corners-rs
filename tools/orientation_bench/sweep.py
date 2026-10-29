@@ -23,18 +23,17 @@ import numpy as np
 from . import bootstrap_paths
 from .config import BenchConfig, SweepSpec
 from .gt import gt_axes_from_homography, gt_axes_synthetic
-
-bootstrap_paths()
-
-# Imports from sibling tool packages — sys.path was extended in __init__.py.
-from render_corner import (  # type: ignore  # noqa: E402
+from .synth.augment import apply_blur
+from .synth.homography import sample_homography
+from .synth.render_corner import (
     make_patch_grid,
     make_render_grid,
     render_corner_pattern_from_grid,
+    sample_from_image,
     sample_patch_from_image,
 )
-from homography import sample_homography  # type: ignore  # noqa: E402
-from augment import apply_blur  # type: ignore  # noqa: E402
+
+bootstrap_paths()
 
 __all__ = [
     "PatchSample",
@@ -233,8 +232,6 @@ def _make_patch(
         w_safe = np.where(np.abs(w) < 1e-9, 1e-9, w)
         xs_w = warped[..., 0] / w_safe
         ys_w = warped[..., 1] / w_safe
-        from render_corner import sample_from_image  # type: ignore
-
         patch01 = sample_from_image(img_high, EXTENT, SUPER_RES, xs_w, ys_w)
     else:
         patch01 = sample_patch_from_image(

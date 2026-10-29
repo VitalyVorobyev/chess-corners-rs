@@ -233,11 +233,3 @@ def test_detections_report_the_frame_noise_sigma(make):
     quiet = chess_corners.Detector(off).detect(img)
     assert len(quiet) > 0
     assert quiet.noise_sigma is None
-
-
-def test_ml_refiner_with_radon_detects_corners():
-    img = _noisy_board()
-    cfg = _radon().with_refiner(chess_corners.ImageRefiner.ml())
-    det = chess_corners.Detector(cfg).detect(img)
-    assert len(det) > 0
-    assert np.isfinite(det.xy).all()

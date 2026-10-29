@@ -92,9 +92,8 @@ impl Detections {
 
     /// `(N, 2, 2)` float32 array of per-corner position covariance in px²
     /// (`[[xx, xy], [xy, yy]]`). Rows are `NaN` for corners without one:
-    /// every localizer except the ML refiner reports it under
-    /// `Uncertainty.propagated()`; none does under `Uncertainty.off()` (the
-    /// default) or on upscaled input. The covariance includes a
+    /// every localizer reports it under `Uncertainty.propagated()`; none
+    /// does under `Uncertainty.off()` (the default) or on upscaled input. The covariance includes a
     /// per-localizer floor measured on real images that usually dominates
     /// it there; weighting by it has not been shown to beat uniform
     /// weighting on real data.
@@ -106,8 +105,8 @@ impl Detections {
     /// Image noise σ in gray levels that `position_covariance` was computed
     /// with: the known `noise_sigma` of `Uncertainty.propagated(...)`, or
     /// the per-image estimate (what `estimate_noise_sigma` returns for the
-    /// same image). `None` when no corner has a covariance (`Uncertainty.off()`, the
-    /// default; upscaled input; the ML refiner) or the estimate declined.
+    /// same image). `None` when no corner has a covariance (`Uncertainty.off()`,
+    /// the default; upscaled input) or the estimate declined.
     #[getter]
     fn noise_sigma(&self) -> Option<f32> {
         self.noise_sigma

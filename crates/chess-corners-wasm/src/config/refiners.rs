@@ -128,9 +128,8 @@ impl SaddlePointConfig {
 
 /// The optional image-refinement stage. Mirrors
 /// [`chess_corners::ImageRefiner`]. An immutable value: build one with
-/// `ImageRefiner.saddlePoint()`, `ImageRefiner.saddlePointWith(cfg)` or, when the package is built with the
-/// `ml-refiner` feature, `ImageRefiner.ml()`, and pass it to
-/// `DetectorConfig.withRefiner`.
+/// `ImageRefiner.saddlePoint()` or `ImageRefiner.saddlePointWith(cfg)` and
+/// pass it to `DetectorConfig.withRefiner`.
 ///
 /// Without an image refiner each detector keeps its own subpixel localizer
 /// (ChESS: center of mass; Radon: peak fit). An image refiner reads only the
@@ -141,14 +140,14 @@ impl SaddlePointConfig {
 ///
 /// `saddlePoint` fits a quadratic surface to the image patch at the saddle
 /// point and re-centres it until it converges; it reports a position
-/// covariance on the corners it refines. `ml` predicts the offset with a
-/// small ONNX model, rejects no corner and reports no covariance.
+/// covariance on the corners it refines.
 ///
-/// JSON: `{"saddle_point": {...}}` or `"ml"`.
+/// JSON: `{"saddle_point": {...}}`.
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ImageRefiner {
-    inner: RsImageRefiner,
+    /// The saddle-point tuning: the only image refiner.
+    inner: RsSaddlePointConfig,
 }
 
 #[wasm_bindgen]
@@ -157,7 +156,7 @@ impl ImageRefiner {
     #[wasm_bindgen(js_name = saddlePoint)]
     pub fn saddle_point() -> Self {
         Self {
-            inner: RsImageRefiner::saddle_point(),
+            inner: RsSaddlePointConfig::default(),
         }
     }
 
@@ -166,45 +165,27 @@ impl ImageRefiner {
     #[wasm_bindgen(js_name = saddlePointWith)]
     pub fn saddle_point_with(cfg: &SaddlePointConfig) -> Self {
         Self {
-            inner: RsImageRefiner::SaddlePoint(*cfg.cell.borrow()),
+            inner: *cfg.cell.borrow(),
         }
     }
 
-    /// ML-backed refinement (requires the `ml-refiner` Cargo feature).
-    #[cfg(feature = "ml-refiner")]
-    pub fn ml() -> Self {
-        Self {
-            inner: RsImageRefiner::Ml,
-        }
-    }
-
-    /// Variant tag: `"saddle_point"` or `"ml"`.
+    /// Variant tag: `"saddle_point"`.
     #[wasm_bindgen(getter)]
     pub fn kind(&self) -> String {
-        match self.inner {
-            RsImageRefiner::SaddlePoint(_) => "saddle_point",
-            #[cfg(feature = "ml-refiner")]
-            RsImageRefiner::Ml => "ml",
-            // `try_from` rejects every variant listed above's complement.
-            _ => "unknown",
-        }
-        .into()
+        "saddle_point".into()
     }
 
-    /// A copy of the saddle-point payload, or `undefined` for other kinds
-    /// (named `saddlePointConfig` because `saddlePoint` is the factory).
+    /// A copy of the saddle-point payload (named `saddlePointConfig` because
+    /// `saddlePoint` is the factory).
     #[wasm_bindgen(getter, js_name = saddlePointConfig)]
-    pub fn get_saddle_point(&self) -> Option<SaddlePointConfig> {
-        match self.inner {
-            RsImageRefiner::SaddlePoint(cfg) => Some(SaddlePointConfig::from_cell(cell(cfg))),
-            _ => None,
-        }
+    pub fn get_saddle_point(&self) -> SaddlePointConfig {
+        SaddlePointConfig::from_cell(cell(self.inner))
     }
 }
 
 impl ImageRefiner {
     pub(crate) fn snapshot(self) -> RsImageRefiner {
-        self.inner
+        RsImageRefiner::SaddlePoint(self.inner)
     }
 }
 
@@ -215,9 +196,7 @@ impl TryFrom<RsImageRefiner> for ImageRefiner {
     /// silently to another one.
     fn try_from(inner: RsImageRefiner) -> Result<Self, Self::Error> {
         match inner {
-            RsImageRefiner::SaddlePoint(_) => Ok(Self { inner }),
-            #[cfg(feature = "ml-refiner")]
-            RsImageRefiner::Ml => Ok(Self { inner }),
+            RsImageRefiner::SaddlePoint(cfg) => Ok(Self { inner: cfg }),
             other => Err(JsError::new(&format!(
                 "unsupported image refiner {other:?}"
             ))),

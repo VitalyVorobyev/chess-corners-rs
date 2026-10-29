@@ -88,9 +88,9 @@ shasum -a 512 src.tar.gz
    are untested and would need cargo cross-compilation setup.)
 2. **(Optional) Add feature support.** The initial port exposes no vcpkg
    features — it builds the crate's default cargo features. To offer
-   `rayon` / `simd` / `ml-refiner` as vcpkg features, make three changes
+   `rayon` / `simd` as vcpkg features, make three changes
    together and verify each with a real install:
-   - add pass-through cargo features (`rayon` / `simd` / `ml-refiner`) to the
+   - add pass-through cargo features (`rayon` / `simd`) to the
      `chess-corners-capi` crate, forwarding to the `chess-corners` facade;
    - teach `crates/chess-corners-capi/CMakeLists.txt` to read a
      `CHESS_CORNERS_CARGO_FEATURES` cache var and append `--features ...` to

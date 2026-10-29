@@ -72,10 +72,7 @@ def test_image_refiner_variant_and_payload():
     assert isinstance(refiner.payload, chess_corners.SaddlePointConfig)
     assert refiner.payload.max_offset == pytest.approx(2.0)
 
-    ml = chess_corners.ImageRefiner.ml()
-    assert ml.kind == "ml"
-    assert ml.payload is None
-    assert ml != refiner
+    assert refiner != chess_corners.ImageRefiner.saddle_point()
     assert chess_corners.ImageRefiner.saddle_point() == chess_corners.ImageRefiner.saddle_point()
 
 
@@ -86,7 +83,7 @@ def test_image_refiner_is_off_by_default_and_settable():
     assert cfg.refiner.kind == "saddle_point"
     cfg.refiner = None
     assert cfg.refiner is None
-    assert cfg.with_refiner(chess_corners.ImageRefiner.ml()).without_refiner().refiner is None
+    assert cfg.with_refiner(chess_corners.ImageRefiner.saddle_point()).without_refiner().refiner is None
 
 
 def test_chess_center_of_mass_is_mutated_in_place():

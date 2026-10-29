@@ -203,19 +203,17 @@ impl SaddlePointConfig {
 
 /// Subpixel refinement of each corner on the input image, replacing the
 /// detector's own localizer. An immutable value: build one with
-/// `ImageRefiner.saddle_point(cfg=None)` or `ImageRefiner.ml()`.
+/// `ImageRefiner.saddle_point(cfg=None)`.
 ///
 /// On the ChESS detector it replaces the center of mass, starts from the
 /// integer peak and drops corners it rejects. On the Radon detector it
 /// starts from the peak fit and keeps the peak fit where it does not
-/// converge. The saddle-point refiner reports a position covariance. The
-/// ML refiner works with both detectors, rejects no corner (one it cannot
-/// refine keeps its seed), reports no covariance and is not supported by
-/// `detect_roi`.
+/// converge. The saddle-point refiner reports a position covariance.
 #[pyclass(module = "chess_corners", frozen, eq, from_py_object)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct ImageRefiner {
-    inner: RsImageRefiner,
+    /// The saddle-point tuning: the only image refiner.
+    inner: RsSaddlePointConfig,
 }
 
 impl ImageRefiner {
@@ -225,15 +223,13 @@ impl ImageRefiner {
         // The facade enum is `#[non_exhaustive]`: the wildcard arm catches
         // variants added to the library after these bindings.
         match inner {
-            RsImageRefiner::SaddlePoint(_) => Ok(Self { inner }),
-            #[cfg(feature = "ml-refiner")]
-            RsImageRefiner::Ml => Ok(Self { inner }),
+            RsImageRefiner::SaddlePoint(cfg) => Ok(Self { inner: cfg }),
             other => Err(unknown_variant("ImageRefiner", &other)),
         }
     }
 
     pub(crate) fn to_rs(&self) -> RsImageRefiner {
-        self.inner
+        RsImageRefiner::SaddlePoint(self.inner)
     }
 }
 
@@ -248,77 +244,43 @@ impl ImageRefiner {
         cfg: Option<Py<SaddlePointConfig>>,
     ) -> Self {
         let inner = cfg.map(|c| c.borrow(py).inner).unwrap_or_default();
-        Self {
-            inner: RsImageRefiner::SaddlePoint(inner),
-        }
+        Self { inner }
     }
 
-    /// ML-backed subpixel refinement. Requires the `ml-refiner` feature.
-    #[cfg(feature = "ml-refiner")]
-    #[classmethod]
-    fn ml(_cls: &Bound<'_, PyType>) -> Self {
-        Self {
-            inner: RsImageRefiner::Ml,
-        }
-    }
-
-    /// Variant tag: `"saddle_point"` or `"ml"`.
+    /// Variant tag: `"saddle_point"`.
     #[getter]
     fn kind(&self) -> &'static str {
-        match self.inner {
-            RsImageRefiner::SaddlePoint(_) => "saddle_point",
-            _ => "ml",
-        }
+        "saddle_point"
     }
 
-    /// Tuning payload: a fresh `SaddlePointConfig` copy for `saddle_point`,
-    /// `None` for `ml`. Modifying the returned object does not affect the
-    /// refiner; rebuild via `ImageRefiner.saddle_point(cfg)` to apply it.
+    /// Tuning payload: a fresh `SaddlePointConfig` copy. Modifying the
+    /// returned object does not affect the refiner; rebuild via
+    /// `ImageRefiner.saddle_point(cfg)` to apply it.
     #[getter]
     fn payload(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        match self.inner {
-            RsImageRefiner::SaddlePoint(inner) => {
-                Ok(Py::new(py, SaddlePointConfig { inner })?.into_any())
-            }
-            _ => Ok(py.None()),
-        }
+        Ok(Py::new(py, SaddlePointConfig { inner: self.inner })?.into_any())
     }
 
-    /// The config dict: `{"saddle_point": {...}}` or `{"ml": None}`.
+    /// The config dict: `{"saddle_point": {...}}`.
     pub(crate) fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
-        match self.inner {
-            RsImageRefiner::SaddlePoint(inner) => {
-                d.set_item("saddle_point", SaddlePointConfig { inner }.to_dict(py)?)?;
-            }
-            _ => d.set_item("ml", py.None())?,
-        }
+        d.set_item(
+            "saddle_point",
+            SaddlePointConfig { inner: self.inner }.to_dict(py)?,
+        )?;
         Ok(d.unbind())
     }
 
-    /// Parse a config value: `{"saddle_point": {...}}`, and with the
-    /// `ml-refiner` feature `"ml"` or `{"ml": None}`. Any other shape
+    /// Parse a config value: `{"saddle_point": {...}}`. Any other shape
     /// raises `ConfigError`.
     #[classmethod]
     pub(crate) fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         const PATH: &str = "refiner";
-        #[cfg(feature = "ml-refiner")]
-        const UNIT_TAGS: &[&str] = &["ml"];
-        #[cfg(not(feature = "ml-refiner"))]
-        const UNIT_TAGS: &[&str] = &[];
-        #[cfg(feature = "ml-refiner")]
-        const ALLOWED: &[&str] = &["saddle_point", "ml"];
-        #[cfg(not(feature = "ml-refiner"))]
         const ALLOWED: &[&str] = &["saddle_point"];
 
-        if accept_dict_or_bare_string(data, UNIT_TAGS, &["saddle_point"], PATH)?.is_some() {
-            #[cfg(feature = "ml-refiner")]
-            return Ok(Self {
-                inner: RsImageRefiner::Ml,
-            });
-            #[cfg(not(feature = "ml-refiner"))]
-            return Err(config_error(format!("{PATH}: no unit variants available")));
-        }
+        // No variant is a bare string: this only rejects strings, naming the
+        // payload a bare `"saddle_point"` lacks.
+        accept_dict_or_bare_string(data, &[], ALLOWED, PATH)?;
         let dict = require_dict(data, PATH)?;
         reject_unknown_keys(&dict, ALLOWED, PATH)?;
         if dict.len() != 1 {
@@ -327,35 +289,22 @@ impl ImageRefiner {
                 ALLOWED.join(", ")
             )));
         }
-        if let Some(value) = dict.get_item("saddle_point")? {
-            let cls = data.py().get_type::<SaddlePointConfig>();
-            let cfg = SaddlePointConfig::from_dict(&cls, &value)?;
-            return Ok(Self {
-                inner: RsImageRefiner::SaddlePoint(cfg.inner),
-            });
-        }
-        #[cfg(feature = "ml-refiner")]
-        if let Some(value) = dict.get_item("ml")? {
-            if !value.is_none() {
-                return Err(config_error(format!("{PATH}.ml must be null")));
-            }
-            return Ok(Self {
-                inner: RsImageRefiner::Ml,
-            });
-        }
-        Err(config_error(format!(
-            "{PATH} must have one of: {}",
-            ALLOWED.join(", ")
-        )))
+        let Some(value) = dict.get_item("saddle_point")? else {
+            return Err(config_error(format!(
+                "{PATH} must have one of: {}",
+                ALLOWED.join(", ")
+            )));
+        };
+        let cls = data.py().get_type::<SaddlePointConfig>();
+        let cfg = SaddlePointConfig::from_dict(&cls, &value)?;
+        Ok(Self { inner: cfg.inner })
     }
 
     fn __repr__(&self) -> String {
-        match self.inner {
-            RsImageRefiner::SaddlePoint(c) => format!(
-                "ImageRefiner.saddle_point(radius={}, det_margin={}, max_offset={}, min_abs_det={})",
-                c.radius, c.det_margin, c.max_offset, c.min_abs_det
-            ),
-            _ => "ImageRefiner.ml()".to_string(),
-        }
+        let c = self.inner;
+        format!(
+            "ImageRefiner.saddle_point(radius={}, det_margin={}, max_offset={}, min_abs_det={})",
+            c.radius, c.det_margin, c.max_offset, c.min_abs_det
+        )
     }
 }

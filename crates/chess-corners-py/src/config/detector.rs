@@ -163,9 +163,8 @@ impl DetectorConfig {
     }
 
     /// Return a new `DetectorConfig` with the image refiner replaced:
-    /// `ImageRefiner.saddle_point(cfg=None)` or `ImageRefiner.ml()`. The
-    /// refiner is independent of the detector and survives `with_chess` /
-    /// `with_radon`.
+    /// `ImageRefiner.saddle_point(cfg=None)`. The refiner is independent of
+    /// the detector and survives `with_chess` / `with_radon`.
     fn with_refiner(&self, py: Python<'_>, refiner: ImageRefiner) -> PyResult<Self> {
         let mut cfg = self.clone_inner(py)?;
         cfg.refiner = Some(refiner.to_rs());

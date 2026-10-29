@@ -1,26 +1,22 @@
 //! Unified cross-refiner benchmark: accuracy + throughput.
 //!
 //! Sweeps sub-pixel offsets (and optionally noise/blur) on an
-//! anti-aliased synthetic chessboard and compares all built-in
-//! refiners plus the embedded ML model (when the `ml-refiner` feature
-//! is enabled). Prints a single table per condition so the full picture
+//! anti-aliased synthetic chessboard and compares the built-in
+//! refiners. Prints a single table per condition so the full picture
 //! fits in one glance.
 //!
 //! Run with:
 //!
 //! ```sh
-//! cargo test -p chess-corners --test refiner_benchmark \
-//!     --all-features -- --nocapture
+//! cargo test -p chess-corners --test refiner_benchmark -- --nocapture
 //! ```
-//!
-//! Without `--all-features` the ML column is omitted.
 
 use chess_corners_core::{chess_response_u8, ChessParams, ImageView};
 use chess_corners_testutil::{aa_chessboard, add_gaussian_noise, gaussian_blur};
 
 #[path = "common/refiner_harness.rs"]
 mod harness;
-use harness::{bench_refiner, ClassicRefiners};
+use harness::{bench_refiner, BuiltinRefiners};
 
 // ---------------------------------------------------------------------------
 // Accuracy / timing aggregators.
@@ -110,13 +106,9 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
     const N: usize = 6; // 6x6 = 36 offsets
     const ITERS: u64 = 400;
 
-    let mut classic = ClassicRefiners::new();
+    let mut classic = BuiltinRefiners::new();
     let mut center_stats = Stats::default();
     let mut saddle_stats = Stats::default();
-    #[cfg(feature = "ml-refiner")]
-    let mut ml_refiner = harness::ml::MlRefiner::load();
-    #[cfg(feature = "ml-refiner")]
-    let mut ml_stats = Stats::default();
 
     let params = ChessParams::default();
 
@@ -150,11 +142,6 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
                 (ox, oy),
                 &mut saddle_stats,
             );
-
-            #[cfg(feature = "ml-refiner")]
-            if let Some(r) = ml_refiner.as_mut() {
-                harness::ml::bench(r, ITERS, view, seed, (ox, oy), &mut ml_stats);
-            }
         }
     }
 
@@ -172,14 +159,6 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
     ];
     for r in &rows {
         eprintln!("{}", format_row(r));
-    }
-    #[cfg(feature = "ml-refiner")]
-    if ml_refiner.is_some() {
-        let ml_row = RefinerRow {
-            name: "ML (ONNX)",
-            stats: ml_stats,
-        };
-        eprintln!("{}", format_row(&ml_row));
     }
 
     // Floor assertion guarding against regressions in the SaddlePoint
@@ -204,8 +183,7 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
 
 // Cell sizes:
 //   - 8 px: a comfortable "large cell" regime.
-//   - 5 px: closer to what the ML refiner was trained on (scale-1
-//     corners on 21×21 patches). Included for a fair ML comparison.
+//   - 5 px: a small-cell regime near the ChESS ring's support limit.
 
 #[test]
 fn sweep_clean() {

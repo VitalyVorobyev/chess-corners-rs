@@ -13,9 +13,8 @@ The library splits that step in two layers:
    (§5.3) and the Radon **peak fit** (§5.4).
 2. An optional **image refiner**, which works on the input image
    around each corner and does not care which detector found it:
-   **SaddlePoint** (§5.5) or the **ML** model (§5.6). It is set once,
-   on `DetectorConfig::refiner`, and applies to whichever detector is
-   active.
+   **SaddlePoint** (§5.5). It is set once, on `DetectorConfig::refiner`,
+   and applies to whichever detector is active.
 
 ## 5.1 Why two layers
 
@@ -40,8 +39,8 @@ accuracy matters more than a fraction of a microsecond per corner.
 
 | | Response-map localizer (strategy config) | Image refiner (`DetectorConfig::refiner`) |
 |---|---|---|
-| ChESS | center of mass (`ChessConfig::center_of_mass`) | `None` (default) · `SaddlePoint(SaddlePointConfig)` · `Ml` |
-| Radon | peak fit (`RadonConfig::peak_fit`) | `None` (default) · `SaddlePoint(SaddlePointConfig)` · `Ml` |
+| ChESS | center of mass (`ChessConfig::center_of_mass`) | `None` (default) · `SaddlePoint(SaddlePointConfig)` |
+| Radon | peak fit (`RadonConfig::peak_fit`) | `None` (default) · `SaddlePoint(SaddlePointConfig)` |
 
 Every combination is valid: an image refiner reads only the image, so
 there is no refiner that needs a response map the active detector does
@@ -55,9 +54,7 @@ it cannot refine, follows the detector:
   starts from the peak-fit position, and a corner it does not refine to
   convergence keeps its peak-fit position; no corner is dropped.
 
-The ML refiner rejects no corner: one it cannot refine (its patch
-leaves the image) keeps its seed. Under `Uncertainty::Propagated` a
-corner's position covariance comes from whichever localizer produced
+Under `Uncertainty::Propagated` a corner's position covariance comes from whichever localizer produced
 its final position ([Part VIII](part-08-uncertainty.md)).
 
 ```rust
@@ -76,8 +73,7 @@ let cfg = DetectorConfig::chess().with_chess(|c| c.center_of_mass.radius = 3);
 The image refiner survives a strategy switch (`with_chess` /
 `with_radon` leave it alone), so the same refinement can be compared
 across detectors with a one-line change. In JSON it is the top-level
-`"refiner"` key: `null` (or absent), `{"saddle_point": {...}}`, or
-`"ml"`.
+`"refiner"` key: `null` (or absent) or `{"saddle_point": {...}}`.
 
 ## 5.2 The refiner trait
 
@@ -121,8 +117,7 @@ dispatches over them. Core's `RefinerKind` selects an image refiner
 (`RefinerKind::SaddlePoint`); the center of mass is configured on
 `ChessParams::center_of_mass`. The pipeline holds one `Refiner` with
 its scratch buffers and reuses it across seeds — no per-corner
-allocation. The ML refiner batches whole frames through an ONNX model,
-so it lives in the facade rather than behind this trait.
+allocation.
 
 ## 5.3 Center of mass (ChESS)
 
@@ -151,8 +146,7 @@ detector's seeds are positive response peaks, so it never hits this.
 |                  | fails when `radius` crosses neighboring corners |
 
 Keep it when throughput matters more than sub-0.1 px accuracy. When an
-image refiner is set it does not run, except to place the coarse
-pyramid seeds of the ML pipeline (§5.6).
+image refiner is set it does not run.
 
 ## 5.4 Peak fit (Radon)
 
@@ -201,143 +195,15 @@ sweeps it has the lowest mean error of the built-in refiners on every
 clean, blurred and noisy row up to `σ_noise = 8`, and is within 0.003 px
 of (or below) `cv2.cornerSubPix` on the blurred rows.
 
-## 5.6 ML (image refiner)
-
-A learned refiner. Feeds a 21×21 normalized grayscale patch, centred on
-each corner, into a small CNN and takes `[dx, dy, conf_logit]` back out.
-The pipeline extracts the patches, stages them in batches, runs ONNX
-inference via `tract-onnx`, and adds `[dx, dy]` to each seed: the
-integer peak on ChESS, the peak fit on Radon. A corner whose patch
-leaves the image keeps its seed. It reports no covariance. Under a
-coarse-to-fine pyramid the coarse seeds come from the detector's own
-localizer, and the model runs only at full resolution. ROI detection
-(`Detector::detect_u8_roi`) does not support it.
-
-Selected with `ImageRefiner::Ml`, behind the `ml-refiner` feature. The default model
-`chess_refiner_v4.onnx` is embedded in the
-[`chess-corners-ml`](https://docs.rs/chess-corners-ml) crate at
-`crates/chess-corners-ml/assets/ml/`.
-
-### 5.6.1 Architecture
-
-The shipped model is `CornerRefinerNet`, a CoordConv CNN with a
-flatten + MLP head. About 180 K parameters:
-
-| Layer                 | Shape                | Notes                                                    |
-|-----------------------|----------------------|----------------------------------------------------------|
-| Input                 | 1 × 21 × 21          | Grayscale patch, normalized `u8/255`.                    |
-| CoordConv prepend     | 3 × 21 × 21          | Two extra channels with per-pixel `x`, `y` in `[-1, 1]`. |
-| Conv3×3, ReLU         | 16 × 21 × 21         |                                                          |
-| Conv3×3, ReLU         | 16 × 21 × 21         |                                                          |
-| Conv3×3 stride 2, ReLU| 32 × 11 × 11         |                                                          |
-| Conv3×3, ReLU         | 32 × 11 × 11         |                                                          |
-| Conv3×3 stride 2, ReLU| 64 × 6 × 6           |                                                          |
-| Flatten               | 2304                 |                                                          |
-| Linear, ReLU          | 64                   |                                                          |
-| Linear (no activation)| 3                    | `[dx, dy, conf_logit]`.                                  |
-
-CoordConv (Liu et al., 2018) concatenates explicit `x`, `y` coordinate
-channels to the input. Standard convolutions are translation-equivariant
-and cannot reliably regress to an absolute pixel offset from a patch
-center; CoordConv restores the center reference that pure convolutions
-discard.
-
-The head outputs three scalars: an offset `(dx, dy)` in patch-pixel
-units (valid range about `[-0.6, 0.6]` px, matching the training
-distribution) and a confidence logit. The current Rust consumer
-applies the offset and ignores the confidence.
-
-The PyTorch source in `tools/ml_refiner/model.py` also defines a
-wider variant (`CornerRefinerNetLarge`, ~730 K params, GroupNorm
-between convs) and a spatial-softargmax head
-(`CornerRefinerNetSoftArgmax`). Both match the 1-channel in, 3-scalar
-out contract so they are drop-in replacements for the inference
-path. The shipped model is the small variant — the larger and
-softargmax variants did not move the held-out error meaningfully in
-our sweeps.
-
-### 5.6.2 Training data and loss
-
-The training pipeline lives in `tools/ml_refiner/`; the shipped model's
-synthetic dataset is generated by the config at
-`tools/ml_refiner/configs/synth_v6.yaml`. It renders 200 000 patches
-with a 50/50 mix of two rendering modes:
-
-- **Hard cells.** An anti-aliased periodic checkerboard, rendered at
-  a random cell size in `[4, 12]` px, then blurred by a Gaussian
-  PSF in `σ ∈ [0.3, 2.0]` px. This matches real camera output: ink/paper
-  step edges, softened by the optical system's PSF, sampled by the
-  sensor. The benchmark fixture in Part IX uses the same renderer.
-- **Smooth saddle.** A `tanh(x)·tanh(y)` corner model, included at
-  50 % weight so the model stays accurate on the smooth synthetic
-  patches some callers still feed it.
-
-Augmentations per sample: additive Gaussian noise `σ ∈ [0, 10]` gray
-levels, photometric jitter (contrast, brightness, gamma), optional
-projective warp for perspective robustness, and 20 % negative
-samples (flat, edge, stripe, blob, pure noise, near-corner) with
-`is_pos = 0`.
-
-The true subpixel offset is sampled from `[-0.6, 0.6]` px.
-
-Loss: Huber on `(dx, dy)` for positives, binary cross-entropy on
-confidence for all samples. The regression loss is weighted up on
-positives only via `is_pos` (negatives have no valid target).
-
-### 5.6.3 Designing the training distribution
-
-A subpixel ML refiner is only as good as the patches it trains on, and
-synthetic training data has two failure modes that pull in opposite
-directions:
-
-- **Smooth-only data.** Training exclusively on smooth
-  `tanh(x)·tanh(y)` corners teaches the model transitions that span the
-  whole patch. Real sensor images look nothing like that — hard
-  ink/paper step edges softened by a small optical PSF — so a model
-  that has only seen `tanh` corners localizes real ones poorly (mean
-  error ~0.5 px on the hard-cell benchmark fixture).
-- **Hard-only data.** Swapping to hard cells alone flips the problem:
-  the model then mislocalizes the smooth synthetic corners some callers
-  still feed it (~0.6 px on `tanh` inputs). Neither distribution alone
-  spans the range of edge profiles a refiner meets in practice.
-
-The shipped dataset avoids both by mixing the two modes 50/50 (§5.6.2)
-and augmenting with sensor noise. Two lessons carry over into the
-Part IX benchmark. Noise augmentation is what lets the model take the
-heaviest-noise row (`σ = 12` gray levels), where it posts the lowest
-mean error; and capacity is not the bottleneck — neither a wider CNN
-nor a spatial-softargmax head lowered held-out error. On clean and
-mildly blurred data the geometric refiners still win (`SaddlePoint`
-on both), so ML earns its cost only
-when noise dominates.
-
-### 5.6.4 ONNX export and inference
-
-The export step (`tools/ml_refiner/export_onnx.py`) writes an ONNX
-graph at opset 17 (falling back to 18 if a conversion is unsupported).
-The graph contract is:
-
-- **Input** `patches`: `float32 [N, 1, 21, 21]`, `u8 / 255` in `[0, 1]`.
-- **Output** `pred`: `float32 [N, 3]` with `[dx, dy, conf_logit]`.
-
-Rust inference is `chess_corners_ml::MlModel::infer_batch`. It wraps
-`tract-onnx`, sizes the input to the runtime batch, and returns
-`Vec<[f32; 3]>`. Dynamic batch sizing is supported via a tract
-`SymbolScope`, so a single loaded model can handle variable-batch
-calls without re-optimization.
-
-## 5.7 Picking a localizer and refiner
+## 5.6 Picking a localizer and refiner
 
 The measurement-driven comparison lives in Part IX. In short:
 
-- Budget matters more than anything else: the geometric localizers and
-  refiners are orders of magnitude faster than ML per corner.
 - `SaddlePoint` has the lowest mean error of the built-in refiners on
   clean and blurred synthetic frames and on real calibration images, and
   is the default choice for calibration-grade work on either detector
   ([Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)
   compares it with the Radon peak fit).
-- ML has the lowest mean error on the heaviest synthetic noise row.
 - With no image refiner, ChESS's center of mass and Radon's peak fit
   cost almost nothing beyond detection.
 

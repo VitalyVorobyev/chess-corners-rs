@@ -69,9 +69,9 @@ enum Commands {
         /// Min cluster size override (applied to whichever strategy is active).
         #[arg(long)]
         min_cluster_size: Option<u32>,
-        /// Override the image refiner (`none`, `saddle_point`, or `ml`
-        /// with the `ml-refiner` feature). Applies to either strategy;
-        /// `none` keeps the detector's own subpixel localizer.
+        /// Override the image refiner (`none` or `saddle_point`). Applies
+        /// to either strategy; `none` keeps the detector's own subpixel
+        /// localizer.
         #[arg(long)]
         refiner: Option<String>,
         /// Integer upscale factor (2, 3, or 4). If set, enables

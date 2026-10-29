@@ -201,8 +201,8 @@ impl AxisEstimate {
 /// [`position_covariance`](Self::position_covariance) is the 2×2 covariance
 /// of `(x, y)` in px², for whitening the corner's residuals in a
 /// calibration. The `chess-corners` `Detector` fills it for every localizer
-/// except the ML refiner when its uncertainty setting is
-/// `Uncertainty::Propagated` (it is off by default), and
+/// when its uncertainty setting is `Uncertainty::Propagated` (it is off by
+/// default), and
 /// [`describe_corners`] leaves it `None` because it needs the image noise
 /// level (see [`Corner::position_covariance`]).
 ///
@@ -233,9 +233,8 @@ pub struct CornerDescriptor {
     /// first-order scatter due to white pixel noise plus the localizer's
     /// systematic error ([`Corner::position_covariance`] gives the model).
     ///
-    /// `None` when the localizer reports none (the uncertainty tier is off,
-    /// the ML refiner, a saddle-point refinement on ChESS seeds that did not
-    /// converge), when the image noise level is unknown (the estimate
+    /// `None` when the localizer reports none (the uncertainty tier is off, a
+    /// saddle-point refinement on ChESS seeds that did not converge), when the image noise level is unknown (the estimate
     /// declined and none was supplied), and when the corner was refined on
     /// an upscaled copy of the input, whose interpolated noise is spatially
     /// correlated.

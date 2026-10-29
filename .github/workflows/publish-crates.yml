@@ -124,13 +124,11 @@ jobs:
 
           BOX_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="box-image-pyramid") | .version')"
           CORE_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-core") | .version')"
-          ML_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-ml") | .version')"
           MAIN_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners") | .version')"
 
           echo "tag version:   $VER"
           echo "box version:   $BOX_VER"
           echo "core version:  $CORE_VER"
-          echo "ml version:    $ML_VER (version-pinned independently, not tag-checked)"
           echo "main version:  $MAIN_VER"
 
           test "$BOX_VER" = "$VER"
@@ -232,10 +230,8 @@ jobs:
 
           BOX_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="box-image-pyramid") | .version')"
           CORE_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-core") | .version')"
-          ML_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners-ml") | .version')"
           MAIN_VER="$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.name=="chess-corners") | .version')"
 
           ensure_published box-image-pyramid "$BOX_VER"
           ensure_published chess-corners-core "$CORE_VER"
-          ensure_published chess-corners-ml "$ML_VER"
           ensure_published chess-corners "$MAIN_VER"

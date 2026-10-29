@@ -44,7 +44,7 @@ interface InspectorProps {
 }
 
 const COVARIANCE_GAPS =
-  "A corner has no covariance when Uncertainty is Off, when the refiner is the ML refiner, when the image is upscaled, or when the noise estimate declines and no σ is supplied.";
+  "A corner has no covariance when Uncertainty is Off, when the image is upscaled, or when the noise estimate declines and no σ is supplied.";
 
 export function Inspector(p: InspectorProps) {
   const s = p.settings;
