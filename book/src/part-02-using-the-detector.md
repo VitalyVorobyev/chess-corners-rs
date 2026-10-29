@@ -78,7 +78,7 @@ Add the facade crate:
 
 ```toml
 [dependencies]
-chess-corners = "2.0"
+chess-corners = "2.1"
 image = "0.25"          # optional, for GrayImage integration
 ```
 

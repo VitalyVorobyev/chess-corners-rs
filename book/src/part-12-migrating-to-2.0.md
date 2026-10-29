@@ -24,7 +24,7 @@ Update the dependency first:
 
 ```toml
 [dependencies]
-chess-corners = "2.0"
+chess-corners = "2.1"
 ```
 
 ```bash
@@ -275,7 +275,7 @@ chess-corners = { version = "1.7", features = ["ml-refiner"] }
 
 ```toml
 # 2.0
-chess-corners = "2.0"
+chess-corners = "2.1"
 ```
 
 The Python wheel no longer includes the ML refiner.

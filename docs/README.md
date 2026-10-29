@@ -62,6 +62,6 @@ docs/
 ## Program status
 
 Milestones M1–M6 are done and `1.0.0` shipped (`API-09`); the latest release
-is `2.0.0` (uncertainty tier carries its noise level, one image-refinement stage, Förstner and ML refiners removed, orientation `fit_std_error`). The only open release residual is the vcpkg port (`CPP-05`). See
+is `2.1.0` (`ChessConfig::on_refiner_reject`: keep the ChESS center of mass for corners the image refiner rejects). The only open release residual is the vcpkg port (`CPP-05`). See
 [`ROADMAP.md`](ROADMAP.md) for the milestone table and
 [`BACKLOG.md`](BACKLOG.md) for the task registry.

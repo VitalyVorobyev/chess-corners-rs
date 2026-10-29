@@ -24,8 +24,8 @@ shipped on every channel, followed by `1.3.1` (maintenance), `1.4.0`
 (saddle-point position covariance, `UQ-00`), `1.5.0` (per-corner position
 covariance on the detector output, `UQ-05`) and `1.6.0` (per-localizer position
 covariance behind `Uncertainty`, Radon refiner choice, public noise estimate,
-Radon false-detection fixes), `1.7.0`, `1.7.1` and `2.0.0`, the current
-version (`chess-corners-ml` is no longer released). One residual remains open — `CPP-05`, the vcpkg port, which carries
+Radon false-detection fixes), `1.7.0`, `1.7.1`, `2.0.0` and `2.1.0`, the
+current version (`chess-corners-ml` is no longer released). One residual remains open — `CPP-05`, the vcpkg port, which carries
 a real SHA512 but still targets `1.1.0` and has never been install-verified on
 any platform. Everything under *Post-1.0 / future*
 is `P2`/`P3`, off the release-critical path. The pre-release campaign on
