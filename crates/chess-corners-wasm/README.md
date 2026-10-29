@@ -177,7 +177,7 @@ cfg.mergeRadius = 2.5;
 const chess = new ChessConfig();
 chess.ring = ChessRing.Broad;
 chess.nmsRadius = 3;
-chess.refiner = ChessRefiner.withForstner(new ForstnerConfig());
+chess.refiner = ChessRefiner.withForstner(new ForstnerConfig()); // deprecated since 1.7.0: use withSaddlePoint
 cfg.strategy = DetectionStrategy.fromChess(chess);
 
 const detector = ChessDetector.withConfig(cfg);

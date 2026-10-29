@@ -11,6 +11,7 @@
 
 use crate::detect::radon::{detect_peaks_from_radon, radon_response_u8, RadonBuffers};
 use crate::uncertainty::{edge_width, PixelTile, ROUNDING_VAR};
+#[allow(deprecated)]
 use crate::{
     chess_response_u8, detect_peaks_from_response_with_refine_radius, CenterOfMassConfig,
     ChessParams, Corner, CornerRefiner, DenseDetector, ForstnerConfig, ImageView,
@@ -77,6 +78,7 @@ fn chess_params(kind: RefinerKind) -> ChessParams {
 }
 
 /// Localize every corner of `img` with `loc` under `unc`.
+#[allow(deprecated)]
 pub(crate) fn localize(
     img: &[u8],
     w: usize,

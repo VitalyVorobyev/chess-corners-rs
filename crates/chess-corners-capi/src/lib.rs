@@ -62,7 +62,9 @@ pub const CC_STRATEGY_RADON: cc_strategy_t = 1;
 pub type cc_refiner_t = u32;
 /// Center-of-mass refiner. ChESS strategy only (the ChESS default).
 pub const CC_REFINER_CENTER_OF_MASS: cc_refiner_t = 0;
-/// Förstner refiner. ChESS strategy only.
+/// Förstner refiner. ChESS strategy only. Deprecated since 1.7.0: use
+/// `CC_REFINER_SADDLE_POINT`, which is more accurate on every tested
+/// condition; the Förstner refiner is removed in 2.0.
 pub const CC_REFINER_FORSTNER: cc_refiner_t = 1;
 /// Saddle-point refiner. Valid for both strategies. Under Radon a corner
 /// whose refinement does not converge keeps its peak-fit position and

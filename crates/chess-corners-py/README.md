@@ -17,7 +17,7 @@ img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.DetectorConfig.chess_multiscale()
 cfg.threshold = 60.0  # ChESS: absolute floor on the raw response (default 30)
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point()
 
 detector = chess_corners.Detector(cfg)
 det = detector.detect(img)
@@ -92,7 +92,7 @@ named fields replaced:
 cfg = (
     chess_corners.DetectorConfig.chess_multiscale()
     .with_chess(
-        refiner=chess_corners.ChessRefiner.forstner(),
+        refiner=chess_corners.ChessRefiner.saddle_point(),
         ring=chess_corners.ChessRing.BROAD,
     )
     .with_detection(nms_radius=2, min_cluster_size=2)
@@ -125,7 +125,7 @@ Tagged classes:
 - `UpscaleConfig`: `UpscaleConfig.disabled()` /
   `UpscaleConfig.fixed(factor)`; read `cfg.upscale.kind` and (when
   `fixed`) `factor`.
-- `ChessRefiner`: `center_of_mass()`, `forstner()`, `saddle_point()`,
+- `ChessRefiner`: `center_of_mass()`, `forstner()` (deprecated since 1.7.0), `saddle_point()`,
   `ml()` (with the `ml-refiner` feature).
 
 Enums:

@@ -4,6 +4,7 @@
 //! detector APIs so both the CLI and examples can share the same behavior.
 
 use anyhow::{Context, Result};
+#[allow(deprecated)]
 use chess_corners::{
     AxisEstimate, CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, CornerDescriptor,
     DetectionStrategy, Detector, DetectorConfig, ForstnerConfig, MultiscaleConfig,
@@ -237,6 +238,7 @@ fn chess_strategy_mut(cfg: &mut DetectorConfig) -> Option<&mut ChessConfig> {
     }
 }
 
+#[allow(deprecated)]
 fn apply_chess_refiner(cfg: &mut DetectorConfig, sel: ChessRefinerSel) {
     if let DetectionStrategy::Chess(chess) = &mut cfg.strategy {
         chess.refiner = match sel {

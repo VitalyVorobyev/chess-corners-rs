@@ -12,6 +12,7 @@
 //! cargo test -p chess-corners-core --test refiner_accuracy -- --nocapture
 //! ```
 
+#[allow(deprecated)]
 use chess_corners_core::{
     CornerRefiner, ForstnerConfig, ForstnerRefiner, ImageView, RefineContext, RefineStatus,
     SaddlePointConfig, SaddlePointRefiner,
@@ -64,6 +65,7 @@ fn refine_err<R: CornerRefiner>(
 /// ever regresses, the fit math in the refiner or the renderer needs
 /// attention.
 #[test]
+#[allow(deprecated)]
 fn clean_subpixel_sweep_mean_accuracy() {
     const SIZE: usize = 35;
     const CELL: usize = 6;

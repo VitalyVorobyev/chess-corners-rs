@@ -52,6 +52,7 @@
         },
         {
           "additionalProperties": false,
+          "deprecated": true,
           "description": "Förstner structure-tensor refinement on the image patch.",
           "properties": {
             "forstner": {
@@ -151,6 +152,7 @@
       ]
     },
     "ForstnerConfig": {
+      "deprecated": true,
       "description": "Configuration for the `ForstnerRefiner`.",
       "properties": {
         "max_condition_number": {

@@ -181,6 +181,7 @@ fn with_orientation(cfg: DetectorConfig, orientation: &str) -> DetectorConfig {
 }
 
 /// Build the 9 ChESS + 3 Radon configs measured per image.
+#[allow(deprecated)]
 fn build_specs() -> Vec<ConfigSpec> {
     let mut specs = Vec::with_capacity(12);
 

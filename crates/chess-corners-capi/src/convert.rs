@@ -46,6 +46,7 @@ use crate::{
 /// Returns [`cc_status::CC_ERR_INVALID_CONFIG`] on an unknown enum tag or a
 /// refiner tag not valid for the strategy, and [`cc_status::CC_ERR_UPSCALE`]
 /// on an invalid `upscale_factor`.
+#[allow(deprecated)]
 pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_status> {
     let orientation_method: Option<OrientationMethod> = match cfg.orientation_method {
         CC_ORIENTATION_RING_FIT => Some(OrientationMethod::RingFit),
@@ -218,6 +219,7 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
     }
 }
 
+#[allow(deprecated)]
 fn chess_refiner_tag(refiner: ChessRefiner) -> cc_refiner_t {
     match refiner {
         ChessRefiner::CenterOfMass(_) => CC_REFINER_CENTER_OF_MASS,

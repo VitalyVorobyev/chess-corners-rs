@@ -20,6 +20,7 @@ pub mod forstner;
 pub mod saddle_point;
 
 pub use center_of_mass::{CenterOfMassConfig, CenterOfMassRefiner};
+#[allow(deprecated)]
 pub use forstner::{ForstnerConfig, ForstnerRefiner};
 pub use saddle_point::{SaddlePointConfig, SaddlePointRefiner};
 
@@ -176,6 +177,10 @@ pub struct RefineResult {
     /// [`Uncertainty::Off`] (the default). Read it with
     /// [`RefineResult::noise_covariance_per_unit_variance`]. Changing this
     /// field drops the systematic term.
+    #[deprecated(
+        since = "1.7.0",
+        note = "read `noise_covariance_per_unit_variance()`, or `position_covariance(noise_sigma)` for the full covariance in px²; writing this field drops the systematic term"
+    )]
     pub covariance_per_noise_variance: Option<PositionCovariance>,
     /// The full covariance model; `covariance_per_noise_variance` mirrors
     /// its noise term.
@@ -190,6 +195,7 @@ pub struct RefineResult {
 impl RefineResult {
     /// Build a [`RefineStatus::Accepted`] result at `xy` with the given `score`.
     #[inline]
+    #[allow(deprecated)]
     pub fn accepted(xy: [f32; 2], score: f32) -> Self {
         Self {
             x: xy[0],
@@ -238,6 +244,7 @@ impl RefineResult {
 
     /// Attach `model`, mirroring its noise term in the public field.
     #[inline]
+    #[allow(deprecated)]
     pub(crate) fn set_model(&mut self, model: Option<CovarianceModel>) {
         self.covariance_per_noise_variance = model.map(|m| m.noise);
         self.model = model;
@@ -246,6 +253,7 @@ impl RefineResult {
     /// The covariance model this result carries (see
     /// [`CovarianceModel::effective`]).
     #[inline]
+    #[allow(deprecated)]
     pub(crate) fn covariance_model(&self) -> Option<CovarianceModel> {
         CovarianceModel::effective(self.model, self.covariance_per_noise_variance)
     }
@@ -314,10 +322,15 @@ pub trait CornerRefiner: private::Sealed {
 /// backend is instantiated into a [`Refiner`] via [`Refiner::from_kind`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
+#[allow(deprecated)]
 pub enum RefinerKind {
     /// 5×5 weighted centroid on the response map.
     CenterOfMass(CenterOfMassConfig),
     /// Gradient structure-tensor refinement on the image patch.
+    #[deprecated(
+        since = "1.7.0",
+        note = "use the saddle-point refiner (`RefinerKind::SaddlePoint`), which is more accurate on every tested condition"
+    )]
     Forstner(ForstnerConfig),
     /// Quadratic surface fit on the image patch.
     SaddlePoint(SaddlePointConfig),
@@ -338,10 +351,15 @@ impl Default for RefinerKind {
 /// reallocated on each call.
 #[derive(Debug)]
 #[non_exhaustive]
+#[allow(deprecated)]
 pub enum Refiner {
     /// 5×5 weighted centroid on the response map.
     CenterOfMass(CenterOfMassRefiner),
     /// Gradient structure-tensor refinement on the image patch.
+    #[deprecated(
+        since = "1.7.0",
+        note = "use the saddle-point refiner (`Refiner::SaddlePoint`), which is more accurate on every tested condition"
+    )]
     Forstner(ForstnerRefiner),
     /// Quadratic surface fit on the image patch.
     SaddlePoint(SaddlePointRefiner),
@@ -351,6 +369,7 @@ impl Refiner {
     /// Construct a [`Refiner`] from the given kind, allocating scratch
     /// buffers at the configured size. It reports no position covariance
     /// ([`Uncertainty::Off`]); see [`Self::with_uncertainty`].
+    #[allow(deprecated)]
     pub fn from_kind(kind: RefinerKind) -> Self {
         match kind {
             RefinerKind::CenterOfMass(cfg) => Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg)),
@@ -363,6 +382,7 @@ impl Refiner {
     /// from [`Self::from_kind`] reports none; pass
     /// [`Uncertainty::Propagated`] for a covariance on every accepted
     /// corner. Refined positions do not depend on the tier.
+    #[allow(deprecated)]
     pub fn with_uncertainty(mut self, uncertainty: Uncertainty) -> Self {
         match &mut self {
             Refiner::CenterOfMass(r) => r.uncertainty = uncertainty,
@@ -375,6 +395,7 @@ impl Refiner {
 
 impl CornerRefiner for Refiner {
     #[inline]
+    #[allow(deprecated)]
     fn radius(&self) -> i32 {
         match self {
             Refiner::CenterOfMass(r) => r.radius(),
@@ -384,6 +405,7 @@ impl CornerRefiner for Refiner {
     }
 
     #[inline]
+    #[allow(deprecated)]
     fn refine(&mut self, seed_xy: [f32; 2], ctx: RefineContext<'_>) -> RefineResult {
         match self {
             Refiner::CenterOfMass(r) => r.refine(seed_xy, ctx),
@@ -394,6 +416,7 @@ impl CornerRefiner for Refiner {
 }
 
 impl private::Sealed for CenterOfMassRefiner {}
+#[allow(deprecated)]
 impl private::Sealed for ForstnerRefiner {}
 impl private::Sealed for SaddlePointRefiner {}
 impl private::Sealed for Refiner {}

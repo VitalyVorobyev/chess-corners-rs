@@ -143,14 +143,14 @@ as a payload, so switching kinds cannot leave a stale per-refiner config
 behind:
 
 ```rust
-use chess_corners::{ChessRefiner, DetectorConfig, ForstnerConfig};
+use chess_corners::{ChessRefiner, DetectorConfig, SaddlePointConfig};
 
 let cfg = DetectorConfig::chess().with_chess(|c| {
-    // `ForstnerConfig` is `#[non_exhaustive]`: start from `Default` and
+    // `SaddlePointConfig` is `#[non_exhaustive]`: start from `Default` and
     // set the fields you need.
-    let mut forstner = ForstnerConfig::default();
-    forstner.max_offset = 2.0;
-    c.refiner = ChessRefiner::Forstner(forstner);
+    let mut saddle = SaddlePointConfig::default();
+    saddle.max_offset = 2.0;
+    c.refiner = ChessRefiner::SaddlePoint(saddle);
 });
 ```
 

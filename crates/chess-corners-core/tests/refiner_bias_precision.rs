@@ -30,6 +30,7 @@
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
+#[allow(deprecated)]
 use chess_corners_core::{
     chess_response_u8, CenterOfMassConfig, CenterOfMassRefiner, ChessParams, CornerRefiner,
     ForstnerConfig, ForstnerRefiner, ImageView, RefineContext, RefineResult, RefineStatus,
@@ -259,6 +260,7 @@ fn accepted<R: CornerRefiner>(
 }
 
 /// The three refiners at their default configs.
+#[allow(deprecated)]
 struct Refiners {
     center: CenterOfMassRefiner,
     forstner: ForstnerRefiner,
@@ -266,6 +268,7 @@ struct Refiners {
 }
 
 impl Refiners {
+    #[allow(deprecated)]
     fn new() -> Self {
         Self {
             center: CenterOfMassRefiner::new(CenterOfMassConfig::default()),

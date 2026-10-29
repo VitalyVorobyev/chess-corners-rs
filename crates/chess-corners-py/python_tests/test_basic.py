@@ -80,6 +80,13 @@ def test_chess_refiner_variant_and_payload():
     assert refiner.payload.max_offset == pytest.approx(2.0)
 
 
+def test_forstner_refiner_selection_warns_deprecated():
+    with pytest.warns(DeprecationWarning, match="Forstner"):
+        chess_corners.ChessRefiner.forstner()
+    with pytest.warns(DeprecationWarning, match="Forstner"):
+        chess_corners.ChessRefiner.from_dict({"forstner": {}})
+
+
 def test_chess_refiner_attached_to_chess_strategy():
     cfg = chess_corners.DetectorConfig().with_chess(refiner=chess_corners.ChessRefiner.forstner())
     assert cfg.strategy.chess.refiner.kind == "forstner"
