@@ -247,7 +247,7 @@ mod upscale;
 // via a direct `chess-corners-core` dependency.
 pub use crate::config::{
     ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, RadonConfig, RadonRefiner,
+    MultiscaleConfig, NoiseLevel, RadonConfig, RadonRefiner, Uncertainty,
 };
 pub use crate::error::ChessError;
 
@@ -260,7 +260,7 @@ pub use crate::upscale::{
 };
 pub use chess_corners_core::{
     AxisEstimate, CenterOfMassConfig, CornerDescriptor, OrientationMethod, PeakFitMode,
-    PositionCovariance, Roi, SaddlePointConfig, Uncertainty,
+    PositionCovariance, Roi, SaddlePointConfig,
 };
 
 // Primary detector entry point.

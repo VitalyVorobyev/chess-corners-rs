@@ -85,10 +85,7 @@ typedef uint32_t cc_chess_ring_t;
 typedef uint32_t cc_peak_fit_t;
 
 /**
- * Position-uncertainty tier stored in `cc_config::uncertainty`.
- *
- * Use the named constants, not the integers: the WebAssembly and Python
- * bindings number the same tiers differently (`Off = 0`, `Propagated = 1`).
+ * Position-uncertainty tag stored in `cc_config::uncertainty`.
  */
 typedef uint32_t cc_uncertainty_t;
 
@@ -181,25 +178,24 @@ typedef struct cc_config {
    */
   cc_peak_fit_t peak_fit;
   /**
-   * `0` estimates the image noise level from each image; any non-zero
-   * value uses `noise_sigma`. The noise level turns each corner's
-   * position covariance into px².
+   * The noise level of `CC_UNCERTAINTY_PROPAGATED`, which turns each
+   * corner's position covariance into px²: `0` estimates it from each
+   * image; any non-zero value uses `noise_sigma`. Read only under
+   * `CC_UNCERTAINTY_PROPAGATED`.
    */
   uint32_t has_noise_sigma;
   /**
    * Standard deviation of the image's pixel noise in gray levels: the
    * total noise of the 8-bit image, rounding included, as
    * `cc_estimate_noise_sigma_u8` measures it (finite, `>= 0`; otherwise
-   * `CC_ERR_INVALID_CONFIG`). Read only when `has_noise_sigma` is
-   * non-zero.
+   * `CC_ERR_INVALID_CONFIG`). Read only under `CC_UNCERTAINTY_PROPAGATED`
+   * when `has_noise_sigma` is non-zero.
    */
   float noise_sigma;
   /**
    * One of the `CC_UNCERTAINTY_*` constants (any other value is
-   * `CC_ERR_INVALID_CONFIG`). The presets select `CC_UNCERTAINTY_OFF`;
-   * a zero-initialised config instead selects
-   * `CC_UNCERTAINTY_PROPAGATED` (tag `0`), so start from
-   * `cc_config_default()` or a strategy preset rather than `{0}`.
+   * `CC_ERR_INVALID_CONFIG`). The presets and a zero-initialised config
+   * select `CC_UNCERTAINTY_OFF`.
    */
   cc_uncertainty_t uncertainty;
 } cc_config;
@@ -362,22 +358,23 @@ typedef struct cc_result {
 #define CC_ORIENTATION_NONE 2
 
 /**
+ * No position covariance and no noise estimate: every corner has
+ * `has_position_covariance == 0`. The default: every preset
+ * (`cc_config_default()` and the strategy presets) and a zero-initialised
+ * `cc_config` select it. `has_noise_sigma` and `noise_sigma` are not read.
+ */
+#define CC_UNCERTAINTY_OFF 0
+
+/**
  * Every corner whose localizer supports it reports a position covariance:
  * image noise propagated through the localizer plus its systematic error.
  * That error includes a per-localizer floor measured on real images,
  * usually the largest part of the covariance there; weighting by it has not
- * been shown to beat uniform weighting on real data. Not the default, but
- * the value `0`, so a zero-initialised `cc_config` selects it.
+ * been shown to beat uniform weighting on real data. The noise level comes
+ * from `cc_config::has_noise_sigma` / `cc_config::noise_sigma`. Positions
+ * are identical to `CC_UNCERTAINTY_OFF`.
  */
-#define CC_UNCERTAINTY_PROPAGATED 0
-
-/**
- * No position covariance and no noise estimate: every corner has
- * `has_position_covariance == 0`. Positions are identical to
- * `CC_UNCERTAINTY_PROPAGATED`. `noise_sigma` is ignored. The default: every
- * preset (`cc_config_default()` and the strategy presets) selects it.
- */
-#define CC_UNCERTAINTY_OFF 1
+#define CC_UNCERTAINTY_PROPAGATED 1
 
 /**
  * Paper-default radius-5 ring (16 samples).
@@ -406,9 +403,9 @@ extern "C" {
 
 /**
  * Default configuration (single-scale ChESS). Its `uncertainty` is
- * `CC_UNCERTAINTY_OFF`, like every preset; a zero-initialised `cc_config`
- * differs (tag `0` is `CC_UNCERTAINTY_PROPAGATED`), so start from this or
- * a strategy preset.
+ * `CC_UNCERTAINTY_OFF`, like every preset. Start from this or a strategy
+ * preset rather than a zero-initialised `cc_config`, whose threshold and
+ * NMS fields are zero.
  */
 struct cc_config cc_config_default(void);
 

@@ -90,6 +90,72 @@ private:
     cc_status status_;
 };
 
+/// Which position uncertainty each corner reports, and the image noise
+/// level behind it: `cc_config::uncertainty` with its noise fields.
+///
+/// `Uncertainty::off()` (the default) reports no position covariance and
+/// skips the noise estimate. `Uncertainty::propagated(noise_sigma)` reports
+/// one per corner; `noise_sigma` is the image's pixel-noise standard
+/// deviation in gray levels (rounding included), used to express the
+/// covariances in px^2, and empty estimates it from each image (see
+/// `estimate_noise_sigma`). Positions are identical under both.
+class Uncertainty {
+public:
+    /// No position covariance (the default).
+    Uncertainty() noexcept = default;
+
+    /// No position covariance and no noise estimate.
+    static Uncertainty off() noexcept { return Uncertainty(); }
+
+    /// A position covariance on every corner whose localizer reports one,
+    /// with a known noise sigma, or the per-image estimate when empty. A
+    /// negative or non-finite sigma makes detection throw
+    /// `CC_ERR_INVALID_CONFIG`.
+    static Uncertainty propagated(std::optional<float> noise_sigma = std::nullopt) noexcept {
+        return Uncertainty(CC_UNCERTAINTY_PROPAGATED, noise_sigma);
+    }
+
+    /// Whether corners report a position covariance.
+    [[nodiscard]] bool is_propagated() const noexcept {
+        return tag_ == CC_UNCERTAINTY_PROPAGATED;
+    }
+
+    /// The known noise sigma, or empty when it is estimated per image (or
+    /// the uncertainty is off).
+    [[nodiscard]] std::optional<float> noise_sigma() const noexcept { return noise_sigma_; }
+
+    friend bool operator==(const Uncertainty& a, const Uncertainty& b) noexcept {
+        return a.tag_ == b.tag_ && a.noise_sigma_ == b.noise_sigma_;
+    }
+    friend bool operator!=(const Uncertainty& a, const Uncertainty& b) noexcept {
+        return !(a == b);
+    }
+
+private:
+    friend struct Config;
+
+    Uncertainty(cc_uncertainty_t tag, std::optional<float> noise_sigma) noexcept
+        : tag_(tag), noise_sigma_(noise_sigma) {}
+
+    // The noise fields are read only under `CC_UNCERTAINTY_PROPAGATED`. An
+    // unknown tag is kept, so detection reports `CC_ERR_INVALID_CONFIG`.
+    static Uncertainty from_c(const cc_config& c) noexcept {
+        if (c.uncertainty == CC_UNCERTAINTY_PROPAGATED && c.has_noise_sigma != 0) {
+            return Uncertainty(c.uncertainty, c.noise_sigma);
+        }
+        return Uncertainty(c.uncertainty, std::nullopt);
+    }
+
+    void to_c(cc_config& c) const noexcept {
+        c.uncertainty = tag_;
+        c.has_noise_sigma = noise_sigma_.has_value() ? 1u : 0u;
+        c.noise_sigma = noise_sigma_.value_or(0.0f);
+    }
+
+    cc_uncertainty_t tag_ = CC_UNCERTAINTY_OFF;
+    std::optional<float> noise_sigma_;
+};
+
 /// Flat detector configuration mirroring `cc_config`.
 ///
 /// Start from a preset (`Config::chess()`, `Config::radon_multiscale()`, ...)
@@ -105,14 +171,8 @@ private:
 /// takes center-of-mass or saddle-point; Radon takes
 /// `CC_REFINER_PEAK_FIT` (its default) or saddle-point.
 ///
-/// `noise_sigma` is the image's pixel-noise standard deviation in gray
-/// levels, used to express position covariances in px^2; empty estimates it
-/// from each image (see `estimate_noise_sigma`).
-///
-/// `uncertainty` is one of the `CC_UNCERTAINTY_*` tags: `CC_UNCERTAINTY_OFF`
-/// (the default of every preset) reports no position covariance and skips
-/// the noise estimate, `CC_UNCERTAINTY_PROPAGATED` reports one per corner.
-/// Positions are identical under both.
+/// `uncertainty` selects the position covariance and its noise level (see
+/// `Uncertainty`); every preset selects `Uncertainty::off()`.
 struct Config {
     cc_strategy_t strategy;
     float threshold;
@@ -128,8 +188,7 @@ struct Config {
     std::uint32_t image_upsample;
     std::uint32_t response_blur_radius;
     cc_peak_fit_t peak_fit;
-    std::optional<float> noise_sigma;
-    cc_uncertainty_t uncertainty;
+    Uncertainty uncertainty;
 
     /// Defaults to the single-scale ChESS preset.
     Config() noexcept : Config(from_c(cc_config_chess())) {}
@@ -151,10 +210,7 @@ struct Config {
         out.image_upsample = c.image_upsample;
         out.response_blur_radius = c.response_blur_radius;
         out.peak_fit = c.peak_fit;
-        if (c.has_noise_sigma != 0) {
-            out.noise_sigma = c.noise_sigma;
-        }
-        out.uncertainty = c.uncertainty;
+        out.uncertainty = Uncertainty::from_c(c);
         return out;
     }
 
@@ -175,9 +231,7 @@ struct Config {
         c.image_upsample = image_upsample;
         c.response_blur_radius = response_blur_radius;
         c.peak_fit = peak_fit;
-        c.has_noise_sigma = noise_sigma.has_value() ? 1u : 0u;
-        c.noise_sigma = noise_sigma.value_or(0.0f);
-        c.uncertainty = uncertainty;
+        uncertainty.to_c(c);
         return c;
     }
 
@@ -241,8 +295,8 @@ private:
 /// `pixels` must point to at least `width * height` readable bytes. When
 /// `noise_sigma` is non-null it receives the image noise sigma, in gray
 /// levels, the corners' position covariances were computed with
-/// (`Config::noise_sigma`, or the per-image estimate `estimate_noise_sigma`
-/// returns), or `std::nullopt` when no corner has a covariance. Throws
+/// (the known sigma of `Uncertainty::propagated`, or the per-image estimate
+/// `estimate_noise_sigma` returns), or `std::nullopt` when no corner has a covariance. Throws
 /// `chess_corners::Error` if the C ABI returns a non-`CC_OK` status, or
 /// `std::runtime_error` on an ABI-version mismatch.
 inline std::vector<Corner> detect(const std::uint8_t* pixels,
@@ -287,7 +341,7 @@ inline std::vector<Corner> detect(const std::uint8_t* pixels,
 
 /// Estimate the pixel-noise standard deviation of an 8-bit, row-major
 /// grayscale image, in gray levels: the per-image estimate detection uses
-/// when `Config::noise_sigma` is empty. Empty when the image is smaller than
+/// under `Uncertainty::propagated()` without a known sigma. Empty when the image is smaller than
 /// 4x4 or has too few structure-free areas. `pixels` must point to at least
 /// `width * height` readable bytes. Throws `chess_corners::Error` on a
 /// non-`CC_OK` status, or `std::runtime_error` on an ABI-version mismatch.

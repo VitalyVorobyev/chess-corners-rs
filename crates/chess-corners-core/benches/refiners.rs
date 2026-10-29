@@ -15,7 +15,7 @@ use chess_corners_core::{
     chess_response_u8, detect_corners_from_response, detect_peaks_from_radon, radon_response_u8,
     CenterOfMassConfig, ChessParams, CornerRefiner, DenseDetector, ImageView, RadonBuffers,
     RadonDetector, RadonDetectorParams, RefineContext, Refiner, RefinerKind, ResponseMap,
-    SaddlePointConfig, Uncertainty,
+    SaddlePointConfig,
 };
 use chess_corners_testutil::aa_chessboard;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -86,10 +86,7 @@ fn bench_refiners(c: &mut Criterion) {
         ];
 
         for (label, kind) in cases {
-            for (tier, uncertainty) in [
-                ("propagated", Uncertainty::Propagated),
-                ("off", Uncertainty::Off),
-            ] {
+            for (tier, covariance) in [("propagated", true), ("off", false)] {
                 group.bench_with_input(
                     BenchmarkId::new(
                         format!("{label}/{tier}"),
@@ -98,7 +95,7 @@ fn bench_refiners(c: &mut Criterion) {
                     kind,
                     |b, kind| {
                         let mut refiner =
-                            Refiner::from_kind(kind.clone()).with_uncertainty(uncertainty);
+                            Refiner::from_kind(kind.clone()).with_covariance(covariance);
                         b.iter(|| {
                             let mut acc = 0.0f32;
                             for seed in &scene.seeds {

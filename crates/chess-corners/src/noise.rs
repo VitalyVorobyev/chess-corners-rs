@@ -6,14 +6,13 @@ use crate::ChessError;
 /// noise, in gray levels.
 ///
 /// This is the estimate [`Detector`](crate::Detector) uses to express
-/// position covariances in px² when
-/// [`DetectorConfig::noise_sigma`](crate::DetectorConfig::noise_sigma) is
-/// `None`; calling it on the same image returns the same value. Strong
+/// position covariances in px² under
+/// [`NoiseLevel::Estimate`](crate::NoiseLevel::Estimate); calling it on the
+/// same image returns the same value. Strong
 /// edges, corners, smooth shading and areas near black or white are
 /// excluded, so it suits images dominated by a calibration board. It is not
 /// reliable on demosaiced or JPEG images; supply
-/// [`DetectorConfig::noise_sigma`](crate::DetectorConfig::noise_sigma)
-/// for those. Cost is independent of the image size (well under a
+/// [`NoiseLevel::Known`](crate::NoiseLevel::Known) for those. Cost is independent of the image size (well under a
 /// millisecond).
 ///
 /// `img` is `width * height` bytes, row-major. Returns `Ok(None)` when the

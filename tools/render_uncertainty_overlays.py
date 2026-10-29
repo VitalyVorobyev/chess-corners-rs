@@ -9,7 +9,7 @@ plus ``numpy``, ``matplotlib``, ``scipy`` and ``opencv-python``:
 
 Every synthetic figure is computed from chessboards whose corner positions
 are known exactly, detected with the ``chess_corners`` Python bindings under
-the ``Uncertainty.PROPAGATED`` tier. Two independent image
+the ``Uncertainty.propagated()`` tier. Two independent image
 generators form the boards: ``Board.render`` below (straight edges, Gaussian
 lens blur, exact integration over each pixel) and
 ``tools/refiner_robustness/synth.py`` (supersampled perspective boards with
@@ -99,14 +99,13 @@ class Localizer:
     def detector(self, noise_sigma: float | None = None) -> "cc.Detector":
         """Detector with this localizer; ``noise_sigma=None`` estimates the
         noise from each image."""
+        uncertainty = cc.Uncertainty.propagated(noise_sigma)
         if self.radon:
-            cfg = cc.DetectorConfig.radon().without_orientation().with_uncertainty(cc.Uncertainty.PROPAGATED)
+            cfg = cc.DetectorConfig.radon().without_orientation().with_uncertainty(uncertainty)
             cfg = cfg.with_radon(refiner=getattr(cc.RadonRefiner, self.refiner)())
         else:
-            cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(cc.Uncertainty.PROPAGATED)
+            cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(uncertainty)
             cfg.strategy.chess.refiner = getattr(cc.ChessRefiner, self.refiner)()
-        if noise_sigma is not None:
-            cfg = cfg.with_noise_sigma(noise_sigma)
         return cc.Detector(cfg)
 
 

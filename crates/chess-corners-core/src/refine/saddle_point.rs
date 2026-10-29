@@ -14,7 +14,7 @@
 
 use super::{CornerRefiner, PositionCovariance, RefineContext, RefineResult, RefineStatus};
 use crate::imageview::ImageView;
-use crate::uncertainty::{edge_width, knot, PixelTile, SystematicModel, Uncertainty};
+use crate::uncertainty::{edge_width, knot, PixelTile, SystematicModel};
 use serde::{Deserialize, Serialize};
 
 /// Systematic error of the converged, re-centred estimate by edge width
@@ -150,7 +150,7 @@ impl Default for SaddlePointConfig {
 #[derive(Debug)]
 pub struct SaddlePointRefiner {
     cfg: SaddlePointConfig,
-    pub(crate) uncertainty: Uncertainty,
+    pub(crate) reports_covariance: bool,
     /// The least-squares operator `R = (ΦᵀΦ)⁻¹Φᵀ` of the
     /// [`quadratic_basis`] over the `(2·radius+1)²` samples: the
     /// coefficients are `Σₖ Rₖ·zₖ`. `None` when `ΦᵀΦ` is singular
@@ -187,7 +187,7 @@ impl SaddlePointRefiner {
         let side = (2 * cfg.radius.max(0) + 1) as usize;
         Self {
             cfg,
-            uncertainty: Uncertainty::default(),
+            reports_covariance: false,
             fit_op: fit_operator(cfg.radius),
             scratch: Scratch {
                 patch: vec![0.0; side * side],
@@ -465,7 +465,7 @@ impl SaddlePointRefiner {
     ) -> Result<Estimate, (f32, RefineStatus)> {
         let Self {
             cfg,
-            uncertainty,
+            reports_covariance,
             fit_op,
             scratch,
         } = self;
@@ -546,7 +546,7 @@ impl SaddlePointRefiner {
             });
         let converged = regular.is_some();
         let covariance = regular
-            .filter(|_| uncertainty.reports())
+            .filter(|_| *reports_covariance)
             .and_then(|(jac, m)| covariance(fit_op, &window, &jac, m));
         Ok(Estimate {
             xy: [
@@ -809,7 +809,7 @@ mod tests {
     /// A refiner reporting a covariance, which these tests examine.
     fn propagated(cfg: SaddlePointConfig) -> SaddlePointRefiner {
         let mut refiner = SaddlePointRefiner::new(cfg);
-        refiner.uncertainty = Uncertainty::Propagated;
+        refiner.reports_covariance = true;
         refiner
     }
 
@@ -1095,7 +1095,7 @@ mod tests {
     fn convergence_does_not_depend_on_the_tier() {
         let mut on = propagated(SaddlePointConfig::default());
         let mut off = propagated(SaddlePointConfig::default());
-        off.uncertainty = Uncertainty::Off;
+        off.reports_covariance = false;
         let mut checked = 0;
         for k in 0..60u64 {
             let offset = (

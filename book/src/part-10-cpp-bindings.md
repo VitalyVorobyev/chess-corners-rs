@@ -214,9 +214,11 @@ The fields group by applicability:
 
 - **Both strategies:** `strategy`, `threshold`, `nms_radius`,
   `min_cluster_size`, `orientation_method`, `multiscale`, `merge_radius`,
-  `upscale_factor`, the image noise level `has_noise_sigma` /
-  `noise_sigma` (`std::optional<float> noise_sigma` in C++; unset
-  estimates it from each image), and `refiner` (a `CC_REFINER_*` tag
+  `upscale_factor`, the position uncertainty `uncertainty` with its
+  noise level `has_noise_sigma` / `noise_sigma` (read only under
+  `CC_UNCERTAINTY_PROPAGATED`; `has_noise_sigma = 0` estimates it from
+  each image; a `chess_corners::Uncertainty` value in C++), and
+  `refiner` (a `CC_REFINER_*` tag
   valid for the strategy: ChESS takes `CENTER_OF_MASS` — its default —
   or `SADDLE_POINT`; Radon takes `PEAK_FIT` — its default —
   or `SADDLE_POINT`).
@@ -258,14 +260,14 @@ skips the per-corner fit, sets `has_orientation` to `0`, and zeroes
 `axes`. `position_covariance` (`xx`, `xy`, `yy`, in px²) is valid when
 `has_position_covariance` is `1` (a `std::optional<Covariance>` in
 C++): every refiner reports it under
-`uncertainty = CC_UNCERTAINTY_PROPAGATED`, none under `CC_UNCERTAINTY_OFF`
-(the presets' default) or when `upscale_factor` is set. A
-zero-initialised `cc_config` selects `CC_UNCERTAINTY_PROPAGATED` (tag
-`0`), so start from `cc_config_default()` or a strategy preset
-([Part VIII](part-08-uncertainty.md) covers its meaning and use).
+`uncertainty = CC_UNCERTAINTY_PROPAGATED` (C++
+`Uncertainty::propagated(sigma)`), none under `CC_UNCERTAINTY_OFF` (the
+default of the presets and of a zero-initialised `cc_config`) or when
+`upscale_factor` is set ([Part VIII](part-08-uncertainty.md) covers its
+meaning and use).
 `cc_estimate_noise_sigma_u8` (`chess_corners::estimate_noise_sigma`,
 returning `std::optional<float>`, in C++) returns the per-image noise
-estimate detection uses when `noise_sigma` is unset; `cc_result`'s
+estimate detection uses when no noise level is supplied; `cc_result`'s
 `has_noise_sigma` / `noise_sigma` report the σ a detection's covariances
 were computed with (in C++, pass a `std::optional<float>*` as the last
 argument of `chess_corners::detect`). See

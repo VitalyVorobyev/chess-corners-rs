@@ -199,8 +199,7 @@ pub trait DenseDetector: private::Sealed {
     /// [`Self::refine_peaks_on_image`] (or in place of it, when no image
     /// refiner runs), once the response is no longer borrowed: it reuses
     /// `buffers`' scratch. Call it only when the position covariance is
-    /// wanted (any [`Uncertainty`](crate::Uncertainty) tier other than
-    /// `Off`).
+    /// wanted.
     ///
     /// Radon's peak fit is itself a subpixel localizer, so a Radon peak the
     /// image refiner left in place gets the peak fit's covariance; a corner
@@ -512,7 +511,6 @@ mod tests {
     #[test]
     fn radon_refinement_keeps_peaks_without_a_covariance() {
         use crate::refine::{CenterOfMassConfig, Refiner, RefinerKind, SaddlePointConfig};
-        use crate::Uncertainty;
         const SIZE: usize = 65;
         let img = synthetic_chessboard_aa(SIZE, 8, (32.35, 32.8), 30, 230);
         let view = ImageView::from_u8_slice(SIZE, SIZE, &img).expect("view");
@@ -523,7 +521,7 @@ mod tests {
         assert!(peaks.len() > 10);
 
         let mut sp = Refiner::from_kind(RefinerKind::SaddlePoint(SaddlePointConfig::default()))
-            .with_uncertainty(Uncertainty::Propagated);
+            .with_covariance(true);
         let refined = RadonDetector.refine_peaks_on_image(peaks.clone(), view, &resp, &mut sp);
         assert_eq!(refined.len(), peaks.len());
         let mut moved = 0;
@@ -543,7 +541,7 @@ mod tests {
         );
 
         let mut com = Refiner::from_kind(RefinerKind::CenterOfMass(CenterOfMassConfig::default()))
-            .with_uncertainty(Uncertainty::Propagated);
+            .with_covariance(true);
         let kept = RadonDetector.refine_peaks_on_image(peaks.clone(), view, &resp, &mut com);
         assert_eq!(kept.len(), peaks.len());
         for (p, k) in peaks.iter().zip(&kept) {
@@ -557,7 +555,6 @@ mod tests {
     #[test]
     fn peak_covariance_attaches_to_unmoved_radon_peaks_only() {
         use crate::refine::{Refiner, RefinerKind, SaddlePointConfig};
-        use crate::Uncertainty;
         const SIZE: usize = 65;
         let img = synthetic_chessboard_aa(SIZE, 8, (32.35, 32.8), 30, 230);
         let view = ImageView::from_u8_slice(SIZE, SIZE, &img).expect("view");
@@ -566,7 +563,7 @@ mod tests {
         let resp = RadonDetector.compute_response(view, &params, &mut buffers);
         let peaks = RadonDetector.detect_corners(&resp, &params, 0);
         let mut sp = Refiner::from_kind(RefinerKind::SaddlePoint(SaddlePointConfig::default()))
-            .with_uncertainty(Uncertainty::Propagated);
+            .with_covariance(true);
         let refined = RadonDetector.refine_peaks_on_image(peaks.clone(), view, &resp, &mut sp);
 
         let mut attached = refined.clone();

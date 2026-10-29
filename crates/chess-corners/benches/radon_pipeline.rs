@@ -16,7 +16,7 @@
 //!   uncertainty tiers, named in the id: `<image>/off`, `<image>/propagated`.
 //!   Skipped with a stderr note if the file is missing.
 
-use chess_corners::{Detector, DetectorConfig, Uncertainty};
+use chess_corners::{Detector, DetectorConfig, NoiseLevel, Uncertainty};
 use chess_corners_testutil::synth_chessboard;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use std::hint::black_box;
@@ -52,7 +52,12 @@ fn bench_radon_pipeline_real(c: &mut Criterion) {
         group.throughput(Throughput::Elements((w as u64) * (h as u64)));
         for (tier, uncertainty) in [
             ("off", Uncertainty::Off),
-            ("propagated", Uncertainty::Propagated),
+            (
+                "propagated",
+                Uncertainty::Propagated {
+                    noise: NoiseLevel::Estimate,
+                },
+            ),
         ] {
             let cfg = DetectorConfig::radon().with_uncertainty(uncertainty);
             let mut detector = Detector::new(cfg).unwrap();

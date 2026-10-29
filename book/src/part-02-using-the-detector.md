@@ -21,8 +21,7 @@ active strategy variant.
 | `upscale`             | `UpscaleConfig::Disabled` or `UpscaleConfig::Fixed(factor)` (`factor ∈ {2, 3, 4}`). Pre-pipeline bilinear upscaling for low-resolution inputs.    |
 | `orientation_method`  | `OrientationMethod::RingFit` (default) or `DiskFit`. Drives the two-axis descriptor fit on both detectors; `without_orientation()` skips the fit and leaves each descriptor's `axes` as `None`. |
 | `merge_radius`        | Duplicate-suppression distance (base-image pixels) for the final cross-scale merge step.                                                          |
-| `noise_sigma`         | `None` (estimate per image, default) or the image's pixel-noise σ in gray levels; turns each corner's covariance into its descriptor's `position_covariance` in px² ([Part VIII](part-08-uncertainty.md)). |
-| `uncertainty`         | `Off` (default: no `position_covariance`, and no noise estimate) or `Propagated` (every localizer reports one; positions unchanged). |
+| `uncertainty`         | `Off` (default: no `position_covariance`, and no noise estimate) or `Propagated { noise }` (every localizer reports one; positions unchanged). `noise` is `NoiseLevel::Estimate` (estimate per image) or `NoiseLevel::Known(σ)`, the image's pixel-noise σ in gray levels; it turns each covariance into px² ([Part VIII](part-08-uncertainty.md)). |
 
 Inside `DetectionParams` (set via `DetectorConfig.detection`):
 
@@ -264,7 +263,7 @@ print(det.response.shape) # (N,)  float32
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.sigmas` — `(N, 2)` float32, per-axis fit-quality score in radians (larger means a less reliable axis; not a calibrated 1σ), or `None` when orientation is disabled
-- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.OFF`, the default — `cfg.with_uncertainty(chess_corners.Uncertainty.PROPAGATED)` reports it — the ML refiner, or upscaling)
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.off()`, the default — `cfg.with_uncertainty(chess_corners.Uncertainty.propagated())` reports it, or `Uncertainty.propagated(noise_sigma=σ)` with a known noise level — the ML refiner, or upscaling)
 - `det.noise_sigma` — the image noise σ (gray levels) behind `position_covariance`, supplied or estimated; `None` when no corner has a covariance
 
 When the orientation fit is skipped (`cfg.without_orientation()`),

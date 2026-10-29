@@ -18,7 +18,7 @@
 //!   `multiscale/off`, `multiscale/propagated`. Skipped with a stderr note
 //!   if the file is missing.
 
-use chess_corners::{Detector, DetectorConfig, Uncertainty};
+use chess_corners::{Detector, DetectorConfig, NoiseLevel, Uncertainty};
 use chess_corners_testutil::{aa_chessboard, synth_chessboard};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::hint::black_box;
@@ -63,7 +63,12 @@ fn bench_chess_pipeline_real(c: &mut Criterion) {
     ];
     let tiers = [
         ("off", Uncertainty::Off),
-        ("propagated", Uncertainty::Propagated),
+        (
+            "propagated",
+            Uncertainty::Propagated {
+                noise: NoiseLevel::Estimate,
+            },
+        ),
     ];
     let mut group = c.benchmark_group("chess_pipeline_real");
     for name in ["small.png", "mid.png", "large.png"] {
@@ -97,7 +102,12 @@ fn bench_chess_pipeline_dense(c: &mut Criterion) {
     img.truncate(W * H);
     let tiers = [
         ("off", Uncertainty::Off),
-        ("propagated", Uncertainty::Propagated),
+        (
+            "propagated",
+            Uncertainty::Propagated {
+                noise: NoiseLevel::Estimate,
+            },
+        ),
     ];
     let mut group = c.benchmark_group("chess_pipeline_dense");
     group.sample_size(20);

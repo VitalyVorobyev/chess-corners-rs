@@ -30,9 +30,9 @@ use chess_corners_core::{ChessBuffers, RadonBuffers};
 
 #[cfg(feature = "ml-refiner")]
 use crate::ml_refiner;
-use crate::multiscale::{self, CovarianceStage, Frame};
+use crate::multiscale::{self, Frame};
 use crate::upscale::{self, UpscaleBuffers};
-use crate::{ChessError, CornerDescriptor, DetectorConfig, Roi};
+use crate::{ChessError, CornerDescriptor, DetectorConfig, Roi, Uncertainty};
 use chess_corners_core::ImageView;
 
 /// High-level chessboard-corner detector.
@@ -66,7 +66,9 @@ impl Detector {
     ///
     /// Returns [`ChessError::Upscale`] when the [`DetectorConfig::upscale`]
     /// configuration is invalid, and [`ChessError::InvalidNoiseSigma`] when
-    /// [`DetectorConfig::noise_sigma`] is negative or not finite.
+    /// the known noise level of [`DetectorConfig::uncertainty`]
+    /// ([`NoiseLevel::Known`](crate::NoiseLevel::Known)) is negative or not
+    /// finite.
     pub fn new(cfg: DetectorConfig) -> Result<Self, ChessError> {
         cfg.validate()?;
         Ok(Self {
@@ -159,7 +161,7 @@ impl Detector {
                 ImageView::from_u8_slice(src_w, src_h, img).expect("dimensions were checked above");
             return Ok(Self::detect_view_inner(
                 &self.cfg,
-                self.cfg.covariance_stage(),
+                self.cfg.uncertainty,
                 &mut self.pyramid,
                 &mut self.chess_buffers,
                 &mut self.radon_buffers,
@@ -179,7 +181,7 @@ impl Detector {
         // reported.
         let mut frame = Self::detect_view_inner(
             &self.cfg,
-            CovarianceStage::Off,
+            Uncertainty::Off,
             &mut self.pyramid,
             &mut self.chess_buffers,
             &mut self.radon_buffers,
@@ -324,8 +326,9 @@ impl Detector {
     ///
     /// It describes the frame the last [`detect_u8`](Self::detect_u8),
     /// [`detect`](Self::detect), [`detect_u8_roi`](Self::detect_u8_roi) or
-    /// [`detect_roi`](Self::detect_roi) call returned: the supplied
-    /// [`DetectorConfig::noise_sigma`], or the per-image estimate (the value
+    /// [`detect_roi`](Self::detect_roi) call returned: the known noise
+    /// level ([`NoiseLevel::Known`](crate::NoiseLevel::Known)), or the
+    /// per-image estimate (the value
     /// [`estimate_noise_sigma_u8`](crate::estimate_noise_sigma_u8) returns
     /// for the same image). Use it to audit the covariances or to re-scale
     /// their noise term with another σ.
@@ -360,7 +363,7 @@ impl Detector {
 
     fn detect_view_inner(
         cfg: &DetectorConfig,
-        covariance: CovarianceStage,
+        uncertainty: Uncertainty,
         pyramid: &mut PyramidBuffers,
         chess_buffers: &mut ChessBuffers,
         radon_buffers: &mut RadonBuffers,
@@ -389,7 +392,7 @@ impl Detector {
         multiscale::detect_with_buffers(
             view,
             cfg,
-            covariance,
+            uncertainty,
             pyramid,
             chess_buffers,
             radon_buffers,

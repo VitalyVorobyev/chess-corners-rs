@@ -66,7 +66,8 @@ pub fn default_detector_config_json_alias() -> Result<String, JsError> {
 /// Estimate the standard deviation of the pixel noise of an 8-bit
 /// grayscale image (`width * height` bytes, row-major), in gray levels:
 /// the per-image estimate the detector uses to express position
-/// covariances when `noiseSigma` is unset. Returns `undefined` when the
+/// covariances under `Uncertainty.propagated()` without a known σ.
+/// Returns `undefined` when the
 /// image is smaller than 4×4 or has too few structure-free areas. Throws
 /// if the buffer length does not match `width * height`.
 #[wasm_bindgen]
@@ -269,9 +270,9 @@ impl ChessDetector {
     /// `detect` / `detectRgba` call, in the same order: a `Float32Array`
     /// with stride 3 per corner, `[xx, xy, yy, ...]`, in px². All three are
     /// `NaN` for a corner without one — every localizer except the ML
-    /// refiner reports it under `Uncertainty.Propagated`; none does under
-    /// `Uncertainty.Off` (the default) or on upscaled input. Empty before the first
-    /// detection, after a failed one, and after `applyConfig`.
+    /// refiner reports it under `Uncertainty.propagated()`; none does under
+    /// `Uncertainty.off()` (the default) or on upscaled input. Empty before
+    /// the first detection, after a failed one, and after `applyConfig`.
     #[wasm_bindgen(js_name = positionCovariance)]
     pub fn position_covariance(&self) -> js_sys::Float32Array {
         let arr = js_sys::Float32Array::new_with_length(self.last_position_covariance.len() as u32);
@@ -280,10 +281,11 @@ impl ChessDetector {
     }
 
     /// Image noise σ in gray levels that [`Self::position_covariance`] was
-    /// computed with: `noiseSigma` from the config when set, otherwise the
-    /// per-image estimate (what `estimateNoiseSigma` returns for the same
-    /// image). `undefined` when no corner of the most recent detection has a
-    /// covariance (`Uncertainty.Off`, the default, or upscaled input) or the
+    /// computed with: the known σ of `Uncertainty.propagated(sigma)`,
+    /// otherwise the per-image estimate (what `estimateNoiseSigma` returns
+    /// for the same image). `undefined` when no corner of the most recent
+    /// detection has a covariance (`Uncertainty.off()`, the default, or
+    /// upscaled input) or the
     /// estimate declined; also before the first detection, after a failed
     /// one, and after `applyConfig`.
     #[wasm_bindgen(js_name = noiseSigma)]

@@ -11,8 +11,8 @@
 use std::sync::OnceLock;
 
 use chess_corners::{
-    ChessRefiner, CornerDescriptor, Detector, DetectorConfig, MultiscaleConfig, RadonRefiner, Roi,
-    Uncertainty, UpscaleConfig,
+    ChessRefiner, CornerDescriptor, Detector, DetectorConfig, MultiscaleConfig, NoiseLevel,
+    RadonRefiner, Roi, Uncertainty, UpscaleConfig,
 };
 use chess_corners_core::estimate_noise_sigma_u8;
 use chess_corners_testutil::{add_gaussian_noise, optical_chessboard, Lattice};
@@ -94,9 +94,19 @@ fn standard_image() -> &'static [u8] {
     })
 }
 
-/// `cfg` reporting a covariance, which every test here examines.
+/// `cfg` reporting a covariance with the per-image noise estimate, which
+/// every test here examines.
 fn propagated(cfg: DetectorConfig) -> DetectorConfig {
-    cfg.with_uncertainty(Uncertainty::Propagated)
+    cfg.with_uncertainty(Uncertainty::Propagated {
+        noise: NoiseLevel::Estimate,
+    })
+}
+
+/// `cfg` reporting a covariance with a known noise level `sigma`.
+fn with_known_noise(cfg: DetectorConfig, sigma: f32) -> DetectorConfig {
+    cfg.with_uncertainty(Uncertainty::Propagated {
+        noise: NoiseLevel::Known(sigma),
+    })
 }
 
 fn saddle() -> DetectorConfig {
@@ -208,7 +218,7 @@ fn run_with(
             None => declined += 1,
         }
         let cfg = if known {
-            config.with_noise_sigma(realised)
+            with_known_noise(config, realised)
         } else {
             config
         };
@@ -262,7 +272,7 @@ fn covariance_scales_with_the_supplied_noise() {
             .unwrap()
     };
     for (name, cfg) in localizers() {
-        let [s1, s2, s4] = [1.0f32, 2.0, 4.0].map(|s| detect(cfg.with_noise_sigma(s)));
+        let [s1, s2, s4] = [1.0f32, 2.0, 4.0].map(|s| detect(with_known_noise(cfg, s)));
         assert_eq!(s1.len(), s4.len(), "{name}");
         let mut checked = 0;
         for ((a, b), c) in s1.iter().zip(&s2).zip(&s4) {
@@ -297,9 +307,9 @@ fn covariance_scales_with_the_supplied_noise() {
 
         // The noise variance is at least the 8-bit rounding variance 1/12,
         // so a lower (or zero) σ gives the same covariance as √(1/12).
-        let at_rounding = detect(cfg.with_noise_sigma((1.0f32 / 12.0).sqrt()));
+        let at_rounding = detect(with_known_noise(cfg, (1.0f32 / 12.0).sqrt()));
         for sigma in [0.0f32, 0.1] {
-            let low = detect(cfg.with_noise_sigma(sigma));
+            let low = detect(with_known_noise(cfg, sigma));
             for (a, b) in low.iter().zip(&at_rounding) {
                 assert_eq!(a.position_covariance, b.position_covariance, "{name}");
             }
@@ -397,7 +407,9 @@ fn positions_do_not_depend_on_the_tier() {
             };
             same(
                 name,
-                &detect(Uncertainty::Propagated),
+                &detect(Uncertainty::Propagated {
+                    noise: NoiseLevel::Estimate,
+                }),
                 &detect(Uncertainty::Off),
             );
         }
@@ -409,7 +421,9 @@ fn positions_do_not_depend_on_the_tier() {
         };
         same(
             name,
-            &detect_roi(Uncertainty::Propagated),
+            &detect_roi(Uncertainty::Propagated {
+                noise: NoiseLevel::Estimate,
+            }),
             &detect_roi(Uncertainty::Off),
         );
     }
@@ -662,9 +676,9 @@ fn roi_covariance_matches_full_frame() {
 #[test]
 fn invalid_noise_sigma_is_rejected() {
     for bad in [-1.0f32, f32::NAN, f32::INFINITY] {
-        assert!(Detector::new(saddle().with_noise_sigma(bad)).is_err());
+        assert!(Detector::new(with_known_noise(saddle(), bad)).is_err());
     }
-    assert!(Detector::new(saddle().with_noise_sigma(0.0)).is_ok());
+    assert!(Detector::new(with_known_noise(saddle(), 0.0)).is_ok());
 }
 
 #[test]
@@ -690,7 +704,7 @@ fn detector_reports_the_frame_noise_sigma() {
             assert_eq!(det.last_noise_sigma(), None, "{name}: after an error");
 
             // Supplied: returned as given.
-            let mut det = Detector::new(cfg.with_noise_sigma(1.25)).unwrap();
+            let mut det = Detector::new(with_known_noise(cfg, 1.25)).unwrap();
             det.detect_u8(img, w, h).unwrap();
             assert_eq!(det.last_noise_sigma(), Some(1.25), "{name}");
             det.detect_u8_roi(img, w, h, roi).unwrap();
@@ -698,8 +712,7 @@ fn detector_reports_the_frame_noise_sigma() {
 
             // No covariance, no σ: the Off tier and upscaled input.
             for quiet in [
-                cfg.with_uncertainty(Uncertainty::Off)
-                    .with_noise_sigma(1.25),
+                cfg.with_uncertainty(Uncertainty::Off),
                 cfg.with_upscale(UpscaleConfig::Fixed(2)),
             ] {
                 let mut det = Detector::new(quiet).unwrap();

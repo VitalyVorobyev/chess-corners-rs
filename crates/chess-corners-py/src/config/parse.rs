@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use chess_corners::{
     ChessRing as RsChessRing, OrientationMethod as RsOrientationMethod,
-    PeakFitMode as RsPeakFitMode, Uncertainty as RsUncertainty,
+    PeakFitMode as RsPeakFitMode,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -253,24 +253,6 @@ py_enum!(
     [
         (RingFit, "RING_FIT", RingFit, "ring_fit"),
         (DiskFit, "DISK_FIT", DiskFit, "disk_fit"),
-    ]
-);
-
-py_enum!(
-    /// Position-uncertainty tier.
-    ///
-    /// `OFF` *(default)* — no covariance and no noise estimate; the
-    /// corresponding output rows are `NaN`.
-    ///
-    /// `PROPAGATED` — every corner whose localizer supports it reports a
-    /// position covariance, scaled by the image noise level.
-    ///
-    /// Positions are identical under both tiers.
-    Uncertainty,
-    RsUncertainty,
-    [
-        (Off, "OFF", Off, "off"),
-        (Propagated, "PROPAGATED", Propagated, "propagated"),
     ]
 );
 
