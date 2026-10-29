@@ -37,6 +37,7 @@ docs/
     detector-comparison.md   ChESS vs Radon
     refiner-comparison.md    refiner accuracy/throughput
     refiner-accuracy.md      refiner bias vs precision, covariance calibration
+    orientation-sigma.md     what the per-axis orientation σ can be (UQ-06)
   process/           ← how we work
     review-workflow.md       release review pipeline
     subagent-workflow.md     subagent dispatch guide
