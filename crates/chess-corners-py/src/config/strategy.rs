@@ -90,10 +90,13 @@ impl ChessConfig {
             "center_of_mass",
             self.center_of_mass.borrow(py).to_dict(py)?,
         )?;
-        d.set_item(
-            "on_refiner_reject",
-            OnRefinerReject::config_str(self.on_refiner_reject)?,
-        )?;
+        // The default is an absent key, as the Rust serializer writes it.
+        if self.on_refiner_reject != RsOnRefinerReject::Drop {
+            d.set_item(
+                "on_refiner_reject",
+                OnRefinerReject::config_str(self.on_refiner_reject)?,
+            )?;
+        }
         Ok(d.unbind())
     }
 

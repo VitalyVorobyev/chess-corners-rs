@@ -57,8 +57,14 @@ pub struct ChessConfig {
     /// What happens to a corner the image refiner
     /// ([`DetectorConfig::refiner`](crate::DetectorConfig::refiner)) rejects.
     /// Ignored when no image refiner is set. Default
-    /// [`OnRefinerReject::Drop`].
+    /// [`OnRefinerReject::Drop`], which serializes as an absent key so a
+    /// default config stays readable by loaders that predate the field.
+    #[serde(skip_serializing_if = "is_drop")]
     pub on_refiner_reject: OnRefinerReject,
+}
+
+fn is_drop(v: &OnRefinerReject) -> bool {
+    *v == OnRefinerReject::Drop
 }
 
 /// What a ChESS detection does with a corner the image refiner rejects (see

@@ -28,8 +28,7 @@
         },
         "on_refiner_reject": {
           "$ref": "#/$defs/OnRefinerReject",
-          "default": "drop",
-          "description": "What happens to a corner the image refiner\n(`DetectorConfig::refiner`) rejects.\nIgnored when no image refiner is set. Default\n`OnRefinerReject::Drop`."
+          "description": "What happens to a corner the image refiner\n(`DetectorConfig::refiner`) rejects.\nIgnored when no image refiner is set. Default\n`OnRefinerReject::Drop`, which serializes as an absent key so a\ndefault config stays readable by loaders that predate the field."
         },
         "ring": {
           "$ref": "#/$defs/ChessRing",
@@ -457,7 +456,6 @@
           "center_of_mass": {
             "radius": 2
           },
-          "on_refiner_reject": "drop",
           "ring": "canonical"
         }
       },

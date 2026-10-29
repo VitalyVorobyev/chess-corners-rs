@@ -97,6 +97,21 @@ fn under_a_pyramid_keep_center_of_mass_loses_no_refined_corner() {
 }
 
 #[test]
+fn the_default_serializes_as_an_absent_key() {
+    let json = serde_json::to_value(DetectorConfig::chess()).expect("serialize");
+    assert!(json["strategy"]["chess"].get("on_refiner_reject").is_none());
+    let keep = DetectorConfig::chess()
+        .with_chess(|c| c.on_refiner_reject = OnRefinerReject::KeepCenterOfMass);
+    let json = serde_json::to_value(keep).expect("serialize");
+    assert_eq!(
+        json["strategy"]["chess"]["on_refiner_reject"],
+        "keep_center_of_mass"
+    );
+    let back: DetectorConfig = serde_json::from_value(json).expect("deserialize");
+    assert_eq!(back, keep);
+}
+
+#[test]
 fn drop_is_the_default_and_the_option_is_ignored_without_an_image_refiner() {
     assert_eq!(
         chess_corners::ChessConfig::default().on_refiner_reject,

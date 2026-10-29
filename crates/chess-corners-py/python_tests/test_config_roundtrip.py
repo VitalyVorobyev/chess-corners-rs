@@ -70,7 +70,8 @@ def test_image_refiner_saddle_point_max_offset_survives_roundtrip():
 def test_on_refiner_reject_survives_roundtrip_and_defaults_to_drop():
     cfg = chess_corners.DetectorConfig.chess()
     assert cfg.strategy.chess.on_refiner_reject == chess_corners.OnRefinerReject.DROP
-    assert cfg.to_dict()["strategy"]["chess"]["on_refiner_reject"] == "drop"
+    # The default is an absent key, as the Rust serializer writes it.
+    assert "on_refiner_reject" not in cfg.to_dict()["strategy"]["chess"]
 
     keep = cfg.with_refiner(chess_corners.ImageRefiner.saddle_point()).with_chess(
         on_refiner_reject=chess_corners.OnRefinerReject.KEEP_CENTER_OF_MASS
