@@ -154,7 +154,7 @@ Optional pre-pipeline **integer bilinear upscaling** (`chess_corners::upscale`, 
 | Feature | Crate | Effect |
 |---------|-------|--------|
 | `std` | core (default) | Standard-library support |
-| `rayon` | core, facade | Parallel response computation |
+| `rayon` | core, facade | Parallel response computation and per-corner refinement |
 | `simd` | core, facade | Portable SIMD (nightly only) |
 | `image` | facade (default) | `image::GrayImage` integration |
 | `ml-refiner` | facade, py | ML-backed refinement via ONNX |
