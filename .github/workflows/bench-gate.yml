@@ -40,7 +40,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout (full history so the merge-base is reachable)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
