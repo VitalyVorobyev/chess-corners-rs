@@ -59,6 +59,8 @@ class CenterOfMassConfig:
     def print(self, *, file: TextIO | None = ..., indent: int = ..., sort_keys: bool = ...) -> None: ...
 
 class ForstnerConfig:
+    """Deprecated since 1.7.0: use `SaddlePointConfig`; removed in 2.0."""
+
     radius: int
     min_trace: float
     min_det: float
@@ -167,7 +169,9 @@ class ChessRefiner:
     @classmethod
     def center_of_mass(cls, cfg: CenterOfMassConfig | None = ...) -> "ChessRefiner": ...
     @classmethod
-    def forstner(cls, cfg: ForstnerConfig | None = ...) -> "ChessRefiner": ...
+    def forstner(cls, cfg: ForstnerConfig | None = ...) -> "ChessRefiner":
+        """Deprecated since 1.7.0 (emits `DeprecationWarning`): use `saddle_point()`, which is more accurate on every tested condition. Removed in 2.0."""
+        ...
     @classmethod
     def saddle_point(cls, cfg: SaddlePointConfig | None = ...) -> "ChessRefiner": ...
     @classmethod

@@ -30,7 +30,7 @@ use the same `DetectorConfig` schema.
 | Stage | Options | More detail |
 |-------|---------|-------------|
 | Detector | `ChESS` ring response, `Radon` ray-sum response | [ChESS](book/src/part-03-chess-detector.md) · [atlas](https://vitavision.dev/atlas/chess-corners), [Radon](book/src/part-04-radon-detector.md) · [atlas](https://vitavision.dev/atlas/duda-radon-corners) |
-| Refiner | `CenterOfMass`, `Förstner`, `SaddlePoint`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
+| Refiner | `CenterOfMass`, `Förstner` (deprecated), `SaddlePoint`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
 | Scale handling | Single-scale or coarse-to-fine 2× pyramid | [Multiscale](book/src/part-07-multiscale-and-pyramids.md) |
 | Uncertainty | Per-corner position covariance (noise plus each localizer's systematic error), or `Off` | [Uncertainty](book/src/part-08-uncertainty.md) |
 | Benchmarks | Synthetic sweeps and pipeline timings | [Benchmarks](book/src/part-09-benchmarks.md) |

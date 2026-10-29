@@ -1,3 +1,5 @@
+#![allow(deprecated)] // this module defines the deprecated Förstner refiner
+
 //! Förstner-style gradient-based subpixel refinement.
 //!
 //! The Förstner operator fits a subpixel corner location by solving a
@@ -47,6 +49,10 @@ const SYSTEMATIC: SystematicModel = SystematicModel {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 #[non_exhaustive]
+#[deprecated(
+    since = "1.7.0",
+    note = "use the saddle-point refiner (`SaddlePointConfig`), which is more accurate on every tested condition"
+)]
 pub struct ForstnerConfig {
     /// Half-size of the local gradient window, in image pixels (integer
     /// `>= 1`; the window is `(2·radius+1)²`). Default `2` gives a 5×5
@@ -99,6 +105,10 @@ impl Default for ForstnerConfig {
 /// structure tensor within a local window. Requires the image intensity
 /// patch (passed via [`RefineContext::image`]); ignores the response map.
 #[derive(Debug)]
+#[deprecated(
+    since = "1.7.0",
+    note = "use the saddle-point refiner (`SaddlePointRefiner`), which is more accurate on every tested condition"
+)]
 pub struct ForstnerRefiner {
     cfg: ForstnerConfig,
     pub(crate) uncertainty: Uncertainty,

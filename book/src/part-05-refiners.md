@@ -94,6 +94,9 @@ the ChESS response is the only signal you want the refinement to see.
 
 ## 5.3 Förstner
 
+> **Deprecated since 1.7.0.** `SaddlePoint` is more accurate on every tested
+> condition; the Förstner refiner will be removed in 2.0.
+
 Gradient-based. Solves a weighted least-squares system for the point
 closest (in a Mahalanobis sense) to all image-gradient lines in a
 local window. The structure tensor
@@ -311,7 +314,7 @@ The measurement-driven comparison lives in Part IX. In short:
 - ML has the lowest mean error on the heaviest synthetic noise row.
 
 The ChESS refiner is selected through `ChessConfig.refiner`:
-`DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::forstner())`.
+`DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::saddle_point())`.
 The Radon refiner through `RadonConfig.refiner`:
 `DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point())`
 refines the peaks

@@ -36,7 +36,7 @@ Inside `ChessConfig`:
 | Field               | Meaning                                                                                                          |
 |---------------------|------------------------------------------------------------------------------------------------------------------|
 | `ring`              | `ChessRing::Canonical` (r=5, paper default) or `ChessRing::Broad` (r=10, wider support window). Descriptors always sample at this same radius. |
-| `refiner`           | `ChessRefiner::CenterOfMass(_)`, `Forstner(_)`, `SaddlePoint(_)`, or `Ml` (with `ml-refiner`). Each variant carries its own tuning struct. |
+| `refiner`           | `ChessRefiner::CenterOfMass(_)`, `Forstner(_)` (deprecated since 1.7.0), `SaddlePoint(_)`, or `Ml` (with `ml-refiner`). Each variant carries its own tuning struct. |
 
 Inside `RadonConfig`:
 
@@ -130,19 +130,19 @@ fixtures; see
 use chess_corners::{ChessRefiner, DetectorConfig};
 
 let cfg = DetectorConfig::chess_multiscale()
-    .with_chess(|c| c.refiner = ChessRefiner::forstner());
+    .with_chess(|c| c.refiner = ChessRefiner::saddle_point());
 ```
 
 Each refiner variant carries its tuning struct inline:
 
 ```rust
-use chess_corners::{ChessRefiner, ForstnerConfig};
+use chess_corners::{ChessRefiner, SaddlePointConfig};
 
 // The per-refiner config structs are `#[non_exhaustive]`: start from
 // `Default` and set only the fields you care about.
-let mut f = ForstnerConfig::default();
+let mut f = SaddlePointConfig::default();
 f.max_offset = 2.0;
-let refiner = ChessRefiner::Forstner(f);
+let refiner = ChessRefiner::SaddlePoint(f);
 ```
 
 The Radon refiner is `RadonConfig.refiner`: the response-map peak fit
@@ -250,7 +250,7 @@ cfg.threshold = 60.0  # ChESS: absolute floor on the raw response (default 30)
 
 # Nested getters return the live shared object, so direct attribute
 # assignment propagates back to `cfg` — no rebuild needed:
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point()
 
 detector = chess_corners.Detector(cfg)
 det = detector.detect(img)
@@ -289,7 +289,7 @@ Nested getters (`cfg.strategy`, `cfg.strategy.chess`, `cfg.threshold`,
 parent — direct attribute assignment is enough:
 
 ```python
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner()
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point()
 cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
 ```
 
@@ -299,7 +299,7 @@ the named fields replaced:
 
 ```python
 cfg = cfg.with_chess(
-    refiner=chess_corners.ChessRefiner.forstner(),
+    refiner=chess_corners.ChessRefiner.saddle_point(),
     ring=chess_corners.ChessRing.BROAD,
 )
 ```

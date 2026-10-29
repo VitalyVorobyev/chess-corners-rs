@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+#[allow(deprecated)]
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessRefiner as RsChessRefiner,
     ForstnerConfig as RsForstnerConfig, RadonRefiner as RsRadonRefiner,
@@ -59,8 +60,12 @@ impl CenterOfMassConfig {
 // ForstnerConfig
 // ---------------------------------------------------------------------------
 
+/// Tuning for the Förstner refiner.
+///
+/// @deprecated Use the saddle-point refiner (`ChessRefiner.withSaddlePoint`), which is more accurate on every tested condition; removed in 2.0.
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
+#[allow(deprecated)]
 pub struct ForstnerConfig {
     cell: Cell<RsForstnerConfig>,
 }
@@ -68,6 +73,7 @@ pub struct ForstnerConfig {
 #[wasm_bindgen]
 impl ForstnerConfig {
     #[wasm_bindgen(constructor)]
+    #[allow(deprecated)]
     pub fn new() -> Self {
         Self {
             cell: cell(RsForstnerConfig::default()),
@@ -75,46 +81,56 @@ impl ForstnerConfig {
     }
 
     #[wasm_bindgen(getter)]
+    #[allow(deprecated)]
     pub fn radius(&self) -> i32 {
         self.cell.borrow().radius
     }
     #[wasm_bindgen(setter)]
+    #[allow(deprecated)]
     pub fn set_radius(&mut self, v: i32) {
         self.cell.borrow_mut().radius = v;
     }
 
     #[wasm_bindgen(getter, js_name = minTrace)]
+    #[allow(deprecated)]
     pub fn min_trace(&self) -> f32 {
         self.cell.borrow().min_trace
     }
     #[wasm_bindgen(setter, js_name = minTrace)]
+    #[allow(deprecated)]
     pub fn set_min_trace(&mut self, v: f32) {
         self.cell.borrow_mut().min_trace = v;
     }
 
     #[wasm_bindgen(getter, js_name = minDet)]
+    #[allow(deprecated)]
     pub fn min_det(&self) -> f32 {
         self.cell.borrow().min_det
     }
     #[wasm_bindgen(setter, js_name = minDet)]
+    #[allow(deprecated)]
     pub fn set_min_det(&mut self, v: f32) {
         self.cell.borrow_mut().min_det = v;
     }
 
     #[wasm_bindgen(getter, js_name = maxConditionNumber)]
+    #[allow(deprecated)]
     pub fn max_condition_number(&self) -> f32 {
         self.cell.borrow().max_condition_number
     }
     #[wasm_bindgen(setter, js_name = maxConditionNumber)]
+    #[allow(deprecated)]
     pub fn set_max_condition_number(&mut self, v: f32) {
         self.cell.borrow_mut().max_condition_number = v;
     }
 
     #[wasm_bindgen(getter, js_name = maxOffset)]
+    #[allow(deprecated)]
     pub fn max_offset(&self) -> f32 {
         self.cell.borrow().max_offset
     }
     #[wasm_bindgen(setter, js_name = maxOffset)]
+    #[allow(deprecated)]
     pub fn set_max_offset(&mut self, v: f32) {
         self.cell.borrow_mut().max_offset = v;
     }
@@ -126,6 +142,7 @@ impl Default for ForstnerConfig {
     }
 }
 
+#[allow(deprecated)]
 impl ForstnerConfig {
     pub(crate) fn share_cell(&self) -> Cell<RsForstnerConfig> {
         Rc::clone(&self.cell)
@@ -253,6 +270,7 @@ impl ChessRefinerKind {
 /// `kind` is read at snapshot time.
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
+#[allow(deprecated)]
 pub struct ChessRefiner {
     pub(crate) kind: Cell<ChessRefinerKind>,
     pub(crate) center_of_mass: Cell<RsCenterOfMassConfig>,
@@ -265,6 +283,7 @@ impl ChessRefiner {
     /// Center-of-mass refinement on the response map. JS:
     /// `ChessRefiner.withCenterOfMass(cfg)`.
     #[wasm_bindgen(js_name = withCenterOfMass)]
+    #[allow(deprecated)]
     pub fn center_of_mass(cfg: &CenterOfMassConfig) -> Self {
         Self {
             kind: cell(ChessRefinerKind::CenterOfMass),
@@ -276,6 +295,8 @@ impl ChessRefiner {
 
     /// Förstner structure-tensor refinement on the image patch. JS:
     /// `ChessRefiner.withForstner(cfg)`.
+    ///
+    /// @deprecated Use the saddle-point refiner (`ChessRefiner.withSaddlePoint`), which is more accurate on every tested condition; removed in 2.0.
     #[wasm_bindgen(js_name = withForstner)]
     pub fn forstner(cfg: &ForstnerConfig) -> Self {
         Self {
@@ -289,6 +310,7 @@ impl ChessRefiner {
     /// Quadratic saddle-point refinement. JS:
     /// `ChessRefiner.withSaddlePoint(cfg)`.
     #[wasm_bindgen(js_name = withSaddlePoint)]
+    #[allow(deprecated)]
     pub fn saddle_point(cfg: &SaddlePointConfig) -> Self {
         Self {
             kind: cell(ChessRefinerKind::SaddlePoint),
@@ -302,6 +324,7 @@ impl ChessRefiner {
     /// JS: `ChessRefiner.withMl()`.
     #[cfg(feature = "ml-refiner")]
     #[wasm_bindgen(js_name = withMl)]
+    #[allow(deprecated)]
     pub fn ml() -> Self {
         Self {
             kind: cell(ChessRefinerKind::Ml),
@@ -335,6 +358,8 @@ impl ChessRefiner {
     }
 
     /// Förstner payload wrapper.
+    ///
+    /// @deprecated Use the saddle-point refiner (`ChessRefiner.withSaddlePoint`), which is more accurate on every tested condition; removed in 2.0.
     #[wasm_bindgen(getter, js_name = forstner)]
     pub fn get_forstner(&self) -> ForstnerConfig {
         ForstnerConfig::from_cell(Rc::clone(&self.forstner))
@@ -367,6 +392,7 @@ impl ChessRefiner {
 }
 
 impl Default for ChessRefiner {
+    #[allow(deprecated)]
     fn default() -> Self {
         Self {
             kind: cell(ChessRefinerKind::CenterOfMass),
@@ -378,6 +404,7 @@ impl Default for ChessRefiner {
 }
 
 impl ChessRefiner {
+    #[allow(deprecated)]
     pub(crate) fn from_value(value: RsChessRefiner) -> Self {
         let me = Self::default();
         match value {
@@ -402,6 +429,7 @@ impl ChessRefiner {
         me
     }
 
+    #[allow(deprecated)]
     pub(crate) fn snapshot(&self) -> RsChessRefiner {
         match *self.kind.borrow() {
             ChessRefinerKind::CenterOfMass => {

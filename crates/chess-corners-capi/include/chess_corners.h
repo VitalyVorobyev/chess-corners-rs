@@ -333,7 +333,9 @@ typedef struct cc_result {
 #define CC_REFINER_CENTER_OF_MASS 0
 
 /**
- * Förstner refiner. ChESS strategy only.
+ * Förstner refiner. ChESS strategy only. Deprecated since 1.7.0: use
+ * `CC_REFINER_SADDLE_POINT`, which is more accurate on every tested
+ * condition; the Förstner refiner is removed in 2.0.
  */
 #define CC_REFINER_FORSTNER 1
 

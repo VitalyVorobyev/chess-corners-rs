@@ -18,6 +18,7 @@
 //!                [--iters N]
 //! ```
 
+#[allow(deprecated)]
 use chess_corners::{
     CenterOfMassConfig, ChessRefiner, Detector, DetectorConfig, ForstnerConfig, SaddlePointConfig,
 };
@@ -61,6 +62,7 @@ fn parse_refiner(s: &str) -> Result<RefinerSel, String> {
     }
 }
 
+#[allow(deprecated)]
 fn chess_refiner_from_sel(sel: RefinerSel) -> Option<ChessRefiner> {
     match sel {
         RefinerSel::CenterOfMass => Some(ChessRefiner::CenterOfMass(CenterOfMassConfig::default())),

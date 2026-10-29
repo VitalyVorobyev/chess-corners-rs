@@ -108,6 +108,7 @@ fn radon_saddle() -> DetectorConfig {
 }
 
 /// Every localizer, as the facade composes them.
+#[allow(deprecated)]
 fn localizers() -> [(&'static str, DetectorConfig); 5] {
     [
         ("ChESS + CenterOfMass", propagated(DetectorConfig::chess())),

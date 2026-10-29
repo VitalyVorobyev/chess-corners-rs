@@ -94,6 +94,7 @@ pub use crate::noise::estimate_noise_sigma_u8;
 pub use crate::orientation::{
     describe_corners, fit_axes_at_point, AxisFitResult, OrientationMethod,
 };
+#[allow(deprecated)]
 pub use crate::refine::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
     PositionCovariance, RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind,

@@ -1,3 +1,4 @@
+#[allow(deprecated)]
 use chess_corners_core::{
     CenterOfMassConfig, ForstnerConfig, OrientationMethod, PeakFitMode, RadonDetectorParams,
     RefinerKind, SaddlePointConfig,
@@ -148,6 +149,7 @@ fn radon_multiscale_preset_carries_pyramid_params() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn broad_ring_and_forstner_refiner_propagate_to_params() {
     // `ForstnerConfig` is `#[non_exhaustive]`; build via `Default`
     // and set the field under test.
@@ -255,6 +257,7 @@ fn multiscale_config_round_trips_with_externally_tagged_payload() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn chess_refiner_round_trips_each_variant() {
     let variants = [
         ChessRefiner::CenterOfMass(CenterOfMassConfig::default()),
@@ -345,6 +348,7 @@ fn with_detection_sets_shared_params_for_both_strategies() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn chained_builder_produces_expected_state() {
     let cfg = DetectorConfig::chess()
         .with_threshold(0.15)
@@ -404,6 +408,7 @@ fn with_merge_radius_sets_radius() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn chess_refiner_shortcuts_equal_full_constructors() {
     assert_eq!(
         ChessRefiner::center_of_mass(),

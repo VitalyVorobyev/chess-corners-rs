@@ -3,6 +3,7 @@
 
 use std::rc::Rc;
 
+#[allow(deprecated)]
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
     ChessRing as RsChessRing, DetectionParams as RsDetectionParams,
@@ -48,6 +49,7 @@ impl StrategyKind {
 /// = 2.5` propagate through the chess config without a round-trip.
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
+#[allow(deprecated)]
 pub struct ChessConfig {
     ring: Cell<RsChessRing>,
     refiner_kind: Cell<ChessRefinerKind>,

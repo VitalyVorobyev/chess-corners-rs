@@ -1,5 +1,12 @@
+#[allow(deprecated)]
 use chess_corners_core::{CenterOfMassConfig, ForstnerConfig, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
+
+// Payload of the deprecated `ChessRefiner::Forstner` variant. The alias keeps the
+// deprecated type out of the enum field, where derive-generated code
+// (`JsonSchema`) would otherwise warn.
+#[allow(deprecated)]
+type ForstnerPayload = ForstnerConfig;
 
 // ---------------------------------------------------------------------------
 // Detector kernel / ring selection
@@ -38,7 +45,11 @@ pub enum ChessRefiner {
     /// map. Cheapest refiner in the shipped benchmark; the library default.
     CenterOfMass(CenterOfMassConfig),
     /// Förstner structure-tensor refinement on the image patch.
-    Forstner(ForstnerConfig),
+    #[deprecated(
+        since = "1.7.0",
+        note = "use the saddle-point refiner (`ChessRefiner::SaddlePoint`), which is more accurate on every tested condition"
+    )]
+    Forstner(ForstnerPayload),
     /// Quadratic surface fit at the saddle point.
     SaddlePoint(SaddlePointConfig),
     /// ML-backed subpixel refinement. Runs a small ONNX model on a
@@ -60,6 +71,11 @@ impl ChessRefiner {
         Self::CenterOfMass(CenterOfMassConfig::default())
     }
     /// Förstner structure-tensor refinement with default tuning.
+    #[deprecated(
+        since = "1.7.0",
+        note = "use the saddle-point refiner (`ChessRefiner::saddle_point`), which is more accurate on every tested condition"
+    )]
+    #[allow(deprecated)]
     pub fn forstner() -> Self {
         Self::Forstner(ForstnerConfig::default())
     }

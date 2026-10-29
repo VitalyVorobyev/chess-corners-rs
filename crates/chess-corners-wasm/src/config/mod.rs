@@ -250,6 +250,7 @@ mod tests {
     };
 
     #[test]
+    #[allow(deprecated)]
     fn leaf_edits_propagate_through_chess_refiner_chain() {
         // Models the JS chain
         //   cfg.strategy.chess.refiner.forstner.maxOffset = 2.5
@@ -663,6 +664,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn with_chess_refiner_builder_sets_forstner() {
         let cfg = DetectorConfig::chess();
         let mut forstner = ForstnerConfig::new();

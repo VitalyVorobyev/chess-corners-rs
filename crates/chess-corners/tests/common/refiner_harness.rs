@@ -14,6 +14,7 @@
 
 use std::time::Instant;
 
+#[allow(deprecated)]
 use chess_corners_core::{
     CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
     ImageView, RefineContext, RefineStatus, ResponseMap, SaddlePointConfig, SaddlePointRefiner,
@@ -34,13 +35,16 @@ pub trait RefineSampleSink {
 /// The three classic (non-ML) refiners, constructed once at their default
 /// configs and reused across the whole sweep so the per-refiner numbers are
 /// directly comparable.
+#[allow(deprecated)]
 pub struct ClassicRefiners {
     pub center: CenterOfMassRefiner,
     pub forstner: ForstnerRefiner,
     pub saddle: SaddlePointRefiner,
 }
 
+#[allow(deprecated)]
 impl ClassicRefiners {
+    #[allow(deprecated)]
     pub fn new() -> Self {
         Self {
             center: CenterOfMassRefiner::new(CenterOfMassConfig::default()),

@@ -53,10 +53,10 @@ fn detect(img: &[u8], w: usize, h: usize) {
     let corners = find_corners_u8(img, w, h, &params);
     println!("found {} corners", corners.len());
 
-    // Opt into Förstner or saddle-point refiners on the image intensities:
-    params.refiner = RefinerKind::Forstner(Default::default());
+    // Opt into the saddle-point refiner on the image intensities:
+    params.refiner = RefinerKind::SaddlePoint(Default::default());
     let refined = find_corners_u8(img, w, h, &params);
-    println!("found {} corners with Förstner", refined.len());
+    println!("found {} corners with SaddlePoint", refined.len());
 }
 ```
 

@@ -174,6 +174,7 @@ mod tests {
         jsonschema::validator_for(&detector_config_schema()).expect("schema compiles")
     }
 
+    #[allow(deprecated)]
     fn presets() -> Vec<(&'static str, DetectorConfig)> {
         vec![
             ("default", DetectorConfig::default()),

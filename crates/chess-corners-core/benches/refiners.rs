@@ -11,6 +11,7 @@
 //! covariance on (`propagated`) and off (`off`); the Radon group times the
 //! peak-fit covariance alone (the peak fit itself is part of detection).
 
+#[allow(deprecated)]
 use chess_corners_core::{
     chess_response_u8, detect_corners_from_response, detect_peaks_from_radon, radon_response_u8,
     CenterOfMassConfig, ChessParams, CornerRefiner, DenseDetector, ForstnerConfig, ImageView,
@@ -57,6 +58,7 @@ fn ctx<'a>(scene: &'a Scene) -> RefineContext<'a> {
     )
 }
 
+#[allow(deprecated)]
 fn bench_refiners(c: &mut Criterion) {
     // 256, 512, 1024 pixel sides give roughly 30 / 120 / 480 seeds at
     // cell = 12 — covers the small / medium / large regimes the
