@@ -188,7 +188,7 @@ export function Inspector(p: InspectorProps) {
               <div className="flex flex-col gap-1.5">
                 <LayerCheckbox id="corners" label={p.coloring === "sigma" ? "Corners (colored by predicted σ)" : "Corners (colored by response)"} p={p} />
                 <LayerCheckbox id="axes" label="Orientation axes" swatch={OVERLAY_COLORS.axis0} p={p} />
-                <LayerCheckbox id="wedges" label="Axis σ wedges" swatch={OVERLAY_COLORS.axis1} p={p} />
+                <LayerCheckbox id="wedges" label="Axis fit-error wedges" swatch={OVERLAY_COLORS.axis1} p={p} />
                 <LayerCheckbox id="ellipses" label="Position 1σ ellipses" swatch="var(--stage-model)" p={p} />
                 <LayerCheckbox id="heatmap" label="Response heatmap" swatch={OVERLAY_COLORS.heatmap} p={p} />
               </div>

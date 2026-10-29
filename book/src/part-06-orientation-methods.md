@@ -4,7 +4,7 @@ Both the [ChESS detector](part-03-chess-detector.md) and the
 [Radon detector](part-04-radon-detector.md) produce a list of corner
 candidates with subpixel positions. The descriptor pipeline lifts each
 position to a richer record that includes two grid-axis directions and
-their per-axis fit-quality scores (not calibrated 1σ values). The "orientation method" is the
+the standard error of each axis fit. The "orientation method" is the
 algorithm that fits those axes from local image evidence — and because
 both detectors feed the same descriptor pipeline, the orientation
 method is detector-agnostic.
@@ -19,13 +19,32 @@ The `orientation_method` field on `DetectorConfig` (and the
 
 | Method       | JSON key     | Notes                                                                        |
 |--------------|--------------|------------------------------------------------------------------------------|
-| `RingFit`    | `"ring_fit"` | **Default.** 16-sample ring Gauss-Newton fit with a residual-scaled σ.              |
+| `RingFit`    | `"ring_fit"` | **Default.** 16-sample ring Gauss-Newton fit.                                |
 | `DiskFit`    | `"disk_fit"` | Full-disk crossing-line estimator. Falls back to `RingFit` on weak evidence. |
 | *(disabled)* | `null`       | Skip the fit entirely. `without_orientation()` (Rust/Python), `withoutOrientation()` (JS), `CC_ORIENTATION_NONE` (C). Each descriptor's `axes` is then `None`. |
 
 `RingFit` and `DiskFit` produce the same `AxisFitResult` shape:
-`(theta1, theta2, sigma_theta1, sigma_theta2, amp, rms)`. They differ
-in the image evidence they use and in the failure modes they handle.
+`(theta1, theta2, fit_std_error_theta1, fit_std_error_theta2, amp, rms)`.
+They differ in the image evidence they use and in the failure modes they
+handle.
+
+Both report, per axis, the residual-based least-squares standard error
+of their own fit (`AxisEstimate::fit_std_error`, radians):
+
+\\[
+\mathrm{SE}(\theta_k) = \sqrt{\left[(J^\top J)^{-1}\right]_{\theta_k\theta_k}
+\cdot \frac{\mathrm{SSR}}{N - 4}}
+\\]
+
+over the \\(N\\) observations of that fit (16 ring samples for
+`RingFit`, the support-disk pixels for `DiskFit`), with parameters
+\\(\mu, A, \theta_1, \theta_2\\). It is a fit-quality score for
+ranking and gating axes, not a calibrated error bound: the angle error of
+both methods is dominated by a deterministic bias of the fit (set by the
+board rotation, the blur and the cell size; up to about 2° on clean
+corners) that the residual does not see. It is the same quantity for
+both methods, so one gate applies to both. `π` means no information.
+
 Disabling skips the stage altogether — see [§6.5](#65-choosing-a-method).
 
 ## 6.2 RingFit
@@ -40,10 +59,8 @@ I(\varphi) = \mu + A \cdot \tanh\bigl(\beta \sin(\varphi - \theta_1)\bigr) \cdot
 
 via Gauss-Newton, seeded from the 2nd-harmonic orientation of the ring
 samples. The slope \\(\beta\\) is fixed; the four free parameters are
-\\(\mu, A, \theta_1, \theta_2\\). The per-axis sigmas are fit-quality
-scores, not calibrated 1σ values: the fit's Gauss-Newton covariance,
-corrected by a piecewise-linear LUT keyed on the contrast-relative
-residual.
+\\(\mu, A, \theta_1, \theta_2\\). Each axis reports the standard error
+of §6.1 from the final Gauss-Newton normal matrix.
 
 `RingFit` is suitable for the full range of standard chessboard images.
 It is the default and should be left in place unless you have a
@@ -166,12 +183,12 @@ The pipeline runs in seven steps:
    - the disk axes disagree with the ring axes by `> 12°` and edge
      support is `≥ 0.18`.
 
-   When accepted, the per-axis sigma is recomputed from the recovered
-   separation and `rel_rms` (a 1.5°/3° floor depending on whether
-   separation is `≥ 55°` or not, plus `8·rel_rms` capped at 6°, all
-   scaled by 0.55). When rejected but the disk and ring axes disagreed
-   by more than 12°, the ring fit's sigma is inflated to at least 10°
-   to flag the ambiguity.
+   When accepted, each axis reports the standard error of §6.1 over
+   the disk pixels, from one Jacobian pass at the accepted angles and
+   width (the width is a discrete choice, not a fit parameter). When
+   rejected but the disk and ring axes disagreed by more than 12°, the
+   ring fit's standard error is raised to at least 10° to flag the
+   ambiguity.
 
 ## 6.5 Choosing a method
 

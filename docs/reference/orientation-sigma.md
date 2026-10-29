@@ -203,6 +203,13 @@ note, no deprecation in 1.x):
 - Values stay radians, `π` stays the no-information value, and the field is
   still computed whenever orientation is on, independent of `Uncertainty`.
 
+Shipped in 2.0 as above. Since then the harness's `cur` column (CSV
+`fit_std_error`) reads the shipped value, which equals `b`; the tables
+here were measured on the 1.x values. The ring fit used to keep each
+standard error on its pre-canonicalisation axis, so on the 1–5% of
+corners where canonicalisation swaps the axes the two values were
+exchanged; 2.0 fixes that.
+
 Rejected: `a` (noise-propagated) would tie the axes to the noise estimate
 and the `Uncertainty` tier (calib-targets-rs switches the tier off when it
 has no noise level, so its axes would lose σ), is 4–5× smaller than the

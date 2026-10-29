@@ -239,9 +239,8 @@ py_enum!(
     /// each detected corner.
     ///
     /// `RING_FIT` *(default)* — fits the parametric two-axis chessboard
-    /// intensity model to the 16-sample ring via Gauss-Newton, with
-    /// per-axis fit-quality scores corrected by a piecewise-linear lookup
-    /// table. Suitable for the full range of standard chessboard images.
+    /// intensity model to the 16-sample ring via Gauss-Newton. Suitable for
+    /// the full range of standard chessboard images.
     ///
     /// `DISK_FIT` — full-disk crossing-line estimator. Samples all image
     /// pixels in a disk around the corner center and fits two possibly

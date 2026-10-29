@@ -33,7 +33,7 @@ def ensure_available() -> None:
 
 def detect_with_method(img_u8: np.ndarray, method: str):
     """Run detection with the given method; returns ``chess_corners.Detections``
-    (``.xy``, ``.response``, ``.angles``, ``.sigmas``; supports ``len()``)."""
+    (``.xy``, ``.response``, ``.angles``, ``.fit_std_errors``; supports ``len()``)."""
     ensure_available()
     import chess_corners
 

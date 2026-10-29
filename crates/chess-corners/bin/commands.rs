@@ -63,7 +63,7 @@ pub struct DetectionOverrides {
 #[derive(Serialize)]
 pub struct AxisOut {
     pub angle: f32,
-    pub sigma: f32,
+    pub fit_std_error: f32,
 }
 
 #[derive(Serialize)]
@@ -88,7 +88,7 @@ impl From<&AxisEstimate> for AxisOut {
     fn from(a: &AxisEstimate) -> Self {
         Self {
             angle: a.angle,
-            sigma: a.sigma,
+            fit_std_error: a.fit_std_error,
         }
     }
 }

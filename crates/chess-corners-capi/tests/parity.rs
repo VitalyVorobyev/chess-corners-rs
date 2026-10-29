@@ -78,7 +78,7 @@ fn assert_ffi_matches_facade(cfg: &cc_config, reference: DetectorConfig) -> usiz
                 assert_eq!(a.has_orientation, 1, "ffi corner should carry orientation");
                 for (a_axis, b_axis) in a.axes.iter().zip(b_axes.iter()) {
                     assert!((a_axis.angle - b_axis.angle).abs() < 1e-4);
-                    assert!((a_axis.sigma - b_axis.sigma).abs() < 1e-4);
+                    assert!((a_axis.fit_std_error - b_axis.fit_std_error).abs() < 1e-4);
                 }
             }
             None => assert_eq!(a.has_orientation, 0, "orientation should be skipped"),

@@ -126,7 +126,7 @@ facade. Fields:
 |-----------------|-----------------------------|-------------------------------------------------------------------------|
 | `x`, `y`        | `f32`                       | Subpixel position in input image pixels.                                |
 | `response`      | `f32`                       | Raw detector response at the peak. Scale is detector-specific.          |
-| `axes`          | `Option<[AxisEstimate; 2]>` | The two local grid axis directions, each with a fit-quality score in radians (not a calibrated 1σ) — or `None` when the orientation fit is disabled. |
+| `axes`          | `Option<[AxisEstimate; 2]>` | The two local grid axis directions, each with the standard error of its fit in radians (a fit-quality score, not a calibrated error bound) — or `None` when the orientation fit is disabled. |
 | `position_covariance` | `Option<PositionCovariance>` | 2×2 covariance of `(x, y)` in px² — or `None`; every localizer except the ML refiner reports one when `DetectorConfig::uncertainty` is `Propagated` (the default is `Off`; [Part VIII](part-08-uncertainty.md)). |
 
 The two axes are **not** assumed orthogonal — projective warp or

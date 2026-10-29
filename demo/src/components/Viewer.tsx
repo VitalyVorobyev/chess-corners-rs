@@ -117,11 +117,11 @@ export function Viewer({ image, corners, heatmap, visible, coloring, exaggeratio
               <dd>{hoveredCorner.response.toFixed(1)}</dd>
               <dt style={{ color: OVERLAY_COLORS.axis0 }}>axis 0</dt>
               <dd>
-                {(hoveredCorner.axes[0].angle * DEG).toFixed(1)}° ± {(hoveredCorner.axes[0].sigma * DEG).toFixed(1)}°
+                {(hoveredCorner.axes[0].angle * DEG).toFixed(1)}° (fit SE {(hoveredCorner.axes[0].fitStdError * DEG).toFixed(1)}°)
               </dd>
               <dt style={{ color: OVERLAY_COLORS.axis1 }}>axis 1</dt>
               <dd>
-                {(hoveredCorner.axes[1].angle * DEG).toFixed(1)}° ± {(hoveredCorner.axes[1].sigma * DEG).toFixed(1)}°
+                {(hoveredCorner.axes[1].angle * DEG).toFixed(1)}° (fit SE {(hoveredCorner.axes[1].fitStdError * DEG).toFixed(1)}°)
               </dd>
               {hoveredEllipse ? (
                 <>

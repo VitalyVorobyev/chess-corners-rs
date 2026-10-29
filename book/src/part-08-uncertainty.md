@@ -594,23 +594,28 @@ covariance.
 
 ## 8.7 Orientation uncertainty
 
-Each axis in `axes` carries a `sigma`: a fit-quality score in radians,
-where larger means a less reliable axis estimate. It is not a calibrated
-1σ or a covariance, uses neither the image noise level nor the
-`Uncertainty` setting, and is computed whenever orientation is enabled:
+Each axis in `axes` carries a `fit_std_error`: the residual-based
+least-squares standard error of the axis angle from the orientation fit,
+in radians ([Part VI §6.1](part-06-orientation-methods.md#61-api-surface)
+gives the formula). Both methods report this same quantity, over the 16
+ring samples (`RingFit`) or the support-disk pixels of an accepted disk
+fit (`DiskFit`). When `DiskFit` rejects its own fit because it disagrees
+with the ring fit by more than 12°, it reports at least 10° to flag the
+ambiguity. It uses neither the image noise level nor the `Uncertainty`
+setting and is computed whenever orientation is enabled.
 
-- `RingFit` takes the Gauss–Newton covariance of its ring fit, scales it
-  by the fit's residual variance, and multiplies it by an empirical
-  factor (1.25 for clean fits, falling to 1.0 as the residual grows).
-- `DiskFit` reports a residual-based estimate with a method-specific
-  floor. When its axes disagree with the ring fit's, it inflates the
-  sigma to at least 10° to flag the ambiguity.
-
-The two methods use different models, so their sigmas are not
-comparable. There is no term for the correlation between the two axes,
-and the values have not been checked against measured angle errors the
-way §8.4 checks positions. Use `sigma` to rank or gate corners within
-one method, not as an inverse-variance weight that assumes it is exact.
+It is a **fit-quality score, not a calibrated 1σ**. Checked against
+measured angle errors on synthetic boards, the error of both methods is
+dominated by a deterministic bias of the fit: the ring's 16 samples and
+the fixed model sharpness locate an edge only through the samples that
+straddle it, so the angle is off by an amount set by the board rotation,
+the blur and the cell size — up to about 2° on clean 20 px cells and
+more on 6 px cells, unchanged as the noise grows. A noise or residual
+term cannot predict that bias corner by corner, so no definition passes
+a coverage check. The standard error does rank axes by their error
+(larger values go with larger errors) and isolates gross failures, so
+use it to rank or gate axes, not as an inverse-variance weight. There is
+no term for the correlation between the two axes.
 
 ---
 

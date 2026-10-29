@@ -335,11 +335,12 @@ class Detections:
         ...
 
     @property
-    def sigmas(self) -> np.ndarray | None:
-        """``(N, 2)`` float32 array of per-axis fit-quality scores in radians
-        (larger means a less reliable axis; not a calibrated 1σ, and
-        independent of the noise level and ``Uncertainty``), or ``None`` when
-        orientation estimation was disabled. Use it for ranking and gating."""
+    def fit_std_errors(self) -> np.ndarray | None:
+        """``(N, 2)`` float32 array of the residual-based least-squares
+        standard error of each axis fit, in radians, or ``None`` when
+        orientation estimation was disabled. A fit-quality score for ranking
+        and gating axes (larger means a less reliable axis), not a calibrated
+        error bound; independent of the noise level and ``Uncertainty``."""
         ...
 
     @property

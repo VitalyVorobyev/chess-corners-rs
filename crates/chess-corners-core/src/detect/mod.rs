@@ -124,7 +124,7 @@ impl Corner {
     }
 }
 
-/// Direction of one local grid axis with a fit-quality score.
+/// Direction of one local grid axis with the standard error of its fit.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct AxisEstimate {
@@ -132,23 +132,33 @@ pub struct AxisEstimate {
     ///
     /// See [`CornerDescriptor`] for the joint polarity convention.
     pub angle: f32,
-    /// Fit-quality score in radians: larger means a less reliable axis
-    /// estimate. It is not a calibrated 1σ.
+    /// Residual-based least-squares standard error of the fit for
+    /// [`angle`](Self::angle), in radians:
+    /// `sqrt([(JᵀJ)⁻¹]θθ · SSR / (N − 4))` for the two-axis intensity
+    /// model fitted by the orientation method (`RingFit`: the 16 ring
+    /// samples; `DiskFit`: the support-disk pixels).
     ///
-    /// How it is derived depends on the orientation method. `RingFit`
-    /// scales the Gauss-Newton covariance of the fit by the residual and
-    /// an empirical factor; `DiskFit` reports a residual-based heuristic
-    /// with a method-specific floor. Neither uses the image noise level or
-    /// the position-uncertainty setting, and it is computed whenever
-    /// orientation is enabled. Use it for ranking and gating corners.
-    pub sigma: f32,
+    /// A fit-quality score for ranking and gating axes, not a calibrated
+    /// error bound: the axis error is dominated by a deterministic bias of
+    /// the fit (up to about 2° on clean corners, set by the board rotation,
+    /// the blur and the cell size) that this value does not contain. Larger
+    /// means a less reliable axis; `π` means no information. When `DiskFit`
+    /// rejects its own fit because it disagrees with the ring fit, it
+    /// reports at least 10°. It uses neither the image noise level nor the
+    /// position-uncertainty setting and is computed whenever orientation is
+    /// enabled.
+    pub fit_std_error: f32,
 }
 
 impl AxisEstimate {
-    /// Construct an [`AxisEstimate`].
+    /// Construct an [`AxisEstimate`] from an axis direction and the
+    /// standard error of its fit, both in radians.
     #[inline]
-    pub fn new(angle: f32, sigma: f32) -> Self {
-        Self { angle, sigma }
+    pub fn new(angle: f32, fit_std_error: f32) -> Self {
+        Self {
+            angle,
+            fit_std_error,
+        }
     }
 }
 
@@ -212,8 +222,9 @@ pub struct CornerDescriptor {
     /// a contrast, or a normalized strength.
     pub response: f32,
 
-    /// The two local grid axis directions with per-axis fit-quality scores
-    /// ([`AxisEstimate::sigma`], not a calibrated 1σ), or
+    /// The two local grid axis directions with the standard error of each
+    /// axis fit ([`AxisEstimate::fit_std_error`], not a calibrated error
+    /// bound), or
     /// `None` when the orientation fit was skipped (orientation disabled in
     /// the detector configuration).
     pub axes: Option<[AxisEstimate; 2]>,

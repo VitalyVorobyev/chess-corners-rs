@@ -120,10 +120,13 @@ on an already stateful detector. Python (`Detections.noise_sigma`) and C
 
 ### 2.5 Orientation σ
 
-Decided by the `UQ-06` evidence (`reference/orientation-sigma.md`): either
-one calibrated definition for RingFit and DiskFit, or the field is renamed
-to what it is (a fit-quality score). calib-targets-rs gates and weights on
-it, so the 2.0 changelog states the scale change and the threshold mapping.
+Decided by the `UQ-06` evidence (`reference/orientation-sigma.md`): no
+definition is a calibrated 1σ, so the field is renamed to what it is.
+`AxisEstimate::fit_std_error` (radians) is the residual-scaled
+least-squares standard error of the axis fit for both RingFit and DiskFit,
+independent of `Uncertainty`. calib-targets-rs gates and weights on it, so
+the 2.0 changelog states the scale change and the threshold mapping
+(×0.65 keeps a gate's rejection rate).
 
 ## 3. Versioning while 2.0 is developed
 

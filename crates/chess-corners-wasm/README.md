@@ -66,7 +66,7 @@ const corners = detector.detectRgba(imageData.data, img.width, img.height);
 
 // corners is a Float32Array with stride 7 per corner:
 //   [x, y, response,
-//    axis0_angle, axis0_sigma, axis1_angle, axis1_sigma, ...]
+//    axis0_angle, axis0_fitStdError, axis1_angle, axis1_fitStdError, ...]
 for (let i = 0; i < corners.length; i += 7) {
     const x = corners[i];
     const y = corners[i + 1];
@@ -276,13 +276,13 @@ visualization. They are not part of the normal detection result.
 | `i + 1` | `y` | Subpixel y coordinate |
 | `i + 2` | `response` | ChESS response strength |
 | `i + 3` | `axis0_angle` | First grid axis, radians in `[0, π)` |
-| `i + 4` | `axis0_sigma` | fit-quality score of `axis0_angle` in radians (larger is less reliable; not a calibrated 1σ) |
+| `i + 4` | `axis0_fitStdError` | residual-based least-squares standard error of the `axis0_angle` fit in radians: a fit-quality score (larger is less reliable), not a calibrated error bound |
 | `i + 5` | `axis1_angle` | Second grid axis, radians in `(axis0, axis0 + π)` |
-| `i + 6` | `axis1_sigma` | fit-quality score of `axis1_angle` in radians (see `axis0_sigma`) |
+| `i + 6` | `axis1_fitStdError` | standard error of the `axis1_angle` fit in radians (see `axis0_fitStdError`) |
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` traverses a **dark** sector of the corner. The two grid axes are not assumed orthogonal, so the layout can represent projective warp instead of forcing a right-angle model.
 
-The orientation fit is the dominant per-corner cost, and it is optional. When it is skipped — `const bare = cfg.withoutOrientation()` — the four axis values (`axis0_angle`, `axis0_sigma`, `axis1_angle`, `axis1_sigma`) are `NaN` for every corner and the stride stays 7. Skip it when a downstream stage recovers board geometry from corner positions alone.
+The orientation fit is the dominant per-corner cost, and it is optional. When it is skipped — `const bare = cfg.withoutOrientation()` — the four axis values (`axis0_angle`, `axis0_fitStdError`, `axis1_angle`, `axis1_fitStdError`) are `NaN` for every corner and the stride stays 7. Skip it when a downstream stage recovers board geometry from corner positions alone.
 
 **Position covariance** (`positionCovariance()`): `Float32Array` with stride 3 per corner, `[xx, xy, yy]` in px², in the order of the corners returned by the most recent `detect` / `detectRgba` call. All three are `NaN` for a corner without one: every localizer reports it under `cfg.withUncertainty(Uncertainty.propagated())` (JSON `"uncertainty": {"propagated": {"noise": "estimate"}}`), none does under the default `Uncertainty.off()` or on upscaled input. The image noise level behind it is estimated per image, or known: `Uncertainty.propagated(sigma)` (JSON `{"propagated": {"noise": {"known": 1.2}}}`); `noiseSigma()` returns the σ the most recent detection used (`undefined` when no corner has a covariance). Positions are identical under every setting. The covariance includes a per-localizer floor measured on real images that usually dominates it there; weighting by it has not been shown to beat uniform weighting on real data.
 

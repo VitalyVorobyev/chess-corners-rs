@@ -102,10 +102,10 @@ int main() {
             if (c.has_orientation) {
                 std::printf(
                     "(%.2f, %.2f) response=%.3f  "
-                    "axis0=%.3f rad (sigma %.3f)  axis1=%.3f rad (sigma %.3f)\n",
+                    "axis0=%.3f rad (se %.3f)  axis1=%.3f rad (se %.3f)\n",
                     c.x, c.y, c.response,
-                    c.axes[0].angle, c.axes[0].sigma,
-                    c.axes[1].angle, c.axes[1].sigma);
+                    c.axes[0].angle, c.axes[0].fit_std_error,
+                    c.axes[1].angle, c.axes[1].fit_std_error);
             } else {
                 std::printf("(%.2f, %.2f) response=%.3f  (orientation skipped)\n",
                             c.x, c.y, c.response);
@@ -250,7 +250,8 @@ and [Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline).
 **Corner fields.** `cc_corner` (and the C++ `Corner`) mirror the Rust
 `CornerDescriptor`: a subpixel `x`, `y` in full-resolution input
 pixels, a raw detector `response`, and two local grid `axes`, each
-carrying an `angle` and a fit-quality score `sigma` (not a calibrated 1σ), both in
+carrying an `angle` and `fit_std_error`, the standard error of the axis
+fit (a fit-quality score, not a calibrated error bound), both in
 radians. The polarity convention is identical on every binding:
 `axes[0].angle` lies in `[0, π)` and `axes[1].angle` in
 `(axes[0].angle, axes[0].angle + π)`, with the counter-clockwise arc

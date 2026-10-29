@@ -265,8 +265,8 @@ refiner are in [Part IX](part-09-benchmarks.md).
 Raw corners (position + strength) are enough for many applications,
 but the core crate also offers a richer `CornerDescriptor` that fits
 a parametric intensity model to the 16-sample ring around each corner.
-The fit yields both local grid axes **independently** and their
-per-axis angular fit-quality score — all in one pass.
+The fit yields both local grid axes **independently** and the
+standard error of each axis fit — all in one pass.
 
 Both the ChESS detector and the Radon detector produce
 `CornerDescriptor` values via the same `describe_corners`
@@ -287,7 +287,7 @@ pub struct CornerDescriptor {
 
 pub struct AxisEstimate {
     pub angle: f32,
-    pub sigma: f32,
+    pub fit_std_error: f32,
 }
 ```
 
@@ -299,7 +299,7 @@ Fields:
   sums; a real corner clears the acceptance floor (`threshold`,
   default `30`) from §3.3.1.
 - `axes` – `Some([axis0, axis1])` carries the two local grid axis
-  directions and their fit-quality scores, or `None` when the
+  directions and the standard errors of their fits, or `None` when the
   orientation fit was disabled (§3.4.6).
 - `position_covariance` – the 2×2 covariance `{ xx, xy, yy }` of
   `(x, y)` in px²: the scatter due to white pixel noise plus the
@@ -364,39 +364,34 @@ radius and is not a fit parameter.
 
 Flat or near‑flat rings (ring variance below `10⁻⁶`, or 2nd‑harmonic
 magnitude below `10⁻⁴`) short‑circuit to a degenerate fit:
-`A = 0`, `θ₁ = 0`, `θ₂ = π/2`, and `σ = π` on both axes so downstream
-consumers can detect the "no signal" case via the uncertainty field.
+`A = 0`, `θ₁ = 0`, `θ₂ = π/2`, and `fit_std_error = π` on both axes
+so downstream consumers can detect the "no signal" case.
 
-### 3.4.4 Per‑axis fit-quality score
+### 3.4.4 Per‑axis fit standard error
 
-The `sigma` field on each `AxisEstimate` is a fit-quality score in
-radians, not a calibrated 1σ: larger means a less reliable axis. It
-is built from the linearised Gauss–Newton covariance at the optimum:
+The `fit_std_error` field on each `AxisEstimate` is the residual-based
+least-squares standard error of that axis angle, in radians, from the
+final Gauss–Newton normal matrix \\(J^\top J\\) of the fit
+(parameters \\(\mu, A, \theta_1, \theta_2\\), \\(N = 16\\) samples):
 
-1. The sum of squared residuals is `SSR = Σᵢ (sᵢ − I(φᵢ))²`.
-2. The unbiased residual variance is
-   `σ̂² = SSR / (N − p) = SSR / (16 − 4) = SSR / 12`.
-3. The parameter covariance is `Σ = σ̂² · (JᵀJ)⁻¹`, where `JᵀJ` is
-   the final Gauss–Newton normal matrix.
-4. The angle sigmas are the relevant diagonal entries:
-   `σθ₁ = √Σ[2,2]`, `σθ₂ = √Σ[3,3]` (clamped to ≥ 0, capped at π).
-5. Both sigmas are multiplied by an empirical calibration factor. It is
-   1.25 for clean fits and falls to 1.0 as the residual grows relative
-   to the fitted amplitude, so `sigma` tracks the angle error measured
-   on synthetic corners.
+\\[
+\mathrm{SE}(\theta_k) = \sqrt{\left[(J^\top J)^{-1}\right]_{\theta_k\theta_k}
+\cdot \frac{\mathrm{SSR}}{N - 4}},
+\qquad \mathrm{SSR} = \sum_i \bigl(s_i - I(\varphi_i)\bigr)^2 ,
+\\]
 
-This follows the textbook Cramér–Rao‑style covariance for nonlinear
-least squares, which assumes residuals are approximately iid Gaussian
-and the linearisation around the optimum is adequate. It does **not**
-account for model mismatch (e.g. a corner that is not well described
-by a separable two‑axis tanh product), but it scales correctly with
-SNR: noisier rings produce proportionally larger `sigma`.
+capped at π. It needs no noise estimate: the residual scales it, so
+noisier rings and corners the two-axis model describes poorly both
+report larger values.
 
-Practically, `sigma` is useful for:
+It is a **fit-quality score, not a calibrated error bound**. The
+16-sample ring and the fixed model sharpness bias the angle by an amount
+set by the board rotation, the blur and the cell size (up to about 2° on
+clean corners), and that bias is not in the residual. Use it to:
 
-- Ranking corners in downstream grid fitting, or rejecting corners
-  whose axes are too uncertain (it is not an inverse‑variance weight).
-- Flagging degenerate fits: `sigma ≈ π` means the fit did not lock
+- rank corners in downstream grid fitting, or reject corners whose axes
+  are unreliable (it is not an inverse‑variance weight);
+- flag degenerate fits: `fit_std_error ≈ π` means the fit did not lock
   onto a well‑defined grid.
 
 ### 3.4.5 From corners to descriptors
@@ -439,9 +434,9 @@ You get `CornerDescriptor` values when you use the high‑level APIs:
 For many tasks, `x`, `y`, and `response` are enough. When you need
 more insight into local structure — grid fitting, lens‑distortion
 modelling, calibration with per‑corner weights, or outlier rejection
-before bundle adjustment — the two `axes` and their per‑axis 1σ
-uncertainty are the extra handles the orientation fit attaches to each
-detection.
+before bundle adjustment — the two `axes` and the standard error of
+each axis fit are the extra handles the orientation fit attaches to
+each detection.
 
 That fit is the dominant per‑corner cost, and it is optional. If
 `x`, `y`, and `response` are all you need — the common case when a
@@ -452,7 +447,7 @@ per‑corner axes — disable it with
 single largest per‑corner saving once detection itself is settled;
 every descriptor's `axes` field then comes back `None`.
 
-The `axes` and their per‑axis `sigma` values are produced by an
+The `axes` and their per‑axis `fit_std_error` values are produced by an
 orientation method shared with the Radon detector. See
 [Part VI: Orientation methods](part-06-orientation-methods.md)
 for the API surface, the two available algorithms (`RingFit` and

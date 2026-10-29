@@ -40,8 +40,8 @@ use crate::imageview::ImageView;
 use data::extract_disk;
 use geometry::{line_separation, pair_disagreement};
 use score::{
-    sigma_for_fit, ACCEPT_REL_MARGIN, ACCEPT_REL_RATIO, INFLATED_SIGMA_RAD, MIN_CONTRAST, MIN_CORR,
-    WEAK_DISAGREE_RAD,
+    fit_std_errors, ACCEPT_REL_MARGIN, ACCEPT_REL_RATIO, INFLATED_STD_ERROR_RAD, MIN_CONTRAST,
+    MIN_CORR, WEAK_DISAGREE_RAD,
 };
 use search::best_disk_fit;
 
@@ -130,19 +130,21 @@ pub(crate) fn fit(
         && (residual_accept || edge_disagreement || strong_nonorthogonal || sharp_orthogonal);
 
     if accepted {
-        let sigma = sigma_for_fit(&fit);
+        let [se1, se2] = fit_std_errors(&data, &fit);
         ring_fit::TwoAxisFit {
             amp: fit.amp,
             theta1: fit.theta1,
             theta2: fit.theta2,
-            sigma_theta1: sigma,
-            sigma_theta2: sigma,
+            fit_std_error_theta1: se1,
+            fit_std_error_theta2: se2,
             rms: fit.rms,
         }
     } else if disagreement > WEAK_DISAGREE_RAD {
+        // The two methods disagree and neither is trusted: report at
+        // least `INFLATED_STD_ERROR_RAD` on the ring-fit axes.
         ring_fit::TwoAxisFit {
-            sigma_theta1: fallback.sigma_theta1.max(INFLATED_SIGMA_RAD),
-            sigma_theta2: fallback.sigma_theta2.max(INFLATED_SIGMA_RAD),
+            fit_std_error_theta1: fallback.fit_std_error_theta1.max(INFLATED_STD_ERROR_RAD),
+            fit_std_error_theta2: fallback.fit_std_error_theta2.max(INFLATED_STD_ERROR_RAD),
             ..fallback
         }
     } else {
@@ -233,8 +235,8 @@ mod tests {
             pair_err(fit.theta1, fit.theta2, target0, target1) < 3.0_f32.to_radians(),
             "fit={fit:?}"
         );
-        assert!(fit.sigma_theta1.is_finite());
-        assert!(fit.sigma_theta2.is_finite());
+        assert!(fit.fit_std_error_theta1.is_finite());
+        assert!(fit.fit_std_error_theta2.is_finite());
     }
 
     #[test]
@@ -328,8 +330,14 @@ mod tests {
         assert_eq!(fit.theta1.to_bits(), fallback.theta1.to_bits());
         assert_eq!(fit.theta2.to_bits(), fallback.theta2.to_bits());
         assert_eq!(fit.amp.to_bits(), fallback.amp.to_bits());
-        assert_eq!(fit.sigma_theta1.to_bits(), fallback.sigma_theta1.to_bits());
-        assert_eq!(fit.sigma_theta2.to_bits(), fallback.sigma_theta2.to_bits());
+        assert_eq!(
+            fit.fit_std_error_theta1.to_bits(),
+            fallback.fit_std_error_theta1.to_bits()
+        );
+        assert_eq!(
+            fit.fit_std_error_theta2.to_bits(),
+            fallback.fit_std_error_theta2.to_bits()
+        );
         assert_eq!(fit.rms.to_bits(), fallback.rms.to_bits());
     }
 
@@ -359,6 +367,79 @@ mod tests {
             "disk fit appears to have been skipped on extreme skew: \
              fallback={fallback:?}, fit={fit:?}"
         );
+    }
+
+    /// An accepted disk fit reports, per axis, the residual-scaled
+    /// least-squares standard error over the support disk at the fit's
+    /// angles and edge width.
+    #[test]
+    fn disk_fit_std_error_matches_reference_formula() {
+        let size = 41usize;
+        let (cx, cy) = (20.0f32, 20.0f32);
+        for (k, &(t0, t1, w)) in [
+            (30.0f32, 150.0f32, 0.7f32),
+            (60.0, 140.0, 1.4),
+            (25.0, 115.0, 0.35),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut img = synthetic_corner(size, t0.to_radians(), t1.to_radians(), w);
+            for (i, v) in img.iter_mut().enumerate() {
+                // Deterministic pseudo-noise of a few gray levels.
+                let noise = ((i as f32 * 0.618 + k as f32).sin() * 3.0).round();
+                *v = (*v as f32 + noise).clamp(0.0, 255.0) as u8;
+            }
+            let ring = ring_offsets(5);
+            let phi = ring_angles(ring);
+            let samples = sample_ring(&img, size, size, cx, cy, ring);
+            let fallback = ring_fit::fit_ring(&samples, &phi);
+            let got = fit_image(&img, size, cx, cy, 5, &samples, &phi);
+            assert!(
+                got.theta1 != fallback.theta1 || got.theta2 != fallback.theta2,
+                "case {k}: the disk fit must be accepted (fit={got:?})"
+            );
+
+            let data = extract_disk(&img, size, size, cx, cy, 5).expect("disk fits the image");
+            let fit = best_disk_fit(&data, fallback.theta1, fallback.theta2).expect("disk fit");
+            assert_eq!(fit.theta1.to_bits(), got.theta1.to_bits());
+            assert_eq!(fit.theta2.to_bits(), got.theta2.to_bits());
+
+            // Reference over the same support pixels, in f64.
+            let (th1, th2, wd) = (fit.theta1 as f64, fit.theta2 as f64, fit.width as f64);
+            let (s1, c1) = th1.sin_cos();
+            let (s2, c2) = th2.sin_cos();
+            let mut model = Vec::new();
+            let mut y = Vec::new();
+            for py in 0..size {
+                for px in 0..size {
+                    let (dx, dy) = (px as f64 - cx as f64, py as f64 - cy as f64);
+                    let rr = dx * dx + dy * dy;
+                    if !(1.0..=64.0).contains(&rr) {
+                        continue;
+                    }
+                    let h1 = ((-s1 * dx + c1 * dy) / wd).tanh();
+                    let h2 = ((-s2 * dx + c2 * dy) / wd).tanh();
+                    model.push([
+                        h1 * h2,
+                        (1.0 - h1 * h1) / wd * (-c1 * dx - s1 * dy) * h2,
+                        h1 * (1.0 - h2 * h2) / wd * (-c2 * dx - s2 * dy),
+                    ]);
+                    y.push(img[py * size + px] as f64);
+                }
+            }
+            assert_eq!(model.len(), data.n);
+            let reference = crate::orientation::reference_std_errors(&model, &y);
+            for (got, want) in [got.fit_std_error_theta1, got.fit_std_error_theta2]
+                .into_iter()
+                .zip(reference)
+            {
+                assert!(
+                    (got as f64 - want).abs() <= 1e-3 * want,
+                    "case {k}: got {got}, reference {want}"
+                );
+            }
+        }
     }
 
     /// Medium projective skew with broader edge width. Pair pruning

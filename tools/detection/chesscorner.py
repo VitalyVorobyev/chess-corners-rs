@@ -9,7 +9,7 @@ from pathlib import Path
 class ChESSAxis:
     """ One of two local grid axes at a corner. """
     angle: float
-    sigma: float
+    fit_std_error: float
 
 
 @dataclass
@@ -33,7 +33,7 @@ class ChESSCorner:
             "x": self.x,
             "y": self.y,
             "response": self.response,
-            "axes": [{"angle": a.angle, "sigma": a.sigma} for a in self.axes],
+            "axes": [{"angle": a.angle, "fit_std_error": a.fit_std_error} for a in self.axes],
         }
         if self.scale is not None:
             payload["scale"] = self.scale

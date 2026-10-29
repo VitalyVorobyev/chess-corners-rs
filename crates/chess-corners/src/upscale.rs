@@ -249,7 +249,7 @@ pub fn upscale_bilinear_u8<'a>(
 /// ```
 ///
 /// A naive `x /= k` biases returned coordinates by `(k − 1) / (2k)`
-/// pixels (+0.25 px at k = 2). Axis angles and sigmas are
+/// pixels (+0.25 px at k = 2). Axis angles and their standard errors are
 /// scale-invariant and are left untouched.
 pub fn rescale_descriptors_to_input(descriptors: &mut [CornerDescriptor], factor: u32) {
     if factor <= 1 {

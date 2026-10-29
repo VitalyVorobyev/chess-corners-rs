@@ -313,7 +313,7 @@ use chess_corners::{DetectorConfig, RadonRefiner};
 let cfg = DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point());
 ```
  The
-orientation method that fills `axes` and `sigma_theta*` is shared with
+orientation method that fills `axes` and their `fit_std_error` is shared with
 the ChESS pipeline; see [Part VI: Orientation methods](part-06-orientation-methods.md).
 
 ## 4.7 Coarse-to-fine Radon

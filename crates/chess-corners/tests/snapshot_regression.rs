@@ -89,9 +89,9 @@ struct CornerSnap {
     y: f64,
     response: f64,
     ax0_angle: f64,
-    ax0_sigma: f64,
+    ax0_fit_std_error: f64,
     ax1_angle: f64,
-    ax1_sigma: f64,
+    ax1_fit_std_error: f64,
 }
 
 impl CornerSnap {
@@ -102,9 +102,9 @@ impl CornerSnap {
             y: c.y as f64,
             response: c.response as f64,
             ax0_angle: axes[0].angle as f64,
-            ax0_sigma: axes[0].sigma as f64,
+            ax0_fit_std_error: axes[0].fit_std_error as f64,
             ax1_angle: axes[1].angle as f64,
-            ax1_sigma: axes[1].sigma as f64,
+            ax1_fit_std_error: axes[1].fit_std_error as f64,
         }
     }
 }

@@ -27,13 +27,15 @@ namespace chess_corners {
 /// incompatible and detection throws rather than reading a stale layout.
 inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 8;
 
-/// One local grid-axis direction with a fit-quality score.
+/// One local grid-axis direction with the standard error of its fit.
 ///
-/// `angle` and `sigma` are in radians, matching `cc_axis`. `sigma` is a
-/// fit-quality score (larger is less reliable), not a calibrated 1-sigma.
+/// `angle` and `fit_std_error` are in radians, matching `cc_axis`.
+/// `fit_std_error` is the residual-based least-squares standard error of the
+/// axis fit: a fit-quality score (larger is less reliable), not a calibrated
+/// error bound.
 struct Axis {
     float angle = 0.0f;
-    float sigma = 0.0f;
+    float fit_std_error = 0.0f;
 };
 
 /// Symmetric 2x2 covariance of a corner position, in px^2, matching
@@ -322,8 +324,8 @@ inline std::vector<Corner> detect(const std::uint8_t* pixels,
         dst.x = src.x;
         dst.y = src.y;
         dst.response = src.response;
-        dst.axes[0] = Axis{src.axes[0].angle, src.axes[0].sigma};
-        dst.axes[1] = Axis{src.axes[1].angle, src.axes[1].sigma};
+        dst.axes[0] = Axis{src.axes[0].angle, src.axes[0].fit_std_error};
+        dst.axes[1] = Axis{src.axes[1].angle, src.axes[1].fit_std_error};
         dst.has_orientation = src.has_orientation != 0;
         if (src.has_position_covariance != 0) {
             dst.position_covariance = Covariance{src.position_covariance.xx,
