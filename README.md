@@ -243,9 +243,12 @@ a JSON summary and optional overlay PNG. It reads PNG, JPEG, TIFF, BMP,
 WebP and GIF input images. Useful config examples:
 
 - [`config/chess_algorithm_config_example.json`](config/chess_algorithm_config_example.json)
-  — pure `DetectorConfig`, shared by Rust and Python.
+  — a `DetectorConfig`, shared by Rust, Python and JavaScript.
 - [`config/chess_cli_config_example.json`](config/chess_cli_config_example.json)
-  — `DetectorConfig` plus CLI input/output fields.
+  — CLI input/output fields with the `DetectorConfig` under `detector`.
+
+Every loader rejects an unknown key, at any level, with an error that
+names it.
 
 ## Feature Flags
 

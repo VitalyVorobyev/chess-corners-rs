@@ -44,7 +44,7 @@ const SYSTEMATIC: SystematicModel = SystematicModel {
 /// centered at the rounded seed position.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct CenterOfMassConfig {
     /// Half-width of the centroid window, in response-map pixels (integer

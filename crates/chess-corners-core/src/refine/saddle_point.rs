@@ -63,7 +63,7 @@ const MIN_GAIN_DET: f32 = 0.05;
 /// rejection or acceptance of clearly-wrong refinements.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct SaddlePointConfig {
     /// Half-size of the image patch used for the surface fit, in image

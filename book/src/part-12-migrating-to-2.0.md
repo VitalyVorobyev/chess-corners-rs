@@ -16,7 +16,7 @@ for each binding. Most programs need only §12.2 and §12.3.
 | [§12.4](#124-the-förstner-refiner-is-removed) Förstner refiner removed | Förstner users | Use the saddle-point refiner |
 | [§12.5](#125-the-ml-refiner-is-removed) ML refiner removed | ML refiner users, `ml-refiner` builds | Use the saddle-point refiner; drop the feature |
 | [§12.6](#126-orientation-reports-fit_std_error) `sigma` → `fit_std_error` | Code that reads or gates on axis scores | Rename; rescale a gate by about ×0.65 |
-| [§12.7](#127-configuration-files) Stricter configuration files | Saved JSON configs | Rewrite the moved keys |
+| [§12.7](#127-configuration-files) Stricter configuration files; CLI nests the detector | Saved JSON configs, CLI config files | Rewrite the moved keys; move detector keys under `"detector"` |
 | [§12.8](#128-c-and-c-abi-version-8) C ABI version 8 | C and C++ | Rebuild; update renamed tags and fields |
 | [§12.9](#129-chess-corners-core) Core accessors and helpers | Direct `chess-corners-core` users | Use the accessor methods |
 
@@ -329,21 +329,22 @@ keep = (det.fit_std_errors <= 0.65 * 0.05).all(axis=1)
 
 ## 12.7 Configuration files
 
-Stale 1.x keys now fail loudly instead of being dropped:
+Stale 1.x keys now fail loudly instead of being dropped. Every loader
+rejects an unknown key at every level of the configuration, with an
+error that names it:
 
-- **Rust (`serde_json`) and the CLI.** `strategy.chess` and
-  `strategy.radon` reject unknown keys, so a 1.x per-strategy
-  `"refiner"` is an error (``unknown field `refiner`, expected `ring`
-  or `center_of_mass` ``). The 1.x `"uncertainty": "propagated"` is an
-  error too. The top level still accepts unknown keys, because the CLI
-  adds its own `image` / `output_*` keys there.
+- **Rust** (`serde_json` and any other serde format):
+  ``unknown field `noise_sigma`, expected one of `strategy`, ...``; a
+  1.x per-strategy refiner gives ``unknown field `refiner`, expected
+  `ring` or `center_of_mass` ``.
 - **Python** (`DetectorConfig.from_dict`, `from_json`,
-  `from_json_file`) rejects unknown keys at every level, as in 1.x, and
-  names the new place of a stale `noise_sigma`.
-- **JavaScript** `DetectorConfig.fromJson` ignores unknown keys, and
-  rejects only values of the wrong shape such as
-  `"uncertainty": "propagated"`. Check a migrated file with the Rust
-  or Python loader.
+  `from_json_file`): `config has unknown keys: ...`, and a stale
+  `noise_sigma` names its new place in `uncertainty`.
+- **JavaScript** (`DetectorConfig.fromJson`): the Rust message, in a
+  thrown `Error`. In 1.x it dropped unknown keys.
+- **CLI**: the Rust message, at the top level and inside `detector`.
+
+The 1.x `"uncertainty": "propagated"` is an error in every loader.
 
 A complete 2.0 configuration with every key that moved:
 
@@ -356,7 +357,43 @@ A complete 2.0 configuration with every key that moved:
 }
 ```
 
-`schemas/detector_config.json` describes the full 2.0 shape.
+`schemas/detector_config.json` describes the full 2.0 shape. It sets
+`additionalProperties: false` on every object, so a schema validator
+rejects the same keys.
+
+### The CLI config nests the detector settings
+
+A 1.x CLI config file put the detector keys beside `image`,
+`output_json`, `output_png` and `log_level`. In 2.0 they go in a
+`detector` object, which has the shape of a `DetectorConfig` file.
+In 1.x:
+
+```json
+{
+  "image": "board.png",
+  "output_json": "board.corners.json",
+  "threshold": 30.0,
+  "multiscale": "single_scale"
+}
+```
+
+In 2.0:
+
+```json
+{
+  "image": "board.png",
+  "output_json": "board.corners.json",
+  "detector": {
+    "threshold": 30.0,
+    "multiscale": "single_scale"
+  }
+}
+```
+
+A 1.x file fails with ``unknown field `threshold`, expected one of
+`image`, `output_json`, `output_png`, `log_level`, `detector` ``. The
+JSON summary the CLI writes echoes the configuration under `detector`
+instead of `algorithm`.
 
 ## 12.8 C and C++: ABI version 8
 

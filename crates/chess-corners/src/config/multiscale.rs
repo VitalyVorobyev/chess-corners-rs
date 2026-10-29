@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 ///   Radon strategies.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum MultiscaleConfig {
     /// Single-scale detection (no pyramid).

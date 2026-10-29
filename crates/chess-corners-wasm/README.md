@@ -243,7 +243,8 @@ const roundTrip = JSON.parse(cfg.toJson());
 ```
 
 Every key is optional; omitted fields take their defaults, so `'{}'` is the
-default config. Unknown keys are ignored. In a bundler the schema file can be imported from
+default config. An unknown key at any level throws an `Error` that names it
+(``unknown field `noise_sigma`, ...``). In a bundler the schema file can be imported from
 `@vitavision/chess-corners/schemas/detector_config.json`; the package has
 no `exports` map, so any deep import path works.
 

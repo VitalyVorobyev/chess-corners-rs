@@ -64,22 +64,24 @@ def build_cli() -> None:
 def detection_config(image_path: Path, threshold: float, output_json: Path) -> dict:
     return {
         "image": str(image_path),
-        "strategy": {
-            "chess": {
-                "ring": "canonical",
-                "center_of_mass": {},
-            }
-        },
-        "refiner": None,
-        "threshold": float(threshold),
-        "detection": {"nms_radius": 2, "min_cluster_size": 2},
-        "multiscale": "single_scale",
-        "upscale": "disabled",
-        "orientation_method": "ring_fit",
-        "merge_radius": 3.0,
         "output_json": str(output_json),
         "output_png": None,
         "log_level": "warn",
+        "detector": {
+            "strategy": {
+                "chess": {
+                    "ring": "canonical",
+                    "center_of_mass": {},
+                }
+            },
+            "refiner": None,
+            "threshold": float(threshold),
+            "detection": {"nms_radius": 2, "min_cluster_size": 2},
+            "multiscale": "single_scale",
+            "upscale": "disabled",
+            "orientation_method": "ring_fit",
+            "merge_radius": 3.0,
+        },
     }
 
 

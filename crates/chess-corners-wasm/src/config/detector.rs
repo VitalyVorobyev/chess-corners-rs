@@ -60,14 +60,14 @@ impl DetectorConfig {
         }
     }
 
-    /// Build from a plain JS value shaped like `chess_corners::DetectorConfig`
-    /// (as produced by `JSON.parse`). Missing fields take their defaults;
-    /// unknown keys are ignored (the JS deserializer does not enforce the
-    /// strict `strategy.chess` / `strategy.radon` key check of the Rust API).
-    fn from_js_value(value: JsValue) -> Result<Self, JsError> {
-        serde_wasm_bindgen::from_value::<RsDetectorConfig>(value)
+    /// Parse JSON text shaped like `chess_corners::DetectorConfig` with
+    /// `serde_json`, which honours the facade's `deny_unknown_fields`
+    /// (`serde-wasm-bindgen` reads only the declared fields of a JS object,
+    /// so it never sees an unknown key). Missing fields take their defaults.
+    fn parse_json_text(json: &str) -> Result<Self, JsError> {
+        serde_json::from_str::<RsDetectorConfig>(json)
             .map(Self::from_value)
-            .map_err(|e| JsError::new(&format!("invalid DetectorConfig JSON: {}", error_text(&e))))
+            .map_err(|e| JsError::new(&format!("invalid DetectorConfig JSON: {e}")))
     }
 
     /// Serialize to JSON text in the shape of `chess_corners::DetectorConfig`.
@@ -141,20 +141,21 @@ impl DetectorConfig {
     /// externally tagged enums such as `{"chess": {...}}`).
     ///
     /// Every field is optional; omitted fields take their library
-    /// defaults, so `"{}"` yields the default config. Unknown keys are
-    /// ignored. Throws an `Error` when the text is not valid JSON (the
-    /// engine's `SyntaxError`) or a value has the wrong type or an unknown
-    /// enum variant (message such as `invalid type: string "high",
-    /// expected f32`). Semantic validation (for example the
+    /// defaults, so `"{}"` yields the default config. Throws an `Error`
+    /// when the text is not valid JSON (the engine's `SyntaxError`), when
+    /// a key is unknown at any level (message such as ``unknown field
+    /// `noise_sigma`, expected one of ...``), or when a value has the wrong
+    /// type or an unknown enum variant (message such as `invalid type:
+    /// string "high", expected f32`). Semantic validation (for example the
     /// allowed upscale factors) happens when the config is handed to
     /// `ChessDetector.withConfig` / `applyConfig`.
     /// JS: `DetectorConfig.fromJson('{"threshold": 40}')`.
     #[wasm_bindgen(js_name = fromJson)]
     pub fn from_json(json: &str) -> Result<DetectorConfig, JsValue> {
-        // Parsing is delegated to the host's `JSON.parse`, so a syntax error
+        // The host's `JSON.parse` checks the syntax first, so invalid JSON
         // surfaces as the engine's own `SyntaxError` with its position info.
-        let value = js_sys::JSON::parse(json)?;
-        Ok(Self::from_js_value(value)?)
+        js_sys::JSON::parse(json)?;
+        Ok(Self::parse_json_text(json)?)
     }
 
     /// Serialize this config to JSON (compact, same shape as

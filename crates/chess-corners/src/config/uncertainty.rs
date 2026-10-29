@@ -13,7 +13,7 @@ use crate::ChessError;
 /// `{"propagated": {"noise": {"known": 1.2}}}`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum Uncertainty {
     /// No position covariance (the default). Localizers skip the noise

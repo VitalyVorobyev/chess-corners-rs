@@ -230,6 +230,43 @@ fn removed_refiner_shapes_are_rejected() {
 }
 
 #[test]
+fn unknown_keys_are_rejected_and_named_at_every_level() {
+    for (json, key) in [
+        (r#"{"noise_sigma": 1.5}"#, "noise_sigma"),
+        (
+            r#"{"strategy": {"chess": {"refiner": "center_of_mass"}}}"#,
+            "refiner",
+        ),
+        (r#"{"strategy": {"radon": {"ray_radus": 5}}}"#, "ray_radus"),
+        (
+            r#"{"strategy": {"chess": {"center_of_mass": {"radius": 2, "r": 1}}}}"#,
+            "r",
+        ),
+        (r#"{"detection": {"nms": 3}}"#, "nms"),
+        (
+            r#"{"multiscale": {"pyramid": {"levels": 3, "min_size": 128, "refinement_radius": 3, "merge_radius": 3.0}}}"#,
+            "merge_radius",
+        ),
+        (
+            r#"{"refiner": {"saddle_point": {"max_offset": 1.0, "radius_px": 2}}}"#,
+            "radius_px",
+        ),
+        (
+            r#"{"uncertainty": {"propagated": {"noise": "estimate", "sigma": 1.0}}}"#,
+            "sigma",
+        ),
+    ] {
+        let err = serde_json::from_str::<DetectorConfig>(json)
+            .expect_err(json)
+            .to_string();
+        assert!(
+            err.contains(&format!("unknown field `{key}`")),
+            "{json}: {err}"
+        );
+    }
+}
+
+#[test]
 fn radon_preset_round_trips_through_serde() {
     let cfg = DetectorConfig::radon();
     let json = serde_json::to_string(&cfg).expect("serialize radon config");

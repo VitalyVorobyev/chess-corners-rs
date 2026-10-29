@@ -14,11 +14,11 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 chess-corners.workspace = true
 serde-wasm-bindgen.workspace = true
+serde_json.workspace = true
 wasm-bindgen.workspace = true
 js-sys.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 wasm-bindgen-test.workspace = true
 
 [package.metadata.wasm-pack.profile.release]

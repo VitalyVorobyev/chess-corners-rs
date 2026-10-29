@@ -31,14 +31,19 @@ impl RefinerSel {
     }
 }
 
+/// The CLI's JSON config file: the run's I/O settings plus the detector
+/// configuration nested under `detector`. Unknown keys are rejected at
+/// every level.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DetectionConfig {
     pub image: PathBuf,
     pub output_json: Option<PathBuf>,
     pub output_png: Option<PathBuf>,
     pub log_level: Option<String>,
-    #[serde(flatten, default)]
-    pub algorithm: DetectorConfig,
+    /// Omitted: the library default (`DetectorConfig::default()`).
+    #[serde(default)]
+    pub detector: DetectorConfig,
 }
 
 /// CLI overrides applied on top of the JSON config. Each `Option`
@@ -101,7 +106,7 @@ pub struct DetectionDump {
     pub image: String,
     pub width: u32,
     pub height: u32,
-    pub algorithm: DetectorConfig,
+    pub detector: DetectorConfig,
     /// Image noise σ (gray levels) the position covariances were computed
     /// with; `null` when no corner carries one.
     pub noise_sigma: Option<f32>,
@@ -109,15 +114,15 @@ pub struct DetectionDump {
 }
 
 pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
-    validate_algorithm_config(&cfg.algorithm)?;
+    validate_detector_config(&cfg.detector)?;
 
     let img = ImageReader::open(&cfg.image)?.decode()?.to_luma8();
 
-    log_active_refiner(&cfg.algorithm);
-    let mut detector = Detector::new(cfg.algorithm).map_err(|e| anyhow::anyhow!(e))?;
+    log_active_refiner(&cfg.detector);
+    let mut detector = Detector::new(cfg.detector).map_err(|e| anyhow::anyhow!(e))?;
     let corners = detector.detect(&img).map_err(|e| anyhow::anyhow!(e))?;
 
-    let multiscale_active = matches!(cfg.algorithm.multiscale, MultiscaleConfig::Pyramid { .. });
+    let multiscale_active = matches!(cfg.detector.multiscale, MultiscaleConfig::Pyramid { .. });
     let json_out = cfg.output_json.clone().unwrap_or_else(|| {
         if multiscale_active {
             cfg.image.with_extension("multiscale.corners.json")
@@ -129,7 +134,7 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
         image: cfg.image.to_string_lossy().into_owned(),
         width: img.width(),
         height: img.height(),
-        algorithm: cfg.algorithm,
+        detector: cfg.detector,
         noise_sigma: detector.last_noise_sigma(),
         corners: corners.iter().map(CornerOut::from).collect(),
     };
@@ -167,7 +172,7 @@ impl From<&CornerDescriptor> for CornerOut {
     }
 }
 
-pub fn validate_algorithm_config(cfg: &DetectorConfig) -> Result<()> {
+pub fn validate_detector_config(cfg: &DetectorConfig) -> Result<()> {
     if let MultiscaleConfig::Pyramid {
         levels,
         min_size,
@@ -238,7 +243,7 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
     // `Pyramid { defaults }` so subsequent fields land somewhere visible.
     if pyramid_levels.is_some() || pyramid_min_size.is_some() || refinement_radius.is_some() {
         let (mut cur_levels, mut cur_min_size, mut cur_refinement_radius) =
-            match cfg.algorithm.multiscale {
+            match cfg.detector.multiscale {
                 MultiscaleConfig::Pyramid {
                     levels,
                     min_size,
@@ -256,14 +261,14 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
         if let Some(v) = refinement_radius {
             cur_refinement_radius = v;
         }
-        cfg.algorithm.multiscale = MultiscaleConfig::Pyramid {
+        cfg.detector.multiscale = MultiscaleConfig::Pyramid {
             levels: cur_levels,
             min_size: cur_min_size,
             refinement_radius: cur_refinement_radius,
         };
     }
     if let Some(v) = merge_radius {
-        cfg.algorithm.merge_radius = v;
+        cfg.detector.merge_radius = v;
     }
     if let Some(v) = output_json {
         cfg.output_json = Some(v);
@@ -272,23 +277,23 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
         cfg.output_png = Some(v);
     }
     if let Some(v) = threshold {
-        cfg.algorithm.threshold = v;
+        cfg.detector.threshold = v;
     }
     if let Some(v) = chess_ring {
-        if let Some(chess) = chess_strategy_mut(&mut cfg.algorithm) {
+        if let Some(chess) = chess_strategy_mut(&mut cfg.detector) {
             chess.ring = v;
         }
     }
     // NMS / clustering are shared detection knobs honoured by both
     // strategies; they live on `DetectorConfig::detection`.
     if let Some(v) = nms_radius {
-        cfg.algorithm.detection.nms_radius = v;
+        cfg.detector.detection.nms_radius = v;
     }
     if let Some(v) = min_cluster_size {
-        cfg.algorithm.detection.min_cluster_size = v;
+        cfg.detector.detection.min_cluster_size = v;
     }
     if let Some(v) = refiner {
-        cfg.algorithm.refiner = v.image_refiner();
+        cfg.detector.refiner = v.image_refiner();
     }
     // `Some(0)` is the documented sentinel for "no override — keep the value
     // parsed from the JSON config". Any other value is forwarded to
@@ -296,7 +301,7 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
     // outside `{2, 3, 4}` with a clear error.
     if let Some(factor) = upscale_factor {
         if factor != 0 {
-            cfg.algorithm.upscale = UpscaleConfig::Fixed(factor);
+            cfg.detector.upscale = UpscaleConfig::Fixed(factor);
         }
     }
 }
@@ -345,21 +350,21 @@ mod tests {
     }
 
     fn radon_detection_config() -> DetectionConfig {
-        let mut algorithm = DetectorConfig::radon();
+        let mut detector = DetectorConfig::radon();
         // Sanity: confirm `DetectorConfig::radon()` actually selects the
         // Radon strategy, so the regression below tests the intended
         // dispatch path.
-        assert!(matches!(algorithm.strategy, DetectionStrategy::Radon(_)));
+        assert!(matches!(detector.strategy, DetectionStrategy::Radon(_)));
         // Pin the shared NMS / cluster fields away from defaults so the
         // override path is observable.
-        algorithm.detection.nms_radius = 7;
-        algorithm.detection.min_cluster_size = 3;
+        detector.detection.nms_radius = 7;
+        detector.detection.min_cluster_size = 3;
         DetectionConfig {
             image: PathBuf::from("ignored.png"),
             output_json: None,
             output_png: None,
             log_level: None,
-            algorithm,
+            detector,
         }
     }
 
@@ -373,11 +378,8 @@ mod tests {
                 ..empty_overrides()
             },
         );
-        assert!(matches!(
-            cfg.algorithm.strategy,
-            DetectionStrategy::Radon(_)
-        ));
-        assert_eq!(cfg.algorithm.detection.nms_radius, 11);
+        assert!(matches!(cfg.detector.strategy, DetectionStrategy::Radon(_)));
+        assert_eq!(cfg.detector.detection.nms_radius, 11);
     }
 
     #[test]
@@ -390,11 +392,8 @@ mod tests {
                 ..empty_overrides()
             },
         );
-        assert!(matches!(
-            cfg.algorithm.strategy,
-            DetectionStrategy::Radon(_)
-        ));
-        assert_eq!(cfg.algorithm.detection.min_cluster_size, 5);
+        assert!(matches!(cfg.detector.strategy, DetectionStrategy::Radon(_)));
+        assert_eq!(cfg.detector.detection.min_cluster_size, 5);
     }
 
     #[test]
@@ -404,7 +403,7 @@ mod tests {
             output_json: None,
             output_png: None,
             log_level: None,
-            algorithm: DetectorConfig::chess(),
+            detector: DetectorConfig::chess(),
         };
         apply_overrides(
             &mut cfg,
@@ -414,12 +413,9 @@ mod tests {
                 ..empty_overrides()
             },
         );
-        assert!(matches!(
-            cfg.algorithm.strategy,
-            DetectionStrategy::Chess(_)
-        ));
-        assert_eq!(cfg.algorithm.detection.nms_radius, 9);
-        assert_eq!(cfg.algorithm.detection.min_cluster_size, 4);
+        assert!(matches!(cfg.detector.strategy, DetectionStrategy::Chess(_)));
+        assert_eq!(cfg.detector.detection.nms_radius, 9);
+        assert_eq!(cfg.detector.detection.min_cluster_size, 4);
     }
 
     // The shared detection knobs must reach both detectors' low-level
@@ -445,14 +441,14 @@ mod tests {
     }
 
     fn detection_config_with_upscale(upscale: UpscaleConfig) -> DetectionConfig {
-        let mut algorithm = DetectorConfig::chess();
-        algorithm.upscale = upscale;
+        let mut detector = DetectorConfig::chess();
+        detector.upscale = upscale;
         DetectionConfig {
             image: PathBuf::from("ignored.png"),
             output_json: None,
             output_png: None,
             log_level: None,
-            algorithm,
+            detector,
         }
     }
 
@@ -466,7 +462,7 @@ mod tests {
                 ..empty_overrides()
             },
         );
-        assert_eq!(cfg.algorithm.upscale, UpscaleConfig::Fixed(3));
+        assert_eq!(cfg.detector.upscale, UpscaleConfig::Fixed(3));
     }
 
     #[test]
@@ -479,6 +475,59 @@ mod tests {
                 ..empty_overrides()
             },
         );
-        assert_eq!(cfg.algorithm.upscale, UpscaleConfig::Fixed(2));
+        assert_eq!(cfg.detector.upscale, UpscaleConfig::Fixed(2));
+    }
+
+    fn workspace_file(rel: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(rel)
+    }
+
+    #[test]
+    fn example_config_loads_with_its_detector_block() {
+        let cfg = load_config(&workspace_file("config/chess_cli_config_example.json")).unwrap();
+        assert_eq!(cfg.image, PathBuf::from("testimages/mid.png"));
+        assert_eq!(cfg.log_level.as_deref(), Some("info"));
+        let algorithm_only: DetectorConfig = serde_json::from_reader(
+            File::open(workspace_file("config/chess_algorithm_config_example.json")).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(algorithm_only, DetectorConfig::default());
+    }
+
+    #[test]
+    fn detector_block_is_optional() {
+        let cfg: DetectionConfig = serde_json::from_str(r#"{"image": "a.png"}"#).unwrap();
+        assert_eq!(cfg.detector, DetectorConfig::default());
+        assert_eq!(cfg.output_json, None);
+    }
+
+    #[test]
+    fn unknown_keys_are_rejected_and_named_at_every_level() {
+        for (json, key) in [
+            // A 1.x flat file: detector keys beside the CLI keys.
+            (r#"{"image": "a.png", "threshold": 30.0}"#, "threshold"),
+            (
+                r#"{"image": "a.png", "output_jsn": "o.json"}"#,
+                "output_jsn",
+            ),
+            (
+                r#"{"image": "a.png", "detector": {"noise_sigma": 1.5}}"#,
+                "noise_sigma",
+            ),
+            (
+                r#"{"image": "a.png", "detector": {"strategy": {"chess": {"refiner": "center_of_mass"}}}}"#,
+                "refiner",
+            ),
+        ] {
+            let err = serde_json::from_str::<DetectionConfig>(json)
+                .expect_err(json)
+                .to_string();
+            assert!(
+                err.contains(&format!("unknown field `{key}`")),
+                "{json}: {err}"
+            );
+        }
     }
 }
