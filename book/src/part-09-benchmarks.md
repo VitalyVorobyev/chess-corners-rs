@@ -1,8 +1,8 @@
 # Part IX: Benchmarks and performance
 
 This chapter measures what the library does on controlled synthetic
-fixtures and on real calibration frames. It covers the three refiners
-of [Part V](part-05-refiners.md), the full detector pipeline with
+fixtures and on real calibration frames. It covers the localizers and
+refiners of [Part V](part-05-refiners.md), the full detector pipeline with
 and without optional features, and a comparison against OpenCV's
 corner pipeline. All plots are reproducible from the commands at the
 end of the chapter.
@@ -47,15 +47,13 @@ fully deterministic. This matters for the CDF plot in §9.2.
 This rendering mode is what we call "hard cells" elsewhere in this
 book: sharp ink/paper step edges, softened by a Gaussian PSF, sampled
 by pixels. It is what a camera produces when it images a printed
-checkerboard. An alternative fixture common in machine-learning
-papers uses a smooth saddle `tanh(x)·tanh(y)` model, which is easier
-to differentiate analytically but has no sharp edges and does not
-resemble sensor output.
+checkerboard. A common alternative fixture uses a smooth saddle
+`tanh(x)·tanh(y)` model, which is easier to differentiate analytically
+but has no sharp edges and does not resemble sensor output.
 
 ![Hard cells vs tanh saddle](img/bench/synth_modes.png)
 
-We use hard cells as the primary fixture. [Part V §5.6.3](part-05-refiners.md#563-designing-the-training-distribution) discusses
-what happens when an ML refiner is trained on `tanh` data only.
+We use hard cells as the primary fixture.
 
 ## 9.2 Accuracy on clean cells
 
@@ -76,8 +74,7 @@ Reading the CDF:
   fixture's 1/8 px supersampling of the edges.
 - **cv2.cornerSubPix** follows, with mean around 0.06 px and `p95`
   around 0.12–0.13 px.
-- **CenterOfMass** and **ML (ONNX)** land around 0.08–0.09 px mean /
-  0.12–0.15 px `p95`.
+- **CenterOfMass** lands around 0.08 px mean / 0.12 px `p95`.
 
 ## 9.3 Accuracy vs blur
 
@@ -103,15 +100,11 @@ Log-y axis, same shaded band as §9.3.
 
 ![Accuracy vs additive noise σ](img/bench/accuracy_vs_noise.png)
 
-Mean error grows with noise for every geometric refiner, and the ML
-(ONNX) curve is nearly flat. Among all plotted series, including
-`cv2.cornerSubPix`, `SaddlePoint` has the lowest mean error for
-`σ_noise` from 1 to 8 gray levels (0.074 px at 8; `cv2.cornerSubPix`
-0.086 px); the two tie at `σ_noise = 0`. At `σ_noise = 12` the ML
-model is ahead of the hand-coded methods on this synthetic fixture. The model was trained
-with noise augmentation over `σ ∈ [0, 10]`; that is the strongest
-supported explanation for the flat curve. Validate this separately on
-real low-light frames before relying on it as a general rule.
+Mean error grows with noise for every refiner. Among all plotted
+series, including `cv2.cornerSubPix`, `SaddlePoint` has the lowest mean
+error at every `σ_noise` from 1 to 12 gray levels (0.074 px at 8, against
+0.086 px for `cv2.cornerSubPix`; 0.100 px at 12, against 0.106 px for
+`CenterOfMass`); the two tie at `σ_noise = 0`.
 
 ## 9.5 Accuracy vs cell size
 
@@ -131,10 +124,9 @@ Largest operational plot. Two refiners break on small cells:
   error. At cell = 6 the crossover is minimal and the refiner
   recovers.
 
-**SaddlePoint** and **ML** look at a 2–3 px local neighborhood and
-are cell-size-agnostic down to 4 px.
-For dense targets (ChArUco, compact calibration boards) pick one of
-those two.
+**SaddlePoint** looks at a 2 px local neighborhood and is
+cell-size-agnostic down to 4 px. For dense targets (ChArUco, compact
+calibration boards) pick it.
 
 ## 9.6 Accuracy on real calibration images
 
@@ -168,8 +160,7 @@ finding.
 ## 9.7 Throughput vs accuracy
 
 Log-log axes. Two orders of magnitude separate the fastest refiner
-(CenterOfMass at ~16 ns/corner) from ML inference (~150 µs/corner at
-batch = 1).
+(CenterOfMass at ~16 ns/corner) from `cv2.cornerSubPix` (~2.7 µs/corner).
 
 ![Throughput vs accuracy](img/bench/throughput_vs_accuracy.png)
 
@@ -178,13 +169,12 @@ The Pareto frontier, fast-to-slow:
 | Refiner             | Time / corner | Clean-data mean error | Notes                                                                 |
 |---------------------|---------------|-----------------------|-----------------------------------------------------------------------|
 | `CenterOfMass`      | ~16 ns        | 0.08 px               | Unmatched throughput; fails at cell ≤ 5 (see §9.5).                   |
-| `SaddlePoint`       | ~180 ns       | 0.045 px              | Lowest mean error among the built-in refiners on every row up to `σ_noise = 8`. |
+| `SaddlePoint`       | ~180 ns       | 0.045 px              | Lowest mean error among the built-in refiners on every row.           |
 | `cv2.cornerSubPix`  | ~2.7 µs       | 0.07 px               | OpenCV's iterative gradient refiner.                                  |
-| `ML (ONNX)`         | ~150 µs (b=1) | 0.09 px               | Lowest error on the heaviest noise row (`σ_noise = 12`).             |
 
 The times are the refinement alone, under the default
-`Uncertainty::Off`. Under `Uncertainty::Propagated` each geometric
-refiner also computes its
+`Uncertainty::Off`. Under `Uncertainty::Propagated` each refiner also
+computes its
 position covariance, which brings it to about 0.5 µs per corner
 ([Part VIII §8.2.1](part-08-uncertainty.md#821-cost)).
 
@@ -215,8 +205,7 @@ Observations:
 
 - Refinement dominates: the coarse detect stage takes 0.08–0.75 ms
   across these sizes; merge is a negligible fraction.
-- Picking ML at batch = 1 adds ~15 ms per 100 corners; the geometric
-  refiners (CenterOfMass, SaddlePoint) add under 1 µs per corner.
+- The refiners (CenterOfMass, SaddlePoint) add under 1 µs per corner.
 
 **Feature flag guidance:**
 
@@ -326,7 +315,6 @@ step. Named spans:
 - `refine` — per-seed refinement (carries `seeds` count).
 - `merge` — cross-level duplicate suppression.
 - `build_pyramid` — pyramid construction.
-- `ml_refiner` — ML path only; carries a batch-size event.
 - `radon_detect` — Radon path only.
 
 Capture traces via the CLI's `--json-trace` flag: one JSON object per
@@ -344,9 +332,9 @@ When a frame returns fewer corners than expected:
    localizer) or relax the specific rejection (e.g. raise
    `SaddlePointConfig.max_offset`).
 3. If accuracy is fine but wall time is large, inspect the `refine`
-   span. On the measured refiner benchmark, replacing ML
-   with a geometric refiner (SaddlePoint or CenterOfMass) is much
-   cheaper per corner, with the accuracy tradeoff shown in §9.2–§9.7.
+   span. Dropping the image refiner (`None` keeps the center of mass or
+   the peak fit) is cheaper per corner, with the accuracy tradeoff
+   shown in §9.2–§9.7.
 
 ## 9.11 Integration recipes
 
@@ -372,8 +360,8 @@ loop {
 ### Offline calibration, maximum accuracy
 
 For still calibration frames, `SaddlePoint` has the lowest mean error
-among the built-in refiners on clean and blurred data alike (§9.2, §9.3),
-and on real calibration images (§9.6).
+among the built-in refiners on clean, blurred and noisy data alike
+(§9.2–§9.4), and on real calibration images (§9.6).
 
 ```rust
 use chess_corners::{Detector, DetectorConfig, ImageRefiner};
@@ -385,23 +373,6 @@ let cfg = DetectorConfig::chess_multiscale()
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&image)?;
 ```
-
-### Low-light / noise-heavy imagery
-
-```rust
-# #[cfg(feature = "ml-refiner")]
-# {
-use chess_corners::{Detector, DetectorConfig, ImageRefiner};
-
-let cfg = DetectorConfig::chess_multiscale().with_refiner(ImageRefiner::Ml);
-
-let mut detector = Detector::new(cfg).unwrap();
-let corners = detector.detect(&image).unwrap();
-# }
-```
-
-Requires the `ml-refiner` feature. The ML path batches candidates
-internally; effective cost on a 100-corner frame is ~30 ms.
 
 ### Small cells or heavy defocus — switch detector
 
@@ -436,7 +407,7 @@ and latency matters.
 ```sh
 # Cross-refiner accuracy sweep (Rust), feeds all Part IX plots
 cargo run --release -p chess-corners --example bench_sweep \
-    --features ml-refiner > book/src/img/bench/bench_sweep.json
+    > book/src/img/bench/bench_sweep.json
 
 # Same fixture, OpenCV cornerSubPix
 python tools/book/opencv_subpix_sweep.py \
@@ -450,7 +421,7 @@ python tools/book/plot_benchmark.py
 
 # Integration test that gates refiner accuracy on CI
 cargo test --release -p chess-corners --test refiner_benchmark \
-    --features ml-refiner -- --nocapture --test-threads=1
+    -- --nocapture --test-threads=1
 
 # Recall / precision / p95-error guard against optimization regressions
 cargo test --release -p chess-corners --test perf_accuracy_guard \

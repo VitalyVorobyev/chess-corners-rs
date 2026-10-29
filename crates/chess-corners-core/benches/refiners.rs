@@ -2,8 +2,7 @@
 //!
 //! Builds a synthetic anti-aliased chessboard, computes a ChESS
 //! response, harvests integer-rounded NMS seeds, and times each of the
-//! two non-ML refiners (CenterOfMass, SaddlePoint)
-//! over a fixed seed list.
+//! two refiners (CenterOfMass, SaddlePoint) over a fixed seed list.
 //!
 //! The harness keeps the seed list constant across refiners so the
 //! resulting per-refiner numbers are directly comparable. Throughput

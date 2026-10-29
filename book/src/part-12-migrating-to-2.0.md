@@ -256,9 +256,11 @@ from its defaults.
 
 ## 12.5 The ML refiner is removed
 
-The saddle-point refiner is more accurate on every tested condition,
-including rotated boards, where the ML model was 0.64–0.90 px RMS
-against at most 0.057 px, and costs about 800× less per corner. The ML
+The saddle-point refiner is more accurate in 15 of the 16 synthetic
+conditions of the refiner benchmark (the exception is the heaviest noise
+row, 0.100 against 0.093 px) and on rotated boards, where the ML model was
+0.64–0.90 px RMS against at most 0.057 px, and it costs about 800× less
+per corner. The ML
 refiner is removed: Rust `ChessRefiner::Ml`, Python
 `ChessRefiner.ml()`, JS `ChessRefiner.withMl()`, the CLI `"ml": true`
 setting and the JSON `"ml"` refiner. Select the saddle-point refiner

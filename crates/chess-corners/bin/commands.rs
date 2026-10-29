@@ -20,8 +20,6 @@ use std::{fs::File, io::Write, path::Path, path::PathBuf};
 pub enum RefinerSel {
     None,
     SaddlePoint,
-    #[cfg(feature = "ml-refiner")]
-    Ml,
 }
 
 impl RefinerSel {
@@ -29,8 +27,6 @@ impl RefinerSel {
         match self {
             Self::None => None,
             Self::SaddlePoint => Some(ImageRefiner::saddle_point()),
-            #[cfg(feature = "ml-refiner")]
-            Self::Ml => Some(ImageRefiner::Ml),
         }
     }
 }

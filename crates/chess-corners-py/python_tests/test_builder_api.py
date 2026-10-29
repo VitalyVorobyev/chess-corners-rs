@@ -245,8 +245,6 @@ def test_refiner_survives_strategy_switches():
     cfg = chess_corners.DetectorConfig.chess().with_refiner(refiner)
     assert cfg.with_radon(ray_radius=7).refiner == refiner
     assert cfg.with_radon().with_chess().refiner == refiner
-    ml = chess_corners.DetectorConfig.radon().with_refiner(chess_corners.ImageRefiner.ml())
-    assert ml.with_chess().refiner == chess_corners.ImageRefiner.ml()
 
 
 def test_with_radon_on_chess_config_switches_strategy():

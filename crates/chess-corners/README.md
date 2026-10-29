@@ -124,7 +124,7 @@ Each detection is a `CornerDescriptor` with:
   measured on real images that usually dominates there (see
   `Corner::position_covariance` in `chess-corners-core`; weighting by it
   has not been shown to beat uniform weighting on real data). Every localizer
-  except the ML refiner reports it when `DetectorConfig::uncertainty` is
+  reports it when `DetectorConfig::uncertainty` is
   `Uncertainty::Propagated { noise }`; it is `None` under the default
   `Off`. The noise level is estimated from each image with
   `NoiseLevel::Estimate` (`estimate_noise_sigma_u8` returns the same
@@ -177,30 +177,6 @@ See:
 - `config/chess_cli_config_example.json` for a complete CLI runner
   input (algorithm config + envelope).
 
-## ML refiner
-
-Enable the `ml-refiner` feature, then select `ImageRefiner::Ml`, with
-either detector:
-
-```rust
-# #[cfg(feature = "ml-refiner")]
-# {
-use chess_corners::{Detector, DetectorConfig, ImageRefiner};
-use image::GrayImage;
-
-let img = GrayImage::new(1, 1);
-let cfg = DetectorConfig::chess().with_refiner(ImageRefiner::Ml);
-
-let mut detector = Detector::new(cfg).unwrap();
-let _ = detector.detect(&img).unwrap();
-# }
-```
-
-The ML path is slower than the classic refiners in the shipped
-benchmark; under a pyramid the coarse seeds come from the detector's own
-localizer and the model runs at full resolution only. It reports no
-position covariance and is not supported by `Detector::detect_u8_roi`.
-
 ## Examples
 
 - Single-scale: `cargo run -p chess-corners --example single_scale_image -- testimages/mid.png`
@@ -213,7 +189,6 @@ position covariance and is not supported by `Detector::detect_u8_roi`.
 - `simd`: optional high-performance path — portable `std::simd` in the core response path (nightly only)
 - `par_pyramid`: SIMD/`rayon` in pyramid construction
 - `tracing`: structured spans
-- `ml-refiner`: ONNX-backed ML refinement
 - `cli`: build the `chess-corners` binary
 
 `image` only wires up in-memory buffer types (`GrayImage`,

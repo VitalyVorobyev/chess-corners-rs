@@ -13,7 +13,6 @@ chess-corners          public Rust API, CLI, multiscale/upscale pipeline
 chess-corners-core     detector kernels, refiners, descriptors
 
 box-image-pyramid      standalone u8 2× pyramid builder
-chess-corners-ml       optional ONNX refiner used by `ml-refiner`
 ```
 
 The dependency direction is one-way. `chess-corners-core` does not
@@ -123,7 +122,6 @@ dependencies:
 | `simd` | optional high-performance path: portable `std::simd` inner loops (nightly only) |
 | `par_pyramid` | SIMD/Rayon pyramid downsampling |
 | `tracing` | structured diagnostic spans |
-| `ml-refiner` | ONNX-backed ML refinement |
 | `cli` | builds the CLI binary |
 | `radon-sat-u32` | lower-memory Radon SATs with an input-size cap |
 

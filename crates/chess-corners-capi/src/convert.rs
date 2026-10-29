@@ -152,8 +152,9 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
     let refiner: cc_image_refiner_t = match config.refiner {
         None => CC_IMAGE_REFINER_NONE,
         Some(ImageRefiner::SaddlePoint(_)) => CC_IMAGE_REFINER_SADDLE_POINT,
-        // A refiner without a C encoding (the ML refiner) is a bug, never
-        // mapped to another one (the presets trap the panic).
+        // `ImageRefiner` is `#[non_exhaustive]`: a variant added to the
+        // facade without a C encoding is a bug, never mapped to another one
+        // (the presets trap the panic).
         Some(other) => panic!("image refiner {other:?} has no C encoding"),
     };
     // Radon geometry: from the active `RadonConfig`, else its defaults so a

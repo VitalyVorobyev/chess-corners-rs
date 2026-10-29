@@ -123,37 +123,6 @@
 //! # Ok::<(), chess_corners::ChessError>(())
 //! ```
 //!
-//! ## ML refiner (feature `ml-refiner`)
-//!
-//! Pick the ML pipeline by selecting `ImageRefiner::Ml` as the image
-//! refiner, with either detector. The example is marked `no_run` because
-//! loading the embedded ONNX model on first use is not appropriate for a
-//! doctest:
-//!
-//! ```no_run
-//! # #[cfg(feature = "ml-refiner")]
-//! # {
-//! use chess_corners::{Detector, DetectorConfig, ImageRefiner};
-//! use image::GrayImage;
-//!
-//! let cfg = DetectorConfig::chess().with_refiner(ImageRefiner::Ml);
-//!
-//! let img: GrayImage = image::open("board.png").unwrap().to_luma8();
-//! let mut detector = Detector::new(cfg).unwrap();
-//! let corners = detector.detect(&img).unwrap();
-//! # let _ = corners;
-//! # }
-//! ```
-//!
-//! The ML refiner runs a small ONNX model on normalized intensity
-//! patches (uint8 / 255.0) centered at each candidate. The model
-//! predicts `[dx, dy, conf_logit]`, but the confidence output is
-//! currently ignored; the offsets are applied directly. Current
-//! accuracy benchmarks are synthetic; real-world accuracy still needs
-//! validation. Per-refiner cost is measured in Part IX §9.6 of the
-//! book. The ML path is slower than the hand-coded refiners and should
-//! be chosen only after measuring that its behavior helps your data.
-//!
 //! ## Python and JavaScript bindings
 //!
 //! The workspace also ships bindings that wrap this facade:
@@ -203,8 +172,6 @@
 //!   refinement of large corner sets, and the multiscale per-seed
 //!   refinement. Combine with `par_pyramid` to parallelize pyramid
 //!   downsampling as well.
-//! - `ml-refiner` – enables the ML image refiner (`ImageRefiner::Ml`) via
-//!   the `chess-corners-ml` crate and embedded ONNX model.
 //! - `simd` – enables portable-SIMD accelerated inner loops for the
 //!   response kernel (requires a nightly compiler). Combine with
 //!   `par_pyramid` to SIMD-accelerate pyramid downsampling.
@@ -238,8 +205,6 @@ mod config;
 mod detector;
 pub mod diagnostics;
 mod error;
-#[cfg(feature = "ml-refiner")]
-mod ml_refiner;
 mod multiscale;
 mod noise;
 mod radon;

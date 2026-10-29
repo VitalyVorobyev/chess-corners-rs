@@ -30,21 +30,18 @@ import numpy as np
 COLOURS: Dict[str, str] = {
     "CenterOfMass": "#1f77b4",
     "SaddlePoint": "#2ca02c",
-    "ML": "#9467bd",
     "OpenCV_subpix": "#17becf",
 }
 
 LABELS: Dict[str, str] = {
     "CenterOfMass": "CenterOfMass",
     "SaddlePoint": "SaddlePoint",
-    "ML": "ML (ONNX)",
     "OpenCV_subpix": "cv2.cornerSubPix",
 }
 
 MARKERS: Dict[str, str] = {
     "CenterOfMass": "o",
     "SaddlePoint": "^",
-    "ML": "P",
     "OpenCV_subpix": "X",
 }
 

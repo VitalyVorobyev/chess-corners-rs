@@ -109,7 +109,7 @@ cargo run -p chess-corners --release --bin chess-corners -- run config/chess_cli
 
 ## Workspace Architecture
 
-Eight crates with strict layering (see AGENTS.md for full rules):
+Seven crates with strict layering (see AGENTS.md for full rules):
 
 ```
 chess-corners-py     (PyO3 bindings, module name: chess_corners)
@@ -121,7 +121,6 @@ chess-corners        (High-level facade, multiscale pipeline, CLI)
 chess-corners-core   (Low-level core: response, detection, refinement)
 
 box-image-pyramid      (Standalone u8 pyramid, 2x box-filter downsample)
-chess-corners-ml       (ONNX inference, optional via ml-refiner feature)
 chess-corners-testutil (Dev-only shared test fixtures; publish = false)
 ```
 
@@ -139,7 +138,7 @@ chess-corners-testutil (Dev-only shared test fixtures; publish = false)
 
 1. **Response** (`core/detect/chess/response.rs`, `core/detect/radon/response.rs`) — Dense ChESS / Radon response computation
 2. **Detection** (`core/detect/`) — Thresholding + NMS + cluster filtering
-3. **Refinement** (`core/refine/`) — Each detector's own localizer (ChESS CenterOfMass, Radon peak fit) plus one optional detector-independent image refiner (`DetectorConfig::refiner`: SaddlePoint in core, or the facade's ML refiner under `ml-refiner`), behind the sealed `CornerRefiner` trait
+3. **Refinement** (`core/refine/`) — Each detector's own localizer (ChESS CenterOfMass, Radon peak fit) plus one optional detector-independent image refiner (`DetectorConfig::refiner`: SaddlePoint), behind the sealed `CornerRefiner` trait
 4. **Descriptors** (`core/orientation/descriptor.rs`) — Corner descriptors lifted from raw detections via `describe_corners`. Carries two-axis orientation with a per-axis `fit_std_error` (the least-squares standard error of the axis fit, radians; a fit-quality score, not a calibrated 1σ).
 5. **Orientation methods** (`core/orientation/`) — Detector-agnostic. `RingFit` (default) runs a 16-sample ring Gauss-Newton fit; `DiskFit` is a full-disk crossing-line estimator with a lazy-gate fallback to `RingFit`. Both ChESS and Radon detectors share this stage.
 
@@ -157,11 +156,9 @@ Optional pre-pipeline **integer bilinear upscaling** (`chess_corners::upscale`, 
 | `rayon` | core, facade | Parallel response computation and per-corner refinement |
 | `simd` | core, facade | Portable SIMD (nightly only) |
 | `image` | facade (default) | `image::GrayImage` integration |
-| `ml-refiner` | facade, py | ML-backed refinement via ONNX |
 | `tracing` | core, facade | Structured logging spans |
 | `radon-sat-u32` | core | `u32` Radon summed-area table (half the memory, wider SIMD lanes; limits images to roughly 16 MP) instead of the default `i64` |
 | `schemars` | core, facade | Derive `JsonSchema` for the detector config types (used by `xtask emit-schemas`) |
-| `embed-model` | ml (default) | Embed the ONNX model weights in the binary |
 | `par_pyramid` | facade, box-image-pyramid | SIMD/rayon in pyramid downsampling |
 | `cli` | facade | CLI-only deps (clap, anyhow, serde, tracing-subscriber) |
 
@@ -342,11 +339,11 @@ output (build logs, `cargo test` outputs > 100 lines, parameter sweeps,
 
 - **Delegate verbose-output work.** Anything that produces > ~200 lines
   of output and needs only a verdict back (build verification, `maturin
-  develop`, full `cargo test` runs, the orientation Python sweep, ONNX
-  parity checks) goes to a subagent that returns only the verdict.
+  develop`, full `cargo test` runs, the orientation Python sweep) goes
+  to a subagent that returns only the verdict.
   Don't read raw `metrics.json` or build logs in the main thread.
 - **Background mode for long-running, non-blocking tasks.** A 10–15 min
-  Python sweep, an ONNX export, or a `wasm-pack` build that doesn't
+  Python sweep or a `wasm-pack` build that doesn't
   gate the next step should be `run_in_background: true`. You'll be
   notified when it completes; in the meantime, do other work in the
   main thread or kick off a parallel implementation subagent.

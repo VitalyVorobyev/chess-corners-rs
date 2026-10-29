@@ -1,4 +1,4 @@
-//! Shared classic-refiner benchmark harness for the `chess-corners` facade.
+//! Shared refiner benchmark harness for the `chess-corners` facade.
 //!
 //! Both `tests/refiner_benchmark.rs` (the accuracy/throughput table) and
 //! `examples/bench_sweep.rs` (the JSON sweep behind the book plots) drive the
@@ -23,7 +23,7 @@ use chess_corners_core::{
 /// sample per subpixel offset (`None` when the refiner rejected the seed) and
 /// the cumulative wall-clock cost of `iters` timed refinements. Implemented by
 /// each driver's own aggregator (the accuracy-table `Stats`, the JSON
-/// `Bucket`) so [`bench_refiner`] and [`ml::bench`] stay aggregator-agnostic.
+/// `Bucket`) so [`bench_refiner`] stays aggregator-agnostic.
 pub trait RefineSampleSink {
     /// Record one accuracy sample (`Some(err_px)` if accepted, else `None`).
     fn record_accuracy(&mut self, err: Option<f32>);
@@ -31,15 +31,15 @@ pub trait RefineSampleSink {
     fn record_timing(&mut self, iters: u64, elapsed_ns: u128);
 }
 
-/// The classic (non-ML) refiners, constructed once at their default
+/// The built-in refiners, constructed once at their default
 /// configs and reused across the whole sweep so the per-refiner numbers are
 /// directly comparable.
-pub struct ClassicRefiners {
+pub struct BuiltinRefiners {
     pub center: CenterOfMassRefiner,
     pub saddle: SaddlePointRefiner,
 }
 
-impl ClassicRefiners {
+impl BuiltinRefiners {
     pub fn new() -> Self {
         Self {
             center: CenterOfMassRefiner::new(CenterOfMassConfig::default()),
@@ -48,7 +48,7 @@ impl ClassicRefiners {
     }
 }
 
-impl Default for ClassicRefiners {
+impl Default for BuiltinRefiners {
     fn default() -> Self {
         Self::new()
     }
@@ -87,84 +87,4 @@ pub fn bench_refiner<R: CornerRefiner, S: RefineSampleSink>(
         let _ = refiner.refine(seed, ctx);
     }
     sink.record_timing(iters, start.elapsed().as_nanos());
-}
-
-// ---------------------------------------------------------------------------
-// ML refiner harness (feature-gated).
-
-#[cfg(feature = "ml-refiner")]
-pub mod ml {
-    use super::{ImageView, Instant, RefineSampleSink};
-    use chess_corners_ml::{MlModel, ModelSource};
-
-    pub struct MlRefiner {
-        pub model: MlModel,
-        patch_size: usize,
-        buffer: Vec<f32>,
-    }
-
-    impl MlRefiner {
-        pub fn load() -> Option<Self> {
-            let model = MlModel::load(ModelSource::EmbeddedDefault).ok()?;
-            let patch_size = model.patch_size();
-            let buffer = vec![0.0f32; patch_size * patch_size];
-            Some(Self {
-                model,
-                patch_size,
-                buffer,
-            })
-        }
-
-        /// Extract a `patch_size × patch_size` bilinear-sampled patch centered
-        /// at `(x, y)` into the internal buffer, returning `None` if the patch
-        /// runs off the image.
-        fn extract(&mut self, view: ImageView<'_>, x: f32, y: f32) -> Option<()> {
-            let ps = self.patch_size;
-            let half = (ps as f32 - 1.0) * 0.5;
-            let (w, h) = (view.width() as f32, view.height() as f32);
-            if x - half < 0.0 || y - half < 0.0 || x + half > w - 1.0 || y + half > h - 1.0 {
-                return None;
-            }
-            for iy in 0..ps {
-                let gy = y + iy as f32 - half;
-                for ix in 0..ps {
-                    let gx = x + ix as f32 - half;
-                    self.buffer[iy * ps + ix] = view.sample_bilinear(gx, gy) / 255.0;
-                }
-            }
-            Some(())
-        }
-
-        pub fn refine(&mut self, view: ImageView<'_>, seed: [f32; 2]) -> Option<[f32; 2]> {
-            self.extract(view, seed[0], seed[1])?;
-            let preds = self.model.infer_batch(&self.buffer, 1).ok()?;
-            let pred = preds.first()?;
-            Some([seed[0] + pred[0], seed[1] + pred[1]])
-        }
-    }
-
-    pub fn bench<S: RefineSampleSink>(
-        refiner: &mut MlRefiner,
-        iters: u64,
-        view: ImageView<'_>,
-        seed: [f32; 2],
-        truth: (f32, f32),
-        sink: &mut S,
-    ) {
-        let _ = refiner.refine(view, seed);
-
-        let first = refiner.refine(view, seed);
-        let err = first.map(|r| {
-            let dx = r[0] - truth.0;
-            let dy = r[1] - truth.1;
-            (dx * dx + dy * dy).sqrt()
-        });
-        sink.record_accuracy(err);
-
-        let start = Instant::now();
-        for _ in 0..iters {
-            let _ = refiner.refine(view, seed);
-        }
-        sink.record_timing(iters, start.elapsed().as_nanos());
-    }
 }

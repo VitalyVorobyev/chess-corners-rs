@@ -8,7 +8,7 @@
 //!
 //! ```json
 //! {
-//!   "refiners": ["CenterOfMass", "SaddlePoint", "ML"],
+//!   "refiners": ["CenterOfMass", "SaddlePoint"],
 //!   "results": [
 //!     {
 //!       "refiner": "CenterOfMass",
@@ -31,8 +31,7 @@
 //! Usage:
 //! ```sh
 //! cargo run --release -p chess-corners \
-//!     --example bench_sweep --features ml-refiner \
-//!     > book/src/img/bench/bench_sweep.json
+//!     --example bench_sweep > book/src/img/bench/bench_sweep.json
 //! ```
 
 use chess_corners_core::{chess_response_u8, ChessParams, ImageView};
@@ -40,7 +39,7 @@ use chess_corners_testutil::{aa_chessboard, add_gaussian_noise, gaussian_blur};
 
 #[path = "../tests/common/refiner_harness.rs"]
 mod harness;
-use harness::{bench_refiner, ClassicRefiners};
+use harness::{bench_refiner, BuiltinRefiners};
 
 // ---------------------------------------------------------------------------
 // Per-condition stats bundle.
@@ -131,16 +130,11 @@ fn run_condition(
     const SIZE: usize = 45;
     const CENTER: f32 = 22.0;
     const N: usize = 6; // 6×6 offsets per condition
-    const ITERS_FAST: u64 = 200;
-    const ITERS_SLOW: u64 = 20;
+    const ITERS: u64 = 200;
 
-    let mut classic = ClassicRefiners::new();
+    let mut classic = BuiltinRefiners::new();
     let mut b_center = Bucket::default();
     let mut b_saddle = Bucket::default();
-    #[cfg(feature = "ml-refiner")]
-    let mut ml_refiner = harness::ml::MlRefiner::load();
-    #[cfg(feature = "ml-refiner")]
-    let mut b_ml = Bucket::default();
 
     let params = ChessParams::default();
 
@@ -157,7 +151,7 @@ fn run_condition(
 
             bench_refiner(
                 &mut classic.center,
-                ITERS_FAST,
+                ITERS,
                 view,
                 Some(&response),
                 seed,
@@ -166,32 +160,20 @@ fn run_condition(
             );
             bench_refiner(
                 &mut classic.saddle,
-                ITERS_FAST,
+                ITERS,
                 view,
                 None,
                 seed,
                 (ox, oy),
                 &mut b_saddle,
             );
-
-            #[cfg(feature = "ml-refiner")]
-            if let Some(r) = ml_refiner.as_mut() {
-                harness::ml::bench(r, ITERS_SLOW, view, seed, (ox, oy), &mut b_ml);
-            }
         }
     }
 
-    #[cfg_attr(not(feature = "ml-refiner"), allow(unused_mut))]
-    let mut rows = vec![
+    vec![
         ("CenterOfMass", b_center.stats()),
         ("SaddlePoint", b_saddle.stats()),
-    ];
-    #[cfg(feature = "ml-refiner")]
-    if ml_refiner.is_some() {
-        rows.push(("ML", b_ml.stats()));
-    }
-    let _ = ITERS_SLOW;
-    rows
+    ]
 }
 
 fn emit_json_row(
@@ -229,7 +211,7 @@ fn emit_json_row(
 }
 
 fn main() {
-    // Sweep grids. Kept narrow enough to run in ~1 min with ML enabled.
+    // Sweep grids, kept narrow enough to run in about a minute.
     let blur_values: &[f32] = &[0.0, 0.5, 1.0, 1.5, 2.0, 2.5];
     let noise_values: &[f32] = &[0.0, 1.0, 2.0, 5.0, 8.0, 12.0];
     let cell_values: &[usize] = &[5, 6, 7, 8, 10];

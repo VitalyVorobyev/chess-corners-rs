@@ -28,8 +28,6 @@
 use box_image_pyramid::PyramidBuffers;
 use chess_corners_core::{ChessBuffers, RadonBuffers};
 
-#[cfg(feature = "ml-refiner")]
-use crate::ml_refiner;
 use crate::multiscale::{self, Frame};
 use crate::upscale::{self, UpscaleBuffers};
 use crate::{ChessError, CornerDescriptor, DetectorConfig, Roi, Uncertainty};
@@ -47,16 +45,6 @@ pub struct Detector {
     upscale: UpscaleBuffers,
     /// Noise σ of the most recent detection; see [`Detector::last_noise_sigma`].
     last_noise_sigma: Option<f32>,
-    #[cfg(feature = "ml-refiner")]
-    ml: MlSlot,
-}
-
-/// ML-refiner parameters and the per-detector model state built from them
-/// on first use; it does not depend on the config.
-#[cfg(feature = "ml-refiner")]
-struct MlSlot {
-    state: Option<ml_refiner::MlRefinerState>,
-    params: ml_refiner::MlRefinerParams,
 }
 
 impl Detector {
@@ -78,11 +66,6 @@ impl Detector {
             radon_buffers: RadonBuffers::default(),
             upscale: UpscaleBuffers::new(),
             last_noise_sigma: None,
-            #[cfg(feature = "ml-refiner")]
-            ml: MlSlot {
-                state: None,
-                params: ml_refiner::MlRefinerParams::default(),
-            },
         })
     }
 
@@ -153,35 +136,30 @@ impl Detector {
         if factor <= 1 {
             let view =
                 ImageView::from_u8_slice(src_w, src_h, img).expect("dimensions were checked above");
-            return Ok(Self::detect_view_inner(
+            return Ok(multiscale::detect_with_buffers(
+                view,
                 &self.cfg,
                 self.cfg.uncertainty,
                 &mut self.pyramid,
                 &mut self.chess_buffers,
                 &mut self.radon_buffers,
-                #[cfg(feature = "ml-refiner")]
-                &mut self.ml,
-                view,
             ));
         }
 
         // Split-borrow: each field is borrowed independently so
-        // `upscaled` (which borrows `self.upscale`) and the
-        // detect_view_inner call (which borrows other fields) don't
-        // conflict.
+        // `upscaled` (which borrows `self.upscale`) and the detection
+        // call (which borrows other fields) don't conflict.
         let upscaled = upscale::upscale_bilinear_u8(img, src_w, src_h, factor, &mut self.upscale)?;
         // Interpolation correlates the noise of neighbouring upscaled
         // pixels, so a white-noise covariance would be wrong: none is
         // reported.
-        let mut frame = Self::detect_view_inner(
+        let mut frame = multiscale::detect_with_buffers(
+            upscaled,
             &self.cfg,
             Uncertainty::Off,
             &mut self.pyramid,
             &mut self.chess_buffers,
             &mut self.radon_buffers,
-            #[cfg(feature = "ml-refiner")]
-            &mut self.ml,
-            upscaled,
         );
         upscale::rescale_descriptors_to_input(&mut frame.corners, factor);
         Ok(frame)
@@ -254,12 +232,7 @@ impl Detector {
     /// # Errors
     ///
     /// Returns [`ChessError::DimensionMismatch`] if `img.len() != width *
-    /// height`. With the `ml-refiner` feature, returns
-    /// `ChessError::RoiRefinerUnsupported` when the configuration selects
-    /// the ML refiner ([`ImageRefiner::Ml`](crate::ImageRefiner::Ml)): the ML
-    /// refiner runs a whole-frame model pipeline this path does not carry,
-    /// and the refiner selection is never silently downgraded — use
-    /// [`Detector::detect_u8`] for ML refinement.
+    /// height`.
     pub fn detect_u8_roi(
         &mut self,
         img: &[u8],
@@ -276,13 +249,6 @@ impl Detector {
                 expected,
                 actual: img.len(),
             });
-        }
-
-        // The ML refiner has no ROI-path plumbing; refuse rather than
-        // silently downgrading to the core default refiner.
-        #[cfg(feature = "ml-refiner")]
-        if Self::is_ml_refiner(&self.cfg) {
-            return Err(ChessError::RoiRefinerUnsupported);
         }
 
         let view =
@@ -331,9 +297,9 @@ impl Detector {
     ///
     /// `None` when that frame has no position covariance: under
     /// [`Uncertainty::Off`](crate::Uncertainty::Off) (the default), on
-    /// upscaled input, when no corner's localizer reported one (the ML
-    /// refiner reports none), or when the estimate declined. Also `None` before the
-    /// first detection and after a detection that returned an error.
+    /// upscaled input, when no corner's localizer reported one, or when the
+    /// estimate declined. Also `None` before the first detection and after a
+    /// detection that returned an error.
     pub fn last_noise_sigma(&self) -> Option<f32> {
         self.last_noise_sigma
     }
@@ -355,48 +321,6 @@ impl Detector {
     /// [`Detector::detect`] result contract.
     pub fn diagnostics(&self) -> crate::diagnostics::DetectorDiagnostics<'_> {
         crate::diagnostics::DetectorDiagnostics::new(self)
-    }
-
-    fn detect_view_inner(
-        cfg: &DetectorConfig,
-        uncertainty: Uncertainty,
-        pyramid: &mut PyramidBuffers,
-        chess_buffers: &mut ChessBuffers,
-        radon_buffers: &mut RadonBuffers,
-        #[cfg(feature = "ml-refiner")] ml: &mut MlSlot,
-        view: ImageView<'_>,
-    ) -> Frame {
-        #[cfg(feature = "ml-refiner")]
-        if Self::is_ml_refiner(cfg) {
-            let state = ml
-                .state
-                .get_or_insert_with(|| ml_refiner::MlRefinerState::new(&ml.params));
-            return multiscale::detect_with_ml(
-                view,
-                cfg,
-                uncertainty,
-                pyramid,
-                chess_buffers,
-                radon_buffers,
-                state,
-            );
-        }
-
-        multiscale::detect_with_buffers(
-            view,
-            cfg,
-            uncertainty,
-            pyramid,
-            chess_buffers,
-            radon_buffers,
-        )
-    }
-
-    /// Whether the active config selects the ML refiner.
-    #[cfg(feature = "ml-refiner")]
-    #[inline]
-    fn is_ml_refiner(cfg: &DetectorConfig) -> bool {
-        matches!(cfg.refiner, Some(crate::ImageRefiner::Ml))
     }
 }
 
@@ -727,21 +651,6 @@ mod tests {
                 checked >= 3,
                 "upsample={upsample}: expected several boundary-peak corners to check, got {checked}"
             );
-        }
-    }
-
-    #[cfg(feature = "ml-refiner")]
-    #[test]
-    fn roi_rejects_ml_refiner_without_silent_downgrade() {
-        let size = 64usize;
-        let img = synthetic_board(size);
-        for base in [DetectorConfig::chess(), DetectorConfig::radon()] {
-            let cfg = base.with_refiner(crate::ImageRefiner::Ml);
-            let mut det = Detector::new(cfg).unwrap();
-            let err = det
-                .detect_u8_roi(&img, size as u32, size as u32, roi(10, 10, 50, 50))
-                .unwrap_err();
-            assert!(matches!(err, ChessError::RoiRefinerUnsupported));
         }
     }
 }

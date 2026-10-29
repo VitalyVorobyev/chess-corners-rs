@@ -34,7 +34,7 @@ arrays:
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.fit_std_errors` — `(N, 2)` float32, the residual-based least-squares standard error of each axis fit in radians: a fit-quality score for ranking and gating axes (larger means a less reliable axis), not a calibrated error bound; `None` when orientation is disabled
-- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (every localizer except the ML refiner reports it under `Uncertainty.propagated()`, selected with `cfg.with_uncertainty(chess_corners.Uncertainty.propagated())`, or `Uncertainty.propagated(noise_sigma=1.2)` when the image noise is known; none does under the default `Uncertainty.off()` or on upscaled input); `chess_corners.estimate_noise_sigma(img)` returns the per-image noise estimate used when no `noise_sigma` is given. The covariance includes a per-localizer floor measured on real images that usually dominates it there; weighting by it has not been shown to beat uniform weighting on real data
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (every localizer reports it under `Uncertainty.propagated()`, selected with `cfg.with_uncertainty(chess_corners.Uncertainty.propagated())`, or `Uncertainty.propagated(noise_sigma=1.2)` when the image noise is known; none does under the default `Uncertainty.off()` or on upscaled input); `chess_corners.estimate_noise_sigma(img)` returns the per-image noise estimate used when no `noise_sigma` is given. The covariance includes a per-localizer floor measured on real images that usually dominates it there; weighting by it has not been shown to beat uniform weighting on real data
 - `det.noise_sigma` — the image noise σ (gray levels) behind `position_covariance`: the known `noise_sigma` when given, otherwise the per-image estimate; `None` when no corner has a covariance
 
 Rotating CCW from `axis0_angle` toward `axis1_angle` (by less than π)
@@ -100,16 +100,15 @@ cfg = (
 By default each detector keeps its own localizer: the center of mass on
 the ChESS response (tuned by `cfg.strategy.chess.center_of_mass`) or the
 peak fit on the Radon response. `cfg.refiner` replaces it with an image
-refiner, `ImageRefiner.saddle_point(cfg=None)` or `ImageRefiner.ml()`,
-set with `with_refiner(...)` / `cfg.refiner = ...` and cleared with
+refiner, `ImageRefiner.saddle_point(cfg=None)`, set with `with_refiner(...)` / `cfg.refiner = ...` and cleared with
 `without_refiner()` / `cfg.refiner = None`. It is independent of the
 detector, so it survives `with_chess` / `with_radon`.
 
 On ChESS the refiner starts from the integer peak and drops corners it
 rejects; on Radon it starts from the peak fit and keeps the peak fit where
 it does not converge. `ImageRefiner.saddle_point()` reports a position
-covariance under `Uncertainty.propagated()` with either detector. The
-tuning of the active variant is reachable via the `payload` property
+covariance under `Uncertainty.propagated()` with either detector. Its
+tuning is reachable via the `payload` property
 (a copy; rebuild the refiner to change it):
 
 ```python
@@ -130,8 +129,8 @@ Tagged classes:
 - `UpscaleConfig`: `UpscaleConfig.disabled()` /
   `UpscaleConfig.fixed(factor)`; read `cfg.upscale.kind` and (when
   `fixed`) `factor`.
-- `ImageRefiner`: `saddle_point()`, `ml()` (with the `ml-refiner`
-  feature); read `cfg.refiner.kind` and `cfg.refiner.payload`.
+- `ImageRefiner`: `saddle_point()`; read `cfg.refiner.kind` and
+  `cfg.refiner.payload`.
 
 Enums:
 
@@ -245,14 +244,3 @@ Both examples use Pillow only for image loading:
 ```bash
 uv pip install --python .venv/bin/python Pillow
 ```
-
-## ML refiner
-
-The published wheel is built with the `ml-refiner` feature on by
-default (pip install cannot toggle Cargo features), so `ImageRefiner.ml()`
-is always available out of the box. The ML pipeline is selected with
-`cfg.with_refiner(ImageRefiner.ml())` and works with both the ChESS and
-Radon detectors. The ML refiner runs a small ONNX model on normalized
-intensity patches around each candidate; it rejects no corner (one it
-cannot refine keeps its seed), reports no position covariance, and is not
-supported by `detect_roi`.

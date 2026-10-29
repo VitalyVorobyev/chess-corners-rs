@@ -13,8 +13,7 @@ and the images in `testdata/` are designed for rerunning accuracy and
 performance experiments after code changes. Extending them, or
 contributing new datasets, is a good way to validate improvements.
 The benchmark fixture in [Part IX §9.1](part-09-benchmarks.md#91-the-benchmark-fixture)
-and the ML refiner pipeline in `tools/ml_refiner/` have their own
-knobs and regression gates.
+has its own knobs and regression gates.
 
 **Algorithms.** ChESS and the Duda-Frese Radon detector are two
 points in the design space. New detectors, refiners, or descriptor

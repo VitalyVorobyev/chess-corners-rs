@@ -28,7 +28,6 @@ image = ["dep:image"]
 rayon = ["chess-corners-core/rayon", "dep:rayon", "box-image-pyramid/rayon"]
 simd = ["chess-corners-core/simd", "box-image-pyramid/simd"]
 tracing = ["chess-corners-core/tracing", "dep:tracing", "box-image-pyramid/tracing"]
-ml-refiner = ["dep:chess-corners-ml"]
 # Opt-in: derive `schemars::JsonSchema` for `DetectorConfig` and every type
 # reachable from it (forwards to `chess-corners-core/schemars`).
 schemars = ["dep:schemars", "chess-corners-core/schemars"]
@@ -36,7 +35,7 @@ par_pyramid = ["box-image-pyramid/par_pyramid"]
 # The CLI decodes arbitrary user-supplied files and writes PNG overlays,
 # so it — not the library — owns the codec set.
 cli = [
-  "dep:clap", "dep:anyhow", "dep:serde_json", "dep:tracing-subscriber",
+  "dep:clap", "dep:anyhow", "dep:log", "dep:serde_json", "dep:tracing-subscriber",
   "image",
   "image/png", "image/jpeg", "image/tiff",
   "image/bmp", "image/webp", "image/gif",
@@ -50,9 +49,8 @@ required-features = ["image", "cli"]
 [dependencies]
 box-image-pyramid.workspace = true
 chess-corners-core.workspace = true
-chess-corners-ml = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
-log.workspace = true
+log = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 schemars = { workspace = true, optional = true }

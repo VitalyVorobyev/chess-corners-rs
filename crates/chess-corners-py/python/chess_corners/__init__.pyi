@@ -177,30 +177,25 @@ class ImageRefiner:
     On the ChESS detector it replaces the center of mass, starts from the
     integer peak and drops corners it rejects. On the Radon detector it
     starts from the peak fit and keeps the peak fit where it does not
-    converge. The saddle-point refiner reports a position covariance. The ML
-    refiner works with both detectors, rejects no corner (one it cannot
-    refine keeps its seed), reports no covariance and is not supported by
-    ``Detector.detect_roi``."""
+    converge. The saddle-point refiner reports a position covariance."""
 
     @classmethod
     def saddle_point(cls, cfg: SaddlePointConfig | None = None) -> "ImageRefiner": ...
-    @classmethod
-    def ml(cls) -> "ImageRefiner": ...
     @property
     def kind(self) -> str:
-        """``"saddle_point"`` or ``"ml"``."""
+        """``"saddle_point"``."""
         ...
     @property
-    def payload(self) -> Optional[SaddlePointConfig]:
-        """A fresh ``SaddlePointConfig`` copy, or ``None`` for ``ml``."""
+    def payload(self) -> SaddlePointConfig:
+        """A fresh ``SaddlePointConfig`` copy."""
         ...
     def to_dict(self) -> dict[str, Any]:
-        """``{"saddle_point": {...}}`` or ``{"ml": None}``."""
+        """``{"saddle_point": {...}}``."""
         ...
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | str) -> "ImageRefiner":
-        """Parse a :meth:`to_dict` value or the bare string ``"ml"``. Any
-        other shape raises :class:`ConfigError`."""
+    def from_dict(cls, data: dict[str, Any]) -> "ImageRefiner":
+        """Parse a :meth:`to_dict` value. Any other shape raises
+        :class:`ConfigError`."""
         ...
     def __eq__(self, other: object) -> bool: ...
 
@@ -342,8 +337,8 @@ class Detections:
     def position_covariance(self) -> np.ndarray:
         """``(N, 2, 2)`` float32 array of per-corner position covariance in px²
         (``[[xx, xy], [xy, yy]]``). Rows are ``NaN`` for corners without one:
-        every localizer except the ML refiner reports it under
-        ``Uncertainty.propagated()``; none does under ``Uncertainty.off()``
+        every localizer reports it under ``Uncertainty.propagated()``; none
+        does under ``Uncertainty.off()``
         (the default) or on upscaled input. The covariance includes a
         per-localizer floor measured on real images that usually dominates
         it there; weighting by it has not been shown to beat uniform
@@ -357,7 +352,7 @@ class Detections:
         ``Uncertainty.propagated(...)``, otherwise the per-image estimate
         (what ``estimate_noise_sigma`` returns for the same image). ``None``
         when no corner has a covariance (``Uncertainty.off()``, the default;
-        upscaled input; the ML refiner) or the estimate declined."""
+        upscaled input) or the estimate declined."""
         ...
 
     def __len__(self) -> int: ...

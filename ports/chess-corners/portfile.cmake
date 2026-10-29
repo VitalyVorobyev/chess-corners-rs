@@ -31,7 +31,7 @@ vcpkg_from_github(
 )
 
 # This initial port builds the crate with its default cargo features. Optional
-# cargo features (rayon / simd / ml-refiner) are intentionally NOT exposed as
+# cargo features (rayon / simd) are intentionally NOT exposed as
 # vcpkg features yet: wiring them is a single release-phase task that adds
 # pass-through features to the `chess-corners-capi` crate, teaches the packaged
 # CMake to forward `--features` to cargo, and declares matching vcpkg features

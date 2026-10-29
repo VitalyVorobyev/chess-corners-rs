@@ -305,7 +305,7 @@ Fields:
 - `position_covariance` – the 2×2 covariance `{ xx, xy, yy }` of
   `(x, y)` in px²: the scatter due to white pixel noise plus the
   localizer's systematic error (the `Corner::position_covariance` rustdoc
-  gives the model). Every localizer except the ML refiner reports it when
+  gives the model). Every localizer reports it when
   `DetectorConfig::uncertainty` is `Propagated` (the default is `Off`); the
   detector scales it by the image noise level that `Propagated` carries,
   estimated per image or supplied, and leaves it `None` on upscaled

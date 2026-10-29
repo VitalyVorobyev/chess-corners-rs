@@ -48,8 +48,7 @@ jobs:
 
       - name: detector config schema is up to date
         # Regenerates schemas/detector_config.json from the Rust config types
-        # (default features, no ml-refiner) and fails on any drift from the
-        # committed copy. Fix with `cargo run -p xtask -- emit-schemas`.
+        # and fails on any drift from the committed copy. Fix with `cargo run -p xtask -- emit-schemas`.
         if: matrix.os == 'ubuntu-latest' && matrix.toolchain == 'stable'
         run: cargo run -p xtask -- emit-schemas --check
 
@@ -71,10 +70,6 @@ jobs:
       - name: test (tracing feature)
         if: matrix.toolchain == 'stable'
         run: cargo test --workspace --features tracing
-
-      - name: test (ml-refiner feature)
-        if: matrix.toolchain == 'stable'
-        run: cargo test --workspace --features ml-refiner
 
       - name: test chess-core feature matrix (no simd)
         if: matrix.toolchain == 'stable'

@@ -26,8 +26,8 @@ pub enum Uncertainty {
     /// the localizer's fit window and the width of its edges). `noise` is
     /// the image noise level that expresses the propagated part in px².
     ///
-    /// Every localizer reports a covariance except the ML refiner. None is
-    /// reported on upscaled input ([`DetectorConfig::upscale`](crate::DetectorConfig::upscale)):
+    /// Every localizer reports a covariance. None is reported on upscaled
+    /// input ([`DetectorConfig::upscale`](crate::DetectorConfig::upscale)):
     /// interpolation correlates the noise of neighbouring pixels.
     ///
     /// The systematic part includes a per-localizer floor measured on real

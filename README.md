@@ -48,7 +48,6 @@ chess-corners          public Rust API, CLI, multiscale pipeline
 chess-corners-core     low-level detectors, refiners, descriptors
 
 box-image-pyramid      standalone u8 2× pyramid builder
-chess-corners-ml       optional ONNX refiner (`ml-refiner` feature)
 ```
 
 `chess-corners` is the compatibility boundary. `chess-corners-core`
@@ -248,8 +247,6 @@ WebP and GIF input images. Useful config examples:
   — pure `DetectorConfig`, shared by Rust and Python.
 - [`config/chess_cli_config_example.json`](config/chess_cli_config_example.json)
   — `DetectorConfig` plus CLI input/output fields.
-- [`config/chess_cli_config_example_ml.json`](config/chess_cli_config_example_ml.json)
-  — ML refiner example (`"refiner": "ml"`); requires `--features ml-refiner`.
 
 ## Feature Flags
 
@@ -260,7 +257,6 @@ WebP and GIF input images. Useful config examples:
 | `simd` | Optional high-performance path: `std::simd` ChESS kernels; nightly only |
 | `par_pyramid` | SIMD/Rayon paths inside `box-image-pyramid` |
 | `tracing` | Structured diagnostic spans |
-| `ml-refiner` | ONNX refiner through `chess-corners-ml` |
 | `cli` | Builds the `chess-corners` binary |
 | `radon-sat-u32` | Uses `u32` Radon SATs for lower memory with an input-size cap |
 

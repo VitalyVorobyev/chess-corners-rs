@@ -19,7 +19,7 @@ active strategy variant.
 | `detection`           | `DetectionParams { nms_radius, min_cluster_size }` — shared NMS and cluster-filter knobs honoured by both detectors.                              |
 | `multiscale`          | `MultiscaleConfig::SingleScale` or `MultiscaleConfig::Pyramid { levels, min_size, refinement_radius }`. Honoured by both detectors.                |
 | `upscale`             | `UpscaleConfig::Disabled` or `UpscaleConfig::Fixed(factor)` (`factor ∈ {2, 3, 4}`). Pre-pipeline bilinear upscaling for low-resolution inputs.    |
-| `refiner`             | `Option<ImageRefiner>`: `None` (default) keeps the detector's own subpixel localizer; `ImageRefiner::SaddlePoint(_)` or `Ml` (with `ml-refiner`) refines the corners of either detector on the image ([Part V](part-05-refiners.md)). |
+| `refiner`             | `Option<ImageRefiner>`: `None` (default) keeps the detector's own subpixel localizer; `ImageRefiner::SaddlePoint(_)` refines the corners of either detector on the image ([Part V](part-05-refiners.md)). |
 | `orientation_method`  | `OrientationMethod::RingFit` (default) or `DiskFit`. Drives the two-axis descriptor fit on both detectors; `without_orientation()` skips the fit and leaves each descriptor's `axes` as `None`. |
 | `merge_radius`        | Duplicate-suppression distance (base-image pixels) for the final cross-scale merge step.                                                          |
 | `uncertainty`         | `Off` (default: no `position_covariance`, and no noise estimate) or `Propagated { noise }` (every localizer reports one; positions unchanged). `noise` is `NoiseLevel::Estimate` (estimate per image) or `NoiseLevel::Known(σ)`, the image's pixel-noise σ in gray levels; it turns each covariance into px² ([Part VIII](part-08-uncertainty.md)). |
@@ -262,7 +262,7 @@ print(det.response.shape) # (N,)  float32
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.fit_std_errors` — `(N, 2)` float32, the standard error of each axis fit in radians (a fit-quality score: larger means a less reliable axis; not a calibrated error bound), or `None` when orientation is disabled
-- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.off()`, the default — `cfg.with_uncertainty(chess_corners.Uncertainty.propagated())` reports it, or `Uncertainty.propagated(noise_sigma=σ)` with a known noise level — corners placed by the ML refiner, or upscaling)
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (under `Uncertainty.off()`, the default, or on upscaled input; `cfg.with_uncertainty(chess_corners.Uncertainty.propagated())` reports it, or `Uncertainty.propagated(noise_sigma=σ)` with a known noise level)
 - `det.noise_sigma` — the image noise σ (gray levels) behind `position_covariance`, supplied or estimated; `None` when no corner has a covariance
 
 When the orientation fit is skipped (`cfg.without_orientation()`),
@@ -276,7 +276,7 @@ supports `to_dict()`, `from_dict()`, `to_json()`, `from_json()`,
 `cfg.threshold` is a plain `float` — assign it directly. The tagged
 enum classes follow a common idiom: `MultiscaleConfig.single_scale()` /
 `.pyramid(...)`, `UpscaleConfig.disabled()` / `.fixed(k)`,
-`ImageRefiner.saddle_point(...)` / `.ml()`. Orientation can be turned off entirely
+`ImageRefiner.saddle_point(...)`. Orientation can be turned off entirely
 with `cfg.without_orientation()`, after which `det.angles` and
 `det.fit_std_errors` are `None`.
 
@@ -304,13 +304,6 @@ top-level and survives the switch:
 cfg = chess_corners.DetectorConfig.radon().with_refiner(
     chess_corners.ImageRefiner.saddle_point()
 )
-```
-
-The published wheel is built with `ml-refiner`, so the ML refiner is
-one more image refiner, for either detector:
-
-```python
-cfg = cfg.with_refiner(chess_corners.ImageRefiner.ml())
 ```
 
 ## 2.4 JavaScript / WebAssembly
@@ -423,8 +416,6 @@ Example configs under `config/`:
   pure `DetectorConfig` shape shared with the Rust and Python APIs.
 - `chess_cli_config_example.json` — algorithm fields plus CLI I/O
   envelope.
-- `chess_cli_config_example_ml.json` — same, with `"refiner": "ml"`.
-  Requires a binary built with `--features ml-refiner`.
 
 In JSON, `threshold` is written as a bare number (ChESS: absolute
 response floor; Radon: fraction of the per-frame maximum), and
@@ -435,7 +426,7 @@ Per-flag overrides (applied on top of the JSON):
 
 - `--threshold <v>` (ChESS: absolute response floor; Radon: fraction of the per-frame max)
 - `--chess-ring canonical|broad`
-- `--refiner none|saddle_point|ml` (`ml` with `--features ml-refiner`)
+- `--refiner none|saddle_point`
 - `--pyramid-levels <n>` (1 = single-scale)
 - `--upscale-factor 0|2|3|4`
 
@@ -447,43 +438,7 @@ Overlay examples on the sample images in `testdata/`:
 
 ![](img/large_chess.png)
 
-## 2.6 ML refiner
-
-The ML refiner is an optional image refiner. Enable it by
-building with `--features ml-refiner` (Rust) or by installing the
-published wheel (Python), then select `ImageRefiner::Ml`, with either
-detector:
-
-```rust
-# #[cfg(feature = "ml-refiner")]
-# {
-use chess_corners::{Detector, DetectorConfig, ImageRefiner};
-
-let cfg = DetectorConfig::chess_multiscale().with_refiner(ImageRefiner::Ml);
-
-let mut detector = Detector::new(cfg).unwrap();
-let corners = detector.detect(&img).unwrap();
-# }
-```
-
-The ML path:
-
-- Runs the active detector to produce seeds: ChESS integer peaks or
-  Radon peak fits.
-- Feeds each seed's 21×21 neighborhood through the embedded
-  ONNX model (`chess_refiner_v4.onnx`, ~180 K params).
-- Moves the seed by the model's predicted `(dx, dy)` offset; a seed
-  whose patch leaves the image keeps its position.
-- Reports no position covariance, and is not available on the ROI path
-  (`detect_u8_roi` returns an error).
-
-The algorithm and its limits are covered in
-[Part V §5.6](part-05-refiners.md#56-ml-image-refiner). Compared to the
-geometric refiners: `SaddlePoint` has lower error on clean and blurred
-data while ML leads on the heaviest noise row (see the comparison in
-Part IX).
-
-## 2.7 Radon heatmap (visualization)
+## 2.6 Radon heatmap (visualization)
 
 The Radon detector computes a dense `(max_α S_α − min_α S_α)²`
 response heatmap as an intermediate step. The heatmap is exposed

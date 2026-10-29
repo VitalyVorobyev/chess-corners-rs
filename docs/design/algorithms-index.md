@@ -32,7 +32,6 @@ by" lists the downstream stages. Paths are relative to the repo root.
 | **S1** | Box pyramid 2× downsample | Scale | `crates/box-image-pyramid/src/lib.rs` | VII | `par_pyramid` | `u8` image → pyramid levels | S3 |
 | **S2** | Integer bilinear upscale (×2/3/4) | Scale | `crates/chess-corners/src/upscale.rs` | VII | — | low-res `u8` → upscaled `u8` | S1, R1/R2 |
 | **S3** | Multiscale coarse-to-fine pipeline | Orchestration | `crates/chess-corners/src/multiscale.rs` | VII | — | image → `CornerDescriptor[]` | output |
-| **M1** | ONNX ML image refiner (optional; either detector) | Refinement (post) | `crates/chess-corners/src/ml_refiner.rs` | V | `ml-refiner` | corner + patch → refined corner | (post-F*) |
 
 ## Interconnection DAG
 
@@ -69,7 +68,6 @@ u8 image
 | `box-image-pyramid` | S1 (fully standalone; zero chess coupling) |
 | `chess-corners-core` | R1, R2, H1, D1, D2, T1, F1, F3, T2, O1, O2, U1, X1, N1 |
 | `chess-corners` (facade) | S2, S3, C1 + the high-level `Detector`/config that selects R*/D*/F*/O* |
-| `chess-corners-ml` | M1 (only with `ml-refiner`) |
 | `chess-corners-py` / `-wasm` | bindings over the facade; own no algorithm |
 
 ## Feature-flag effects (perf-relevant)
@@ -80,7 +78,6 @@ u8 image
 | `simd` | core, facade | portable-SIMD inner loop in R1 (nightly) |
 | `par_pyramid` | facade, box-image-pyramid | SIMD/rayon in S1 downsample |
 | `radon-sat-u32` | core | u32 SAT element in R2 (memory/lane trade-off) |
-| `ml-refiner` | facade, py | enables M1 |
 
 ---
 

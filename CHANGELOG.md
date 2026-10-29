@@ -109,12 +109,15 @@ has before and after code for every binding.
   `CC_IMAGE_REFINER_SADDLE_POINT`), which is more accurate on real
   calibration images and on almost every synthetic condition.
 - The ML refiner: `ChessRefiner::Ml`, the `ml-refiner` feature of
-  `chess-corners` and of the Python package, Python
-  `ChessRefiner.ml()`, JS `ChessRefiner.withMl()`, and the CLI `"ml"`
-  setting. Use `ImageRefiner::SaddlePoint`, which is more accurate on
-  every tested condition, including rotated boards, where the ML model
-  was 0.64–0.90 px RMS against at most 0.057 px, and about 800× cheaper
-  per corner. A build that enabled `ml-refiner` drops the feature.
+  `chess-corners` and of the Python package, Python `ChessRefiner.ml()`,
+  JS `ChessRefiner.withMl()`, and the CLI `"ml"` setting. Use
+  `ImageRefiner::SaddlePoint`: it is more accurate in 15 of the 16
+  synthetic conditions of the refiner benchmark (the exception is the
+  heaviest noise row, 0.100 against 0.093 px) and on rotated boards, where
+  the ML model was 0.64–0.90 px RMS against at most 0.057 px, and it is
+  about 800× cheaper per corner. A build that enabled `ml-refiner` drops
+  the feature. The `chess-corners-ml` crate is no longer developed; 0.13.0
+  stays on crates.io.
 - The `covariance_per_noise_variance` fields of `Corner` and
   `RefineResult`: read `noise_covariance_per_unit_variance()`, or
   `position_covariance(noise_sigma)` for the full covariance in px².
