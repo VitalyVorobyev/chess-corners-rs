@@ -121,11 +121,11 @@ pub fn describe_corners(
             axes: Some([
                 AxisEstimate {
                     angle: fit.theta1,
-                    sigma: fit.sigma_theta1,
+                    fit_std_error: fit.fit_std_error_theta1,
                 },
                 AxisEstimate {
                     angle: fit.theta2,
-                    sigma: fit.sigma_theta2,
+                    fit_std_error: fit.fit_std_error_theta2,
                 },
             ]),
             position_covariance: None,
@@ -284,8 +284,8 @@ mod tests {
         assert!(err2 < 1e-2, "theta2 err {err2} for fit {fit:?}");
         assert!(fit.amp > 60.0, "amp {}", fit.amp);
         assert!(fit.rms < 1e-2, "rms {}", fit.rms);
-        assert!(fit.sigma_theta1 < 5e-2);
-        assert!(fit.sigma_theta2 < 5e-2);
+        assert!(fit.fit_std_error_theta1 < 5e-2);
+        assert!(fit.fit_std_error_theta2 < 5e-2);
     }
 
     #[test]
@@ -341,8 +341,8 @@ mod tests {
         let samples = [77.0f32; 16];
         let fit = fit_two_axes(&samples, &phi);
         assert_eq!(fit.amp, 0.0);
-        assert!(fit.sigma_theta1 >= PI - 1e-3);
-        assert!(fit.sigma_theta2 >= PI - 1e-3);
+        assert!(fit.fit_std_error_theta1 >= PI - 1e-3);
+        assert!(fit.fit_std_error_theta2 >= PI - 1e-3);
         assert!(fit.theta1 >= 0.0 && fit.theta1 < PI);
         assert!(fit.theta2 > fit.theta1 && fit.theta2 < fit.theta1 + PI);
     }
@@ -383,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn fit_sigma_grows_with_noise() {
+    fn fit_std_error_grows_with_noise() {
         let t1 = FRAC_PI_4;
         let t2 = 3.0 * FRAC_PI_4;
 
@@ -396,12 +396,12 @@ mod tests {
         }
         let noisy_fit = fit_two_axes(&noisy_samples, &phi);
 
-        assert!(clean_fit.sigma_theta1 < 5e-2);
-        assert!(clean_fit.sigma_theta2 < 5e-2);
-        assert!(noisy_fit.sigma_theta1 > clean_fit.sigma_theta1);
-        assert!(noisy_fit.sigma_theta2 > clean_fit.sigma_theta2);
-        assert!(noisy_fit.sigma_theta1.is_finite());
-        assert!(noisy_fit.sigma_theta2.is_finite());
+        assert!(clean_fit.fit_std_error_theta1 < 5e-2);
+        assert!(clean_fit.fit_std_error_theta2 < 5e-2);
+        assert!(noisy_fit.fit_std_error_theta1 > clean_fit.fit_std_error_theta1);
+        assert!(noisy_fit.fit_std_error_theta2 > clean_fit.fit_std_error_theta2);
+        assert!(noisy_fit.fit_std_error_theta1.is_finite());
+        assert!(noisy_fit.fit_std_error_theta2.is_finite());
         assert!(noisy_fit.rms > clean_fit.rms);
     }
 }

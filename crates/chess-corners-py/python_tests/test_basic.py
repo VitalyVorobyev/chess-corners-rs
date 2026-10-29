@@ -34,23 +34,23 @@ def test_detect_without_orientation_yields_nan_axes():
     base.threshold = 0.1
     base.detection.min_cluster_size = 1
 
-    # Orientation on: angles and sigmas are finite (N, 2) arrays.
+    # Orientation on: angles and fit_std_errors are finite (N, 2) arrays.
     on = chess_corners.Detector(base).detect(img)
     assert len(on) > 0
-    assert on.angles is not None and on.sigmas is not None
+    assert on.angles is not None and on.fit_std_errors is not None
     assert on.angles.shape == (len(on), 2)
-    assert on.sigmas.shape == (len(on), 2)
+    assert on.fit_std_errors.shape == (len(on), 2)
     assert np.isfinite(on.angles).all()
-    assert np.isfinite(on.sigmas).all()
+    assert np.isfinite(on.fit_std_errors).all()
     assert np.isfinite(on.xy).all()
     assert np.isfinite(on.response).all()
 
-    # Orientation off: same corner count; angles and sigmas are None.
+    # Orientation off: same corner count; angles and fit_std_errors are None.
     off_cfg = base.without_orientation()
     off = chess_corners.Detector(off_cfg).detect(img)
     assert len(off) == len(on)
     assert off.angles is None
-    assert off.sigmas is None
+    assert off.fit_std_errors is None
     assert np.isfinite(off.xy).all()
     assert np.isfinite(off.response).all()
 

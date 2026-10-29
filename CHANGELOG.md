@@ -39,6 +39,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Config::noise_sigma`.
   - `chess-corners-core`: `Uncertainty` moved to `chess-corners`;
     `Refiner::with_uncertainty(tier)` → `Refiner::with_covariance(bool)`.
+- Each orientation axis reports `fit_std_error`, the residual-based
+  least-squares standard error of the axis fit in radians, in place of
+  `sigma`. It is a fit-quality score for ranking and gating axes, not a
+  calibrated error bound. Both methods now report this same quantity:
+  `RingFit` values are the previous ones divided by 1.0–1.25 (the empirical
+  correction factor is gone); `DiskFit` computes it over the disk pixels
+  instead of the previous residual heuristic, and its two axes now differ.
+  The 10° minimum when `DiskFit` and `RingFit` disagree and π as "no
+  information" are unchanged, and so are positions, covariances and axis
+  angles. The two values of a `RingFit` axis pair are no longer exchanged
+  when the fit relabels its axes. A gate tuned on the previous values
+  rejects about half as many axes; tighten it by about ×0.65 to keep its
+  rejection rate. Renamed:
+  - Rust: `AxisEstimate::sigma` → `AxisEstimate::fit_std_error` (and the
+    second parameter of `AxisEstimate::new`); core `AxisFitResult::
+    sigma_theta1` / `sigma_theta2` → `fit_std_error_theta1` /
+    `fit_std_error_theta2`.
+  - Python: `Detections.sigmas` → `Detections.fit_std_errors`.
+  - JS: the `axis0_sigma` / `axis1_sigma` slots of the stride-7 corner
+    array are `axis0_fitStdError` / `axis1_fitStdError` (same offsets).
+  - C: `cc_axis::sigma` → `cc_axis::fit_std_error`; C++ `Axis::sigma` →
+    `Axis::fit_std_error`.
+  - CLI JSON output: `axes[].sigma` → `axes[].fit_std_error`.
 - C ABI: `cc_abi_version` is 8. The `CC_REFINER_*` tags are renumbered to
   stay contiguous: `CC_REFINER_CENTER_OF_MASS = 0`,
   `CC_REFINER_SADDLE_POINT = 1`, `CC_REFINER_PEAK_FIT = 2`. Rebuild against

@@ -46,7 +46,7 @@ export function rampCss(t: number): string {
 
 // --- Orientation markers --------------------------------------------------
 // stage2d markers are sized in screen pixels. Both read the item's `angle`
-// (radians, clockwise from +x); the wedge reads its σ from `angle2`.
+// (radians, clockwise from +x); the wedge reads its half-width from `angle2`.
 
 const AXIS_HALF = 9;
 
@@ -61,12 +61,12 @@ export const AXIS_MARKER: MarkerShape = {
   },
 };
 
-/** Both ±1σ wedges of an undirected axis (σ = `angle2`, clamped so a weak corner stays legible). */
+/** Both ± fit-standard-error wedges of an undirected axis (half-width `angle2`, clamped so a weak corner stays legible). */
 export const WEDGE_MARKER: MarkerShape = {
   paint: "line",
   size: AXIS_HALF,
-  path: (x, y, u, angle, sigma = 0) => {
-    const s = Math.min(0.6, Math.max(0, sigma));
+  path: (x, y, u, angle, halfWidth = 0) => {
+    const s = Math.min(0.6, Math.max(0, halfWidth));
     const r = AXIS_HALF * u;
     let d = "";
     for (const base of [angle, angle + Math.PI]) {
@@ -80,7 +80,7 @@ export const WEDGE_MARKER: MarkerShape = {
   },
 };
 
-/** Two items per corner, one per axis, in the axis colours; a `wedge` item carries σ instead of drawing the axis. */
+/** Two items per corner, one per axis, in the axis colours; a `wedge` item carries the fit standard error instead of drawing the axis. */
 export function axisItems(corners: readonly DetectedCorner[], wedge: boolean): PointSetItem[] {
   return corners.flatMap((c, i) =>
     c.axes.map((axis, k) => ({
@@ -89,7 +89,7 @@ export function axisItems(corners: readonly DetectedCorner[], wedge: boolean): P
       y: c.y,
       kind: wedge ? "wedge" : "axis",
       angle: axis.angle,
-      ...(wedge ? { angle2: axis.sigma } : {}),
+      ...(wedge ? { angle2: axis.fitStdError } : {}),
       color: k === 0 ? OVERLAY_COLORS.axis0 : OVERLAY_COLORS.axis1,
     })),
   );

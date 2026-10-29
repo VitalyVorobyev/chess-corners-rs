@@ -5,7 +5,7 @@ Usage: python analyze.py CSV [CSV ...] [--fit-gen optical]
 Each CSV comes from ``cargo run --release -p chess-corners --example
 orientation_sigma_study`` (``optical`` or ``files`` mode). Candidates:
 
-- ``cur``     shipped ``AxisEstimate::sigma``;
+- ``cur``     shipped ``AxisEstimate::fit_std_error`` (equals ``b`` since 2.0);
 - ``cur*k``   shipped value times one constant per method;
 - ``b``       residual-scaled covariance ``sqrt(c_unit·s2)`` (no lookup table);
 - ``a``       noise-propagated ``sqrt(c_pix·σ_pix²)``, σ_pix = true noise
@@ -43,7 +43,7 @@ def load(paths):
         v = np.asarray(v, float)
         return np.where(infl, np.maximum(v, INFLATED), v)
 
-    d["cur"] = d.sigma_cur
+    d["cur"] = d.fit_std_error
     d["b"] = keep_inflation(np.sqrt(d.c_unit * d.s2))
     d["a"] = keep_inflation(np.sqrt(d.c_pix * (d.noise.astype(float) ** 2 + q)))
     d["a_est"] = keep_inflation(np.sqrt(d.c_pix * d.noise_est**2))

@@ -105,14 +105,13 @@ Each detection is a `CornerDescriptor` with:
 - `x`, `y` — subpixel position.
 - `response` — raw unnormalized detector response (the ChESS paper's
   score for ChESS, `(max α S_α − min α S_α)²` for Radon).
-- `axes` — `Some([axis0, axis1])` carries the two local grid axes with
-  per-axis angular fit-quality score in radians (larger means a less
-  reliable axis; not a calibrated 1σ, and independent of the noise level
-  and `Uncertainty`). For the default `RingFit` method it is the
-  Gauss-Newton covariance
-  (`σθᵢ = √((SSR / 12) · (JᵀJ)⁻¹[i,i])`) scaled by an empirical
-  factor; `DiskFit` reports a residual-based heuristic. Use it for
-  ranking and gating. Axes are not assumed
+- `axes` — `Some([axis0, axis1])` carries the two local grid axes, each
+  with `fit_std_error`: the residual-based least-squares standard error of
+  the axis fit in radians, `√([(JᵀJ)⁻¹]θθ · SSR / (N − 4))` over the ring
+  samples (`RingFit`) or disk pixels (`DiskFit`). It is a fit-quality
+  score for ranking and gating (larger means a less reliable axis), not a
+  calibrated error bound, and independent of the noise level and
+  `Uncertainty`. Axes are not assumed
   orthogonal; `axis0.angle ∈ [0, π)` and `axis1.angle ∈
   (axis0.angle, axis0.angle + π)`, with the CCW arc between them
   spanning a dark sector. It is `None` when the orientation fit is

@@ -33,7 +33,7 @@ arrays:
 - `det.xy` — `(N, 2)` float32, subpixel corner positions (x, y) in input pixels
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
-- `det.sigmas` — `(N, 2)` float32, per-axis fit-quality score in radians (larger means a less reliable axis; not a calibrated 1σ), or `None` when orientation is disabled
+- `det.fit_std_errors` — `(N, 2)` float32, the residual-based least-squares standard error of each axis fit in radians: a fit-quality score for ranking and gating axes (larger means a less reliable axis), not a calibrated error bound; `None` when orientation is disabled
 - `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (every localizer except the ML refiner reports it under `Uncertainty.propagated()`, selected with `cfg.with_uncertainty(chess_corners.Uncertainty.propagated())`, or `Uncertainty.propagated(noise_sigma=1.2)` when the image noise is known; none does under the default `Uncertainty.off()` or on upscaled input); `chess_corners.estimate_noise_sigma(img)` returns the per-image noise estimate used when no `noise_sigma` is given. The covariance includes a per-localizer floor measured on real images that usually dominates it there; weighting by it has not been shown to beat uniform weighting on real data
 - `det.noise_sigma` — the image noise σ (gray levels) behind `position_covariance`: the known `noise_sigma` when given, otherwise the per-image estimate; `None` when no corner has a covariance
 
@@ -45,7 +45,7 @@ warp and lens distortion.
 The orientation fit is the dominant per-corner cost, and it is
 optional. A pipeline that recovers board geometry from corner
 *positions* alone can skip it with `cfg.without_orientation()`; in that
-case `det.angles` and `det.sigmas` are `None`.
+case `det.angles` and `det.fit_std_errors` are `None`.
 
 Input requirements:
 
@@ -133,8 +133,8 @@ Enums:
 - `ChessRing`: `CANONICAL`, `BROAD`
 - `PeakFitMode`: `PARABOLIC`, `GAUSSIAN`
 - `OrientationMethod`: `RING_FIT`, `DISK_FIT`; disable the fit entirely
-  with `cfg.without_orientation()` (then `det.angles` and `det.sigmas`
-  are `None`)
+  with `cfg.without_orientation()` (then `det.angles` and
+  `det.fit_std_errors` are `None`)
 
 `ChessRing.BROAD` uses the wider radius-10 detector sampling pattern.
 Descriptors always sample at the detector ring radius.

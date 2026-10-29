@@ -4,7 +4,8 @@
 //! For every ground-truth corner that the default detector finds (within
 //! 1 px), it runs both orientation methods at the detected position and
 //! writes one CSV row per method and axis with the angular error, the
-//! shipped σ, and the ingredients of the candidate σ definitions:
+//! shipped per-axis value (`AxisFitResult::fit_std_error_theta{1,2}`), and
+//! the ingredients of the candidate σ definitions:
 //!
 //! - `c_unit`: diagonal of `(JᵀJ)⁻¹` for the axis angle of the fit that
 //!   produced the result (ring: 16 bilinear samples; disk: support-disk
@@ -13,6 +14,9 @@
 //!   (`(JᵀJ)⁻¹ JᵀDJ (JᵀJ)⁻¹`, `D` = bilinear-weight energy per ring sample;
 //!   `D = I` on the disk), so `sqrt(c_pix) · σ_pix` is noise-propagated;
 //! - `s2`: residual variance `SSR / (N − 4)`.
+//!
+//! The shipped value is `sqrt(c_unit · s2)` (candidate `b`); `recon`
+//! re-evaluates it from the ingredients as a self-check.
 //!
 //! The analysis lives in `tools/orientation_sigma/analyze.py`.
 //!
@@ -69,10 +73,9 @@ struct Ingredients {
     c_unit: [f64; 2],
     c_pix: [f64; 2],
     s2: f64,
-    /// Ring: `sqrt(c_unit·s2)` × the shipped lookup factor, a self-check
-    /// against the shipped σ. Disk: the shipped heuristic re-evaluated.
+    /// `sqrt(c_unit·s2)`, a self-check against the shipped value.
     recon: [f64; 2],
-    /// Disk only: edge width whose heuristic reproduces the shipped σ.
+    /// Disk only: edge width whose `recon` reproduces the shipped value.
     width: f64,
 }
 
@@ -168,24 +171,6 @@ fn finish(rows: &[[f64; 4]], d: &[f64], ssr: f64) -> Option<([f64; 2], [f64; 2],
     Some(([ni[2][2], ni[3][3]], c_pix, s2))
 }
 
-fn ring_lut(rel: f64) -> f64 {
-    const LUT: [(f64, f64); 5] = [
-        (0.0, 1.25),
-        (0.05, 1.25),
-        (0.20, 1.20),
-        (1.0, 1.10),
-        (5.0, 1.0),
-    ];
-    let r = if rel.is_finite() { rel.max(0.0) } else { 0.0 };
-    for w in LUT.windows(2) {
-        if r <= w[1].0 {
-            let t = ((r - w[0].0) / (w[1].0 - w[0].0)).clamp(0.0, 1.0);
-            return w[0].1 + (w[1].1 - w[0].1) * t;
-        }
-    }
-    1.0
-}
-
 /// Ring-fit ingredients at the reported axes.
 fn ring_ingredients(
     view: &ImageView<'_>,
@@ -223,12 +208,11 @@ fn ring_ingredients(
         })
         .collect();
     let (c_unit, c_pix, s2) = finish(&rows, &d, ssr)?;
-    let m = ring_lut((ssr / 16.0).sqrt() / amp.abs().max(1.0));
     Some(Ingredients {
         c_unit,
         c_pix,
         s2,
-        recon: [(c_unit[0] * s2).sqrt() * m, (c_unit[1] * s2).sqrt() * m],
+        recon: [(c_unit[0] * s2).sqrt(), (c_unit[1] * s2).sqrt()],
         width: f64::NAN,
     })
 }
@@ -262,13 +246,6 @@ fn disk_pixels(view: &ImageView<'_>, x: f32, y: f32) -> Option<Disk> {
         }
     }
     Some((p, v))
-}
-
-fn disk_heuristic(rel_rms: f64, t1: f64, t2: f64) -> f64 {
-    let sep = (t2 - t1).rem_euclid(PI);
-    let sep_deg = sep.min(PI - sep).to_degrees();
-    let floor = if sep_deg >= 55.0 { 1.5 } else { 3.0 };
-    ((floor + (8.0 * rel_rms).min(6.0)) * 0.55).to_radians()
 }
 
 /// Disk-fit ingredients at the reported axes for the given edge width.
@@ -305,18 +282,16 @@ fn disk_ingredients_at(
         .collect();
     let ones = vec![1.0; rows.len()];
     let (c_unit, c_pix, s2v) = finish(&rows, &ones, ssr)?;
-    let rel = (ssr / px.len() as f64).sqrt() / amp.abs().max(1.0);
-    let h = disk_heuristic(rel, t1, t2);
     Some(Ingredients {
         c_unit,
         c_pix,
         s2: s2v,
-        recon: [h, h],
+        recon: [(c_unit[0] * s2v).sqrt(), (c_unit[1] * s2v).sqrt()],
         width: w,
     })
 }
 
-/// Disk ingredients: the width whose heuristic reproduces the shipped σ,
+/// Disk ingredients: the width whose `recon` reproduces the shipped value,
 /// else the width with the smallest residual.
 fn disk_ingredients(
     view: &ImageView<'_>,
@@ -330,7 +305,7 @@ fn disk_ingredients(
         .iter()
         .filter_map(|&w| disk_ingredients_at(&px, &vals, t1, t2, w))
         .collect();
-    let shipped = fit.sigma_theta1 as f64;
+    let shipped = fit.fit_std_error_theta1 as f64;
     all.iter().copied().min_by(|a, b| {
         (a.recon[0] - shipped)
             .abs()
@@ -381,7 +356,9 @@ fn evaluate(img: &[u8], w: usize, h: usize, truth: &[Truth], prefix: &str) -> (S
         let same = ring.theta1 == disk.theta1 && ring.theta2 == disk.theta2;
         let disk_path = if !same {
             "disk"
-        } else if disk.sigma_theta1 > ring.sigma_theta1 || disk.sigma_theta2 > ring.sigma_theta2 {
+        } else if disk.fit_std_error_theta1 > ring.fit_std_error_theta1
+            || disk.fit_std_error_theta2 > ring.fit_std_error_theta2
+        {
             "inflated"
         } else {
             "ring"
@@ -401,7 +378,10 @@ fn evaluate(img: &[u8], w: usize, h: usize, truth: &[Truth], prefix: &str) -> (S
                 width: f64::NAN,
             });
             let est = [fit.theta1 as f64, fit.theta2 as f64];
-            let sig = [fit.sigma_theta1 as f64, fit.sigma_theta2 as f64];
+            let sig = [
+                fit.fit_std_error_theta1 as f64,
+                fit.fit_std_error_theta2 as f64,
+            ];
             let direct =
                 line_delta_signed(est[0], t.a[0]).abs() + line_delta_signed(est[1], t.a[1]).abs();
             let swapped =
@@ -437,7 +417,7 @@ fn evaluate(img: &[u8], w: usize, h: usize, truth: &[Truth], prefix: &str) -> (S
     (out, matched)
 }
 
-const HEADER: &str = "gen,cell,blur,rot_deg,shear_deg,noise,shading,seed,id,x_true,y_true,x,y,noise_est,method,path,axis,err,sigma_cur,c_unit,c_pix,s2,recon,width,amp,rms,sep_deg";
+const HEADER: &str = "gen,cell,blur,rot_deg,shear_deg,noise,shading,seed,id,x_true,y_true,x,y,noise_est,method,path,axis,err,fit_std_error,c_unit,c_pix,s2,recon,width,amp,rms,sep_deg";
 
 fn run_optical(out_path: &str) {
     let cells = [6.0f32, 10.0, 20.0];
@@ -616,16 +596,16 @@ fn run_cost() {
         let t_ring = time(&|| {
             pts.iter()
                 .map(|&(x, y)| {
-                    fit_axes_at_point(view, x, y, RADIUS, OrientationMethod::RingFit).sigma_theta1
-                        as f64
+                    fit_axes_at_point(view, x, y, RADIUS, OrientationMethod::RingFit)
+                        .fit_std_error_theta1 as f64
                 })
                 .sum()
         });
         let t_disk = time(&|| {
             pts.iter()
                 .map(|&(x, y)| {
-                    fit_axes_at_point(view, x, y, RADIUS, OrientationMethod::DiskFit).sigma_theta1
-                        as f64
+                    fit_axes_at_point(view, x, y, RADIUS, OrientationMethod::DiskFit)
+                        .fit_std_error_theta1 as f64
                 })
                 .sum()
         });

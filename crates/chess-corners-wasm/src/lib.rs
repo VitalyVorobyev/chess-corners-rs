@@ -242,9 +242,10 @@ impl ChessDetector {
     ///
     /// Returns a `Float32Array` with stride 7 per corner:
     /// `[x, y, response,
-    ///   axis0_angle, axis0_sigma, axis1_angle, axis1_sigma, ...]`.
-    /// Each `*_sigma` is a fit-quality score in radians (larger means a less
-    /// reliable axis), not a calibrated 1σ.
+    ///   axis0_angle, axis0_fitStdError, axis1_angle, axis1_fitStdError, ...]`.
+    /// Each `*_fitStdError` is the residual-based least-squares standard
+    /// error of the axis fit in radians: a fit-quality score (larger means a
+    /// less reliable axis), not a calibrated error bound.
     ///
     /// Throws a JS error string if the pixel buffer length does not match
     /// `width * height` or if the upscale configuration is invalid.
@@ -550,8 +551,9 @@ impl ChessDetector {
 }
 
 /// Flat array stride per corner: `[x, y, response,
-/// axis0_angle, axis0_sigma, axis1_angle, axis1_sigma]`. Each `*_sigma` is a
-/// fit-quality score in radians, not a calibrated 1σ.
+/// axis0_angle, axis0_fitStdError, axis1_angle, axis1_fitStdError]`. Each
+/// `*_fitStdError` is the least-squares standard error of the axis fit in
+/// radians, a fit-quality score, not a calibrated error bound.
 ///
 /// When the orientation fit is skipped (`orientationMethod` is `undefined`),
 /// the four axis values are `NaN` for every corner; the stride is unchanged.
@@ -582,9 +584,9 @@ fn corners_to_f32_array(corners: &[chess_corners::CornerDescriptor]) -> js_sys::
         match c.axes {
             Some(axes) => {
                 flat.push(axes[0].angle);
-                flat.push(axes[0].sigma);
+                flat.push(axes[0].fit_std_error);
                 flat.push(axes[1].angle);
-                flat.push(axes[1].sigma);
+                flat.push(axes[1].fit_std_error);
             }
             None => flat.extend_from_slice(&[f32::NAN; 4]),
         }

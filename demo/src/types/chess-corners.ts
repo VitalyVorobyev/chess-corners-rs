@@ -1,16 +1,19 @@
 // Demo-internal domain types for the chess-corners WASM detector.
 //
 // `detect` / `detectRgba` return a flat `Float32Array` with stride 7 per
-// corner: `[x, y, response, axis0_angle, axis0_sigma, axis1_angle,
-// axis1_sigma]`. The demo parses that into the structured shapes below
+// corner: `[x, y, response, axis0_angle, axis0_fitStdError, axis1_angle,
+// axis1_fitStdError]`. The demo parses that into the structured shapes below
 // (see `lib/detector.ts`).
 
-/** One orientation axis: undirected angle (radians) + its 1σ uncertainty. */
+/** One orientation axis: undirected angle (radians) + the standard error of its fit. */
 export interface Axis {
   /** Undirected axis angle in radians (image frame: x right, y down). */
   angle: number;
-  /** 1σ uncertainty of `angle`, in radians. */
-  sigma: number;
+  /**
+   * Least-squares standard error of the `angle` fit, in radians: a
+   * fit-quality score, not a calibrated error bound.
+   */
+  fitStdError: number;
 }
 
 /** A single detected corner with subpixel position and two orientation axes. */

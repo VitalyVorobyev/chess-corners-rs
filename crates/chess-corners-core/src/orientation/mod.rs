@@ -1,8 +1,8 @@
 //! Two-axis projective orientation fit at a chessboard corner.
 //!
 //! The detector lifts each subpixel corner to an [`AxisFitResult`] that
-//! carries the two local grid-axis directions, their per-axis angular
-//! fit-quality scores, and a residual RMS. The actual fit is pluggable via
+//! carries the two local grid-axis directions, the standard error of
+//! each axis fit, and a residual RMS. The actual fit is pluggable via
 //! [`OrientationMethod`].
 //!
 //! [`fit_axes_at_point`] is the public entry point: it samples the
@@ -54,10 +54,8 @@ pub enum OrientationMethod {
     /// radius-10 detector ring is used and the fit still looks
     /// suspicious, the canonical radius-5 ring is sampled as a cheap
     /// safety check and used when it produces a valid contrast/residual
-    /// fit. Per-axis sigmas are fit-quality scores, not calibrated
-    /// 1σ values: the fit's Gauss-Newton covariance, corrected by a
-    /// piecewise-linear lookup table keyed on the contrast-relative
-    /// residual.
+    /// fit. Each axis reports the residual-scaled least-squares standard
+    /// error of this fit ([`crate::AxisEstimate::fit_std_error`]).
     ///
     /// This is the **default** method. Suitable for the full range of
     /// standard chessboard images.
@@ -76,7 +74,10 @@ pub enum OrientationMethod {
     ///
     /// Output axes use the same canonical convention as [`Self::RingFit`]
     /// — see the type-level doc comment above and
-    /// [`crate::CornerDescriptor`].
+    /// [`crate::CornerDescriptor`]. When the disk fit is used, each axis
+    /// reports its residual-scaled least-squares standard error over the
+    /// disk pixels; a ring-fit fallback reports the ring fit's, at least
+    /// 10° when the two fits disagree.
     DiskFit,
 }
 
@@ -145,4 +146,59 @@ pub(crate) fn ring_fit_canonicalize_for_test(
     amp: f32,
 ) -> (f32, f32, f32) {
     ring_fit::canonicalize(theta1, theta2, amp)
+}
+
+/// Test reference for the axis standard error, in f64: for the model
+/// `y = μ + A·q(θ₁, θ₂)`, `model[i] = [q, ∂q/∂θ₁, ∂q/∂θ₂]` at the reported
+/// axes. Solves `μ` and `A` by linear least squares at those axes and
+/// returns `sqrt([(JᵀJ)⁻¹]θθ · SSR / (N − 4))` for both axes.
+#[cfg(test)]
+pub(crate) fn reference_std_errors(model: &[[f64; 3]], y: &[f64]) -> [f64; 2] {
+    let n = y.len() as f64;
+    let (sq, sy) = (
+        model.iter().map(|m| m[0]).sum::<f64>(),
+        y.iter().sum::<f64>(),
+    );
+    let sqq: f64 = model.iter().map(|m| m[0] * m[0]).sum();
+    let sqy: f64 = model.iter().zip(y).map(|(m, v)| m[0] * v).sum();
+    let amp = (sqy - sq * sy / n) / (sqq - sq * sq / n);
+    let mu = (sy - amp * sq) / n;
+    let mut jtj = [[0.0f64; 4]; 4];
+    let mut ssr = 0.0;
+    for (m, v) in model.iter().zip(y) {
+        let j = [1.0, m[0], amp * m[1], amp * m[2]];
+        for k in 0..4 {
+            for l in 0..4 {
+                jtj[k][l] += j[k] * j[l];
+            }
+        }
+        ssr += (v - mu - amp * m[0]).powi(2);
+    }
+    // Gauss-Jordan inverse of the 4×4 normal matrix.
+    let mut a = [[0.0f64; 8]; 4];
+    for i in 0..4 {
+        a[i][..4].copy_from_slice(&jtj[i]);
+        a[i][4 + i] = 1.0;
+    }
+    for i in 0..4 {
+        let p = (i..4)
+            .max_by(|&r, &s| a[r][i].abs().total_cmp(&a[s][i].abs()))
+            .expect("non-empty range");
+        a.swap(i, p);
+        let piv = a[i][i];
+        for v in a[i].iter_mut() {
+            *v /= piv;
+        }
+        let row = a[i];
+        for (k, r) in a.iter_mut().enumerate() {
+            if k != i {
+                let f = r[i];
+                for (x, y) in r.iter_mut().zip(row.iter()) {
+                    *x -= f * y;
+                }
+            }
+        }
+    }
+    let s2 = ssr / (n - 4.0);
+    [(a[2][6] * s2).sqrt(), (a[3][7] * s2).sqrt()]
 }

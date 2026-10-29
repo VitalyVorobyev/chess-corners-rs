@@ -133,13 +133,13 @@ configuration classes that round-trip through the same JSON shape as the
 Rust facade. `Detector.detect(image)` accepts a 2D C-contiguous `uint8`
 NumPy array and returns a structure-of-arrays `Detections` object with
 named fields — `.xy` (`(N, 2)`), `.response` (`(N,)`), `.angles`
-(`(N, 2)`), `.sigmas` (`(N, 2)`), `.position_covariance` (`(N, 2, 2)`,
-`NaN` rows where absent) — where `.angles` / `.sigmas` are `None`
+(`(N, 2)`), `.fit_std_errors` (`(N, 2)`), `.position_covariance` (`(N, 2, 2)`,
+`NaN` rows where absent) — where `.angles` / `.fit_std_errors` are `None`
 when orientation is disabled (`without_orientation()`).
 
 The WebAssembly package exposes the same detector/configuration concepts
 for JavaScript and TypeScript, returning a flat stride-7 `Float32Array`
-(`x, y, response, axis0_angle, axis0_sigma, axis1_angle, axis1_sigma`; the
+(`x, y, response, axis0_angle, axis0_fitStdError, axis1_angle, axis1_fitStdError`; the
 four axis values are `NaN` when orientation is disabled), plus a stride-3
 `positionCovariance()` accessor for the last detection. The C ABI
 (`cc_abi_version` 7) carries the covariance in `cc_corner` and the frame's

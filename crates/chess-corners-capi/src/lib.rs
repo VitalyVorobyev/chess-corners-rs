@@ -119,16 +119,18 @@ pub const CC_PEAK_FIT_GAUSSIAN: cc_peak_fit_t = 1;
 
 // ─── Result types (library writes, C reads) ─────────────────────────────
 
-/// One local grid-axis direction with a fit-quality score.
+/// One local grid-axis direction with the standard error of its fit.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct cc_axis {
     /// Axis direction in radians.
     pub angle: f32,
-    /// Fit-quality score in radians: larger means a less reliable axis. Not a
-    /// calibrated 1σ; it ignores the noise level and `cc_uncertainty_t`.
-    /// Use it for ranking and gating.
-    pub sigma: f32,
+    /// Residual-based least-squares standard error of the axis fit, in
+    /// radians. A fit-quality score for ranking and gating axes (larger is
+    /// less reliable, π is no information), not a calibrated error bound:
+    /// the deterministic bias of the fit is not in it. It ignores the noise
+    /// level and `cc_uncertainty_t`.
+    pub fit_std_error: f32,
 }
 
 /// Symmetric 2×2 covariance of a corner position, in px².

@@ -2,7 +2,7 @@
 
 use super::super::ring_fit;
 use super::data::DiskData;
-use super::geometry::{line_separation, signed_line_delta, valid_pair};
+use super::geometry::{signed_line_delta, valid_pair};
 
 pub(super) const WIDTHS_PX: [f32; 4] = [0.35, 0.70, 1.40, 2.80];
 
@@ -11,7 +11,9 @@ pub(super) const MIN_CORR: f32 = 0.74;
 pub(super) const ACCEPT_REL_MARGIN: f32 = 0.03;
 pub(super) const ACCEPT_REL_RATIO: f32 = 0.92;
 pub(super) const WEAK_DISAGREE_RAD: f32 = 12.0_f32.to_radians();
-pub(super) const INFLATED_SIGMA_RAD: f32 = 10.0_f32.to_radians();
+/// Minimum standard error reported when the disk fit is rejected but
+/// disagrees with the ring fit by more than [`WEAK_DISAGREE_RAD`].
+pub(super) const INFLATED_STD_ERROR_RAD: f32 = 10.0_f32.to_radians();
 
 /// Upper bound on disk pixels for the per-candidate `tanh` cache.
 /// At `MAX_SUPPORT_RADIUS = 8` a full disk has `≤ π·64 ≈ 201` pixels;
@@ -260,11 +262,66 @@ pub(super) fn fit_is_better(a: Fit, b: Fit) -> bool {
     a.theta2 < b.theta2
 }
 
-/// Map a `Fit`'s residual quality to a per-axis sigma estimate
-/// (radians).
-pub(super) fn sigma_for_fit(fit: &Fit) -> f32 {
-    let sep_deg = line_separation(fit.theta1, fit.theta2).to_degrees();
-    let floor_deg = if sep_deg >= 55.0 { 1.5 } else { 3.0 };
-    let model_deg = floor_deg + (8.0 * fit.rel_rms).min(6.0);
-    (model_deg * 0.55).to_radians()
+/// Residual-scaled least-squares standard errors of the two axis angles of
+/// an accepted disk fit, `sqrt([(JᵀJ)⁻¹]θθ · SSR / (N − 4))` over the `N`
+/// support-disk pixels.
+///
+/// One pass at the fit's own angles and edge width: the model
+/// `μ + A·tanh(d₁/w)·tanh(d₂/w)` with parameters `(μ, A, θ₁, θ₂)`, where
+/// `μ` and `A` are the fit's closed-form least-squares values (the edge
+/// width is a discrete choice, not a parameter). `fit.amp` is the
+/// amplitude for the canonical angles, so the model is evaluated there
+/// directly.
+pub(super) fn fit_std_errors(data: &DiskData, fit: &Fit) -> [f32; 2] {
+    let n = data.n;
+    let amp = fit.amp;
+    let inv_w = 1.0 / fit.width;
+    let (s1, c1) = fit.theta1.sin_cos();
+    let (s2, c2) = fit.theta2.sin_cos();
+
+    // Upper triangle of JᵀJ for the columns (1, q, ∂/∂θ₁, ∂/∂θ₂), plus
+    // Σq and Σ(y − ȳ − A·q)² for the residual of the fitted μ.
+    let mut sq = 0.0f64;
+    let mut sqq = 0.0f64;
+    let mut sj1 = 0.0f64;
+    let mut sj2 = 0.0f64;
+    let mut sqj1 = 0.0f64;
+    let mut sqj2 = 0.0f64;
+    let mut sj1j1 = 0.0f64;
+    let mut sj1j2 = 0.0f64;
+    let mut sj2j2 = 0.0f64;
+    let mut see = 0.0f64;
+    for p in 0..n {
+        let (x, y) = (data.xs[p], data.ys[p]);
+        let h1 = ((-s1 * x + c1 * y) * inv_w).tanh();
+        let h2 = ((-s2 * x + c2 * y) * inv_w).tanh();
+        let q = h1 * h2;
+        // ∂d/∂θ = −cos θ·x − sin θ·y; ∂tanh(d/w)/∂d = sech²(d/w)/w.
+        let j1 = amp * (1.0 - h1 * h1) * inv_w * (-c1 * x - s1 * y) * h2;
+        let j2 = amp * h1 * (1.0 - h2 * h2) * inv_w * (-c2 * x - s2 * y);
+        let e = data.vals_centered[p] - amp * q;
+        let (q, j1, j2, e) = (q as f64, j1 as f64, j2 as f64, e as f64);
+        sq += q;
+        sqq += q * q;
+        sj1 += j1;
+        sj2 += j2;
+        sqj1 += q * j1;
+        sqj2 += q * j2;
+        sj1j1 += j1 * j1;
+        sj1j2 += j1 * j2;
+        sj2j2 += j2 * j2;
+        see += e * e;
+    }
+    // Residual with the least-squares offset μ = ȳ − A·q̄:
+    // Σ(y − μ − A·q)² = Σ(y − ȳ − A·q)² − N·(A·q̄)².
+    let a_qbar = amp as f64 * sq / n as f64;
+    let ssr = (see - n as f64 * a_qbar * a_qbar).max(0.0);
+    let jtj = [
+        [n as f64, sq, sj1, sj2],
+        [sq, sqq, sqj1, sqj2],
+        [sj1, sqj1, sj1j1, sj1j2],
+        [sj2, sqj2, sj1j2, sj2j2],
+    ]
+    .map(|row| row.map(|v| v as f32));
+    ring_fit::axis_std_errors(&jtj, ssr as f32, n)
 }

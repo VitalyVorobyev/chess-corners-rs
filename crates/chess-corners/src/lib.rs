@@ -160,7 +160,7 @@
 //!   accepts a 2D `uint8` NumPy array and returns a `Detections`
 //!   structure-of-arrays object with named fields: `.xy` (`(N, 2)`
 //!   float32), `.response` (`(N,)` float32), `.angles` (`(N, 2)`
-//!   float32, or `None` when orientation is disabled), `.sigmas`
+//!   float32, or `None` when orientation is disabled), `.fit_std_errors`
 //!   (`(N, 2)` float32, or `None` when orientation is disabled), and
 //!   `.position_covariance` (`(N, 2, 2)` float32 px², `NaN` rows where
 //!   absent). See its README for usage and configuration details.

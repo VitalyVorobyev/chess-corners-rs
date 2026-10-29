@@ -203,7 +203,7 @@ for c in &corners {
 
 The `axes` field is `Option<[AxisEstimate; 2]>`. `Some([a0, a1])`
 gives **two** directions, both in radians and not assumed orthogonal,
-with `a0.sigma` / `a1.sigma` their fit-quality scores in radians (larger means a less reliable axis; not a calibrated 1σ). It is
+with `a0.fit_std_error` / `a1.fit_std_error` the standard errors of their fits in radians (a fit-quality score: larger means a less reliable axis; not a calibrated error bound). It is
 `None` when the orientation fit was disabled with
 `without_orientation()` (see
 [Part VI §6.5](part-06-orientation-methods.md#65-choosing-a-method)).
@@ -262,12 +262,12 @@ print(det.response.shape) # (N,)  float32
 - `det.xy` — `(N, 2)` float32, subpixel corner positions (x, y) in input pixels
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
-- `det.sigmas` — `(N, 2)` float32, per-axis fit-quality score in radians (larger means a less reliable axis; not a calibrated 1σ), or `None` when orientation is disabled
+- `det.fit_std_errors` — `(N, 2)` float32, the standard error of each axis fit in radians (a fit-quality score: larger means a less reliable axis; not a calibrated error bound), or `None` when orientation is disabled
 - `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.off()`, the default — `cfg.with_uncertainty(chess_corners.Uncertainty.propagated())` reports it, or `Uncertainty.propagated(noise_sigma=σ)` with a known noise level — the ML refiner, or upscaling)
 - `det.noise_sigma` — the image noise σ (gray levels) behind `position_covariance`, supplied or estimated; `None` when no corner has a covariance
 
 When the orientation fit is skipped (`cfg.without_orientation()`),
-`det.angles` and `det.sigmas` are `None`.
+`det.angles` and `det.fit_std_errors` are `None`.
 
 The Python `DetectorConfig` mirrors the Rust type field-for-field and
 supports `to_dict()`, `from_dict()`, `to_json()`, `from_json()`,
@@ -279,7 +279,7 @@ enum classes follow a common idiom: `MultiscaleConfig.single_scale()` /
 `.pyramid(...)`, `UpscaleConfig.disabled()` / `.fixed(k)`,
 `ChessRefiner.center_of_mass(...)` / `.saddle_point(...)` / `.ml()`. Orientation can be turned off entirely
 with `cfg.without_orientation()`, after which `det.angles` and
-`det.sigmas` are `None`.
+`det.fit_std_errors` are `None`.
 
 Nested getters (`cfg.strategy`, `cfg.strategy.chess`, `cfg.threshold`,
 `cfg.multiscale`, …) all return the live shared object held by the

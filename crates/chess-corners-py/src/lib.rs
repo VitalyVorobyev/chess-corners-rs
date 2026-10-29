@@ -43,7 +43,7 @@ fn extract_image<'py>(
 ///
 /// Built by [`Detector::detect`]. Access coordinates via [`Self::xy`],
 /// per-corner response via [`Self::response`], and axis orientations via
-/// [`Self::angles`] and [`Self::sigmas`]. Both `angles` and `sigmas` are
+/// [`Self::angles`] and [`Self::fit_std_errors`]. Both are
 /// `None` when orientation estimation was disabled for the run.
 /// [`Self::position_covariance`] holds each corner's 2×2 position
 /// covariance and [`Self::noise_sigma`] the image noise level behind it.
@@ -54,7 +54,7 @@ pub struct Detections {
     xy: Py<PyAny>,
     response: Py<PyAny>,
     angles: Option<Py<PyAny>>,
-    sigmas: Option<Py<PyAny>>,
+    fit_std_errors: Option<Py<PyAny>>,
     position_covariance: Py<PyAny>,
     noise_sigma: Option<f32>,
 }
@@ -80,14 +80,14 @@ impl Detections {
         self.angles.as_ref().map(|a| a.clone_ref(py))
     }
 
-    /// `(N, 2)` float32 array of per-axis fit-quality scores in radians
-    /// (larger means a less reliable axis; not a calibrated 1σ, and
-    /// independent of the noise level and `Uncertainty`) when orientation
-    /// estimation is enabled, `None` otherwise. Use it for ranking and
-    /// gating.
+    /// `(N, 2)` float32 array of the residual-based least-squares standard
+    /// error of each axis fit, in radians, when orientation estimation is
+    /// enabled, `None` otherwise. A fit-quality score for ranking and gating
+    /// axes (larger means a less reliable axis), not a calibrated error
+    /// bound; independent of the noise level and `Uncertainty`.
     #[getter]
-    fn sigmas(&self, py: Python<'_>) -> Option<Py<PyAny>> {
-        self.sigmas.as_ref().map(|s| s.clone_ref(py))
+    fn fit_std_errors(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.fit_std_errors.as_ref().map(|s| s.clone_ref(py))
     }
 
     /// `(N, 2, 2)` float32 array of per-corner position covariance in px²
@@ -148,7 +148,7 @@ fn build_detections(
     } else {
         Vec::new()
     };
-    let mut sigmas_data = if orientation_on {
+    let mut std_errors_data = if orientation_on {
         Vec::with_capacity(n * 2)
     } else {
         Vec::new()
@@ -167,14 +167,14 @@ fn build_detections(
                 Some(axes) => {
                     angles_data.push(axes[0].angle);
                     angles_data.push(axes[1].angle);
-                    sigmas_data.push(axes[0].sigma);
-                    sigmas_data.push(axes[1].sigma);
+                    std_errors_data.push(axes[0].fit_std_error);
+                    std_errors_data.push(axes[1].fit_std_error);
                 }
                 None => {
                     // Guard: orientation is global so this branch is unreachable
                     // in well-formed output, but NaN is safer than panicking.
                     angles_data.extend_from_slice(&[f32::NAN; 2]);
-                    sigmas_data.extend_from_slice(&[f32::NAN; 2]);
+                    std_errors_data.extend_from_slice(&[f32::NAN; 2]);
                 }
             }
         }
@@ -191,14 +191,14 @@ fn build_detections(
         .into_any()
         .unbind();
 
-    let (angles, sigmas) = if orientation_on {
+    let (angles, fit_std_errors) = if orientation_on {
         let a = Array2::from_shape_vec((n, 2), angles_data)
             .map_err(|e| PyValueError::new_err(format!("angles array: {e}")))?
             .into_pyarray(py)
             .into_any()
             .unbind();
-        let s = Array2::from_shape_vec((n, 2), sigmas_data)
-            .map_err(|e| PyValueError::new_err(format!("sigmas array: {e}")))?
+        let s = Array2::from_shape_vec((n, 2), std_errors_data)
+            .map_err(|e| PyValueError::new_err(format!("fit_std_errors array: {e}")))?
             .into_pyarray(py)
             .into_any()
             .unbind();
@@ -219,7 +219,7 @@ fn build_detections(
         xy,
         response,
         angles,
-        sigmas,
+        fit_std_errors,
         position_covariance,
         noise_sigma,
     })

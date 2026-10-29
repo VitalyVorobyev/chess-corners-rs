@@ -155,8 +155,8 @@ function parseCorners(flat: Float32Array, cov: Float32Array): DetectedCorner[] {
       y: flat[o + 1]!,
       response: flat[o + 2]!,
       axes: [
-        { angle: flat[o + 3]!, sigma: flat[o + 4]! },
-        { angle: flat[o + 5]!, sigma: flat[o + 6]! },
+        { angle: flat[o + 3]!, fitStdError: flat[o + 4]! },
+        { angle: flat[o + 5]!, fitStdError: flat[o + 6]! },
       ],
       covariance:
         xx === undefined || Number.isNaN(xx)

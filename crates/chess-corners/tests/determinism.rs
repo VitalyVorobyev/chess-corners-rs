@@ -58,9 +58,9 @@ fn assert_descriptors_bit_identical(label: &str, a: &[CornerDescriptor], b: &[Co
                         "{label}: corner {i} axis {k} angle differs"
                     );
                     assert_eq!(
-                        axa[k].sigma.to_bits(),
-                        axb[k].sigma.to_bits(),
-                        "{label}: corner {i} axis {k} sigma differs"
+                        axa[k].fit_std_error.to_bits(),
+                        axb[k].fit_std_error.to_bits(),
+                        "{label}: corner {i} axis {k} fit_std_error differs"
                     );
                 }
             }

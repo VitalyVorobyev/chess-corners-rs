@@ -28,11 +28,13 @@ pub struct AxisFitResult {
     pub theta1: f32,
     /// Second axis direction, radians in `(theta1, theta1 + π) ⊂ [0, 2π)`.
     pub theta2: f32,
-    /// Fit-quality score for `theta1` in radians (larger is less reliable;
-    /// not a calibrated 1σ).
-    pub sigma_theta1: f32,
-    /// Fit-quality score for `theta2` in radians (see `sigma_theta1`).
-    pub sigma_theta2: f32,
+    /// Residual-based least-squares standard error of the fit for
+    /// `theta1`, radians: a fit-quality score, not a calibrated error bound
+    /// (see [`crate::AxisEstimate::fit_std_error`]).
+    pub fit_std_error_theta1: f32,
+    /// Residual-based least-squares standard error of the fit for
+    /// `theta2`, radians (see `fit_std_error_theta1`).
+    pub fit_std_error_theta2: f32,
     /// RMS fit residual of the two-axis intensity model (gray levels).
     pub rms: f32,
 }
@@ -44,8 +46,8 @@ impl From<ring_fit::TwoAxisFit> for AxisFitResult {
             amp: v.amp,
             theta1: v.theta1,
             theta2: v.theta2,
-            sigma_theta1: v.sigma_theta1,
-            sigma_theta2: v.sigma_theta2,
+            fit_std_error_theta1: v.fit_std_error_theta1,
+            fit_std_error_theta2: v.fit_std_error_theta2,
             rms: v.rms,
         }
     }
@@ -116,6 +118,7 @@ mod tests {
     use super::{fit_axes_at_point, fit_axes_from_samples};
     use crate::detect::chess::ring::ring_offsets;
     use crate::imageview::ImageView;
+    use crate::orientation::reference_std_errors;
     use crate::OrientationMethod;
     use core::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
@@ -180,8 +183,8 @@ mod tests {
         assert!(err2 < 1e-2, "theta2 err {err2}");
         assert!(fit.amp > 60.0, "amp {}", fit.amp);
         assert!(fit.rms < 1e-2, "rms {}", fit.rms);
-        assert!(fit.sigma_theta1 < 5e-2);
-        assert!(fit.sigma_theta2 < 5e-2);
+        assert!(fit.fit_std_error_theta1 < 5e-2);
+        assert!(fit.fit_std_error_theta2 < 5e-2);
     }
 
     #[test]
@@ -280,8 +283,8 @@ mod tests {
         let samples = [77.0f32; 16];
         let fit = fit_axes_from_samples(&samples, &phi, OrientationMethod::RingFit);
         assert_eq!(fit.amp, 0.0);
-        assert!(fit.sigma_theta1 >= PI - 1e-3);
-        assert!(fit.sigma_theta2 >= PI - 1e-3);
+        assert!(fit.fit_std_error_theta1 >= PI - 1e-3);
+        assert!(fit.fit_std_error_theta2 >= PI - 1e-3);
         assert!(fit.theta1 >= 0.0 && fit.theta1 < PI);
         assert!(fit.theta2 > fit.theta1 && fit.theta2 < fit.theta1 + PI);
     }
@@ -414,8 +417,8 @@ mod tests {
             amp
         );
         assert!(fit.rms < PARITY_TOL, "rms {}", fit.rms);
-        assert!(fit.sigma_theta1 < PARITY_TOL);
-        assert!(fit.sigma_theta2 < PARITY_TOL);
+        assert!(fit.fit_std_error_theta1 < PARITY_TOL);
+        assert!(fit.fit_std_error_theta2 < PARITY_TOL);
     }
 
     #[test]
@@ -435,8 +438,8 @@ mod tests {
             amp
         );
         assert!(fit.rms < PARITY_TOL, "rms {}", fit.rms);
-        assert!(fit.sigma_theta1 < PARITY_TOL);
-        assert!(fit.sigma_theta2 < PARITY_TOL);
+        assert!(fit.fit_std_error_theta1 < PARITY_TOL);
+        assert!(fit.fit_std_error_theta2 < PARITY_TOL);
     }
 
     #[test]
@@ -463,8 +466,8 @@ mod tests {
             fit.amp,
             amp
         );
-        assert!(fit.sigma_theta1.is_finite() && fit.sigma_theta1 < 0.05);
-        assert!(fit.sigma_theta2.is_finite() && fit.sigma_theta2 < 0.05);
+        assert!(fit.fit_std_error_theta1.is_finite() && fit.fit_std_error_theta1 < 0.05);
+        assert!(fit.fit_std_error_theta2.is_finite() && fit.fit_std_error_theta2 < 0.05);
         assert!(fit.rms.is_finite() && fit.rms > 0.0);
     }
 
@@ -485,8 +488,8 @@ mod tests {
             amp
         );
         assert!(fit.rms < PARITY_TOL, "rms {}", fit.rms);
-        assert!(fit.sigma_theta1 < PARITY_TOL);
-        assert!(fit.sigma_theta2 < PARITY_TOL);
+        assert!(fit.fit_std_error_theta1 < PARITY_TOL);
+        assert!(fit.fit_std_error_theta2 < PARITY_TOL);
     }
 
     #[test]
@@ -508,43 +511,85 @@ mod tests {
             fit.theta2
         );
         assert!(
-            (fit.sigma_theta1 - PI).abs() < PARITY_TOL,
-            "sigma1 {} should be π",
-            fit.sigma_theta1
+            (fit.fit_std_error_theta1 - PI).abs() < PARITY_TOL,
+            "fit_std_error_theta1 {} should be π",
+            fit.fit_std_error_theta1
         );
         assert!(
-            (fit.sigma_theta2 - PI).abs() < PARITY_TOL,
-            "sigma2 {} should be π",
-            fit.sigma_theta2
+            (fit.fit_std_error_theta2 - PI).abs() < PARITY_TOL,
+            "fit_std_error_theta2 {} should be π",
+            fit.fit_std_error_theta2
         );
         assert!(fit.rms < PARITY_TOL, "rms {} should be ~0", fit.rms);
     }
 
     // -----------------------------------------------------------------------
-    // σ-LUT specific tests
+    // Fit standard error
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn lut_applies_to_sigmas_only() {
-        // Clean fit → fit_rms ≈ 0 → LUT multiplier 1.25 (first breakpoint).
-        // Angles, amp, rms are not exposed before the LUT, so we verify the
-        // clean-fit regime and that finite sigmas were scaled.
-        let (samples, phi) = synthetic_ring(128.0, 80.0, PI * 0.25, PI * 0.75);
-        let fit = fit_axes_from_samples(&samples, &phi, OrientationMethod::RingFit);
+    /// Reference `sqrt([(JᵀJ)⁻¹]θθ · SSR / (N − 4))` in f64 at the reported
+    /// axes, with `μ` and `A` re-solved by linear least squares there.
+    fn reference_ring_std_errors(
+        samples: &[f32; 16],
+        phi: &[f32; 16],
+        t1: f32,
+        t2: f32,
+    ) -> [f64; 2] {
+        let (t1, t2, beta) = (t1 as f64, t2 as f64, TANH_BETA as f64);
+        let mut h = [(0.0f64, 0.0f64, 0.0f64, 0.0f64); 16];
+        for i in 0..16 {
+            let p = phi[i] as f64;
+            h[i] = (
+                (beta * (p - t1).sin()).tanh(),
+                (beta * (p - t2).sin()).tanh(),
+                (p - t1).cos(),
+                (p - t2).cos(),
+            );
+        }
+        // Per sample: q and its derivatives in θ₁ and θ₂.
+        let model: Vec<[f64; 3]> = h
+            .iter()
+            .map(|&(h1, h2, c1, c2)| {
+                [
+                    h1 * h2,
+                    -(1.0 - h1 * h1) * beta * c1 * h2,
+                    -h1 * (1.0 - h2 * h2) * beta * c2,
+                ]
+            })
+            .collect();
+        let y: Vec<f64> = samples.iter().map(|&v| v as f64).collect();
+        reference_std_errors(&model, &y)
+    }
 
-        // On a clean noiseless input the GN solve converges tightly.
-        assert!(
-            fit.rms < 0.05,
-            "baseline rms {} not in clean regime",
-            fit.rms
-        );
-        // The LUT must have inflated the sigmas above the raw GN value
-        // (which would be extremely small on a perfect input).
-        assert!(fit.sigma_theta1 > 0.0);
-        assert!(fit.sigma_theta2 > 0.0);
-        // But they must still be well below π.
-        assert!(fit.sigma_theta1 < 0.1);
-        assert!(fit.sigma_theta2 < 0.1);
+    #[test]
+    fn ring_fit_std_error_matches_reference_formula() {
+        let ring = ring_offsets(5);
+        let phi = ring_angles(ring);
+        // Board rotations × axis separations (the axis-swap branch of
+        // canonicalisation is covered in `ring_fit::solver`).
+        let cases = (0..12).flat_map(|r| {
+            [60.0f32, 75.0, 90.0, 110.0].map(move |sep| (r as f32 * 15.0, r as f32 * 15.0 + sep))
+        });
+        for (k, (t1, t2)) in cases.enumerate() {
+            let (t1, t2) = (t1.to_radians(), t2.to_radians());
+            let mut samples = [0.0f32; 16];
+            for (i, s) in samples.iter_mut().enumerate() {
+                // Deterministic pseudo-noise of a few gray levels.
+                let noise = ((i as f32 * 2.399 + k as f32 * 0.7).sin() * 4.0).round();
+                *s = eval_model(phi[i], 120.0, 70.0, t1, t2) + noise;
+            }
+            let fit = fit_axes_from_samples(&samples, &phi, OrientationMethod::RingFit);
+            let reference = reference_ring_std_errors(&samples, &phi, fit.theta1, fit.theta2);
+            for (got, want) in [fit.fit_std_error_theta1, fit.fit_std_error_theta2]
+                .into_iter()
+                .zip(reference)
+            {
+                assert!(
+                    (got as f64 - want).abs() <= 0.01 * want + 1e-6,
+                    "case {k}: got {got}, reference {want} (fit {fit:?})"
+                );
+            }
+        }
     }
 
     #[test]
@@ -554,8 +599,8 @@ mod tests {
         let samples = [77.0f32; 16];
         let fit = fit_axes_from_samples(&samples, &phi, OrientationMethod::RingFit);
 
-        // Flat ring → degenerate sentinel → σ pinned at π even after LUT.
-        assert!((fit.sigma_theta1 - PI).abs() < 1e-6);
-        assert!((fit.sigma_theta2 - PI).abs() < 1e-6);
+        // Flat ring → degenerate sentinel → no information, π.
+        assert!((fit.fit_std_error_theta1 - PI).abs() < 1e-6);
+        assert!((fit.fit_std_error_theta2 - PI).abs() < 1e-6);
     }
 }

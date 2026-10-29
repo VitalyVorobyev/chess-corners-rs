@@ -16,15 +16,15 @@ The crate exposes three orthogonal components via its crate root:
   center-of-mass, saddle-point, and Radon-peak
   (`refine_corners_on_image`, `Refiner`, `RefinerKind`).
 - **Orientation** — two-axis orientation fit at each detected corner:
-  ring-fit (parametric tanh model with robust seeding and σ-LUT) and
+  ring-fit (parametric tanh model with robust seeding) and
   disk-sector full-disk crossing-line estimator (`describe_corners`,
   `OrientationMethod`).
 
-Rich corner descriptors carry both local grid axes with a per-axis
-angular fit-quality score (not a calibrated 1σ; for the default `RingFit`
-method, the Gauss–Newton covariance `σ̂² · (JᵀJ)⁻¹` with `σ̂² = SSR / 12`,
-scaled by an empirical factor), the fitted bright/dark
-amplitude, and the RMS fit residual.
+Rich corner descriptors carry both local grid axes, each with
+`fit_std_error`: the residual-based least-squares standard error of the
+axis fit, `√([(JᵀJ)⁻¹]θθ · SSR / (N − 4))` over the fit's samples, in
+radians (a fit-quality score, not a calibrated 1σ). `fit_axes_at_point`
+also returns the fitted bright/dark amplitude and the RMS fit residual.
 
 Feature flags:
 

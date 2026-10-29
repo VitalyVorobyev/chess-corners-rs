@@ -201,7 +201,7 @@ typedef struct cc_config {
 } cc_config;
 
 /**
- * One local grid-axis direction with a fit-quality score.
+ * One local grid-axis direction with the standard error of its fit.
  */
 typedef struct cc_axis {
   /**
@@ -209,11 +209,13 @@ typedef struct cc_axis {
    */
   float angle;
   /**
-   * Fit-quality score in radians: larger means a less reliable axis. Not a
-   * calibrated 1σ; it ignores the noise level and `cc_uncertainty_t`.
-   * Use it for ranking and gating.
+   * Residual-based least-squares standard error of the axis fit, in
+   * radians. A fit-quality score for ranking and gating axes (larger is
+   * less reliable, π is no information), not a calibrated error bound:
+   * the deterministic bias of the fit is not in it. It ignores the noise
+   * level and `cc_uncertainty_t`.
    */
-  float sigma;
+  float fit_std_error;
 } cc_axis;
 
 /**

@@ -121,30 +121,50 @@ pub(super) fn fit_with_seed(
         iter += 1;
     }
 
-    // Covariance from the final Hessian. Degrees of freedom = N − params = 12.
-    let residual_var = ssr / 12.0;
-    let cov = invert_4x4(&jtj);
-    let (sigma_t1, sigma_t2) = match cov {
-        Some(c) => (
-            (residual_var * c[2][2].max(0.0)).sqrt(),
-            (residual_var * c[3][3].max(0.0)).sqrt(),
-        ),
-        None => (PI, PI),
-    };
-
+    let [se1, se2] = axis_std_errors(&jtj, ssr, 16);
     let rms = (ssr / 16.0).sqrt();
 
-    let (theta1_c, theta2_c, amp_c) = canonicalize(theta1, theta2, amp);
+    let (theta1_c, theta2_c, amp_c, swapped) = canonicalize_tracking_swap(theta1, theta2, amp);
     let _ = mu;
+    // Canonicalisation may exchange the two axes; the standard errors
+    // follow their axis.
+    let (se1, se2) = if swapped { (se2, se1) } else { (se1, se2) };
 
     TwoAxisFit {
         amp: amp_c,
         theta1: theta1_c,
         theta2: theta2_c,
-        sigma_theta1: sigma_t1.min(PI),
-        sigma_theta2: sigma_t2.min(PI),
+        fit_std_error_theta1: se1,
+        fit_std_error_theta2: se2,
         rms,
     }
+}
+
+/// Residual-scaled least-squares standard errors of the two axis angles,
+/// `sqrt([(JᵀJ)⁻¹]θθ · SSR / (N − 4))`, from the normal matrix `jtj` of a
+/// fit with parameters `(μ, A, θ₁, θ₂)` (in that order), its residual sum
+/// of squares `ssr`, and its `n` observations. Shared by the ring and the
+/// disk fit so both report the same quantity.
+///
+/// Returns `π` for both axes when `JᵀJ` is singular or `n ≤ 4`, and caps
+/// each value at `π`.
+pub(crate) fn axis_std_errors(jtj: &[[f32; 4]; 4], ssr: f32, n: usize) -> [f32; 2] {
+    if n <= 4 {
+        return [PI, PI];
+    }
+    let residual_var = ssr / (n - 4) as f32;
+    // Only the θθ diagonal of the inverse is needed: solve for its two
+    // columns instead of inverting the whole matrix.
+    let (Some(c2), Some(c3)) = (
+        solve_4x4(jtj, &[0.0, 0.0, 1.0, 0.0]),
+        solve_4x4(jtj, &[0.0, 0.0, 0.0, 1.0]),
+    ) else {
+        return [PI, PI];
+    };
+    [
+        (residual_var * c2[2].max(0.0)).sqrt().min(PI),
+        (residual_var * c3[3].max(0.0)).sqrt().min(PI),
+    ]
 }
 
 /// Fallback result for flat / no-contrast inputs.
@@ -153,8 +173,8 @@ pub(super) fn degenerate_fit(centered_var: f32) -> TwoAxisFit {
         amp: 0.0,
         theta1: 0.0,
         theta2: core::f32::consts::FRAC_PI_2,
-        sigma_theta1: PI,
-        sigma_theta2: PI,
+        fit_std_error_theta1: PI,
+        fit_std_error_theta2: PI,
         rms: centered_var.max(0.0).sqrt(),
     }
 }
@@ -191,6 +211,13 @@ pub(super) fn degenerate_fit(centered_var: f32) -> TwoAxisFit {
 /// sector for the antipodal branch. Finally `θ₁` is folded into `[0, π)`
 /// via the symmetric-shift symmetry.
 pub(crate) fn canonicalize(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32) {
+    let (t1, t2, a, _) = canonicalize_tracking_swap(theta1, theta2, amp);
+    (t1, t2, a)
+}
+
+/// [`canonicalize`] that also reports whether the two axes were exchanged,
+/// i.e. whether the returned `θ₁` is the line of the input `θ₂`.
+fn canonicalize_tracking_swap(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32, bool) {
     let mut t1 = wrap_to_tau(theta1);
     let mut t2 = wrap_to_tau(theta2);
     let mut a = amp;
@@ -210,7 +237,8 @@ pub(crate) fn canonicalize(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32
     // ring fit's canonical seed but with `(t1, t2)` arriving in
     // descending order — see `crate::orientation::tests::
     // canonical_axes_match_across_methods`.
-    if diff >= PI {
+    let swapped = diff >= PI;
+    if swapped {
         core::mem::swap(&mut t1, &mut t2);
         diff = (t2 - t1).rem_euclid(TAU);
     }
@@ -218,7 +246,7 @@ pub(crate) fn canonicalize(theta1: f32, theta2: f32, amp: f32) -> (f32, f32, f32
     t1 = t1.rem_euclid(PI);
     t2 = t1 + diff;
 
-    (t1, t2, a)
+    (t1, t2, a, swapped)
 }
 
 #[inline]
@@ -270,17 +298,61 @@ fn solve_4x4(a: &[[f32; 4]; 4], b: &[f32; 4]) -> Option<[f32; 4]> {
     Some([m[0][4], m[1][4], m[2][4], m[3][4]])
 }
 
-/// Invert a 4x4 matrix by solving `A X = I` column-wise. Returns
-/// `None` on singularity.
-fn invert_4x4(a: &[[f32; 4]; 4]) -> Option<[[f32; 4]; 4]> {
-    let mut inv = [[0f32; 4]; 4];
-    for col in 0..4 {
-        let mut b = [0f32; 4];
-        b[col] = 1.0;
-        let x = solve_4x4(a, &b)?;
-        for (row_idx, inv_row) in inv.iter_mut().enumerate() {
-            inv_row[col] = x[row_idx];
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::detect::chess::ring::ring_offsets;
+    use crate::orientation::descriptor::ring_angles;
+    use crate::orientation::reference_std_errors;
+
+    /// When canonicalisation exchanges the two axes, each standard error
+    /// stays with its axis.
+    #[test]
+    fn std_errors_follow_their_axis_through_canonicalisation() {
+        let phi = ring_angles(ring_offsets(5));
+        let (t1, t2) = (20f32.to_radians(), 85f32.to_radians());
+        let h = |p: f32, t: f32| (TANH_BETA * (p - t).sin()).tanh();
+        let mut samples = [0.0f32; 16];
+        for (i, s) in samples.iter_mut().enumerate() {
+            let noise = ((i as f32 * 2.399).sin() * 4.0).round();
+            *s = 120.0 + 70.0 * h(phi[i], t1) * h(phi[i], t2) + noise;
+        }
+        let mean = samples.iter().sum::<f32>() / 16.0;
+        let var = samples.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / 16.0;
+
+        // Seeded with the axes in the other order, the fit converges to the
+        // same model with θ₁ and θ₂ exchanged, which canonicalisation swaps.
+        let fit = fit_with_seed(&samples, &phi, t2, t1, 70.0, mean, var);
+        assert!((fit.theta1 - t1).abs() < 0.05, "fit {fit:?}");
+
+        let (a, b) = (fit.theta1 as f64, fit.theta2 as f64);
+        let beta = TANH_BETA as f64;
+        let model: Vec<[f64; 3]> = phi
+            .iter()
+            .map(|&p| {
+                let p = p as f64;
+                let (h1, h2) = ((beta * (p - a).sin()).tanh(), (beta * (p - b).sin()).tanh());
+                [
+                    h1 * h2,
+                    -(1.0 - h1 * h1) * beta * (p - a).cos() * h2,
+                    -h1 * (1.0 - h2 * h2) * beta * (p - b).cos(),
+                ]
+            })
+            .collect();
+        let y: Vec<f64> = samples.iter().map(|&v| v as f64).collect();
+        let reference = reference_std_errors(&model, &y);
+        assert!(
+            (reference[0] - reference[1]).abs() > 0.05 * reference[0],
+            "the two axes must differ for this check: {reference:?}"
+        );
+        for (got, want) in [fit.fit_std_error_theta1, fit.fit_std_error_theta2]
+            .into_iter()
+            .zip(reference)
+        {
+            assert!(
+                (got as f64 - want).abs() <= 0.01 * want,
+                "got {got}, reference {want} (fit {fit:?})"
+            );
         }
     }
-    Some(inv)
 }

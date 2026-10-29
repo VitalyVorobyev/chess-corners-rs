@@ -68,8 +68,8 @@ fn disk_fit_recovers_extreme_skew_30_150() {
         fit.theta1.to_degrees(),
         fit.theta2.to_degrees(),
     );
-    assert!(fit.sigma_theta1.is_finite());
-    assert!(fit.sigma_theta2.is_finite());
+    assert!(fit.fit_std_error_theta1.is_finite());
+    assert!(fit.fit_std_error_theta2.is_finite());
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ fn disk_fit_lazy_gate_matches_ring_fit_on_clean_orthogonal() {
     assert_eq!(
         disk.theta1.to_bits(),
         lut.theta1.to_bits(),
-        "lazy gate: theta1 mismatch (disk={}, lut={})",
+        "lazy gate: theta1 mismatch (disk={}, ring={})",
         disk.theta1,
         lut.theta1
     );
@@ -115,14 +115,14 @@ fn disk_fit_lazy_gate_matches_ring_fit_on_clean_orthogonal() {
         "lazy gate: amp mismatch"
     );
     assert_eq!(
-        disk.sigma_theta1.to_bits(),
-        lut.sigma_theta1.to_bits(),
-        "lazy gate: sigma_theta1 mismatch"
+        disk.fit_std_error_theta1.to_bits(),
+        lut.fit_std_error_theta1.to_bits(),
+        "lazy gate: fit_std_error_theta1 mismatch"
     );
     assert_eq!(
-        disk.sigma_theta2.to_bits(),
-        lut.sigma_theta2.to_bits(),
-        "lazy gate: sigma_theta2 mismatch"
+        disk.fit_std_error_theta2.to_bits(),
+        lut.fit_std_error_theta2.to_bits(),
+        "lazy gate: fit_std_error_theta2 mismatch"
     );
 }
 

@@ -270,18 +270,18 @@ fn peak_fit_tag(mode: PeakFitMode) -> cc_peak_fit_t {
 pub(crate) fn corner_to_ffi(corner: &CornerDescriptor) -> cc_corner {
     let zero_axis = cc_axis {
         angle: 0.0,
-        sigma: 0.0,
+        fit_std_error: 0.0,
     };
     let (axes, has_orientation) = match corner.axes {
         Some(axes) => (
             [
                 cc_axis {
                     angle: axes[0].angle,
-                    sigma: axes[0].sigma,
+                    fit_std_error: axes[0].fit_std_error,
                 },
                 cc_axis {
                     angle: axes[1].angle,
-                    sigma: axes[1].sigma,
+                    fit_std_error: axes[1].fit_std_error,
                 },
             ],
             1,

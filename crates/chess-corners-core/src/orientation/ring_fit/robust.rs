@@ -18,8 +18,9 @@ const ROBUST_SEP_TRIGGER_MAX_RAD: f32 = 115.0_f32.to_radians();
 
 /// Fit a two-axis chessboard-corner intensity model to 16 ring
 /// samples, with the deterministic grid-search fallback used when the
-/// fast 2nd-harmonic seed produces a suspicious fit.
-pub(super) fn fit(samples: &[f32; 16], ring_phi: &[f32; 16]) -> TwoAxisFit {
+/// fast 2nd-harmonic seed produces a suspicious fit. Implementation of
+/// [`super::super::OrientationMethod::RingFit`].
+pub(crate) fn fit_ring(samples: &[f32; 16], ring_phi: &[f32; 16]) -> TwoAxisFit {
     let mean = samples.iter().copied().sum::<f32>() / 16.0;
     let centered_var = samples
         .iter()

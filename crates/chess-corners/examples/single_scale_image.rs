@@ -37,8 +37,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn print_corner(label: &str, c: &CornerDescriptor) {
     match c.axes {
         Some(axes) => println!(
-            "{label}: ({:.2}, {:.2}), response {:.1}, axes [{:.2} ± {:.3}, {:.2} ± {:.3}] rad",
-            c.x, c.y, c.response, axes[0].angle, axes[0].sigma, axes[1].angle, axes[1].sigma
+            "{label}: ({:.2}, {:.2}), response {:.1}, axes [{:.2} (fit std error {:.3}), {:.2} (fit std error {:.3})] rad",
+            c.x, c.y, c.response, axes[0].angle, axes[0].fit_std_error, axes[1].angle, axes[1].fit_std_error
         ),
         None => println!(
             "{label}: ({:.2}, {:.2}), response {:.1}, axes skipped",

@@ -65,12 +65,12 @@ def _process_patch_sample(
     if matched_pred.size == 0:
         return None
     pi = int(matched_pred[0])
-    if corners.angles is None or corners.sigmas is None:
+    if corners.angles is None or corners.fit_std_errors is None:
         return None
     p1 = float(corners.angles[pi, 0])
     p2 = float(corners.angles[pi, 1])
-    s0 = float(corners.sigmas[pi, 0])
-    s1 = float(corners.sigmas[pi, 1])
+    s0 = float(corners.fit_std_errors[pi, 0])
+    s1 = float(corners.fit_std_errors[pi, 1])
     g1, g2 = sample.gt_angles
     d0, d1, swap = pair_axes_array(
         np.array([p1]), np.array([p2]), np.array([g1]), np.array([g2])
@@ -103,12 +103,12 @@ def _process_chess_sample(
     matched_pred, matched_gt = match_to_gt(
         corners.xy, sample.gt_xy, threshold_px=3.0
     )
-    if corners.angles is None or corners.sigmas is None:
+    if corners.angles is None or corners.fit_std_errors is None:
         return out | {"matched": 0, "gt_total": int(sample.gt_xy.shape[0])}
     p1 = corners.angles[matched_pred, 0] if matched_pred.size else np.empty((0,))
     p2 = corners.angles[matched_pred, 1] if matched_pred.size else np.empty((0,))
-    s0 = corners.sigmas[matched_pred, 0] if matched_pred.size else np.empty((0,))
-    s1 = corners.sigmas[matched_pred, 1] if matched_pred.size else np.empty((0,))
+    s0 = corners.fit_std_errors[matched_pred, 0] if matched_pred.size else np.empty((0,))
+    s1 = corners.fit_std_errors[matched_pred, 1] if matched_pred.size else np.empty((0,))
     g1 = sample.gt_angles[matched_gt, 0] if matched_gt.size else np.empty((0,))
     g2 = sample.gt_angles[matched_gt, 1] if matched_gt.size else np.empty((0,))
     d0, d1, swap = pair_axes_array(p1, p2, g1, g2)
