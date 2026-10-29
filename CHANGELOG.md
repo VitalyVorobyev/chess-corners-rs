@@ -7,113 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- The ML refiner refines Radon corners too: `ImageRefiner::Ml` works with
-  either detector. On Radon it starts from the peak fit, and a corner it
-  cannot refine keeps the peak fit and, under
-  `Uncertainty::Propagated`, its covariance.
+2.0 is a major release. To upgrade from 1.x, see
+[Migrating from 1.x to 2.0](book/src/part-12-migrating-to-2.0.md), which
+has before and after code for every binding.
 
 ### Changed
 
 - Subpixel refinement is one optional, detector-independent stage. Each
-  detector keeps the localizer that works on its own response map — the
-  ChESS center of mass (`ChessConfig::center_of_mass: CenterOfMassConfig`)
-  and the Radon peak fit (`RadonConfig::peak_fit`) — and
-  `DetectorConfig::refiner: Option<ImageRefiner>` adds an image refiner,
-  `ImageRefiner::SaddlePoint(SaddlePointConfig)` or (feature
-  `ml-refiner`) `ImageRefiner::Ml`, for either detector. `None`, the
-  default, keeps the detector's own localizer. On ChESS an image refiner
-  replaces the center of mass, starts from the integer peak and drops a
-  corner it rejects; on Radon it starts from the peak fit and keeps it
-  where it does not converge. The refiner survives `with_chess` /
-  `with_radon` strategy switches. `ChessRefiner`, `RadonRefiner`,
-  `ChessConfig::refiner` and `RadonConfig::refiner` are removed. Outputs
-  of every configuration that maps across are unchanged bit for bit.
-  Migration:
-
-  | Binding | Before | After |
-  |---------|--------|-------|
-  | Rust | `.with_chess(\|c\| c.refiner = ChessRefiner::SaddlePoint(cfg))` | `.with_refiner(ImageRefiner::SaddlePoint(cfg))` |
-  | Rust | `.with_radon(\|r\| r.refiner = RadonRefiner::saddle_point())` | `.with_refiner(ImageRefiner::saddle_point())` |
-  | Rust | `ChessRefiner::CenterOfMass(cfg)` | `refiner: None` (default) plus `.with_chess(\|c\| c.center_of_mass = cfg)` |
-  | Rust | `RadonRefiner::PeakFit` | `refiner: None` (default) |
-  | Rust | `ChessRefiner::Ml` | `.with_refiner(ImageRefiner::Ml)` |
-  | JSON | `"strategy": {"chess": {"refiner": {"center_of_mass": {...}}}}` | `"strategy": {"chess": {"center_of_mass": {...}}}` |
-  | JSON | `"strategy": {"chess" \| "radon": {"refiner": {"saddle_point": {...}}}}` | top-level `"refiner": {"saddle_point": {...}}` |
-  | JSON | `"strategy": {"radon": {"refiner": "peak_fit"}}` | `"refiner": null` or absent |
-  | JSON | `"strategy": {"chess": {"refiner": "ml"}}`, CLI `"ml": true` | `"refiner": "ml"` |
-  | Python | `cfg.strategy.chess.refiner = ChessRefiner.saddle_point(c)` | `cfg.refiner = ImageRefiner.saddle_point(c)` or `cfg.with_refiner(...)` |
-  | Python | `RadonRefiner.saddle_point()` / `.peak_fit()`, `with_radon(refiner=...)` | `ImageRefiner.saddle_point()` / `None`, `with_refiner(...)` / `without_refiner()` |
-  | Python | `ChessRefiner.center_of_mass(c)`, `ChessRefiner.ml()` | `cfg.strategy.chess.center_of_mass = c`, `ImageRefiner.ml()` |
-  | JS | `withChessRefiner(ChessRefiner.withSaddlePoint(c))`, `withRadonRefiner(RadonRefiner.withSaddlePoint(c))` | `withRefiner(ImageRefiner.saddlePointWith(c))` |
-  | JS | `ChessRefiner.withCenterOfMass(c)`, `RadonRefiner.withPeakFit()` | `cfg.strategy.chess.centerOfMass = c`, `withoutRefiner()` |
-  | C | `CC_REFINER_CENTER_OF_MASS`, `CC_REFINER_PEAK_FIT` | `CC_IMAGE_REFINER_NONE` (`0`, zero-initialised default) |
-  | C | `CC_REFINER_SADDLE_POINT` | `CC_IMAGE_REFINER_SADDLE_POINT`, now valid for either strategy |
-  | CLI | `--chess-refiner center_of_mass\|saddle_point` | `--refiner none\|saddle_point\|ml` |
-  | core | `ChessParams::refiner`, `RefinerKind::CenterOfMass(cfg)` | `ChessParams::center_of_mass = cfg`; `RefinerKind` holds only image refiners, and `Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg))` builds the localizer |
-- `ChessConfig` and `RadonConfig` reject unknown JSON keys (with
-  `serde_json` and in Python), so a configuration written for the removed
-  per-strategy `refiner` field fails to load instead of silently dropping
-  the refiner.
-
+  detector keeps the localizer that works on its own response map, the
+  ChESS center of mass (`ChessConfig::center_of_mass`) and the Radon peak
+  fit (`RadonConfig::peak_fit`), and `DetectorConfig::refiner:
+  Option<ImageRefiner>` adds an image refiner for either detector.
+  `None`, the default, keeps the detector's own localizer. On ChESS an
+  image refiner replaces the center of mass, starts from the integer peak
+  and drops a corner it rejects; on Radon it starts from the peak fit and
+  keeps it where it does not converge. The refiner survives `with_chess` /
+  `with_radon` strategy switches. Outputs of every configuration that
+  maps across are unchanged bit for bit. Replaces `ChessRefiner`,
+  `RadonRefiner`, `ChessConfig::refiner` and `RadonConfig::refiner`:
+  - Rust: `ChessRefiner::SaddlePoint(c)` / `RadonRefiner::SaddlePoint(c)`
+    → `.with_refiner(ImageRefiner::SaddlePoint(c))`;
+    `ChessRefiner::CenterOfMass(c)` → no refiner plus
+    `.with_chess(|s| s.center_of_mass = c)`; `RadonRefiner::PeakFit` → no
+    refiner.
+  - Python: `ImageRefiner.saddle_point(c)` set on `cfg.refiner` or passed
+    to `cfg.with_refiner(...)`; `cfg.without_refiner()`;
+    `cfg.strategy.chess.center_of_mass`.
+  - JS: `cfg.withRefiner(ImageRefiner.saddlePoint())` /
+    `ImageRefiner.saddlePointWith(c)` in place of `withChessRefiner` /
+    `withRadonRefiner`; `cfg.withoutRefiner()`;
+    `cfg.strategy.chess.centerOfMass`.
+  - JSON: the refiner moves from `strategy.chess.refiner` /
+    `strategy.radon.refiner` to a top-level `"refiner"` (`null` or
+    `{"saddle_point": {...}}`); the center-of-mass tuning is
+    `strategy.chess.center_of_mass`.
+  - CLI: `--chess-refiner` → `--refiner none|saddle_point`.
+  - core: `ChessParams::refiner` → `ChessParams::center_of_mass`;
+    `RefinerKind` holds only image refiners.
 - The uncertainty setting carries its noise level:
   `Uncertainty::{Off, Propagated { noise: NoiseLevel }}` with
-  `NoiseLevel::{Estimate, Known(f32)}` (both now in `chess-corners`).
+  `NoiseLevel::{Estimate, Known(f32)}`, both in `chess-corners`.
   `DetectorConfig::noise_sigma` and `with_noise_sigma` are removed; a
   `Known(σ)` that is negative or not finite is still rejected by
-  `Detector::new` (`ChessError::InvalidNoiseSigma`). Positions and
-  covariances are unchanged. Migration:
-  - Rust: `.with_uncertainty(Uncertainty::Propagated)` →
-    `.with_uncertainty(Uncertainty::Propagated { noise: NoiseLevel::Estimate })`;
-    adding `.with_noise_sigma(σ)` → `noise: NoiseLevel::Known(σ)`.
-  - JSON config: `"uncertainty": "propagated"` →
-    `{"propagated": {"noise": "estimate"}}`; with `"noise_sigma": σ` →
-    `{"propagated": {"noise": {"known": σ}}}`. `"off"` is unchanged.
-  - Python: `Uncertainty` is an immutable value: `Uncertainty.OFF` →
-    `Uncertainty.off()`, `Uncertainty.PROPAGATED` →
-    `Uncertainty.propagated()`, plus `with_noise_sigma(σ)` /
-    `cfg.noise_sigma = σ` → `Uncertainty.propagated(noise_sigma=σ)`.
-    `DetectorConfig.from_dict` rejects the removed `noise_sigma` key.
-  - JS: `Uncertainty.Off` → `Uncertainty.off()`, `Uncertainty.Propagated`
-    → `Uncertainty.propagated()`, plus `withNoiseSigma(σ)` /
-    `cfg.noiseSigma = σ` → `Uncertainty.propagated(σ)`.
-  - C: `CC_UNCERTAINTY_OFF` is now `0` and `CC_UNCERTAINTY_PROPAGATED` `1`,
-    so a zero-initialised `cc_config` selects off, like every preset.
-    `has_noise_sigma` / `noise_sigma` are read only under
-    `CC_UNCERTAINTY_PROPAGATED`. C++: `Config::uncertainty` is a
-    `chess_corners::Uncertainty` (`Uncertainty::off()`,
-    `Uncertainty::propagated(sigma)`) in place of the tag plus
-    `Config::noise_sigma`.
-  - `chess-corners-core`: `Uncertainty` moved to `chess-corners`;
+  `Detector::new`. Positions and covariances are unchanged.
+  - Python and JS: `Uncertainty` is an immutable value,
+    `Uncertainty.off()` / `Uncertainty.propagated(noise_sigma=σ)` (JS
+    `Uncertainty.propagated(σ)`), in place of the `OFF` / `PROPAGATED`
+    (`Off` / `Propagated`) enum plus `noise_sigma` (`noiseSigma`).
+  - JSON: `"propagated"` → `{"propagated": {"noise": "estimate"}}`, or
+    with `"noise_sigma": σ` → `{"propagated": {"noise": {"known": σ}}}`.
+  - core: `Uncertainty` moved to `chess-corners`;
     `Refiner::with_uncertainty(tier)` → `Refiner::with_covariance(bool)`.
 - Each orientation axis reports `fit_std_error`, the residual-based
   least-squares standard error of the axis fit in radians, in place of
-  `sigma`. It is a fit-quality score for ranking and gating axes, not a
-  calibrated error bound. Both methods now report this same quantity:
-  `RingFit` values are the previous ones divided by 1.0–1.25 (the empirical
-  correction factor is gone); `DiskFit` computes it over the disk pixels
-  instead of the previous residual heuristic, and its two axes now differ.
-  The 10° minimum when `DiskFit` and `RingFit` disagree and π as "no
-  information" are unchanged, and so are positions, covariances and axis
-  angles. The two values of a `RingFit` axis pair are no longer exchanged
-  when the fit relabels its axes. A gate tuned on the previous values
-  rejects about half as many axes; tighten it by about ×0.65 to keep its
-  rejection rate. Renamed:
-  - Rust: `AxisEstimate::sigma` → `AxisEstimate::fit_std_error` (and the
-    second parameter of `AxisEstimate::new`); core `AxisFitResult::
-    sigma_theta1` / `sigma_theta2` → `fit_std_error_theta1` /
-    `fit_std_error_theta2`.
-  - Python: `Detections.sigmas` → `Detections.fit_std_errors`.
-  - JS: the `axis0_sigma` / `axis1_sigma` slots of the stride-7 corner
-    array are `axis0_fitStdError` / `axis1_fitStdError` (same offsets).
-  - C: `cc_axis::sigma` → `cc_axis::fit_std_error`; C++ `Axis::sigma` →
-    `Axis::fit_std_error`.
-  - CLI JSON output: `axes[].sigma` → `axes[].fit_std_error`.
-- C ABI: `cc_abi_version` is 8. `cc_config::refiner` is a
-  `cc_image_refiner_t` (`CC_IMAGE_REFINER_NONE = 0`,
-  `CC_IMAGE_REFINER_SADDLE_POINT = 1`; see the migration table above).
-  Rebuild against the new header.
+  `sigma`: a fit-quality score for ranking and gating axes, not a
+  calibrated error bound. Both methods now report this quantity. `RingFit`
+  values are the previous ones divided by 1.0–1.25; `DiskFit` computes it
+  over the disk pixels, and its two axes now differ. The 10° minimum when
+  `DiskFit` and `RingFit` disagree, π as "no information", and the axis
+  angles are unchanged. A gate tuned on the previous values rejects about
+  half as many axes; tighten it by about ×0.65 to keep its rejection
+  rate. Renamed: Rust `AxisEstimate::sigma` → `fit_std_error` (and core
+  `AxisFitResult::sigma_theta1` / `sigma_theta2` →
+  `fit_std_error_theta1` / `fit_std_error_theta2`), Python
+  `Detections.sigmas` → `fit_std_errors`, JS `axis0_sigma` /
+  `axis1_sigma` slots → `axis0_fitStdError` / `axis1_fitStdError` (same
+  offsets), C `cc_axis::sigma` → `fit_std_error`, C++ `Axis::sigma` →
+  `fit_std_error`, CLI JSON output `axes[].sigma` →
+  `axes[].fit_std_error`.
+- C ABI version 8; rebuild C and C++ code against the new header.
+  `cc_config::refiner` is a `cc_image_refiner_t`: `CC_IMAGE_REFINER_NONE`
+  (`0`, replacing `CC_REFINER_CENTER_OF_MASS` and `CC_REFINER_PEAK_FIT`)
+  or `CC_IMAGE_REFINER_SADDLE_POINT` (`1`, for either strategy).
+  `CC_UNCERTAINTY_OFF` is now `0` and `CC_UNCERTAINTY_PROPAGATED` `1`, so
+  a zero-initialised `cc_config` selects no covariance and no image
+  refiner, like every preset; `has_noise_sigma` / `noise_sigma` are read
+  only under `CC_UNCERTAINTY_PROPAGATED`. `cc_axis::sigma` is
+  `fit_std_error`. C++: `Config::uncertainty` is a
+  `chess_corners::Uncertainty` (`Uncertainty::off()`,
+  `Uncertainty::propagated(sigma)`) in place of the tag plus
+  `Config::noise_sigma`.
+- `ChessConfig` and `RadonConfig` reject unknown JSON keys with
+  `serde_json` (and so in the CLI), as Python already did, so a
+  configuration written for the removed per-strategy `refiner` fails to
+  load instead of silently dropping the refiner.
 - With the `rayon` feature, the subpixel refinement and position covariance
   of large corner sets, the Radon peak-fit covariance, and the multiscale
   per-seed refinement run in parallel. Results are unchanged bit for bit;
@@ -126,10 +103,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Refiner::Forstner`, `ForstnerConfig` and `ForstnerRefiner`, Python
   `ForstnerConfig` and `ChessRefiner.forstner()`, JS `ForstnerConfig` and
   `ChessRefiner.withForstner`, C `CC_REFINER_FORSTNER`, the CLI
-  `--chess-refiner forstner` choice and the `"forstner"` refiner in the JSON
-  config. Use the saddle-point image refiner (`ImageRefiner::saddle_point()`,
-  `"saddle_point"`, `CC_IMAGE_REFINER_SADDLE_POINT`), which is more accurate on
-  real calibration images and on almost every synthetic condition.
+  `--chess-refiner forstner` choice and the `"forstner"` refiner in the
+  JSON config. Use the saddle-point image refiner
+  (`ImageRefiner::saddle_point()`, `"saddle_point"`,
+  `CC_IMAGE_REFINER_SADDLE_POINT`), which is more accurate on real
+  calibration images and on almost every synthetic condition.
+- The ML refiner: `ChessRefiner::Ml`, the `ml-refiner` feature of
+  `chess-corners` and of the Python package, Python
+  `ChessRefiner.ml()`, JS `ChessRefiner.withMl()`, and the CLI `"ml"`
+  setting. Use `ImageRefiner::SaddlePoint`, which is more accurate on
+  every tested condition, including rotated boards, where the ML model
+  was 0.64–0.90 px RMS against at most 0.057 px, and about 800× cheaper
+  per corner. A build that enabled `ml-refiner` drops the feature.
 - The `covariance_per_noise_variance` fields of `Corner` and
   `RefineResult`: read `noise_covariance_per_unit_variance()`, or
   `position_covariance(noise_sigma)` for the full covariance in px².
@@ -137,6 +122,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DenseDetector::attach_peak_covariance` on `RadonDetector`.
 - `DenseDetector::refines_on_image`: both detectors always refine on the
   image; drop the call.
+
+### Fixed
+
+- `RingFit`: the per-axis fit errors (`fit_std_error`, previously
+  `sigma`) now follow their axes. When the fit relabelled the two axes to
+  put them in canonical order, the two values stayed in place and were
+  reported on the wrong axis.
+
+### Documentation
+
+- A migration guide from 1.x to 2.0 in the book, with before and after
+  code for Rust, Python, JavaScript, C and C++, and the JSON
+  configuration.
 
 ## Past releases
 

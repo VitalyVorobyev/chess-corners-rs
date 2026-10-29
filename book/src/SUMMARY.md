@@ -11,3 +11,4 @@
 - [Part IX: Benchmarks and performance](part-09-benchmarks.md)
 - [Part X: C++ bindings](part-10-cpp-bindings.md)
 - [Part XI: Contributing](part-11-contributing.md)
+- [Part XII: Migrating from 1.x to 2.0](part-12-migrating-to-2.0.md)

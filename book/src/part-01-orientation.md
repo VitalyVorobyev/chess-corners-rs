@@ -158,6 +158,7 @@ positions you use.
 - Per-corner position uncertainty: [Part VIII](part-08-uncertainty.md).
 - From C or C++: [Part X](part-10-cpp-bindings.md).
 - To contribute: [Part XI](part-11-contributing.md).
+- Upgrading from 1.x: [Part XII](part-12-migrating-to-2.0.md).
 
 Rust API documentation builds alongside this book and is published
 at the same site:
