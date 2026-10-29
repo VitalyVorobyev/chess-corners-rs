@@ -176,6 +176,10 @@ pub struct RefineResult {
     /// [`Uncertainty::Off`] (the default). Read it with
     /// [`RefineResult::noise_covariance_per_unit_variance`]. Changing this
     /// field drops the systematic term.
+    #[deprecated(
+        since = "1.7.0",
+        note = "read `noise_covariance_per_unit_variance()`, or `position_covariance(noise_sigma)` for the full covariance in px²; writing this field drops the systematic term"
+    )]
     pub covariance_per_noise_variance: Option<PositionCovariance>,
     /// The full covariance model; `covariance_per_noise_variance` mirrors
     /// its noise term.
@@ -190,6 +194,7 @@ pub struct RefineResult {
 impl RefineResult {
     /// Build a [`RefineStatus::Accepted`] result at `xy` with the given `score`.
     #[inline]
+    #[allow(deprecated)]
     pub fn accepted(xy: [f32; 2], score: f32) -> Self {
         Self {
             x: xy[0],
@@ -238,6 +243,7 @@ impl RefineResult {
 
     /// Attach `model`, mirroring its noise term in the public field.
     #[inline]
+    #[allow(deprecated)]
     pub(crate) fn set_model(&mut self, model: Option<CovarianceModel>) {
         self.covariance_per_noise_variance = model.map(|m| m.noise);
         self.model = model;
@@ -246,6 +252,7 @@ impl RefineResult {
     /// The covariance model this result carries (see
     /// [`CovarianceModel::effective`]).
     #[inline]
+    #[allow(deprecated)]
     pub(crate) fn covariance_model(&self) -> Option<CovarianceModel> {
         CovarianceModel::effective(self.model, self.covariance_per_noise_variance)
     }

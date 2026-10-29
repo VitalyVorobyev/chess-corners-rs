@@ -45,6 +45,10 @@ pub struct Corner {
     /// [`Corner::noise_covariance_per_unit_variance`]; the full covariance
     /// in px² is [`Corner::position_covariance`]. Changing this field drops
     /// the systematic term.
+    #[deprecated(
+        since = "1.7.0",
+        note = "read `noise_covariance_per_unit_variance()`, or `position_covariance(noise_sigma)` for the full covariance in px²; writing this field drops the systematic term"
+    )]
     pub covariance_per_noise_variance: Option<PositionCovariance>,
     /// The full covariance model; `covariance_per_noise_variance` mirrors
     /// its noise term.
@@ -58,6 +62,7 @@ pub struct Corner {
 impl Corner {
     /// Construct a [`Corner`] without a covariance.
     #[inline]
+    #[allow(deprecated)]
     pub fn new(x: f32, y: f32, strength: f32) -> Self {
         Self {
             x,
@@ -71,6 +76,7 @@ impl Corner {
 
     /// Attach `model`, mirroring its noise term in the public field.
     #[inline]
+    #[allow(deprecated)]
     pub(crate) fn set_model(&mut self, model: Option<CovarianceModel>) {
         self.covariance_per_noise_variance = model.map(|m| m.noise);
         self.model = model;
@@ -79,6 +85,7 @@ impl Corner {
     /// The covariance model this corner carries (see
     /// [`CovarianceModel::effective`]).
     #[inline]
+    #[allow(deprecated)]
     pub(crate) fn covariance_model(&self) -> Option<CovarianceModel> {
         CovarianceModel::effective(self.model, self.covariance_per_noise_variance)
     }
@@ -257,6 +264,7 @@ pub struct CornerDescriptor {
 impl CornerDescriptor {
     /// Construct a [`CornerDescriptor`] with a fitted orientation.
     #[inline]
+    #[allow(deprecated)]
     pub fn new(x: f32, y: f32, response: f32, axes: [AxisEstimate; 2]) -> Self {
         Self {
             x,
