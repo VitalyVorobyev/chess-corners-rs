@@ -186,6 +186,9 @@ fn describe(
 // Shared coarse-to-fine pipeline
 // ---------------------------------------------------------------------------
 
+/// A base-image ROI `(x0, y0, x1, y1)`, half-open, in pixels.
+type RoiBounds = (i32, i32, i32, i32);
+
 /// Pre-computed parameters for per-seed ROI refinement.
 struct RoiContext {
     inv_scale: f32,
@@ -200,7 +203,7 @@ impl RoiContext {
     /// Compute a clamped, validated ROI around a coarse seed projected to base
     /// image coordinates. Returns `None` if the seed is too close to the border
     /// or the resulting ROI is too small.
-    fn compute_roi(&self, c: &Corner) -> Option<(i32, i32, i32, i32)> {
+    fn compute_roi(&self, c: &Corner) -> Option<RoiBounds> {
         let cx = (c.x * self.inv_scale).round() as i32;
         let cy = (c.y * self.inv_scale).round() as i32;
 
@@ -286,11 +289,12 @@ trait TraversalStep {
     /// (expensive) model. Positions are in the coarse-level frame.
     fn detect_seeds(&mut self, view: ImageView<'_>) -> Vec<Corner>;
 
-    /// Refine one ROI `(x0, y0, x1, y1)` of `base` (bounds in
-    /// base-image pixels). Returned corner positions are **patch-local**
-    /// (origin at the ROI's top-left); [`traverse`] shifts them back
-    /// into base-image coordinates.
-    fn refine_roi(&mut self, base: ImageView<'_>, roi: (i32, i32, i32, i32)) -> Vec<Corner>;
+    /// Refine every ROI `(x0, y0, x1, y1)` of `rois` on `base` (bounds in
+    /// base-image pixels), returning one corner list per ROI, in ROI
+    /// order. Corner positions are **patch-local** (origin at the ROI's
+    /// top-left); [`traverse`] shifts them back into base-image
+    /// coordinates.
+    fn refine_rois(&mut self, base: ImageView<'_>, rois: &[RoiBounds]) -> Vec<Vec<Corner>>;
 
     /// Apply the frame-level acceptance test to the corners gathered from
     /// every ROI of one frame (see [`DenseDetector::retain_frame_peaks`]).
@@ -387,23 +391,19 @@ fn traverse<S: TraversalStep>(
     )
     .entered();
 
-    // Per-seed refinement runs sequentially: the detector's patch
-    // response computation mutates shared scratch buffers, and rayon
-    // parallelism over seeds would require cloning those buffers per
-    // worker for little gain (the heavy per-seed work is a small ROI).
-    let mut refined: Vec<Corner> = Vec::new();
-    for c in coarse_corners {
-        let Some(roi_bounds) = roi_ctx.compute_roi(&c) else {
-            continue;
-        };
-        let (x0, y0, _x1, _y1) = roi_bounds;
-        let mut patch = step.refine_roi(base, roi_bounds);
+    let rois: Vec<RoiBounds> = coarse_corners
+        .iter()
+        .filter_map(|c| roi_ctx.compute_roi(c))
+        .collect();
+    let patches = step.refine_rois(base, &rois);
+    let mut refined: Vec<Corner> = Vec::with_capacity(patches.iter().map(Vec::len).sum());
+    for (&(x0, y0, _x1, _y1), patch) in rois.iter().zip(patches) {
         // Shift patch-local refined positions to base coords.
-        for pc in &mut patch {
+        refined.extend(patch.into_iter().map(|mut pc| {
             pc.x += x0 as f32;
             pc.y += y0 as f32;
-        }
-        refined.extend(patch);
+            pc
+        }));
     }
 
     // Each ROI judged its peaks against itself; apply the frame-level
@@ -442,17 +442,69 @@ impl TraversalShape {
 /// [`TraversalStep`] for the generic detector-driven path. Both
 /// `detect_full` and `detect_seeds` are the same operation (compute
 /// response → detect peaks → image-domain refine); only the ML pipeline
-/// distinguishes them. The single owned [`Refiner`] (if any) is reused
-/// across coarse seeds and every ROI, matching the "no per-corner
-/// allocation" contract.
+/// distinguishes them. The owned [`Refiner`] (if any) and `buffers` are
+/// reused across coarse seeds and every ROI, matching the "no per-corner
+/// allocation" contract; under `rayon` the ROIs run in parallel jobs, each
+/// with buffers and a refiner of its own.
 struct DetectorStep<'a, D: DenseDetector> {
     detector: &'a D,
     params: &'a D::Params,
     buffers: &'a mut D::Buffers,
     refiner: Option<Refiner>,
+    /// Builds each parallel ROI job's own refiner.
+    #[cfg(feature = "rayon")]
+    shape: &'a DetectorShape,
     refine_border: i32,
     /// Whether the localizers report a covariance for final corners.
     covariance: bool,
+}
+
+/// The per-seed ROI pass over `base`: everything but the scratch, so one
+/// value serves every ROI and every worker.
+struct RoiPass<'a, D: DenseDetector> {
+    detector: &'a D,
+    params: &'a D::Params,
+    refine_border: i32,
+    /// Whether the detector attaches its own peak covariance.
+    covariance: bool,
+    base: ImageView<'a>,
+}
+
+impl<D: DenseDetector> RoiPass<'_, D> {
+    /// Corners of the ROI `roi` of `base`: patch response → peaks →
+    /// image-domain refinement (and the detector's own peak covariance
+    /// when `covariance` is set). Positions are patch-local.
+    fn corners(
+        &self,
+        buffers: &mut D::Buffers,
+        refiner: Option<&mut Refiner>,
+        roi: RoiBounds,
+    ) -> Vec<Corner> {
+        let (detector, params, base) = (self.detector, self.params, self.base);
+        let (x0, y0, _x1, _y1) = roi;
+        let resp = detector.compute_response_patch(base, roi, params, buffers);
+        let peaks = detector.detect_corners(&resp, params, self.refine_border);
+        if peaks.is_empty() {
+            return Vec::new();
+        }
+        // Image-domain refinement over the base image with origin [x0, y0]:
+        // the refiner sees patch-local seed coords and samples base pixels
+        // at (cx + x0, cy + y0).
+        let patch_image =
+            ImageView::with_origin(base.width(), base.height(), base.data(), [x0, y0])
+                .expect("base image dimensions must match buffer length");
+        let mut out = refine_peaks(detector, peaks, patch_image, &resp, refiner);
+        drop(resp);
+        attach_peak_covariance(
+            detector,
+            &mut out,
+            patch_image,
+            params,
+            buffers,
+            self.covariance,
+        );
+        out
+    }
 }
 
 impl<D: DenseDetector> DetectorStep<'_, D> {
@@ -479,7 +531,11 @@ impl<D: DenseDetector> DetectorStep<'_, D> {
     }
 }
 
-impl<D: DenseDetector> TraversalStep for DetectorStep<'_, D> {
+impl<D> TraversalStep for DetectorStep<'_, D>
+where
+    D: DenseDetector + Sync,
+    D::Params: Sync,
+{
     fn detect_full(&mut self, view: ImageView<'_>) -> Vec<Corner> {
         self.detect_at(view, self.covariance)
     }
@@ -494,40 +550,34 @@ impl<D: DenseDetector> TraversalStep for DetectorStep<'_, D> {
         seeds
     }
 
-    fn refine_roi(&mut self, base: ImageView<'_>, roi: (i32, i32, i32, i32)) -> Vec<Corner> {
-        let (x0, y0, _x1, _y1) = roi;
-        let resp = self
-            .detector
-            .compute_response_patch(base, roi, self.params, self.buffers);
-        let peaks = self
-            .detector
-            .detect_corners(&resp, self.params, self.refine_border);
-        if peaks.is_empty() {
-            return Vec::new();
+    fn refine_rois(&mut self, base: ImageView<'_>, rois: &[RoiBounds]) -> Vec<Vec<Corner>> {
+        let pass = RoiPass {
+            detector: self.detector,
+            params: self.params,
+            refine_border: self.refine_border,
+            covariance: self.covariance,
+            base,
+        };
+        // Each ROI's corners depend only on its pixels, so a parallel job
+        // with fresh buffers and refiner returns what the frame's own would;
+        // `collect` keeps seed order.
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            let shape = self.shape;
+            rois.par_iter()
+                .map_init(
+                    || (D::Buffers::default(), shape.refiner()),
+                    |(buffers, refiner), &roi| pass.corners(buffers, refiner.as_mut(), roi),
+                )
+                .collect()
         }
-        // Image-domain refinement over the base image with origin
-        // [x0, y0]: the refiner sees patch-local seed coords and samples
-        // base pixels at (cx + x0, cy + y0).
-        let patch_image =
-            ImageView::with_origin(base.width(), base.height(), base.data(), [x0, y0])
-                .expect("base image dimensions must match buffer length");
-        let mut out = refine_peaks(
-            self.detector,
-            peaks,
-            patch_image,
-            &resp,
-            self.refiner.as_mut(),
-        );
-        drop(resp);
-        attach_peak_covariance(
-            self.detector,
-            &mut out,
-            patch_image,
-            self.params,
-            self.buffers,
-            self.covariance,
-        );
-        out
+        #[cfg(not(feature = "rayon"))]
+        {
+            rois.iter()
+                .map(|&roi| pass.corners(self.buffers, self.refiner.as_mut(), roi))
+                .collect()
+        }
     }
 
     fn retain_frame_peaks(&self, corners: &mut Vec<Corner>) {
@@ -583,7 +633,7 @@ impl DetectorShape {
 /// the ChESS-derived params even when the active detector is Radon —
 /// descriptor sampling and orientation are detector-agnostic stages
 /// downstream of peak extraction.
-fn detect_multiscale<D: DenseDetector>(
+fn detect_multiscale<D>(
     base: ImageView<'_>,
     detector: &D,
     params: &D::Params,
@@ -591,7 +641,11 @@ fn detect_multiscale<D: DenseDetector>(
     pyramid_buffers: &mut PyramidBuffers,
     multiscale: Option<&CoarseToFineParams>,
     shape: &DetectorShape,
-) -> Frame {
+) -> Frame
+where
+    D: DenseDetector + Sync,
+    D::Params: Sync,
+{
     // The refiner widens the ROI margin only when one runs, so the
     // peak-fit-only Radon path keeps its full seed area near the border.
     let covariance = shape.uncertainty.propagates();
@@ -611,6 +665,8 @@ fn detect_multiscale<D: DenseDetector>(
         params,
         buffers: detector_buffers,
         refiner,
+        #[cfg(feature = "rayon")]
+        shape,
         refine_border,
         covariance,
     };
@@ -628,14 +684,17 @@ fn detect_multiscale<D: DenseDetector>(
 /// [`dispatch_strategy`], so the two entry points cannot drift on how a
 /// strategy is configured.
 trait StrategyPipeline {
-    fn run<D: DenseDetector>(
+    fn run<D>(
         self,
         base: ImageView<'_>,
         detector: &D,
         params: &D::Params,
         buffers: &mut D::Buffers,
         shape: &DetectorShape,
-    ) -> Frame;
+    ) -> Frame
+    where
+        D: DenseDetector + Sync,
+        D::Params: Sync;
 }
 
 /// Lower `cfg.strategy` into the concrete detector marker, its params,
@@ -687,14 +746,18 @@ struct MultiscaleRun<'a> {
 }
 
 impl StrategyPipeline for MultiscaleRun<'_> {
-    fn run<D: DenseDetector>(
+    fn run<D>(
         self,
         base: ImageView<'_>,
         detector: &D,
         params: &D::Params,
         buffers: &mut D::Buffers,
         shape: &DetectorShape,
-    ) -> Frame {
+    ) -> Frame
+    where
+        D: DenseDetector + Sync,
+        D::Params: Sync,
+    {
         detect_multiscale(
             base,
             detector,
@@ -713,14 +776,18 @@ struct RoiRun {
 }
 
 impl StrategyPipeline for RoiRun {
-    fn run<D: DenseDetector>(
+    fn run<D>(
         self,
         base: ImageView<'_>,
         detector: &D,
         params: &D::Params,
         buffers: &mut D::Buffers,
         shape: &DetectorShape,
-    ) -> Frame {
+    ) -> Frame
+    where
+        D: DenseDetector + Sync,
+        D::Params: Sync,
+    {
         detect_roi_generic(base, self.roi, detector, params, buffers, shape)
     }
 }
@@ -780,7 +847,7 @@ pub(crate) fn detect_roi_with_buffers(
 /// half-width) and clamped to the image — so a corner sitting on the ROI
 /// edge is still fully inside the carved patch. It then runs the same
 /// response → peak → image-domain-refine composition one coarse-to-fine
-/// ROI tile uses (`DetectorStep::refine_roi`), keeps only peaks whose
+/// ROI tile uses ([`RoiPass::corners`]), keeps only peaks whose
 /// detected position lands inside the (un-inflated, clamped) `roi`,
 /// maps them into the base-image frame, and produces descriptors through
 /// the shared merge + describe stage.
@@ -920,7 +987,7 @@ pub(crate) fn detect_with_ml(
 ///
 /// The traversal skeleton is shared with the generic detector path via
 /// [`traverse`]; the ML-specific behaviour lives entirely in
-/// [`MlStep`]: `detect_full` / `refine_roi` run the model, while
+/// [`MlStep`]: `detect_full` / `refine_rois` run the model, while
 /// `detect_seeds` uses the classic ChESS refiner (coarse seeds only
 /// need to be accurate enough to carve an ROI).
 #[cfg(feature = "ml-refiner")]
@@ -966,7 +1033,7 @@ where
 }
 
 /// [`TraversalStep`] for the ChESS+ML path. `detect_full` and
-/// `refine_roi` run the ML model (via `detect_fn`), while `detect_seeds`
+/// `refine_rois` run the ML model (via `detect_fn`), while `detect_seeds`
 /// runs the classic ChESS refiner: coarse seeds only need positions
 /// accurate enough to carve a base-image ROI, so the (expensive) model
 /// is reserved for the fine per-seed step.
@@ -996,13 +1063,19 @@ where
         ChessDetector.refine_peaks_on_image(peaks, view, &resp, &mut self.seed_refiner)
     }
 
-    fn refine_roi(&mut self, base: ImageView<'_>, roi: (i32, i32, i32, i32)) -> Vec<Corner> {
-        let (x0, y0, _x1, _y1) = roi;
-        let resp = ChessDetector.compute_response_patch(base, roi, self.params, self.buffers);
-        let refine_view =
-            ImageView::with_origin(base.width(), base.height(), base.data(), [x0, y0])
-                .expect("base image dimensions must match buffer length");
-        (self.detect_fn)(resp, self.params, Some(refine_view))
+    fn refine_rois(&mut self, base: ImageView<'_>, rois: &[RoiBounds]) -> Vec<Vec<Corner>> {
+        // Sequential: the model session is not shared across threads.
+        rois.iter()
+            .map(|&roi| {
+                let (x0, y0, _x1, _y1) = roi;
+                let resp =
+                    ChessDetector.compute_response_patch(base, roi, self.params, self.buffers);
+                let refine_view =
+                    ImageView::with_origin(base.width(), base.height(), base.data(), [x0, y0])
+                        .expect("base image dimensions must match buffer length");
+                (self.detect_fn)(resp, self.params, Some(refine_view))
+            })
+            .collect()
     }
 
     fn retain_frame_peaks(&self, corners: &mut Vec<Corner>) {

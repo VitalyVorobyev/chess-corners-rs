@@ -468,9 +468,15 @@ Conditions: Criterion medians (`cargo bench -p chess-corners --bench
 chess_pipeline -- chess_pipeline_real`, `--bench radon_pipeline`,
 `--bench noise_estimate`, `-p chess-corners-core --bench refiners`), release
 build, Apple M4 Pro (12 cores), rustc 1.101.0-nightly (2026-10-02), 1-minute
-load 1.1 to 1.8 before each run (self-induced up to 4 during the `rayon`
-runs), one bench at a time. The default is `Uncertainty::Off`; the table is
-the cost of opting in to `Propagated`. Noise estimate per frame
+load 1.1 to 1.8 before each run, one bench at a time. The `rayon` rows
+are re-measured after `PERF-18` parallelised the refinement: interleaved
+A/B against the previous `main`, 3 s Criterion runs per binary in 6
+(ChESS) or 3 (Radon) rounds, the median of the round medians, rayon's
+default 12 threads, 1-minute load 2 to 6 (Radon) and 7 to 18 (ChESS:
+other jobs on the machine plus the benches' own threads). The multiscale
+`rayon` row and its "before" are from a later 3-round A/B (load 4 to 10).
+The default is `Uncertainty::Off`; the table is the cost of opting in to
+`Propagated`. Noise estimate per frame
 (single-threaded call): 60 / 47 / 56 µs on small / mid / large. Per corner
 (Off to Propagated, 1024² board): CoM 18 to 526 ns, Förstner 57 to 478 ns,
 SaddlePoint 222 to 569 ns.
@@ -482,22 +488,34 @@ Frame time, `testimages/` small / mid / large, median:
 | ChESS single scale | 3.87 / 4.22 / 23.2 ms | 4.14 / 4.31 / 23.6 ms | +6.9 / +2.1 / +1.5% |
 | ChESS multiscale | 0.80 / 0.82 / 5.77 ms | 0.90 / 0.91 / 6.04 ms | +13.5 / +10.7 / +4.5% |
 | Radon single scale | 13.2 / 28.1 / 148 ms | 13.4 / 28.4 / 149 ms | +1.7 / +0.9 / +0.7% |
-| ChESS single, `rayon` | 0.85 / 0.90 / 4.44 ms | 1.12 / 1.00 / 4.95 ms | +32 / +11 / +11% |
-| ChESS multiscale, `rayon` | 0.67 / 0.59 / 4.26 ms | 0.79 / 0.68 / 4.54 ms | +17 / +15 / +6.7% |
-| Radon single, `rayon` | 4.36 / 14.8 / 78.7 ms | 4.69 / 15.0 / 78.7 ms | +7.6 / +1.3 / +0.0% |
+| ChESS single, `rayon` | 0.86 / 0.92 / 4.63 ms | 1.04 / 1.02 / 4.87 ms | +20 / +10 / +5.2% |
+| ChESS multiscale, `rayon` | 0.27 / 0.28 / 1.40 ms | 0.39 / 0.37 / 1.52 ms | +47 / +35 / +8.4% |
+| Radon single, `rayon` | 4.47 / 14.7 / 78.2 ms | 4.70 / 14.9 / 78.5 ms | +5.3 / +1.4 / +0.4% |
+
+Before `PERF-18` (refinement sequential under `rayon`; same A/B runs):
+ChESS single 0.85 / 0.91 / 4.60 to 1.12 / 1.01 / 5.05 ms (+32 / +11 / +9.7%),
+multiscale 0.73 / 0.62 / 4.31 to 0.85 / 0.69 / 4.59 ms (+16 / +11 / +6.7%),
+Radon 4.44 / 14.7 / 78.9 to 4.78 / 15.0 / 79.1 ms (+7.5 / +2.0 / +0.4%).
+Multiscale frames got 2 to 3× faster, Off and Propagated alike, because the
+per-seed ROI pass (patch response, refinement, covariance) runs in parallel;
+the opt-in cost there stays about 0.1 ms (small 116 to 127 µs, mid 69 to
+96 µs, large 287 to 117 µs), so its share of the shorter frame grew.
 
 Dense board (synthetic anti-aliased board, 2048×1536, 48 px cells, 1376
-corners, ChESS single scale, SaddlePoint): 22.70 to 23.45 ms single-threaded
-(+3.3%, 546 ns per corner for the covariance and the noise estimate), 4.44
-to 5.11 ms with `rayon` (+15%, 485 ns per corner). The per-corner covariance
-runs sequentially, so under `rayon` the dense response shrinks around it and
-the share of the covariance grows. WASM (node, `testimages/mid.png`, median
+corners, ChESS single scale, CenterOfMass): 22.70 to 23.45 ms single-threaded
+(+3.3%, 546 ns per corner for the covariance and the noise estimate), 4.54
+to 4.77 ms with `rayon` (+5.1%; 4.62 to 5.30 ms, +15%, while the covariance
+ran sequentially). Under `rayon` a refiner splits a corner set into jobs of
+about 20 µs of work (≈ 38 corners at the Propagated cost, ≈ 1000 CoM
+corners at the Off cost, so Off stays on the calling thread on these
+frames); the per-frame noise estimate stays sequential and is now most of
+the remaining opt-in cost on small and multiscale frames. WASM (node, `testimages/mid.png`, median
 of 40 runs): single scale 5.09 to 5.27 ms (+3.5%), multiscale 1.18 to 1.36 ms
 (+15%).
 
 The cost is the noise estimate plus ~0.5 µs per corner, so it is largest
 on small, sparse frames: on small multiscale the noise estimate alone is
-~7% of the frame. Off vs 1.5.0, p95, default build: ChESS single −4.5 /
+~7% of the frame single-threaded and ~20% with `rayon`. Off vs 1.5.0, p95, default build: ChESS single −4.5 /
 −0.7 / −0.9%, multiscale −1.7 / −0.6 / −1.2%; Radon −0.8 / −1.7 / 0.0%.
 The Radon kernel moves by a few percent with code layout alone.
 

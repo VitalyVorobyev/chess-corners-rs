@@ -3,7 +3,7 @@ use super::response::chess_response_u8;
 use crate::detect::{count_positive_neighbors, is_local_max, Corner, CornerDescriptor};
 use crate::imageview::ImageView;
 use crate::orientation::describe_corners;
-use crate::refine::{CornerRefiner, RefineContext, RefineStatus, Refiner};
+use crate::refine::{refine_each, CornerRefiner, RefineContext, RefineStatus, Refiner};
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "tracing")]
@@ -177,8 +177,9 @@ pub fn detect_peaks_from_response_with_refine_radius(
 /// rescore the peak strength), and the refiner's
 /// covariance model ([`Corner::position_covariance`]).
 ///
-/// Iteration order matches the order of the input vector — necessary
-/// for downstream stages that assume a stable scan order.
+/// Output order matches the order of the input vector — necessary for
+/// downstream stages that assume a stable scan order — with or without
+/// the `rayon` feature, which refines large sets on several threads.
 #[cfg_attr(
     feature = "tracing",
     instrument(level = "debug", skip(corners, image, response, refiner))
@@ -194,17 +195,16 @@ pub fn refine_corners_on_image(
     }
 
     let ctx = RefineContext { image, response };
-    let mut out = Vec::with_capacity(corners.len());
-    for c in corners {
-        let seed_xy = [c.x, c.y];
-        let res = refiner.refine(seed_xy, ctx);
-        if matches!(res.status, RefineStatus::Accepted) {
+    refine_each(refiner, ctx, &corners)
+        .into_iter()
+        .zip(&corners)
+        .filter(|(res, _)| res.status == RefineStatus::Accepted)
+        .map(|(res, c)| {
             let mut refined = Corner::new(res.x, res.y, c.strength);
             refined.model = res.model;
-            out.push(refined);
-        }
-    }
-    out
+            refined
+        })
+        .collect()
 }
 
 #[cfg(test)]

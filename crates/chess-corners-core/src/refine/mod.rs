@@ -66,7 +66,45 @@ impl core::ops::Add for PositionCovariance {
 /// in-crate refiners, so downstream crates cannot add their own
 /// [`CornerRefiner`] implementations.
 mod private {
-    pub trait Sealed {}
+    /// `Sync` so a refiner can be shared with worker threads to
+    /// [`fork`](Sealed::fork) per-thread copies.
+    pub trait Sealed: Sync {
+        /// A refiner with the same configuration and covariance setting
+        /// and fresh scratch: it returns the same result as `self` for every
+        /// seed.
+        fn fork(&self) -> super::Refiner;
+
+        /// Typical time of one [`refine`](super::CornerRefiner::refine)
+        /// call in nanoseconds (single-threaded, Apple M4 Pro, from the
+        /// `refiners` bench), which sizes the parallel jobs.
+        fn cost_ns(&self) -> u32;
+    }
+}
+
+/// Work per parallel job in [`refine_each`], in nanoseconds: well above
+/// the cost of forking a refiner and waking a worker thread. Below twice
+/// this, refinement stays on the calling thread.
+const REFINE_JOB_NS: u32 = 20_000;
+
+/// Refine every corner of `corners` with `refiner`, results in corner order.
+///
+/// Under `rayon`, a set worth more than two jobs of
+/// [`REFINE_JOB_NS`] is split across worker threads, each with a
+/// [`fork`](private::Sealed::fork) of `refiner`; a refiner's result does not
+/// depend on its scratch history, so the output is the same bit for bit.
+pub(crate) fn refine_each(
+    refiner: &mut dyn CornerRefiner,
+    ctx: RefineContext<'_>,
+    corners: &[crate::detect::Corner],
+) -> Vec<RefineResult> {
+    let min_len = (REFINE_JOB_NS / refiner.cost_ns().max(1)) as usize;
+    crate::par::map_with_scratch(
+        corners,
+        min_len,
+        refiner,
+        |r| -> Box<dyn CornerRefiner> { Box::new(r.fork()) },
+        |r, c| r.refine([c.x, c.y], ctx),
+    )
 }
 
 /// Status of a refinement attempt.
@@ -345,9 +383,45 @@ impl CornerRefiner for Refiner {
     }
 }
 
-impl private::Sealed for CenterOfMassRefiner {}
-impl private::Sealed for SaddlePointRefiner {}
-impl private::Sealed for Refiner {}
+/// `off` ns per corner without a covariance, `with` with one.
+fn covariance_cost(reports_covariance: bool, off: u32, with: u32) -> u32 {
+    if reports_covariance {
+        with
+    } else {
+        off
+    }
+}
+
+impl private::Sealed for CenterOfMassRefiner {
+    fn fork(&self) -> Refiner {
+        Refiner::CenterOfMass(Self::fork(self))
+    }
+    fn cost_ns(&self) -> u32 {
+        covariance_cost(self.reports_covariance, 20, 530)
+    }
+}
+impl private::Sealed for SaddlePointRefiner {
+    fn fork(&self) -> Refiner {
+        Refiner::SaddlePoint(Self::fork(self))
+    }
+    fn cost_ns(&self) -> u32 {
+        covariance_cost(self.reports_covariance, 210, 570)
+    }
+}
+impl private::Sealed for Refiner {
+    fn fork(&self) -> Refiner {
+        match self {
+            Refiner::CenterOfMass(r) => private::Sealed::fork(r),
+            Refiner::SaddlePoint(r) => private::Sealed::fork(r),
+        }
+    }
+    fn cost_ns(&self) -> u32 {
+        match self {
+            Refiner::CenterOfMass(r) => r.cost_ns(),
+            Refiner::SaddlePoint(r) => r.cost_ns(),
+        }
+    }
+}
 
 #[cfg(test)]
 pub(crate) mod test_fixtures {

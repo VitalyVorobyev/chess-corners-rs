@@ -97,6 +97,14 @@ impl CenterOfMassRefiner {
         }
     }
 
+    /// The same configuration and covariance setting with fresh scratch.
+    pub(crate) fn fork(&self) -> Self {
+        Self {
+            reports_covariance: self.reports_covariance,
+            ..Self::new(self.cfg)
+        }
+    }
+
     /// Covariance model of the centroid `xy` of the window centred on pixel
     /// `centre`, or `None` when the map is not a ChESS response.
     ///
