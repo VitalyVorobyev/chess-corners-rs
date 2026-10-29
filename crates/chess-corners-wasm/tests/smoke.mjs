@@ -82,6 +82,17 @@ throwsWith(() => DetectorConfig.fromJson("{not json"), "JSON");
 throwsWith(() => DetectorConfig.fromJson('{"threshold": "high"}'), "expected f32");
 throwsWith(() => DetectorConfig.fromJson('{"strategy": {"sobel": {}}}'), "sobel");
 throwsWith(() => DetectorConfig.fromJson('{"upscale": {"fixed": 2.5}}'), "invalid type");
+assert.throws(() => DetectorConfig.fromJson("{not json"), SyntaxError);
+// Stale 1.x keys are rejected at every level, and the message names the key.
+throwsWith(() => DetectorConfig.fromJson('{"noise_sigma": 1.5}'), "unknown field `noise_sigma`");
+throwsWith(
+  () => DetectorConfig.fromJson('{"strategy": {"chess": {"refiner": "center_of_mass"}}}'),
+  "unknown field `refiner`",
+);
+throwsWith(
+  () => DetectorConfig.fromJson('{"multiscale": {"pyramid": {"levels": 3, "min_size": 128, "refinement_radius": 3, "x": 1}}}'),
+  "unknown field `x`",
+);
 // Semantic validation (allowed upscale factors) happens at detector construction,
 // where the existing API throws the message as a plain string.
 assert.throws(

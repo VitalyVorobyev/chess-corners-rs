@@ -1,6 +1,7 @@
 {
   "$defs": {
     "CenterOfMassConfig": {
+      "additionalProperties": false,
       "description": "Configuration for the `CenterOfMassRefiner`.\n\nControls the size of the weighted-centroid window. The centroid is\ncomputed over a `(2·radius+1)²` patch on the ChESS response map\ncentered at the rounded seed position.",
       "properties": {
         "radius": {
@@ -54,6 +55,7 @@
       "type": "string"
     },
     "DetectionParams": {
+      "additionalProperties": false,
       "description": "Shared non-maximum-suppression and peak-clustering thresholds.\n\nThese two knobs have identical meaning for the ChESS and Radon\ndetectors, so they live once at the `DetectorConfig` level rather\nthan being duplicated inside each strategy config. Both are expressed\nin the detector's working-resolution pixels (for Radon, that is after\n`image_upsample`). Tune them through\n`DetectorConfig::with_detection`.\n\nThe defaults match the ChESS presets; the Radon presets raise\n`nms_radius` to `4` to suit the wider Radon response peak.",
       "properties": {
         "min_cluster_size": {
@@ -136,6 +138,7 @@
           "description": "Coarse-to-fine pyramid detection.",
           "properties": {
             "pyramid": {
+              "additionalProperties": false,
               "properties": {
                 "levels": {
                   "description": "Number of pyramid levels (integer `>= 1`, at most 255). Level 0\nis the base image; each subsequent level is a 2× box-filter\ndownsample.",
@@ -277,6 +280,7 @@
       "type": "object"
     },
     "SaddlePointConfig": {
+      "additionalProperties": false,
       "description": "Configuration for the `SaddlePointRefiner`.\n\nAll thresholds below are advanced tuning knobs. The defaults are\nappropriate for most scenes; adjust only if you observe excessive\nrejection or acceptance of clearly-wrong refinements.",
       "properties": {
         "det_margin": {
@@ -325,6 +329,7 @@
           "description": "Image noise propagated through the localizer to first order, plus\nthe localizer's systematic-error model (from the corner's offset to\nthe localizer's fit window and the width of its edges). `noise` is\nthe image noise level that expresses the propagated part in px².\n\nEvery localizer reports a covariance. None is reported on upscaled\ninput (`DetectorConfig::upscale`):\ninterpolation correlates the noise of neighbouring pixels.\n\nThe systematic part includes a per-localizer floor measured on real\ncalibration images (about 0.05 px per axis for the saddle-point fit\nand the Radon peak fit, 0.07 center of mass). On real, well-exposed\nimages this floor is usually the largest part of the covariance, so\nthe reported σ varies little from corner to corner there. Weighting\na calibration by it has not been shown to beat uniform weighting on\nreal data. Errors shared by all corners of an image (defocus,\nlens-model error) are outside it. The floor was fitted on one camera\npair and is likely low for other optics. Within that pair the two\ncameras' own floors differed by up to 2×.",
           "properties": {
             "propagated": {
+              "additionalProperties": false,
               "properties": {
                 "noise": {
                   "$ref": "#/$defs/NoiseLevel",
@@ -372,7 +377,8 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "High-level detection configuration.\n\nBuild one with `DetectorConfig::chess`,\n`DetectorConfig::chess_multiscale`, `DetectorConfig::radon`, or\n`DetectorConfig::radon_multiscale` and tweak only the fields you need.\nThe detector translates this into the low-level `ChessParams` /\n`RadonDetectorParams` consumed by `chess-corners-core` at the detection\nboundary.\n\n# Common knobs\n\nThese fields are the primary surface for most callers:\n\n- `strategy` — choose ChESS or Radon and\n  configure its parameters.\n- `threshold` — control how many corners are\n  returned: lower → more candidates, higher → fewer and stronger. ChESS\n  reads it as an absolute response floor; Radon as a fraction of the\n  per-frame maximum.\n- `multiscale` — enable coarse-to-fine\n  pyramid detection (`Pyramid`) or keep it off (`SingleScale`).\n- `upscale` — pre-pipeline integer bilinear\n  upscaling for low-resolution inputs where corners have fewer than 5 px\n  of ring support. `Disabled` by default.\n- `refiner` — an optional image refiner that\n  improves on the detector's own subpixel localizer. `None` by default.\n- `orientation_method` — how corner\n  axis orientations are estimated when building descriptors.\n- `uncertainty` — whether each corner\n  reports a position covariance, and the image noise level behind it.\n\n# Advanced tuning\n\n- `detection` — shared NMS / clustering\n  thresholds applied by both strategies. See `DetectionParams`.\n- `merge_radius` — duplicate-suppression\n  radius across pyramid levels. See the field docs below.",
+  "additionalProperties": false,
+  "description": "High-level detection configuration.\n\nBuild one with `DetectorConfig::chess`,\n`DetectorConfig::chess_multiscale`, `DetectorConfig::radon`, or\n`DetectorConfig::radon_multiscale` and tweak only the fields you need.\nThe detector translates this into the low-level `ChessParams` /\n`RadonDetectorParams` consumed by `chess-corners-core` at the detection\nboundary.\n\n# Common knobs\n\nThese fields are the primary surface for most callers:\n\n- `strategy` — choose ChESS or Radon and\n  configure its parameters.\n- `threshold` — control how many corners are\n  returned: lower → more candidates, higher → fewer and stronger. ChESS\n  reads it as an absolute response floor; Radon as a fraction of the\n  per-frame maximum.\n- `multiscale` — enable coarse-to-fine\n  pyramid detection (`Pyramid`) or keep it off (`SingleScale`).\n- `upscale` — pre-pipeline integer bilinear\n  upscaling for low-resolution inputs where corners have fewer than 5 px\n  of ring support. `Disabled` by default.\n- `refiner` — an optional image refiner that\n  improves on the detector's own subpixel localizer. `None` by default.\n- `orientation_method` — how corner\n  axis orientations are estimated when building descriptors.\n- `uncertainty` — whether each corner\n  reports a position covariance, and the image noise level behind it.\n\n# Advanced tuning\n\n- `detection` — shared NMS / clustering\n  thresholds applied by both strategies. See `DetectionParams`.\n- `merge_radius` — duplicate-suppression\n  radius across pyramid levels. See the field docs below.\n\n# Deserialization\n\nAn omitted key takes its default, so `{}` is the default config. An\nunknown key is an error that names it, at every level of the tree.",
   "properties": {
     "detection": {
       "$ref": "#/$defs/DetectionParams",

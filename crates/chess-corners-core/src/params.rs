@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 /// Tunable parameters for the ChESS response computation and corner detection.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct ChessParams {
     /// Use the larger r=10 ring instead of the canonical r=5.

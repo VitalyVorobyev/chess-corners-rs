@@ -25,7 +25,7 @@ use super::{ChessConfig, ChessRing, ImageRefiner, MultiscaleConfig, RadonConfig,
 /// `nms_radius` to `4` to suit the wider Radon response peak.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct DetectionParams {
     /// Non-maximum-suppression half-radius, in working-resolution pixels
@@ -118,9 +118,14 @@ impl Default for DetectionStrategy {
 ///   thresholds applied by both strategies. See [`DetectionParams`].
 /// - [`merge_radius`](DetectorConfig::merge_radius) — duplicate-suppression
 ///   radius across pyramid levels. See the field docs below.
+///
+/// # Deserialization
+///
+/// An omitted key takes its default, so `{}` is the default config. An
+/// unknown key is an error that names it, at every level of the tree.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct DetectorConfig {
     /// Detector dispatch: ChESS or Radon, each carrying its own tuning.

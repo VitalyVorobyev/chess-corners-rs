@@ -378,44 +378,50 @@ The CLI:
 
 - Loads the image at the config's `image` field. Supported input
   formats are PNG, JPEG, TIFF, BMP, WebP and GIF.
-- Picks single-scale or multiscale from the top-level `multiscale` field.
-- Picks ChESS or Radon from `strategy` (the top-level variant).
-- Picks the image refiner from the top-level `refiner` field (`null`
-  keeps the detector's own localizer).
+- Runs the detector configured by the `detector` object: `strategy`
+  picks ChESS or Radon, `multiscale` single-scale or the pyramid, and
+  `refiner` the image refiner (`null` keeps the detector's own
+  localizer).
 - Writes a JSON summary and a PNG overlay with one mark per corner.
 
-The JSON config is the same `DetectorConfig` schema as the Rust and
-Python APIs, wrapped in a CLI envelope that adds `image`,
-`output_json`, `output_png`, and `log_level`:
+The config file holds the run's I/O settings at the top level and the
+`DetectorConfig` under `detector`, in the same schema as the Rust,
+Python and JavaScript APIs. Every key except `image` is optional; an
+omitted `detector` is the default config. An unknown key at either
+level is an error that names it.
 
 ```json
 {
   "image": "testimages/mid.png",
-  "strategy": {
-    "chess": {
-      "ring": "canonical",
-      "center_of_mass": { "radius": 2 }
-    }
-  },
-  "refiner": null,
-  "threshold": 30.0,
-  "detection": { "nms_radius": 2, "min_cluster_size": 2 },
-  "multiscale": "single_scale",
-  "upscale": "disabled",
-  "orientation_method": "ring_fit",
-  "merge_radius": 3.0,
   "output_json": null,
   "output_png": null,
-  "log_level": "info"
+  "log_level": "info",
+  "detector": {
+    "strategy": {
+      "chess": {
+        "ring": "canonical",
+        "center_of_mass": { "radius": 2 }
+      }
+    },
+    "refiner": null,
+    "threshold": 30.0,
+    "detection": { "nms_radius": 2, "min_cluster_size": 2 },
+    "multiscale": "single_scale",
+    "upscale": "disabled",
+    "orientation_method": "ring_fit",
+    "merge_radius": 3.0
+  }
 }
 ```
 
 Example configs under `config/`:
 
-- `chess_algorithm_config_example.json` — just the algorithm fields, the
-  pure `DetectorConfig` shape shared with the Rust and Python APIs.
-- `chess_cli_config_example.json` — algorithm fields plus CLI I/O
-  envelope.
+- `chess_algorithm_config_example.json` — a `DetectorConfig` on its
+  own, the value of a CLI file's `detector` key.
+- `chess_cli_config_example.json` — a complete CLI config.
+
+The JSON summary echoes the configuration under `detector`, next to
+the image size and the corners.
 
 In JSON, `threshold` is written as a bare number (ChESS: absolute
 response floor; Radon: fraction of the per-frame maximum), and

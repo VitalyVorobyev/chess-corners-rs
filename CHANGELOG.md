@@ -87,10 +87,16 @@ has before and after code for every binding.
   `chess_corners::Uncertainty` (`Uncertainty::off()`,
   `Uncertainty::propagated(sigma)`) in place of the tag plus
   `Config::noise_sigma`.
-- `ChessConfig` and `RadonConfig` reject unknown JSON keys with
-  `serde_json` (and so in the CLI), as Python already did, so a
-  configuration written for the removed per-strategy `refiner` fails to
-  load instead of silently dropping the refiner.
+- Every config loader rejects an unknown key at every level, with an
+  error that names it: Rust serde (`DetectorConfig` and every type in
+  it), the CLI, Python `DetectorConfig.from_dict` / `from_json`, and JS
+  `DetectorConfig.fromJson`, which ignored unknown keys before. A stale
+  1.x key such as `noise_sigma` or a per-strategy `refiner` fails to
+  load instead of being dropped. The JSON Schema sets
+  `additionalProperties: false` on every object.
+- The CLI config file nests the detector settings under `"detector"`,
+  beside `image`, `output_json`, `output_png` and `log_level`; the
+  JSON summary echoes them under `detector` instead of `algorithm`.
 - With the `rayon` feature, the subpixel refinement and position covariance
   of large corner sets, the Radon peak-fit covariance, and the multiscale
   per-seed refinement run in parallel. Results are unchanged bit for bit;

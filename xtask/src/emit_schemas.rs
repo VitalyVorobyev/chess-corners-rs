@@ -227,14 +227,15 @@ mod tests {
 
     #[test]
     fn unknown_keys_follow_serde() {
-        // serde ignores unknown top-level keys, so the schema must not reject
-        // them either; the strategy configs deny them, in both.
-        let instance = json!({"threshold": 30.0, "not_a_field": 1});
-        assert!(serde_json::from_value::<DetectorConfig>(instance.clone()).is_ok());
-        assert!(validator().is_valid(&instance));
+        // serde rejects unknown keys at every level; so must the schema.
         for strict in [
+            json!({"threshold": 30.0, "noise_sigma": 1.5}),
             json!({"strategy": {"chess": {"refiner": {"saddle_point": {}}}}}),
             json!({"strategy": {"radon": {"refiner": "peak_fit"}}}),
+            json!({"detection": {"nms": 3}}),
+            json!({"multiscale": {"pyramid": {"levels": 3, "min_size": 128, "refinement_radius": 3, "x": 1}}}),
+            json!({"refiner": {"saddle_point": {"x": 1}}}),
+            json!({"uncertainty": {"propagated": {"noise": "estimate", "x": 1}}}),
         ] {
             assert!(serde_json::from_value::<DetectorConfig>(strict.clone()).is_err());
             assert!(!validator().is_valid(&strict), "should reject {strict}");

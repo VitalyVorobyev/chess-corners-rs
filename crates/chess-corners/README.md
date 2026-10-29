@@ -164,9 +164,10 @@ peak fit and keeps the peak fit where it does not converge.
 
 ## CLI config shape
 
-The CLI uses the same `DetectorConfig` schema, combined with
-application fields such as `image`, `output_json`, `output_png`, and
-`log_level`. It reads PNG, JPEG, TIFF, BMP, WebP and GIF
+The CLI config holds application fields (`image`, `output_json`,
+`output_png`, `log_level`) at the top level and a `DetectorConfig`
+under `detector`. An unknown key at either level is an error that
+names it. The CLI reads PNG, JPEG, TIFF, BMP, WebP and GIF
 input images.
 
 See:
@@ -175,7 +176,7 @@ See:
   `DetectorConfig` shape (round-trips through the Rust and Python
   APIs).
 - `config/chess_cli_config_example.json` for a complete CLI runner
-  input (algorithm config + envelope).
+  input (I/O fields + `detector`).
 
 ## Examples
 

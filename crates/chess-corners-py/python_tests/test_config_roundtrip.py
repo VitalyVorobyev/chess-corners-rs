@@ -99,6 +99,33 @@ def test_from_dict_rejects_unknown_top_level_key():
         chess_corners.DetectorConfig.from_dict({"bogus_key_that_does_not_exist": 1})
 
 
+@pytest.mark.parametrize(
+    "data, key",
+    [
+        ({"noise_sigma": 1.5}, "noise_sigma"),
+        ({"strategy": {"chess": {"refiner": "center_of_mass"}}}, "refiner"),
+        ({"strategy": {"radon": {"ray_radus": 5}}}, "ray_radus"),
+        ({"strategy": {"chess": {"center_of_mass": {"radius": 2, "r": 1}}}}, "r"),
+        ({"detection": {"nms": 3}}, "nms"),
+        (
+            {"multiscale": {"pyramid": {"levels": 3, "min_size": 128, "refinement_radius": 3, "x": 1}}},
+            "x",
+        ),
+        ({"upscale": {"fixed": 2, "x": 1}}, "x"),
+        ({"refiner": {"saddle_point": {"radius_px": 2}}}, "radius_px"),
+        ({"uncertainty": {"propagated": {"noise": "estimate", "sigma": 1.0}}}, "sigma"),
+    ],
+)
+def test_stale_keys_are_rejected_and_named_at_every_level(data, key):
+    """A stale or misspelt key fails at any depth, through both entry points."""
+    for load in (
+        chess_corners.DetectorConfig.from_dict,
+        lambda d: chess_corners.DetectorConfig.from_json(json.dumps(d)),
+    ):
+        with pytest.raises(chess_corners.ConfigError, match=rf"(unknown keys: {key}$|^{key} moved)"):
+            load(data)
+
+
 # ---------------------------------------------------------------------------
 # JSON / dict equivalence
 # ---------------------------------------------------------------------------
