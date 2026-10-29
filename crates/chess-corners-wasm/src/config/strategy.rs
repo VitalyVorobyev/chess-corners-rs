@@ -3,13 +3,11 @@
 
 use std::rc::Rc;
 
-#[allow(deprecated)]
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
     ChessRing as RsChessRing, DetectionParams as RsDetectionParams,
-    DetectionStrategy as RsDetectionStrategy, ForstnerConfig as RsForstnerConfig,
-    PeakFitMode as RsPeakFitMode, RadonConfig as RsRadonConfig,
-    SaddlePointConfig as RsSaddlePointConfig,
+    DetectionStrategy as RsDetectionStrategy, PeakFitMode as RsPeakFitMode,
+    RadonConfig as RsRadonConfig, SaddlePointConfig as RsSaddlePointConfig,
 };
 use wasm_bindgen::prelude::*;
 
@@ -45,16 +43,14 @@ impl StrategyKind {
 /// All fields — including the refiner discriminant and payloads — are
 /// stored as shared `Rc<RefCell<…>>` cells. The `refiner` getter
 /// assembles a [`ChessRefiner`] wrapper out of clones of those cells,
-/// so edits chained as `cfg.strategy.chess.refiner.forstner.maxOffset
+/// so edits chained as `cfg.strategy.chess.refiner.saddlePoint.maxOffset
 /// = 2.5` propagate through the chess config without a round-trip.
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
-#[allow(deprecated)]
 pub struct ChessConfig {
     ring: Cell<RsChessRing>,
     refiner_kind: Cell<ChessRefinerKind>,
     refiner_center_of_mass: Cell<RsCenterOfMassConfig>,
-    refiner_forstner: Cell<RsForstnerConfig>,
     refiner_saddle_point: Cell<RsSaddlePointConfig>,
 }
 
@@ -81,7 +77,6 @@ impl ChessConfig {
         ChessRefiner {
             kind: Rc::clone(&self.refiner_kind),
             center_of_mass: Rc::clone(&self.refiner_center_of_mass),
-            forstner: Rc::clone(&self.refiner_forstner),
             saddle_point: Rc::clone(&self.refiner_saddle_point),
         }
     }
@@ -92,7 +87,6 @@ impl ChessConfig {
         // referencing the same Rc) see the update.
         *self.refiner_kind.borrow_mut() = *v.kind.borrow();
         *self.refiner_center_of_mass.borrow_mut() = *v.center_of_mass.borrow();
-        *self.refiner_forstner.borrow_mut() = *v.forstner.borrow();
         *self.refiner_saddle_point.borrow_mut() = *v.saddle_point.borrow();
     }
 }
@@ -110,7 +104,6 @@ impl ChessConfig {
             ring: cell(value.ring),
             refiner_kind: refiner.kind,
             refiner_center_of_mass: refiner.center_of_mass,
-            refiner_forstner: refiner.forstner,
             refiner_saddle_point: refiner.saddle_point,
         }
     }
@@ -122,7 +115,6 @@ impl ChessConfig {
         *self.ring.borrow_mut() = *other.ring.borrow();
         *self.refiner_kind.borrow_mut() = *other.refiner_kind.borrow();
         *self.refiner_center_of_mass.borrow_mut() = *other.refiner_center_of_mass.borrow();
-        *self.refiner_forstner.borrow_mut() = *other.refiner_forstner.borrow();
         *self.refiner_saddle_point.borrow_mut() = *other.refiner_saddle_point.borrow();
     }
 
@@ -133,7 +125,6 @@ impl ChessConfig {
         let refiner_view = ChessRefiner {
             kind: Rc::clone(&self.refiner_kind),
             center_of_mass: Rc::clone(&self.refiner_center_of_mass),
-            forstner: Rc::clone(&self.refiner_forstner),
             saddle_point: Rc::clone(&self.refiner_saddle_point),
         };
         let mut s = RsChessConfig::default();

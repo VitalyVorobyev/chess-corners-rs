@@ -217,8 +217,8 @@ The fields group by applicability:
   `upscale_factor`, the image noise level `has_noise_sigma` /
   `noise_sigma` (`std::optional<float> noise_sigma` in C++; unset
   estimates it from each image), and `refiner` (a `CC_REFINER_*` tag
-  valid for the strategy: ChESS takes `CENTER_OF_MASS` — its default —,
-  `FORSTNER` or `SADDLE_POINT`; Radon takes `PEAK_FIT` — its default —
+  valid for the strategy: ChESS takes `CENTER_OF_MASS` — its default —
+  or `SADDLE_POINT`; Radon takes `PEAK_FIT` — its default —
   or `SADDLE_POINT`).
 - **ChESS only:** `chess_ring` (`CC_CHESS_RING_CANONICAL` for the
   paper's radius-5 ring, or `CC_CHESS_RING_BROAD` for radius-10).

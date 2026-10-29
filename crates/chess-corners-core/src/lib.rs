@@ -77,9 +77,6 @@ pub use crate::params::ChessParams;
 
 pub use crate::detect::chess::response::{chess_response_u8, chess_response_u8_patch, Roi};
 pub use crate::detect::dense::{ChessBuffers, ChessDetector, DenseDetector, RadonDetector};
-#[doc(hidden)]
-#[allow(deprecated)]
-pub use crate::detect::radon::detect::attach_radon_peak_covariance;
 pub use crate::detect::radon::primitives::PeakFitMode;
 pub use crate::detect::radon::{
     detect_peaks_from_radon, radon_response_u8, RadonBuffers, RadonDetectorParams,
@@ -94,11 +91,9 @@ pub use crate::noise::estimate_noise_sigma_u8;
 pub use crate::orientation::{
     describe_corners, fit_axes_at_point, AxisFitResult, OrientationMethod,
 };
-#[allow(deprecated)]
 pub use crate::refine::{
-    CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, ForstnerConfig, ForstnerRefiner,
-    PositionCovariance, RefineContext, RefineResult, RefineStatus, Refiner, RefinerKind,
-    SaddlePointConfig, SaddlePointRefiner,
+    CenterOfMassConfig, CenterOfMassRefiner, CornerRefiner, PositionCovariance, RefineContext,
+    RefineResult, RefineStatus, Refiner, RefinerKind, SaddlePointConfig, SaddlePointRefiner,
 };
 pub use crate::uncertainty::Uncertainty;
 pub use imageview::ImageView;

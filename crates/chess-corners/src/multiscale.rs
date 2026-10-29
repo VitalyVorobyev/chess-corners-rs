@@ -607,7 +607,7 @@ impl DetectorShape {
 /// peak extraction stays inside [`DenseDetector::detect_corners`]
 /// (which returns peaks with the response-map subpixel position only
 /// — e.g. the ChESS quadratic / Radon 3-point Gaussian); image-domain
-/// refinement (`CenterOfMassRefiner`, `ForstnerRefiner`, …) runs as a
+/// refinement (`CenterOfMassRefiner`, `SaddlePointRefiner`) runs as a
 /// separate post-detection stage via
 /// [`refine_corners_on_image`](chess_corners_core::refine_corners_on_image).
 ///

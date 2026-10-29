@@ -174,7 +174,6 @@ mod tests {
         jsonschema::validator_for(&detector_config_schema()).expect("schema compiles")
     }
 
-    #[allow(deprecated)]
     fn presets() -> Vec<(&'static str, DetectorConfig)> {
         vec![
             ("default", DetectorConfig::default()),
@@ -183,9 +182,9 @@ mod tests {
             ("radon", DetectorConfig::radon()),
             ("radon_multiscale", DetectorConfig::radon_multiscale()),
             (
-                "forstner_upscale",
+                "center_of_mass_upscale",
                 DetectorConfig::chess()
-                    .with_chess(|c| c.refiner = chess_corners::ChessRefiner::forstner())
+                    .with_chess(|c| c.refiner = chess_corners::ChessRefiner::center_of_mass())
                     .with_upscale(UpscaleConfig::fixed(3))
                     .without_orientation(),
             ),

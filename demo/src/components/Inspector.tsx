@@ -115,7 +115,6 @@ export function Inspector(p: InspectorProps) {
                     onValueChange={(v) => p.onSettings({ chessRefiner: v as ChessRefinerKind })}
                     options={[
                       { value: "centerOfMass", label: "Center of mass" },
-                      { value: "forstner", label: "Förstner" },
                       { value: "saddlePoint", label: "Saddle point" },
                     ]}
                   />

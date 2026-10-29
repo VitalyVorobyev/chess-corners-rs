@@ -362,7 +362,6 @@ impl DetectorConfig {
     /// ChESS-specific fields fall back to their [`ChessParams::default()`]
     /// values; callers should route through
     /// [`Self::radon_detector_params`] instead.
-    #[allow(deprecated)]
     pub fn chess_params(&self) -> ChessParams {
         let mut params = ChessParams::default();
         params.nms_radius = self.detection.nms_radius;
@@ -371,7 +370,6 @@ impl DetectorConfig {
             params.use_radius10 = matches!(chess.ring, ChessRing::Broad);
             match chess.refiner {
                 ChessRefiner::CenterOfMass(cfg) => params.refiner = RefinerKind::CenterOfMass(cfg),
-                ChessRefiner::Forstner(cfg) => params.refiner = RefinerKind::Forstner(cfg),
                 ChessRefiner::SaddlePoint(cfg) => params.refiner = RefinerKind::SaddlePoint(cfg),
                 // The ML refiner runs in the facade, not core: `Detector`
                 // routes `Ml` to the ONNX pipeline. Core only produces the

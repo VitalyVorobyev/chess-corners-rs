@@ -60,7 +60,7 @@ mod private {
 /// orchestrator can amortise allocations across frames.
 ///
 /// Subpixel refinement on the *input image* (center-of-mass,
-/// Förstner, saddle-point) runs on the detected peaks through
+/// saddle-point) runs on the detected peaks through
 /// [`Self::refine_peaks_on_image`].
 ///
 /// # Toolchain
@@ -216,16 +216,6 @@ pub trait DenseDetector: private::Sealed {
     ) {
         let _ = (corners, image, params, buffers);
     }
-
-    /// Whether [`Self::refine_peaks_on_image`] consumes the refiner:
-    /// `true` for both built-in detectors.
-    #[deprecated(
-        since = "1.6.0",
-        note = "both built-in detectors refine on the image; this is always `true`"
-    )]
-    fn refines_on_image(&self) -> bool {
-        true
-    }
 }
 
 /// Reusable scratch for [`ChessDetector`]. Wraps an owned
@@ -247,7 +237,7 @@ pub struct ChessBuffers {
 /// ([`crate::chess_response_u8`]) and the
 /// threshold + NMS + cluster-filter peak detector
 /// ([`crate::detect_peaks_from_response_with_refine_radius`]). Subpixel
-/// refinement (center-of-mass, Förstner, saddle-point) is a separate
+/// refinement (center-of-mass, saddle-point) is a separate
 /// detector-agnostic stage; see
 /// [`crate::refine_corners_on_image`].
 #[derive(Debug, Default, Clone, Copy)]
@@ -452,7 +442,7 @@ impl DenseDetector for RadonDetector {
             if res.status == RefineStatus::Accepted && res.converged {
                 c.x = res.x;
                 c.y = res.y;
-                c.set_model(res.covariance_model());
+                c.model = res.model;
                 c.at_peak_fit = false;
             }
         }
@@ -588,24 +578,23 @@ mod tests {
             assert_eq!((r.x, r.y), (a.x, a.y));
             if r.at_peak_fit {
                 assert_eq!((p.x, p.y), (a.x, a.y));
-                assert!(a.covariance_model().is_some());
+                assert!(a.model.is_some());
             } else {
                 moved += 1;
-                assert_eq!(a.covariance_model(), r.covariance_model());
+                assert_eq!(a.model, r.model);
             }
         }
         assert!(moved > 0);
 
         // Without an image refiner every peak gets the peak-fit covariance,
-        // the model the deprecated per-corner entry point attaches.
+        // the model the per-corner peak-fit covariance attaches.
         let mut fit_only = peaks.clone();
         RadonDetector.attach_peak_covariance(&mut fit_only, view, &params, &mut buffers);
         for (p, a) in peaks.iter().zip(&fit_only) {
             let mut single = p.clone();
-            #[allow(deprecated)]
-            crate::attach_radon_peak_covariance(&mut single, view, &params, &mut buffers);
-            assert!(a.covariance_model().is_some());
-            assert_eq!(a.covariance_model(), single.covariance_model());
+            attach_peak_fit_covariance(&mut single, view, &params, &mut buffers);
+            assert!(a.model.is_some());
+            assert_eq!(a.model, single.model);
         }
 
         let chess_params = ChessParams::default();
@@ -619,7 +608,7 @@ mod tests {
             &chess_params,
             &mut chess_buffers,
         );
-        assert!(chess_peaks.iter().all(|c| c.covariance_model().is_none()));
+        assert!(chess_peaks.iter().all(|c| c.model.is_none()));
     }
 
     /// A second smoke test that pins the buffer-reuse semantics: a

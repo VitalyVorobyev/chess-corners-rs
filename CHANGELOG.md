@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- C ABI: `cc_abi_version` is 8. The `CC_REFINER_*` tags are renumbered to
+  stay contiguous: `CC_REFINER_CENTER_OF_MASS = 0`,
+  `CC_REFINER_SADDLE_POINT = 1`, `CC_REFINER_PEAK_FIT = 2`. Rebuild against
+  the new header; code that uses the named constants needs no other change.
+
+### Removed
+
+- The Förstner refiner, everywhere: `ChessRefiner::Forstner` and
+  `ChessRefiner::forstner()`, core `RefinerKind::Forstner`,
+  `Refiner::Forstner`, `ForstnerConfig` and `ForstnerRefiner`, Python
+  `ForstnerConfig` and `ChessRefiner.forstner()`, JS `ForstnerConfig` and
+  `ChessRefiner.withForstner`, C `CC_REFINER_FORSTNER`, the CLI
+  `--chess-refiner forstner` choice and the `"forstner"` refiner in the JSON
+  config. Use `ChessRefiner::SaddlePoint` (`ChessRefiner::saddle_point()`,
+  `"saddle_point"`, `CC_REFINER_SADDLE_POINT`), which is more accurate on
+  real calibration images and on almost every synthetic condition.
+- The `covariance_per_noise_variance` fields of `Corner` and
+  `RefineResult`: read `noise_covariance_per_unit_variance()`, or
+  `position_covariance(noise_sigma)` for the full covariance in px².
+- `chess_corners_core::attach_radon_peak_covariance`: use
+  `DenseDetector::attach_peak_covariance` on `RadonDetector`.
+- `DenseDetector::refines_on_image`: both detectors always refine on the
+  image; drop the call.
+
 ## Past releases
 
 Detailed notes for prior releases live under `docs/changelog/`.

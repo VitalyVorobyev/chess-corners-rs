@@ -24,12 +24,11 @@ SAMPLE_CONFIG = {
         "chess": {
             "ring": "broad",
             "refiner": {
-                "forstner": {
+                "saddle_point": {
                     "radius": 2,
-                    "min_trace": 25.0,
-                    "min_det": 0.001,
-                    "max_condition_number": 50.0,
+                    "det_margin": 0.001,
                     "max_offset": 2.0,
+                    "min_abs_det": 0.0001,
                 },
             },
         },
@@ -78,7 +77,7 @@ def test_full_config_example_parser_is_lazy_about_pillow():
     assert abs(cfg.threshold - 0.5) < 1e-6
     assert cfg.detection.nms_radius == 3
     assert cfg.detection.min_cluster_size == 1
-    assert cfg.strategy.chess.refiner.kind == "forstner"
+    assert cfg.strategy.chess.refiner.kind == "saddle_point"
     assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
     ms = cfg.multiscale
     assert ms.kind == "pyramid"
@@ -110,7 +109,7 @@ def test_code_config_example_is_lazy_about_pillow_and_builds_full_config():
     assert cfg.strategy.kind == "chess"
     assert cfg.strategy.chess.ring is chess_corners.ChessRing.BROAD
     assert abs(cfg.threshold - 0.5) < 1e-6
-    assert cfg.strategy.chess.refiner.kind == "forstner"
+    assert cfg.strategy.chess.refiner.kind == "saddle_point"
     assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
     ms = cfg.multiscale
     assert ms.kind == "pyramid"

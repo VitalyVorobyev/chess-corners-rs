@@ -19,8 +19,6 @@ create_exception!(_native, ConfigError, PyValueError);
 pub use detector::DetectorConfig;
 pub use multiscale::MultiscaleConfig;
 pub use parse::{ChessRing, OrientationMethod, PeakFitMode, Uncertainty};
-pub use refiners::{
-    CenterOfMassConfig, ChessRefiner, ForstnerConfig, RadonRefiner, SaddlePointConfig,
-};
+pub use refiners::{CenterOfMassConfig, ChessRefiner, RadonRefiner, SaddlePointConfig};
 pub use strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig};
 pub use upscale::UpscaleConfig;

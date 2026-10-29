@@ -62,17 +62,13 @@ pub const CC_STRATEGY_RADON: cc_strategy_t = 1;
 pub type cc_refiner_t = u32;
 /// Center-of-mass refiner. ChESS strategy only (the ChESS default).
 pub const CC_REFINER_CENTER_OF_MASS: cc_refiner_t = 0;
-/// Förstner refiner. ChESS strategy only. Deprecated since 1.7.0: use
-/// `CC_REFINER_SADDLE_POINT`, which is more accurate on every tested
-/// condition; the Förstner refiner is removed in 2.0.
-pub const CC_REFINER_FORSTNER: cc_refiner_t = 1;
 /// Saddle-point refiner. Valid for both strategies. Under Radon a corner
 /// whose refinement does not converge keeps its peak-fit position and
 /// covariance.
-pub const CC_REFINER_SADDLE_POINT: cc_refiner_t = 2;
+pub const CC_REFINER_SADDLE_POINT: cc_refiner_t = 1;
 /// Radon's response-map peak fit, with no image refinement. Radon strategy
 /// only (the Radon default).
-pub const CC_REFINER_PEAK_FIT: cc_refiner_t = 3;
+pub const CC_REFINER_PEAK_FIT: cc_refiner_t = 2;
 
 /// Orientation-fit tag stored in `cc_config::orientation_method`.
 pub type cc_orientation_method_t = u32;
@@ -580,7 +576,7 @@ pub extern "C" fn cc_status_str(status: cc_status) -> *const c_char {
 /// ABI version of this library. Bumped manually on any breaking ABI change.
 #[no_mangle]
 pub extern "C" fn cc_abi_version() -> u32 {
-    7
+    8
 }
 
 #[cfg(test)]
@@ -657,7 +653,7 @@ mod tests {
 
     #[test]
     fn abi_version_is_stable() {
-        assert_eq!(cc_abi_version(), 7);
+        assert_eq!(cc_abi_version(), 8);
     }
 
     #[test]
@@ -856,7 +852,7 @@ mod tests {
         cfg.refiner = CC_REFINER_SADDLE_POINT;
         let rs = convert::to_detector_config(&cfg).expect("valid");
         assert_eq!(convert::flatten(&rs).refiner, CC_REFINER_SADDLE_POINT);
-        for bad in [CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, 99] {
+        for bad in [CC_REFINER_CENTER_OF_MASS, 99] {
             cfg.refiner = bad;
             assert_eq!(
                 convert::to_detector_config(&cfg),

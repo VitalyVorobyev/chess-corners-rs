@@ -180,7 +180,7 @@ impl CornerRefiner for CenterOfMassRefiner {
             let xy = [sx / sw, sy / sw];
             let mut res = RefineResult::accepted(xy, sw);
             if let (true, Some(img)) = (self.uncertainty.reports(), ctx.image) {
-                res.set_model(self.covariance(&img, resp, [x, y], xy, sw));
+                res.model = self.covariance(&img, resp, [x, y], xy, sw);
             }
             res
         } else {

@@ -1,7 +1,6 @@
-#[allow(deprecated)]
 use chess_corners_core::{
-    CenterOfMassConfig, ForstnerConfig, OrientationMethod, PeakFitMode, RadonDetectorParams,
-    RefinerKind, SaddlePointConfig,
+    CenterOfMassConfig, OrientationMethod, PeakFitMode, RadonDetectorParams, RefinerKind,
+    SaddlePointConfig,
 };
 
 use crate::upscale::UpscaleConfig;
@@ -149,16 +148,15 @@ fn radon_multiscale_preset_carries_pyramid_params() {
 }
 
 #[test]
-#[allow(deprecated)]
-fn broad_ring_and_forstner_refiner_propagate_to_params() {
-    // `ForstnerConfig` is `#[non_exhaustive]`; build via `Default`
+fn broad_ring_and_saddle_point_refiner_propagate_to_params() {
+    // `SaddlePointConfig` is `#[non_exhaustive]`; build via `Default`
     // and set the field under test.
-    let mut forstner = ForstnerConfig::default();
-    forstner.max_offset = 2.0;
+    let mut saddle = SaddlePointConfig::default();
+    saddle.max_offset = 2.0;
     let cfg = DetectorConfig {
         strategy: DetectionStrategy::Chess(ChessConfig {
             ring: ChessRing::Broad,
-            refiner: ChessRefiner::Forstner(forstner),
+            refiner: ChessRefiner::SaddlePoint(saddle),
             ..ChessConfig::default()
         }),
         ..DetectorConfig::chess()
@@ -166,7 +164,7 @@ fn broad_ring_and_forstner_refiner_propagate_to_params() {
 
     let params = cfg.chess_params();
     assert!(params.use_radius10);
-    assert_eq!(params.refiner, RefinerKind::Forstner(forstner));
+    assert_eq!(params.refiner, RefinerKind::SaddlePoint(saddle));
 }
 
 #[test]
@@ -257,11 +255,9 @@ fn multiscale_config_round_trips_with_externally_tagged_payload() {
 }
 
 #[test]
-#[allow(deprecated)]
 fn chess_refiner_round_trips_each_variant() {
     let variants = [
         ChessRefiner::CenterOfMass(CenterOfMassConfig::default()),
-        ChessRefiner::Forstner(ForstnerConfig::default()),
         ChessRefiner::SaddlePoint(SaddlePointConfig::default()),
     ];
     for v in variants {
@@ -348,16 +344,15 @@ fn with_detection_sets_shared_params_for_both_strategies() {
 }
 
 #[test]
-#[allow(deprecated)]
 fn chained_builder_produces_expected_state() {
     let cfg = DetectorConfig::chess()
         .with_threshold(0.15)
-        .with_chess(|c| c.refiner = ChessRefiner::forstner());
+        .with_chess(|c| c.refiner = ChessRefiner::saddle_point());
     assert_eq!(cfg.threshold, 0.15);
     let chess = assert_strategy_chess(&cfg);
     assert_eq!(
         chess.refiner,
-        ChessRefiner::Forstner(ForstnerConfig::default())
+        ChessRefiner::SaddlePoint(SaddlePointConfig::default())
     );
 }
 
@@ -408,15 +403,10 @@ fn with_merge_radius_sets_radius() {
 }
 
 #[test]
-#[allow(deprecated)]
 fn chess_refiner_shortcuts_equal_full_constructors() {
     assert_eq!(
         ChessRefiner::center_of_mass(),
         ChessRefiner::CenterOfMass(CenterOfMassConfig::default())
-    );
-    assert_eq!(
-        ChessRefiner::forstner(),
-        ChessRefiner::Forstner(ForstnerConfig::default())
     );
     assert_eq!(
         ChessRefiner::saddle_point(),

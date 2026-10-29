@@ -36,7 +36,6 @@ KNOTS = [1.09, 1.14, 1.18, 1.24, 1.30, 1.35, 1.40, 1.47, 1.58, 1.68]
 # (localizer rows, grid spacing px, fit the gain?)
 MODELS = {
     "center_of_mass.rs": ("CoM", 1.0, False),
-    "forstner.rs": ("Forstner", 1.0, True),
     "radon/detect.rs": ("RadonPeak", 0.5, True),
     "saddle_point.rs": ("SaddlePoint", 1.0, False),
 }

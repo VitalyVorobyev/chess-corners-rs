@@ -112,7 +112,6 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
 
     let mut classic = ClassicRefiners::new();
     let mut center_stats = Stats::default();
-    let mut forstner_stats = Stats::default();
     let mut saddle_stats = Stats::default();
     #[cfg(feature = "ml-refiner")]
     let mut ml_refiner = harness::ml::MlRefiner::load();
@@ -143,15 +142,6 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
                 &mut center_stats,
             );
             bench_refiner(
-                &mut classic.forstner,
-                ITERS,
-                view,
-                None,
-                seed,
-                (ox, oy),
-                &mut forstner_stats,
-            );
-            bench_refiner(
                 &mut classic.saddle,
                 ITERS,
                 view,
@@ -174,10 +164,6 @@ fn run_sweep(label: &str, blur_sigma: f32, noise_sigma: f32, cell: usize, noise_
         RefinerRow {
             name: "CenterOfMass",
             stats: center_stats,
-        },
-        RefinerRow {
-            name: "Forstner",
-            stats: forstner_stats,
         },
         RefinerRow {
             name: "SaddlePoint",

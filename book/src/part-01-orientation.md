@@ -43,10 +43,9 @@ single configuration type:
 Both produce the same `CornerDescriptor` output, and both feed the
 same [multiscale pipeline](part-07-multiscale-and-pyramids.md).
 
-Once a detector has produced integer-pixel seeds, one of four
+Once a detector has produced integer-pixel seeds, one of three
 subpixel refiners brings the coordinates under a pixel:
-`CenterOfMass`, `Förstner`, `SaddlePoint`, or an
-ONNX-backed `ML` refiner. Each is selected through the active
+`CenterOfMass`, `SaddlePoint`, or an ONNX-backed `ML` refiner. Each is selected through the active
 strategy's `refiner` field. The refiners are described in
 [Part V](part-05-refiners.md) and benchmarked in
 [Part IX](part-09-benchmarks.md).
@@ -173,7 +172,7 @@ at the same site:
 
 ```toml
 [dependencies]
-chess-corners = "1.7"
+chess-corners = "2.0"
 image = { version = "0.25", features = ["png", "jpeg"] }  # pick the formats your code decodes
 ```
 

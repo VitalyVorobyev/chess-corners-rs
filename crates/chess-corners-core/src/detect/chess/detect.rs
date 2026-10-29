@@ -201,7 +201,7 @@ pub fn refine_corners_on_image(
         let res = refiner.refine(seed_xy, ctx);
         if matches!(res.status, RefineStatus::Accepted) {
             let mut refined = Corner::new(res.x, res.y, c.strength);
-            refined.set_model(res.covariance_model());
+            refined.model = res.model;
             out.push(refined);
         }
     }

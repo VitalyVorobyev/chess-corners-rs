@@ -75,8 +75,8 @@ pub trait CornerRefiner {
 }
 ```
 
-`ChessRefiner` carries `CenterOfMass`, `Förstner`, `SaddlePoint`, and
-optionally `Ml`. Each variant owns its tuning struct, so switching
+`ChessRefiner` carries `CenterOfMass`, `SaddlePoint`, and optionally
+`Ml`. Each variant owns its tuning struct, so switching
 variants cannot leave old tuning fields active by accident. The Radon
 detector does not use a pluggable refiner; its subpixel step is the
 built-in 3-point Gaussian peak fit configured via

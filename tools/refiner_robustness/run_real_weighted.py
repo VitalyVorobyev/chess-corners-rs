@@ -4,7 +4,7 @@ calibration by each corner's reported covariance help?
 Datasets (read-only): ``stereo_simple`` (20 views per camera, 11 x 7 inner
 corners, 30 mm squares, board IDs from ``cv2.findChessboardCornersSB``) and
 ``table`` (ChArUco 22 x 22 squares, 1.35 mm, DICT_4X4_1000, non-legacy layout,
-board IDs from ``cv2.aruco.CharucoDetector``). Per localizer (ChESS + CenterOfMass / Förstner / SaddlePoint,
+board IDs from ``cv2.aruco.CharucoDetector``). Per localizer (ChESS + CenterOfMass / SaddlePoint,
 the Radon peak fit, Radon + SaddlePoint; ``Uncertainty.PROPAGATED``,
 noise sigma estimated per image), on the corners every localizer matched and
 gave a covariance:
@@ -48,7 +48,7 @@ sys.path.insert(0, str(HERE))
 import chess_corners as cc  # noqa: E402
 import estimators as est  # noqa: E402
 
-NAMES = ["CoM", "Forstner", "SaddlePoint", "RadonPeak", "RadonSaddle"]
+NAMES = ["CoM", "SaddlePoint", "RadonPeak", "RadonSaddle"]
 SS = "/Users/vitalyvorobyev/vision/calib-examples/data/stereo_simple/imgs"
 TB = "/Users/vitalyvorobyev/vision/data/25_09_17_Table_Calibration"
 
@@ -93,7 +93,6 @@ def detector(name: str):
             cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(cc.Uncertainty.PROPAGATED)
             cfg.strategy.chess.refiner = {
                 "CoM": cc.ChessRefiner.center_of_mass(),
-                "Forstner": cc.ChessRefiner.forstner(),
                 "SaddlePoint": cc.ChessRefiner.saddle_point(),
             }[name]
         _DETS[name] = cc.Detector(cfg)

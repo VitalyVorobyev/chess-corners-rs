@@ -3,12 +3,11 @@
     "chess": {
       "ring": "broad",
       "refiner": {
-        "forstner": {
+        "saddle_point": {
           "radius": 2,
-          "min_trace": 25.0,
-          "min_det": 0.001,
-          "max_condition_number": 50.0,
-          "max_offset": 1.5
+          "det_margin": 0.001,
+          "max_offset": 1.5,
+          "min_abs_det": 0.0001
         }
       }
     }

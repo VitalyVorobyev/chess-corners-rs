@@ -333,24 +333,17 @@ typedef struct cc_result {
 #define CC_REFINER_CENTER_OF_MASS 0
 
 /**
- * Förstner refiner. ChESS strategy only. Deprecated since 1.7.0: use
- * `CC_REFINER_SADDLE_POINT`, which is more accurate on every tested
- * condition; the Förstner refiner is removed in 2.0.
- */
-#define CC_REFINER_FORSTNER 1
-
-/**
  * Saddle-point refiner. Valid for both strategies. Under Radon a corner
  * whose refinement does not converge keeps its peak-fit position and
  * covariance.
  */
-#define CC_REFINER_SADDLE_POINT 2
+#define CC_REFINER_SADDLE_POINT 1
 
 /**
  * Radon's response-map peak fit, with no image refinement. Radon strategy
  * only (the Radon default).
  */
-#define CC_REFINER_PEAK_FIT 3
+#define CC_REFINER_PEAK_FIT 2
 
 /**
  * 16-sample ring Gauss-Newton fit (the default).

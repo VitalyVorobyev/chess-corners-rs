@@ -38,7 +38,7 @@ pub enum Uncertainty {
     ///
     /// The systematic part includes a per-localizer floor measured on real
     /// calibration images (about 0.05 px per axis for the saddle-point fit
-    /// and the Radon peak fit, 0.07 center of mass, 0.11 Förstner). On
+    /// and the Radon peak fit, 0.07 center of mass). On
     /// real, well-exposed images this floor is usually the largest part of
     /// the covariance, so the reported σ varies little from corner to
     /// corner there. Weighting a calibration by it has not been shown to
@@ -83,15 +83,6 @@ pub(crate) struct CovarianceModel {
 }
 
 impl CovarianceModel {
-    /// A model with only the noise term `noise`.
-    pub(crate) fn noise_only(noise: PositionCovariance) -> Self {
-        Self {
-            noise,
-            systematic: PositionCovariance::ZERO,
-            growth: [0.0; 2],
-        }
-    }
-
     /// The model with an image noise of `noise_sigma` gray levels, in px²:
     /// `max(σₙ², 1/12)·C` (each axis grown by its second-order factor) plus
     /// `Σ_sys`.
@@ -111,20 +102,6 @@ impl CovarianceModel {
             var * c.xy * f[0] * f[1],
             var * c.yy * f[1] * f[1],
         )
-    }
-
-    /// The model a result carries: `stored` when it still belongs to the
-    /// public noise term `mirror`, otherwise (a caller set or changed the
-    /// public field) the noise term alone.
-    pub(crate) fn effective(
-        stored: Option<Self>,
-        mirror: Option<PositionCovariance>,
-    ) -> Option<Self> {
-        match (stored, mirror) {
-            (Some(m), Some(c)) if m.noise == c => Some(m),
-            (_, Some(c)) => Some(Self::noise_only(c)),
-            _ => None,
-        }
     }
 }
 
@@ -633,7 +610,12 @@ mod tests {
     fn systematic_model_limits() {
         let sys = |offset, width, grid| {
             MODEL
-                .model(PositionCovariance::ZERO, offset, Some(width), grid)
+                .model(
+                    PositionCovariance::new(0.0, 0.0, 0.0),
+                    offset,
+                    Some(width),
+                    grid,
+                )
                 .systematic
         };
         // g = 0.7: the error is the linear pull (1 − 1/g)·û, the spread ≈ ρ/g.

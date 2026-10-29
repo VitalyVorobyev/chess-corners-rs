@@ -100,7 +100,7 @@ cfg = (
 ```
 
 Refiners are per-detector: `ChessRefiner` carries one of
-`center_of_mass`, `forstner`, `saddle_point`, or `ml` (with the
+`center_of_mass`, `saddle_point`, or `ml` (with the
 `ml-refiner` feature). `RadonRefiner` carries `peak_fit` (the default:
 keep the response-map peak fit) or `saddle_point` (refine each Radon peak
 on the image; more accurate).
@@ -108,11 +108,11 @@ The active `ChessRefiner` variant's tuning is reachable via the
 `payload` property:
 
 ```python
-fcfg = chess_corners.ForstnerConfig()
-fcfg.max_offset = 2.0
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.forstner(fcfg)
+scfg = chess_corners.SaddlePointConfig()
+scfg.max_offset = 2.0
+cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point(scfg)
 
-assert cfg.strategy.chess.refiner.kind == "forstner"
+assert cfg.strategy.chess.refiner.kind == "saddle_point"
 assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
 ```
 
@@ -125,7 +125,7 @@ Tagged classes:
 - `UpscaleConfig`: `UpscaleConfig.disabled()` /
   `UpscaleConfig.fixed(factor)`; read `cfg.upscale.kind` and (when
   `fixed`) `factor`.
-- `ChessRefiner`: `center_of_mass()`, `forstner()` (deprecated since 1.7.0), `saddle_point()`,
+- `ChessRefiner`: `center_of_mass()`, `saddle_point()`,
   `ml()` (with the `ml-refiner` feature).
 
 Enums:
@@ -174,12 +174,11 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
     "chess": {
       "ring": "broad",
       "refiner": {
-        "forstner": {
+        "saddle_point": {
           "radius": 3,
-          "min_trace": 20.0,
-          "min_det": 0.001,
-          "max_condition_number": 60.0,
-          "max_offset": 2.0
+          "det_margin": 0.001,
+          "max_offset": 2.0,
+          "min_abs_det": 0.0001
         }
       }
     }

@@ -53,8 +53,8 @@ for (const name of ["chess", "chessMultiscale", "radon", "radonMultiscale"]) {
 }
 assert.equal(JSON.parse(DetectorConfig.radon().toJson()).threshold, 0.28);
 assert.equal(
-  JSON.parse(DetectorConfig.fromJson('{"strategy":{"chess":{"refiner":{"forstner":{}}}}}').toJson()).strategy.chess.refiner.forstner.min_det,
-  0.001,
+  JSON.parse(DetectorConfig.fromJson('{"strategy":{"chess":{"refiner":{"saddle_point":{}}}}}').toJson()).strategy.chess.refiner.saddle_point.min_abs_det,
+  0.0001,
 );
 
 // Empty object = defaults; partial objects only override what they name.

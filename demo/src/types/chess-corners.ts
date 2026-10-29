@@ -48,7 +48,7 @@ export type Strategy = "chess" | "radon";
 export type OrientationKind = "ringFit" | "diskFit";
 
 /** Subpixel refiner for the ChESS strategy. */
-export type ChessRefinerKind = "centerOfMass" | "forstner" | "saddlePoint";
+export type ChessRefinerKind = "centerOfMass" | "saddlePoint";
 
 /** Radon subpixel refiner. */
 export type RadonRefinerKind = "peakFit" | "saddlePoint";
