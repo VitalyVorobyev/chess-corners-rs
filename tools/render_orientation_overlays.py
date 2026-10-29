@@ -52,7 +52,7 @@ def synthetic_corner(theta0: float, theta1: float, width: float) -> np.ndarray:
 
 
 def make_config(method) -> "cc.DetectorConfig":
-    cfg = cc.DetectorConfig.single_scale()
+    cfg = cc.DetectorConfig.chess()
     chess = cc.ChessConfig()
     chess.ring = cc.ChessRing.BROAD
     cfg.strategy = cc.DetectionStrategy.from_chess(chess)
@@ -65,15 +65,18 @@ def make_config(method) -> "cc.DetectorConfig":
 
 
 def detect(patch: np.ndarray, method) -> np.ndarray | None:
-    """Return the corner row closest to the patch center, or None."""
+    """Return ``[x, y, axis0, axis1]`` of the corner closest to the patch
+    center (axes in radians), or None."""
     cfg = make_config(method)
     detector = cc.Detector(cfg)
     corners = detector.detect(np.ascontiguousarray(patch))
     if len(corners) == 0:
         return None
     cx0, cy0 = PATCH_CENTER, PATCH_CENTER
-    dists = (corners[:, 0] - cx0) ** 2 + (corners[:, 1] - cy0) ** 2
-    return corners[int(np.argmin(dists))]
+    xy = corners.xy
+    dists = (xy[:, 0] - cx0) ** 2 + (xy[:, 1] - cy0) ** 2
+    i = int(np.argmin(dists))
+    return np.array([xy[i, 0], xy[i, 1], *corners.angles[i]], dtype=np.float64)
 
 
 def err_deg(theta_fit: float, theta_gt: float) -> float:
@@ -83,7 +86,7 @@ def err_deg(theta_fit: float, theta_gt: float) -> float:
 
 
 def best_pair_err(fit: np.ndarray, gt0: float, gt1: float) -> float:
-    a0, a1 = float(fit[5]), float(fit[7])
+    a0, a1 = float(fit[2]), float(fit[3])
     direct = max(err_deg(a0, gt0), err_deg(a1, gt1))
     swapped = max(err_deg(a0, gt1), err_deg(a1, gt0))
     return min(direct, swapped)
@@ -127,17 +130,17 @@ def render_case(
     # RingFit (red)
     if ring is not None:
         rx, ry = float(ring[0]), float(ring[1])
-        draw_line(ax, rx, ry, float(ring[5]), line_len,
+        draw_line(ax, rx, ry, float(ring[2]), line_len,
                   color=RING_COLOR, linewidth=1.6, label="RingFit")
-        draw_line(ax, rx, ry, float(ring[7]), line_len,
+        draw_line(ax, rx, ry, float(ring[3]), line_len,
                   color=RING_COLOR, linewidth=1.6)
 
     # DiskFit (green)
     if disk is not None:
         dx_, dy_ = float(disk[0]), float(disk[1])
-        draw_line(ax, dx_, dy_, float(disk[5]), line_len,
+        draw_line(ax, dx_, dy_, float(disk[2]), line_len,
                   color=DISK_COLOR, linewidth=1.6, label="DiskFit")
-        draw_line(ax, dx_, dy_, float(disk[7]), line_len,
+        draw_line(ax, dx_, dy_, float(disk[3]), line_len,
                   color=DISK_COLOR, linewidth=1.6)
 
     # Per-method axis-pair error
