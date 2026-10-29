@@ -16,7 +16,7 @@ autobins = false
 # chess_corners_testutil (path-only, stripped from the published manifest).
 # Exclude it from the package so `cargo publish` verification doesn't break;
 # it remains auto-discovered and runnable in-workspace.
-exclude = ["examples/bench_sweep.rs"]
+exclude = ["examples/bench_sweep.rs", "examples/orientation_sigma_study.rs"]
 
 [lib]
 name = "chess_corners"

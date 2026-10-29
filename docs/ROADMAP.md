@@ -106,7 +106,7 @@ from a measured bias/precision split, not ahead of it.
 | `1.6.0` (shipped) | Position covariance for every localizer behind `Uncertainty { Off, Propagated }` (noise through each localizer's Jacobian plus a per-localizer systematic term with a real-data floor); opt-in SaddlePoint refinement of Radon corners (`RadonRefiner`; default stays the peak fit, `UQ-22`); per-image noise estimate public in every binding; robustness audit and real-data validation; book Part VIII rewritten on that evidence | `UQ-18`, `UQ-23`–`UQ-28`, `UQ-30` |
 | `1.7.0` (shipped) | Evidence first, then hardening. The per-corner systematic model is kept: dropping it loses the ranking on real data (`UQ-36`). The floor is not transferable across cameras, and a cross-camera refit failed its pre-registered rule, so the shipped values stay with the limit documented (`UQ-37`, `UQ-44`). Weighting by Σ never helped, so `Off` is now the default (`UQ-38`). Also: honest docs for `Propagated` and orientation σ (`UQ-41`), two-sided σ̂₀² tests (`UQ-39`), the frame σₙ in every binding (`UQ-40`, C ABI 7), binding consistency (`UQ-42`), covariance code DRY (`SOLID-06`), a perf guard for the opt-in cost (`PERF-16`/`17`), and redundant tooling removed (`SOLID-07`) | `UQ-36`–`UQ-42`, `UQ-44`, `SOLID-06`/`07`, `PERF-16`/`17` |
 | next | A second real dataset to settle the floor (`UQ-45`); end-to-end σ̂₀ in calibration-rs (`UQ-08`); one orientation σ definition, coordinated with calib-targets-rs, which gates and weights on it (`UQ-06`) | `UQ-45`, `UQ-08`, `UQ-06` |
-| later | Per-corner systematic term that sees board rotation and Radon peak switching; cubic re-centring for SaddlePoint; a noise estimate for correlated noise | `UQ-16`, `UQ-32` |
+| later | Per-corner systematic term that sees board rotation and Radon peak switching; cubic re-centring for SaddlePoint; a noise estimate for correlated noise; RingFit axis accuracy on real images | `UQ-16`, `UQ-32`, `UQ-47` |
 | `2.0.0` | Uncertainty API: noise level inside the tier (`Propagated { noise }`), no public covariance mirror fields, no hidden public helpers (both deprecated in 1.7.0); refiner lifted to one stage | `UQ-43`, `UQ-19` |
 | ongoing | Realistic ground truth (calib-synth / etendue renders; end-to-end σ̂₀ check in calibration-rs) | `UQ-08`, `ML-01`, `ML-02` |
 
@@ -128,9 +128,12 @@ from a measured bias/precision split, not ahead of it.
   users must supply σ there (`UQ-32`).
 - Real-data evidence comes from one stereo ChArUco set; no repeated-capture
   or stage-truth data yet (`UQ-30`).
-- Orientation σ is a fit-quality score, not a calibrated 1σ: RingFit scales a
-  Gauss-Newton covariance by the fit residual plus a calibration factor;
-  DiskFit is a heuristic. calib-targets-rs gates and weights on it (`UQ-06`).
+- Orientation σ is a fit-quality score, not a calibrated 1σ, and no
+  per-corner definition can be one: the angle error is dominated by
+  deterministic fit bias. 2.0 ships one residual-scaled standard error for
+  both methods as `fit_std_error`; calib-targets-rs gates and weights on it
+  (`UQ-06`, [orientation-sigma](reference/orientation-sigma.md)).
+- RingFit axes are ~3° off on the real set (DiskFit's own fit 0.7°) (`UQ-47`).
 - The detector drops refine score and status before `CornerDescriptor`
   (`detect/chess/detect.rs`, `refine_corners_on_image`); the covariance is
   carried (`UQ-05`).
