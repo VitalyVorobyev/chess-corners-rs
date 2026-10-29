@@ -165,13 +165,10 @@ def _detector(name: str):
         if name in ("Radon", "Radon+SP"):
             cfg = cc.DetectorConfig.radon().without_orientation().with_uncertainty(cc.Uncertainty.propagated())
             if name == "Radon+SP":
-                cfg.strategy.radon.refiner = cc.RadonRefiner.saddle_point()
+                cfg.refiner = cc.ImageRefiner.saddle_point()
         else:
             cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(cc.Uncertainty.propagated())
-            cfg.strategy.chess.refiner = {
-                "CoM": cc.ChessRefiner.center_of_mass(),
-                "SaddlePoint": cc.ChessRefiner.saddle_point(),
-            }[name]
+            cfg.refiner = {"CoM": None, "SaddlePoint": cc.ImageRefiner.saddle_point()}[name]
         _DET[name] = cc.Detector(cfg)
     return _DET[name]
 

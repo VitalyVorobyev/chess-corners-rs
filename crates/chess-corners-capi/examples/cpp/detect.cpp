@@ -39,7 +39,7 @@ int main() {
         // synthetic board has no noise to estimate, so supply the sensor
         // noise level.
         chess_corners::Config saddle = chess_corners::Config::chess();
-        saddle.refiner = CC_REFINER_SADDLE_POINT;
+        saddle.refiner = CC_IMAGE_REFINER_SADDLE_POINT;
         saddle.uncertainty = chess_corners::Uncertainty::propagated(1.0f);
         std::size_t with_cov = 0;
         std::optional<float> noise_sigma;
@@ -55,11 +55,11 @@ int main() {
             return 1;
         }
 
-        // Radon keeps its peak fit by default; refining its peaks with the
-        // saddle point is opt-in. Switching the uncertainty off drops
+        // Radon keeps its peak fit by default; the same image refiner
+        // refines its peaks on request. Switching the uncertainty off drops
         // the covariances and leaves positions unchanged.
         chess_corners::Config radon = chess_corners::Config::radon();
-        radon.refiner = CC_REFINER_SADDLE_POINT;
+        radon.refiner = CC_IMAGE_REFINER_SADDLE_POINT;
         radon.uncertainty = chess_corners::Uncertainty::propagated(1.0f);
         const std::vector<chess_corners::Corner> radon_corners =
             chess_corners::detect(image, width, height, radon);

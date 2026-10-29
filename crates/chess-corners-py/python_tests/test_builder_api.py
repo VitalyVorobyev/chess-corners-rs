@@ -117,12 +117,14 @@ def test_chainable_form_produces_expected_nested_values():
     cfg = (
         chess_corners.DetectorConfig.chess_multiscale()
         .with_threshold(0.12)
-        .with_chess(refiner=chess_corners.ChessRefiner.saddle_point())
+        .with_chess(ring=chess_corners.ChessRing.BROAD)
+        .with_refiner(chess_corners.ImageRefiner.saddle_point())
     )
     assert cfg.strategy.kind == "chess"
     assert cfg.multiscale.kind == "pyramid"
     assert abs(cfg.threshold - 0.12) < 1e-6
-    assert cfg.strategy.chess.refiner.kind == "saddle_point"
+    assert cfg.strategy.chess.ring == chess_corners.ChessRing.BROAD
+    assert cfg.refiner.kind == "saddle_point"
 
 
 # ---------------------------------------------------------------------------
@@ -130,11 +132,18 @@ def test_chainable_form_produces_expected_nested_values():
 # ---------------------------------------------------------------------------
 
 
-def test_with_chess_refiner_kwarg_sets_nested_refiner():
-    cfg = chess_corners.DetectorConfig.chess().with_chess(
-        refiner=chess_corners.ChessRefiner.saddle_point()
-    )
-    assert cfg.strategy.chess.refiner.kind == "saddle_point"
+def test_with_chess_center_of_mass_kwarg():
+    com = chess_corners.CenterOfMassConfig()
+    com.radius = 3
+    cfg = chess_corners.DetectorConfig.chess().with_chess(center_of_mass=com)
+    assert cfg.strategy.chess.center_of_mass.radius == 3
+
+
+def test_with_chess_refiner_kwarg_rejected():
+    with pytest.raises(TypeError, match="unexpected keyword argument: 'refiner'"):
+        chess_corners.DetectorConfig.chess().with_chess(
+            refiner=chess_corners.ImageRefiner.saddle_point()
+        )
 
 
 def test_with_chess_ring_kwarg_sets_ring():
@@ -151,11 +160,13 @@ def test_with_chess_nms_radius_kwarg_now_rejected():
 
 
 def test_with_chess_multiple_kwargs_at_once():
+    com = chess_corners.CenterOfMassConfig()
+    com.radius = 3
     cfg = chess_corners.DetectorConfig.chess().with_chess(
-        refiner=chess_corners.ChessRefiner.saddle_point(),
+        center_of_mass=com,
         ring=chess_corners.ChessRing.BROAD,
     )
-    assert cfg.strategy.chess.refiner.kind == "saddle_point"
+    assert cfg.strategy.chess.center_of_mass.radius == 3
     assert cfg.strategy.chess.ring == chess_corners.ChessRing.BROAD
 
 
@@ -194,10 +205,10 @@ def test_with_chess_on_radon_config_switches_strategy_and_preserves_threshold():
     radon_cfg = chess_corners.DetectorConfig.radon()
     original_threshold = radon_cfg.threshold
 
-    chess_cfg = radon_cfg.with_chess(refiner=chess_corners.ChessRefiner.saddle_point())
+    chess_cfg = radon_cfg.with_chess(ring=chess_corners.ChessRing.BROAD)
 
     assert chess_cfg.strategy.kind == "chess"
-    assert chess_cfg.strategy.chess.refiner.kind == "saddle_point"
+    assert chess_cfg.strategy.chess.ring == chess_corners.ChessRing.BROAD
     # Threshold is preserved (not reset to chess preset defaults).
     assert abs(chess_cfg.threshold - original_threshold) < 1e-6
 
@@ -222,16 +233,20 @@ def test_with_radon_unknown_kwarg_raises_type_error():
         chess_corners.DetectorConfig.radon().with_radon(bad_key=1)
 
 
-def test_with_radon_refiner_kwarg_takes_a_radon_refiner():
-    cfg = chess_corners.DetectorConfig.radon().with_radon(
-        refiner=chess_corners.RadonRefiner.peak_fit()
-    )
-    assert cfg.strategy.radon.refiner.kind == "peak_fit"
-    # A ChESS refiner is not a Radon refiner.
-    with pytest.raises(TypeError):
+def test_with_radon_refiner_kwarg_rejected():
+    with pytest.raises(TypeError, match="unexpected keyword argument: 'refiner'"):
         chess_corners.DetectorConfig.radon().with_radon(
-            refiner=chess_corners.ChessRefiner.saddle_point()
+            refiner=chess_corners.ImageRefiner.saddle_point()
         )
+
+
+def test_refiner_survives_strategy_switches():
+    refiner = chess_corners.ImageRefiner.saddle_point()
+    cfg = chess_corners.DetectorConfig.chess().with_refiner(refiner)
+    assert cfg.with_radon(ray_radius=7).refiner == refiner
+    assert cfg.with_radon().with_chess().refiner == refiner
+    ml = chess_corners.DetectorConfig.radon().with_refiner(chess_corners.ImageRefiner.ml())
+    assert ml.with_chess().refiner == chess_corners.ImageRefiner.ml()
 
 
 def test_with_radon_on_chess_config_switches_strategy():

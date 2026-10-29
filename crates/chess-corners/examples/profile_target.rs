@@ -13,14 +13,12 @@
 //!
 //! ```sh
 //! profile_target --mode <chess|radon> \
-//!                [--refiner <com|saddle|radon>] \
+//!                [--refiner <none|saddle>] \
 //!                --image <path> \
 //!                [--iters N]
 //! ```
 
-use chess_corners::{
-    CenterOfMassConfig, ChessRefiner, Detector, DetectorConfig, SaddlePointConfig,
-};
+use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 use image::ImageReader;
 use std::env;
 use std::error::Error;
@@ -33,11 +31,12 @@ enum Mode {
     Radon,
 }
 
+/// Image refiner: `None` keeps the detector's own localizer (ChESS center
+/// of mass, Radon peak fit).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RefinerSel {
-    CenterOfMass,
+    None,
     Saddle,
-    Radon,
 }
 
 fn parse_mode(s: &str) -> Result<Mode, String> {
@@ -50,21 +49,9 @@ fn parse_mode(s: &str) -> Result<Mode, String> {
 
 fn parse_refiner(s: &str) -> Result<RefinerSel, String> {
     match s {
-        "com" | "center_of_mass" | "centerofmass" => Ok(RefinerSel::CenterOfMass),
-        "saddle" | "saddle_point" | "saddlepoint" => Ok(RefinerSel::Saddle),
-        "radon" | "none" => Ok(RefinerSel::Radon),
-        other => Err(format!(
-            "unknown refiner '{other}' (expected com|saddle|radon)"
-        )),
-    }
-}
-
-fn chess_refiner_from_sel(sel: RefinerSel) -> Option<ChessRefiner> {
-    match sel {
-        RefinerSel::CenterOfMass => Some(ChessRefiner::CenterOfMass(CenterOfMassConfig::default())),
-        RefinerSel::Saddle => Some(ChessRefiner::SaddlePoint(SaddlePointConfig::default())),
-        // The Radon strategy has no pluggable refiner (Gaussian peak fit).
-        RefinerSel::Radon => None,
+        "none" => Ok(RefinerSel::None),
+        "saddle" | "saddle_point" => Ok(RefinerSel::Saddle),
+        other => Err(format!("unknown refiner '{other}' (expected none|saddle)")),
     }
 }
 
@@ -77,7 +64,7 @@ struct Args {
 
 fn parse_args() -> Result<Args, Box<dyn Error>> {
     let mut mode = None;
-    let mut refiner = RefinerSel::CenterOfMass;
+    let mut refiner = RefinerSel::None;
     let mut image = None;
     let mut iters: u32 = 200;
 
@@ -102,7 +89,7 @@ fn parse_args() -> Result<Args, Box<dyn Error>> {
             }
             "--help" | "-h" => {
                 println!(
-                    "profile_target --mode <chess|radon> [--refiner <com|saddle|radon>] --image <path> [--iters N]"
+                    "profile_target --mode <chess|radon> [--refiner <none|saddle>] --image <path> [--iters N]"
                 );
                 std::process::exit(0);
             }
@@ -127,14 +114,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let data = img.into_raw();
 
     let cfg = match args.mode {
-        Mode::Chess => {
-            let mut cfg = DetectorConfig::chess_multiscale();
-            if let Some(refiner) = chess_refiner_from_sel(args.refiner) {
-                cfg = cfg.with_chess(|c| c.refiner = refiner);
-            }
-            cfg
-        }
+        Mode::Chess => DetectorConfig::chess_multiscale(),
         Mode::Radon => DetectorConfig::radon(),
+    };
+    let cfg = match args.refiner {
+        RefinerSel::None => cfg,
+        RefinerSel::Saddle => cfg.with_refiner(ImageRefiner::saddle_point()),
     };
     let mut detector = Detector::new(cfg).unwrap();
 
@@ -173,8 +158,7 @@ fn as_str_mode(m: Mode) -> &'static str {
 
 fn as_str_refiner(r: RefinerSel) -> &'static str {
     match r {
-        RefinerSel::CenterOfMass => "com",
+        RefinerSel::None => "none",
         RefinerSel::Saddle => "saddle",
-        RefinerSel::Radon => "radon",
     }
 }

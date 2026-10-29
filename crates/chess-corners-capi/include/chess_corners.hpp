@@ -169,9 +169,9 @@ private:
 /// Radon strategy only. Fields that do not apply to the active `strategy`
 /// are ignored.
 ///
-/// `refiner` is one of the `CC_REFINER_*` tags valid for `strategy`: ChESS
-/// takes center-of-mass or saddle-point; Radon takes
-/// `CC_REFINER_PEAK_FIT` (its default) or saddle-point.
+/// `refiner` is one of the `CC_IMAGE_REFINER_*` tags, for either strategy:
+/// `CC_IMAGE_REFINER_NONE` (every preset) keeps the detector's own
+/// localizer (ChESS center of mass, Radon peak fit).
 ///
 /// `uncertainty` selects the position covariance and its noise level (see
 /// `Uncertainty`); every preset selects `Uncertainty::off()`.
@@ -180,7 +180,7 @@ struct Config {
     float threshold;
     std::uint32_t nms_radius;
     std::uint32_t min_cluster_size;
-    cc_refiner_t refiner;
+    cc_image_refiner_t refiner;
     cc_orientation_method_t orientation_method;
     std::uint32_t multiscale;
     float merge_radius;

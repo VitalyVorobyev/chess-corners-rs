@@ -20,7 +20,7 @@ create_exception!(_native, ConfigError, PyValueError);
 pub use detector::DetectorConfig;
 pub use multiscale::MultiscaleConfig;
 pub use parse::{ChessRing, OrientationMethod, PeakFitMode};
-pub use refiners::{CenterOfMassConfig, ChessRefiner, RadonRefiner, SaddlePointConfig};
+pub use refiners::{CenterOfMassConfig, ImageRefiner, SaddlePointConfig};
 pub use strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig};
 pub use uncertainty::Uncertainty;
 pub use upscale::UpscaleConfig;

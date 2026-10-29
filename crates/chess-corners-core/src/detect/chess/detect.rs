@@ -3,7 +3,7 @@ use super::response::chess_response_u8;
 use crate::detect::{count_positive_neighbors, is_local_max, Corner, CornerDescriptor};
 use crate::imageview::ImageView;
 use crate::orientation::describe_corners;
-use crate::refine::{refine_each, CornerRefiner, RefineContext, RefineStatus, Refiner};
+use crate::refine::{refine_each, CenterOfMassRefiner, CornerRefiner, RefineContext, RefineStatus};
 use crate::{ChessParams, ResponseMap};
 
 #[cfg(feature = "tracing")]
@@ -14,7 +14,7 @@ use tracing::instrument;
 /// This is a convenience that combines:
 /// - chess_response_u8 (dense response map)
 /// - thresholding + NMS
-/// - subpixel refinement driven by [`ChessParams::refiner`]
+/// - the center-of-mass localizer configured by [`ChessParams::center_of_mass`]
 ///
 /// # Panics
 ///
@@ -34,7 +34,7 @@ pub fn find_corners_u8(
     );
     // Descriptors from `describe_corners` carry no covariance (it needs the
     // image noise level), so none is computed.
-    let mut refiner = Refiner::from_kind(params.refiner.clone());
+    let mut refiner = CenterOfMassRefiner::new(params.center_of_mass);
     find_corners_u8_with_refiner(img, w, h, params, &mut refiner)
 }
 
@@ -54,17 +54,20 @@ pub(crate) fn find_corners_u8_with_refiner(
     describe_corners(img, w, h, desc_radius, corners, params.orientation_method)
 }
 
-/// Core detector: run NMS + refinement on an existing response map.
+/// Core detector: run NMS + the center-of-mass localizer on an existing
+/// response map.
 ///
 /// Useful if you want to reuse the response map for debugging or tuning. Honors
 /// the absolute response threshold, enforces the configurable NMS radius, and
 /// rejects isolated responses via `min_cluster_size`.
 pub fn detect_corners_from_response(resp: &ResponseMap, params: &ChessParams) -> Vec<Corner> {
-    let mut refiner = Refiner::from_kind(params.refiner.clone());
+    let mut refiner = CenterOfMassRefiner::new(params.center_of_mass);
     detect_corners_from_response_with_refiner(resp, params, None, &mut refiner)
 }
 
-/// Detector variant that accepts a user-provided refiner implementation.
+/// Detector variant that localizes the peaks with `refiner` — the
+/// center-of-mass localizer or an image refiner — instead of
+/// [`ChessParams::center_of_mass`].
 ///
 /// Wires [`detect_peaks_from_response_with_refine_radius`] (stage 1:
 /// threshold + NMS + cluster-filter on the response map) into
@@ -165,7 +168,9 @@ pub fn detect_peaks_from_response_with_refine_radius(
     corners
 }
 
-/// Stage 2 of detection: image-domain subpixel refinement.
+/// Stage 2 of detection: subpixel localization of the peaks with
+/// `refiner` — the ChESS center-of-mass localizer, which reads `response`,
+/// or an image refiner, which reads `image`.
 ///
 /// Detector-agnostic: works on any `Vec<Corner>` regardless of whether
 /// the peaks came from the ChESS or Radon detector. Each input peak
@@ -210,9 +215,7 @@ pub fn refine_corners_on_image(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::refine::{
-        CenterOfMassConfig, CenterOfMassRefiner, RefineContext, RefineStatus, RefinerKind,
-    };
+    use crate::refine::{CenterOfMassConfig, CenterOfMassRefiner, RefineContext, RefineStatus};
     use image::{GrayImage, Luma};
 
     fn make_quadrant_corner(size: u32, dark: u8, bright: u8) -> GrayImage {
@@ -338,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn params_refiner_controls_margin() {
+    fn center_of_mass_radius_controls_margin() {
         let mut resp = ResponseMap::new(30, 30, vec![0.0; 30 * 30]);
 
         let cx = 10usize;
@@ -357,11 +360,11 @@ mod tests {
         let baseline = detect_corners_from_response(&resp, &params);
         assert_eq!(baseline.len(), 1, "expected baseline detection");
 
-        params.refiner = RefinerKind::CenterOfMass(CenterOfMassConfig { radius: 4 });
+        params.center_of_mass = CenterOfMassConfig { radius: 4 };
         let shrunk = detect_corners_from_response(&resp, &params);
         assert!(
             shrunk.is_empty(),
-            "larger refiner radius should increase border and skip the corner"
+            "larger center-of-mass radius should increase border and skip the corner"
         );
     }
 }

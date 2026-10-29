@@ -50,11 +50,8 @@ export type Strategy = "chess" | "radon";
 /** Two-axis orientation-fit method. */
 export type OrientationKind = "ringFit" | "diskFit";
 
-/** Subpixel refiner for the ChESS strategy. */
-export type ChessRefinerKind = "centerOfMass" | "saddlePoint";
-
-/** Radon subpixel refiner. */
-export type RadonRefinerKind = "peakFit" | "saddlePoint";
+/** Image refiner: none keeps the detector's own subpixel localizer. */
+export type RefinerKind = "none" | "saddlePoint";
 
 /** Position-uncertainty tier. */
 export type UncertaintyKind = "off" | "propagated";
@@ -66,8 +63,7 @@ export interface DetectorSettings {
   /** Acceptance threshold. ChESS: absolute response floor (0–100). Radon: fraction of per-frame max (0–0.5). */
   threshold: number;
   orientation: OrientationKind;
-  chessRefiner: ChessRefinerKind;
-  radonRefiner: RadonRefinerKind;
+  refiner: RefinerKind;
   uncertainty: UncertaintyKind;
   /** Pixel-noise σ in gray levels supplied by the user; `null` lets the detector estimate it per image. */
   noiseSigma: number | null;

@@ -162,16 +162,17 @@ turns it into subpixel corner positions:
 
 The peak fit is a closed-form operation on three samples per axis —
 no iteration. Implementation: `radon::fit_peak_frac` in
-`chess-corners-core`.
+`chess-corners-core`. It is Radon's own subpixel localizer
+([Part V §5.4](part-05-refiners.md#54-peak-fit-radon)).
 
-7. **Saddle-point refinement** (optional). With
-   `RadonConfig.refiner = RadonRefiner::SaddlePoint(_)`, each peak seeds
-   the `SaddlePoint` refiner of [Part V §5.3](part-05-refiners.md#53-saddlepoint)
-   on the input image, which re-centres a quadratic fit on the corner
-   ([Part VIII](part-08-uncertainty.md)). A corner whose refinement does
-   not converge keeps its peak-fit position and covariance; no
-   peak is dropped. The default, `RadonRefiner::PeakFit`, stops at
-   step 6.
+7. **Image refinement** (optional). With an image refiner set on
+   `DetectorConfig::refiner` — e.g. `ImageRefiner::SaddlePoint(_)`, the
+   refiner of [Part V §5.5](part-05-refiners.md#55-saddlepoint-image-refiner)
+   that re-centres a quadratic fit on the corner
+   ([Part VIII](part-08-uncertainty.md)) — each peak seeds it on the
+   input image. A corner whose refinement does not converge keeps its
+   peak-fit position and covariance; no peak is dropped. With no image
+   refiner (the default) the pipeline stops at step 6.
 
 The peak fit locates a maximum of a blurred, supersampled response
 map, so on synthetic boards its error grows with lens blur and with
@@ -189,7 +190,7 @@ board rotation; the saddle-point fit on the pixels measures lower there
 | `nms_radius` (`detection`)      | 4       | Matches `ray_radius` — local maxima should be at least one ray length apart. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `min_cluster_size` (`detection`)| 2       | Requires at least one supporting positive neighbor inside the NMS window. Shared with ChESS; lives on `DetectorConfig.detection`. |
 | `peak_fit`              | Gaussian | Log-space 3-point fit used by the paper-style pipeline; parabolic fit is also available.              |
-| `refiner`               | PeakFit | The paper's pipeline; `SaddlePoint` is an opt-in refinement on the image (§4.5). |
+| `refiner` (top-level)   | `None`   | The paper's pipeline stops at the peak fit; `ImageRefiner::SaddlePoint` is an opt-in refinement on the image (§4.5). |
 
 ## 4.5 When to pick ChESS vs Radon
 
@@ -204,13 +205,14 @@ values. The practical differences:
 | Defocus / blur mechanism          | Ring samples can smear across cells | Ray integral averages over a short support |
 | Cost per image                    | One ring sample per pixel (+SIMD) | 4 SATs + one dense map per pixel          |
 | Memory overhead                   | One `ResponseMap`                 | Four SATs + response + blur scratch       |
-| Subpixel refinement               | A refiner stage (`ChessRefiner`)  | Peak fit; optional saddle-point refinement (`RadonRefiner`) |
+| Subpixel localizer                | Center of mass on the response map | 3-point peak fit on the response map    |
+| Image refiner (`DetectorConfig::refiner`) | Replaces the center of mass; drops corners it rejects | Refines the peak fit; keeps it where it does not converge |
 
 On synthetic boards, the saddle-point refinement localizes Radon's
 corners more precisely than the peak fit. RMS error per axis (px) on
 boards formed as a camera forms them (Gaussian lens blur, pixel
 integration, exact truth; corners matched within 0.5 px), Radon's peak
-fit → with `RadonRefiner::SaddlePoint`:
+fit → with `ImageRefiner::SaddlePoint`:
 
 | Board, cell 8 px           | blur σ 1.5, noise 0 | blur 2.5, noise 0 | blur 1.5, noise 2 | blur 2.5, noise 2 |
 |----------------------------|---------------------|-------------------|-------------------|-------------------|
@@ -232,7 +234,7 @@ On a real stereo calibration set with an accurate ChArUco target the
 refinement also lowers the error: 0.038 px per axis at each corner
 against 0.056 px for the peak fit, the same as ChESS with `SaddlePoint`
 ([Part IX §9.6](part-09-benchmarks.md#96-accuracy-on-real-calibration-images)).
-Select `RadonRefiner::SaddlePoint` for calibration. The peak fit keeps
+Select `ImageRefiner::SaddlePoint` for calibration. The peak fit keeps
 one advantage: it is barely moved by illumination gradients, which bias
 the saddle-point fit, so under strong local shading it is the more
 accurate of the two ([Part VIII §8.5](part-08-uncertainty.md#85-where-it-does-not-hold)).
@@ -301,16 +303,16 @@ let corners = detector.detect(&gray_image)?;
 // corners: Vec<CornerDescriptor>
 ```
 
-The facade runs the Radon detector, refines its peaks per
-`RadonConfig.refiner` (§4.4), feeds them into `describe_corners` (the
-shared descriptor stage from Part III §3.4), and returns
-`CornerDescriptor` values in the input pixel frame. To refine the peaks
-with the saddle-point fit:
+The facade runs the Radon detector, refines its peaks with the image
+refiner when `DetectorConfig::refiner` sets one (§4.4), feeds them into
+`describe_corners` (the shared descriptor stage from Part III §3.4), and
+returns `CornerDescriptor` values in the input pixel frame. To refine
+the peaks with the saddle-point fit:
 
 ```rust
-use chess_corners::{DetectorConfig, RadonRefiner};
+use chess_corners::{DetectorConfig, ImageRefiner};
 
-let cfg = DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point());
+let cfg = DetectorConfig::radon().with_refiner(ImageRefiner::saddle_point());
 ```
  The
 orientation method that fills `axes` and their `fit_std_error` is shared with
@@ -381,5 +383,6 @@ every field in §4.4's defaults table. The most common tweaks:
 ---
 
 Next we move from response maps to what happens after detection:
-[Part V](part-05-refiners.md) describes the subpixel refiners, among
-them the saddle-point fit that can also refine Radon peaks.
+[Part V](part-05-refiners.md) describes subpixel localization: each
+detector's own localizer, and the image refiners that work on either
+detector's corners.

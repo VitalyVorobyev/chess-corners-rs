@@ -4,7 +4,7 @@ This chapter is a walk through the public API on every binding
 target. Code-first; algorithms are covered in
 [Part III (ChESS)](part-03-chess-detector.md),
 [Part IV (Radon)](part-04-radon-detector.md), and
-[Part V (refiners)](part-05-refiners.md).
+[Part V (subpixel localization)](part-05-refiners.md).
 
 ## 2.1 Configuration shape
 
@@ -19,6 +19,7 @@ active strategy variant.
 | `detection`           | `DetectionParams { nms_radius, min_cluster_size }` — shared NMS and cluster-filter knobs honoured by both detectors.                              |
 | `multiscale`          | `MultiscaleConfig::SingleScale` or `MultiscaleConfig::Pyramid { levels, min_size, refinement_radius }`. Honoured by both detectors.                |
 | `upscale`             | `UpscaleConfig::Disabled` or `UpscaleConfig::Fixed(factor)` (`factor ∈ {2, 3, 4}`). Pre-pipeline bilinear upscaling for low-resolution inputs.    |
+| `refiner`             | `Option<ImageRefiner>`: `None` (default) keeps the detector's own subpixel localizer; `ImageRefiner::SaddlePoint(_)` or `Ml` (with `ml-refiner`) refines the corners of either detector on the image ([Part V](part-05-refiners.md)). |
 | `orientation_method`  | `OrientationMethod::RingFit` (default) or `DiskFit`. Drives the two-axis descriptor fit on both detectors; `without_orientation()` skips the fit and leaves each descriptor's `axes` as `None`. |
 | `merge_radius`        | Duplicate-suppression distance (base-image pixels) for the final cross-scale merge step.                                                          |
 | `uncertainty`         | `Off` (default: no `position_covariance`, and no noise estimate) or `Propagated { noise }` (every localizer reports one; positions unchanged). `noise` is `NoiseLevel::Estimate` (estimate per image) or `NoiseLevel::Known(σ)`, the image's pixel-noise σ in gray levels; it turns each covariance into px² ([Part VIII](part-08-uncertainty.md)). |
@@ -35,7 +36,7 @@ Inside `ChessConfig`:
 | Field               | Meaning                                                                                                          |
 |---------------------|------------------------------------------------------------------------------------------------------------------|
 | `ring`              | `ChessRing::Canonical` (r=5, paper default) or `ChessRing::Broad` (r=10, wider support window). Descriptors always sample at this same radius. |
-| `refiner`           | `ChessRefiner::CenterOfMass(_)`, `SaddlePoint(_)`, or `Ml` (with `ml-refiner`). Each variant carries its own tuning struct. |
+| `center_of_mass`    | `CenterOfMassConfig { radius }` — the ChESS subpixel localizer, a response-weighted centroid around each peak. Replaced by an image refiner when `refiner` is set. |
 
 Inside `RadonConfig`:
 
@@ -44,8 +45,7 @@ Inside `RadonConfig`:
 | `ray_radius`           | Half-length of each ray (working-resolution pixels). Paper default at `image_upsample = 2` is `4`. |
 | `image_upsample`       | `1` (no supersample) or `2` (paper default). Values ≥ 3 are clamped to 2.                       |
 | `response_blur_radius` | Half-size of the box blur applied to the response map. `0` disables blurring.                  |
-| `peak_fit`             | `PeakFitMode::Parabolic` or `Gaussian` for the 3-point subpixel peak fit on the response map.  |
-| `refiner`              | `RadonRefiner::PeakFit` (default: keep the peak fit) or `SaddlePoint(_)` (refine each peak on the image). |
+| `peak_fit`             | `PeakFitMode::Parabolic` or `Gaussian` for the 3-point subpixel peak fit on the response map — the Radon localizer. An image refiner starts from it and keeps it where it does not converge. |
 
 Four presets cover the common cases:
 
@@ -61,12 +61,13 @@ Three guarantees follow from this shape:
 1. **One place per knob.** `cfg.strategy.chess.ring = ChessRing::Broad`
    is the only way to request the wider ChESS sampling ring. There is
    no parallel top-level "broad" flag.
-2. **Per-detector refiners.** `ChessRefiner` lists the refiners that
-   operate on ChESS output (`CenterOfMass`, `SaddlePoint`, `Ml`); `RadonRefiner` lists the two that apply to Radon peaks
-   (`PeakFit`, `SaddlePoint`), so a refiner that cannot run on the
-   active detector cannot be configured.
+2. **Every combination is valid.** Each detector's own localizer is
+   tuned inside its strategy config; the image refiner is one
+   detector-independent stage that reads only the image, so every
+   `ImageRefiner` works with both detectors and survives a strategy
+   switch.
 3. **Enum-with-payload everywhere a knob has an "on/off + tuning"
-   shape.** `MultiscaleConfig`, `UpscaleConfig`, and `ChessRefiner`
+   shape.** `MultiscaleConfig`, `UpscaleConfig`, and `ImageRefiner`
    share the same encoding, so the JSON shape and the binding surface
    stay symmetric across all of them. (`threshold` is a plain number —
    a single scalar carries no tuning, so it needs no tag.)
@@ -122,37 +123,36 @@ the repository tests. For throughput, ChESS is faster in the measured
 fixtures; see
 [Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon).
 
-### 2.2.3 Swapping the subpixel refiner
+### 2.2.3 Adding an image refiner
+
+Each detector places its corners with its own localizer (ChESS center
+of mass, Radon peak fit). An image refiner refines them on the image,
+for either detector:
 
 ```rust
-use chess_corners::{ChessRefiner, DetectorConfig};
+use chess_corners::{DetectorConfig, ImageRefiner};
 
-let cfg = DetectorConfig::chess_multiscale()
-    .with_chess(|c| c.refiner = ChessRefiner::saddle_point());
+let cfg = DetectorConfig::chess_multiscale().with_refiner(ImageRefiner::saddle_point());
+let cfg = DetectorConfig::radon().with_refiner(ImageRefiner::saddle_point());
 ```
 
 Each refiner variant carries its tuning struct inline:
 
 ```rust
-use chess_corners::{ChessRefiner, SaddlePointConfig};
+use chess_corners::{ImageRefiner, SaddlePointConfig};
 
 // The per-refiner config structs are `#[non_exhaustive]`: start from
 // `Default` and set only the fields you care about.
 let mut f = SaddlePointConfig::default();
 f.max_offset = 2.0;
-let refiner = ChessRefiner::SaddlePoint(f);
+let refiner = ImageRefiner::SaddlePoint(f);
 ```
 
-The Radon refiner is `RadonConfig.refiner`: the response-map peak fit
-alone (the default) or the saddle-point fit on the image:
-
-```rust
-use chess_corners::{DetectorConfig, RadonRefiner};
-
-let cfg = DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point());
-```
-
-See [Part V](part-05-refiners.md).
+`without_refiner()` goes back to the detector's own localizer, whose
+tuning lives in the strategy config
+(`.with_chess(|c| c.center_of_mass.radius = 3)`). See
+[Part V](part-05-refiners.md) for where each refiner starts and what it
+does with a corner it cannot refine.
 
 ### 2.2.4 Raw buffer API
 
@@ -246,9 +246,8 @@ img = np.zeros((128, 128), dtype=np.uint8)
 cfg = chess_corners.DetectorConfig.chess_multiscale()
 cfg.threshold = 60.0  # ChESS: absolute floor on the raw response (default 30)
 
-# Nested getters return the live shared object, so direct attribute
-# assignment propagates back to `cfg` — no rebuild needed:
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point()
+# Refine the corners on the image (either detector):
+cfg.refiner = chess_corners.ImageRefiner.saddle_point()
 
 detector = chess_corners.Detector(cfg)
 det = detector.detect(img)
@@ -263,7 +262,7 @@ print(det.response.shape) # (N,)  float32
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.fit_std_errors` — `(N, 2)` float32, the standard error of each axis fit in radians (a fit-quality score: larger means a less reliable axis; not a calibrated error bound), or `None` when orientation is disabled
-- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.off()`, the default — `cfg.with_uncertainty(chess_corners.Uncertainty.propagated())` reports it, or `Uncertainty.propagated(noise_sigma=σ)` with a known noise level — the ML refiner, or upscaling)
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (with `Uncertainty.off()`, the default — `cfg.with_uncertainty(chess_corners.Uncertainty.propagated())` reports it, or `Uncertainty.propagated(noise_sigma=σ)` with a known noise level — corners placed by the ML refiner, or upscaling)
 - `det.noise_sigma` — the image noise σ (gray levels) behind `position_covariance`, supplied or estimated; `None` when no corner has a covariance
 
 When the orientation fit is skipped (`cfg.without_orientation()`),
@@ -277,7 +276,7 @@ supports `to_dict()`, `from_dict()`, `to_json()`, `from_json()`,
 `cfg.threshold` is a plain `float` — assign it directly. The tagged
 enum classes follow a common idiom: `MultiscaleConfig.single_scale()` /
 `.pyramid(...)`, `UpscaleConfig.disabled()` / `.fixed(k)`,
-`ChessRefiner.center_of_mass(...)` / `.saddle_point(...)` / `.ml()`. Orientation can be turned off entirely
+`ImageRefiner.saddle_point(...)` / `.ml()`. Orientation can be turned off entirely
 with `cfg.without_orientation()`, after which `det.angles` and
 `det.fit_std_errors` are `None`.
 
@@ -286,8 +285,8 @@ Nested getters (`cfg.strategy`, `cfg.strategy.chess`, `cfg.threshold`,
 parent — direct attribute assignment is enough:
 
 ```python
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point()
 cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
+cfg.strategy.chess.center_of_mass.radius = 3
 ```
 
 For chainable single-expression edits, use the `with_chess(**kwargs)` /
@@ -295,25 +294,23 @@ For chainable single-expression edits, use the `with_chess(**kwargs)` /
 the named fields replaced:
 
 ```python
-cfg = cfg.with_chess(
-    refiner=chess_corners.ChessRefiner.saddle_point(),
-    ring=chess_corners.ChessRing.BROAD,
+cfg = cfg.with_chess(ring=chess_corners.ChessRing.BROAD)
+```
+
+The Radon strategy is selected the same way; the image refiner is
+top-level and survives the switch:
+
+```python
+cfg = chess_corners.DetectorConfig.radon().with_refiner(
+    chess_corners.ImageRefiner.saddle_point()
 )
 ```
 
-The Radon strategy is selected the same way:
+The published wheel is built with `ml-refiner`, so the ML refiner is
+one more image refiner, for either detector:
 
 ```python
-cfg = chess_corners.DetectorConfig.radon()
-cfg = cfg.with_radon(refiner=chess_corners.RadonRefiner.saddle_point())  # refine the peaks
-```
-
-If the wheel was built with `ml-refiner`, the ML pipeline is reached
-through the same `Detector(cfg).detect(img)` call once the active ChESS
-refiner is the `ml` variant:
-
-```python
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.ml()
+cfg = cfg.with_refiner(chess_corners.ImageRefiner.ml())
 ```
 
 ## 2.4 JavaScript / WebAssembly
@@ -331,12 +328,11 @@ from a web app:
 import init, {
   ChessDetector,
   ChessConfig,
-  ChessRefiner,
   ChessRing,
   DetectionStrategy,
   DetectorConfig,
+  ImageRefiner,
   MultiscaleConfig,
-  SaddlePointConfig,
 } from '@vitavision/chess-corners';
 
 await init();
@@ -348,10 +344,10 @@ cfg.multiscale = MultiscaleConfig.pyramid(3, 128, 3); // levels, minSize, refine
 
 const chess = new ChessConfig();
 chess.ring = ChessRing.Broad;
-chess.refiner = ChessRefiner.withSaddlePoint(new SaddlePointConfig());
 cfg.strategy = DetectionStrategy.fromChess(chess);
 
-const detector = ChessDetector.withConfig(cfg);
+// Refine the corners on the image (works with either detector).
+const detector = ChessDetector.withConfig(cfg.withRefiner(ImageRefiner.saddlePoint()));
 
 // From a canvas (webcam frame, loaded image, etc.)
 const imageData = ctx.getImageData(0, 0, width, height);
@@ -373,8 +369,8 @@ const response = detector.diagnostics_response_rgba(imageData.data, width, heigh
 typed tree — `detector.getConfig()` returns an independent
 `DetectorConfig` snapshot and `detector.applyConfig(cfg)` commits
 edits. The factory functions on the tagged classes follow the same
-`with*` idiom: `ChessRefiner.withCenterOfMass(cfg)`,
-`ChessRefiner.withSaddlePoint(cfg)`, `MultiscaleConfig.singleScale()`,
+`with*` idiom: `cfg.withRefiner(ImageRefiner.saddlePoint())` (or `ImageRefiner.saddlePointWith(spCfg)`) /
+`cfg.withoutRefiner()`, `MultiscaleConfig.singleScale()`,
 `MultiscaleConfig.pyramid(levels, minSize, refinementRadius)`, `UpscaleConfig.disabled()`,
 `UpscaleConfig.fixed(factor)`.
 
@@ -391,12 +387,13 @@ The CLI:
   formats are PNG, JPEG, TIFF, BMP, WebP and GIF.
 - Picks single-scale or multiscale from the top-level `multiscale` field.
 - Picks ChESS or Radon from `strategy` (the top-level variant).
-- Picks the refiner from the strategy's nested `refiner` block.
+- Picks the image refiner from the top-level `refiner` field (`null`
+  keeps the detector's own localizer).
 - Writes a JSON summary and a PNG overlay with one mark per corner.
 
 The JSON config is the same `DetectorConfig` schema as the Rust and
 Python APIs, wrapped in a CLI envelope that adds `image`,
-`output_json`, `output_png`, `log_level`, and `ml`:
+`output_json`, `output_png`, and `log_level`:
 
 ```json
 {
@@ -404,9 +401,10 @@ Python APIs, wrapped in a CLI envelope that adds `image`,
   "strategy": {
     "chess": {
       "ring": "canonical",
-      "refiner": { "center_of_mass": { "radius": 2 } }
+      "center_of_mass": { "radius": 2 }
     }
   },
+  "refiner": null,
   "threshold": 30.0,
   "detection": { "nms_radius": 2, "min_cluster_size": 2 },
   "multiscale": "single_scale",
@@ -425,8 +423,8 @@ Example configs under `config/`:
   pure `DetectorConfig` shape shared with the Rust and Python APIs.
 - `chess_cli_config_example.json` — algorithm fields plus CLI I/O
   envelope.
-- `chess_cli_config_example_ml.json` — same, with the ML refiner
-  enabled. Requires a binary built with `--features ml-refiner`.
+- `chess_cli_config_example_ml.json` — same, with `"refiner": "ml"`.
+  Requires a binary built with `--features ml-refiner`.
 
 In JSON, `threshold` is written as a bare number (ChESS: absolute
 response floor; Radon: fraction of the per-frame maximum), and
@@ -437,7 +435,7 @@ Per-flag overrides (applied on top of the JSON):
 
 - `--threshold <v>` (ChESS: absolute response floor; Radon: fraction of the per-frame max)
 - `--chess-ring canonical|broad`
-- `--chess-refiner center_of_mass|saddle_point`
+- `--refiner none|saddle_point|ml` (`ml` with `--features ml-refiner`)
 - `--pyramid-levels <n>` (1 = single-scale)
 - `--upscale-factor 0|2|3|4`
 
@@ -451,18 +449,17 @@ Overlay examples on the sample images in `testdata/`:
 
 ## 2.6 ML refiner
 
-The ML refiner is a separate, optional code path. Enable it by
-building with `--features ml-refiner` (Rust) or by installing a
-wheel built with the same feature (Python), then pick the
-`Ml` variant on the active ChESS refiner:
+The ML refiner is an optional image refiner. Enable it by
+building with `--features ml-refiner` (Rust) or by installing the
+published wheel (Python), then select `ImageRefiner::Ml`, with either
+detector:
 
 ```rust
 # #[cfg(feature = "ml-refiner")]
 # {
-use chess_corners::{ChessRefiner, Detector, DetectorConfig};
+use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 
-let cfg = DetectorConfig::chess_multiscale()
-    .with_chess(|c| c.refiner = ChessRefiner::Ml);
+let cfg = DetectorConfig::chess_multiscale().with_refiner(ImageRefiner::Ml);
 
 let mut detector = Detector::new(cfg).unwrap();
 let corners = detector.detect(&img).unwrap();
@@ -471,21 +468,20 @@ let corners = detector.detect(&img).unwrap();
 
 The ML path:
 
-- Runs the ChESS detector to produce seeds.
+- Runs the active detector to produce seeds: ChESS integer peaks or
+  Radon peak fits.
 - Feeds each seed's 21×21 neighborhood through the embedded
   ONNX model (`chess_refiner_v4.onnx`, ~180 K params).
-- Replaces the seed position with the model's predicted
-  `(dx, dy)` offset.
-- Falls back to the configured classical refiner if the ML path
-  rejects or times out.
+- Moves the seed by the model's predicted `(dx, dy)` offset; a seed
+  whose patch leaves the image keeps its position.
+- Reports no position covariance, and is not available on the ROI path
+  (`detect_u8_roi` returns an error).
 
 The algorithm and its limits are covered in
-[Part V §5.4](part-05-refiners.md#54-ml-onnx-model). Compared to the
+[Part V §5.6](part-05-refiners.md#56-ml-image-refiner). Compared to the
 geometric refiners: `SaddlePoint` has lower error on clean and blurred
 data while ML leads on the heaviest noise row (see the comparison in
 Part IX).
-
-The ML refiner is available on the ChESS strategy only.
 
 ## 2.7 Radon heatmap (visualization)
 

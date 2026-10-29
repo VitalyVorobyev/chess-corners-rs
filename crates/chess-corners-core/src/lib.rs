@@ -8,11 +8,11 @@
 //! [`chess_response_u8_patch`], [`radon_response_u8`]), corner
 //! detection ([`find_corners_u8`], [`detect_corners_from_response`])
 //! and its individual stages — threshold + NMS via
-//! [`detect_peaks_from_response_with_refine_radius`] and image-domain
-//! refinement via [`refine_corners_on_image`] — the [`ChessParams`]
-//! configuration consumed by those stages together with its
-//! [`RefinerKind`] refiner selector, pluggable subpixel refinement (the
-//! [`CornerRefiner`] trait and built-in refiners), the two-axis
+//! [`detect_peaks_from_response_with_refine_radius`] and subpixel
+//! localization via [`refine_corners_on_image`] — the [`ChessParams`]
+//! configuration consumed by those stages, the subpixel refiners (the
+//! [`CornerRefiner`] trait, ChESS's center-of-mass localizer, and the
+//! image refiners selected by [`RefinerKind`]), the two-axis
 //! orientation fit ([`fit_axes_at_point`], [`describe_corners`]), and
 //! the [`ImageView`] borrowed-buffer type. The detector pipeline
 //! composes three orthogonal stages — detection, refinement, and

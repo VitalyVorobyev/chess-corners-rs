@@ -8,14 +8,18 @@
 //! detectors that share the same output surface:
 //!
 //! - **ChESS** (Chess-board Extraction by Subtraction and Summation)
-//!   — a dense ring-difference response with NMS and a pluggable
-//!   subpixel refiner. This is the default path and the fastest preset
+//!   — a dense ring-difference response with NMS and a center-of-mass
+//!   subpixel localizer. This is the default path and the fastest preset
 //!   in the repository's clean-image benchmark.
 //! - **Radon** — a whole-image Duda-Frese accumulator that scores
 //!   corners by summing ray intensities through each pixel. It is useful
 //!   when the ChESS ring does not produce enough seeds, especially in
 //!   the small-cell, blur, and low-contrast fixtures covered by the
-//!   tests.
+//!   tests. Its peaks are placed by a 3-point fit of the response map.
+//!
+//! An optional image refiner ([`ImageRefiner`], set on
+//! [`DetectorConfig::refiner`]) refines the corners of either detector on
+//! the input image.
 //!
 //! The [`Detector`] struct ties together the active strategy, the
 //! orientation fit, and the multiscale / upscale scratch buffers
@@ -39,7 +43,7 @@
 //! crate. This example reads from disk and is marked `no_run`:
 //!
 //! ```no_run
-//! use chess_corners::{ChessRefiner, Detector, DetectorConfig};
+//! use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 //! use image::ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -49,7 +53,7 @@
 //!
 //! let cfg = DetectorConfig::chess_multiscale()
 //!     .with_threshold(120.0)
-//!     .with_chess(|c| c.refiner = ChessRefiner::saddle_point());
+//!     .with_refiner(ImageRefiner::saddle_point());
 //!
 //! let mut detector = Detector::new(cfg)?;
 //! let corners = detector.detect(&img)?;
@@ -98,11 +102,10 @@
 //! Switch to the whole-image Radon detector when ChESS misses corners on
 //! the images you care about. The strategy lives inside
 //! [`DetectorConfig::strategy`]; pick a Radon preset to get sensible
-//! defaults ([`RadonRefiner`] adds an optional saddle-point refinement
-//! that reports a position covariance):
+//! defaults. The image refiner works the same way on Radon corners:
 //!
 //! ```
-//! use chess_corners::{Detector, DetectorConfig};
+//! use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 //!
 //! let mut img = vec![0u8; 128 * 128];
 //! for y in 0..128 {
@@ -113,7 +116,7 @@
 //!     }
 //! }
 //!
-//! let cfg = DetectorConfig::radon();
+//! let cfg = DetectorConfig::radon().with_refiner(ImageRefiner::saddle_point());
 //! let mut detector = Detector::new(cfg)?;
 //! let corners = detector.detect_u8(&img, 128, 128)?;
 //! assert!(!corners.is_empty());
@@ -122,18 +125,18 @@
 //!
 //! ## ML refiner (feature `ml-refiner`)
 //!
-//! Pick the ML pipeline by selecting `ChessRefiner::Ml` inside the
-//! ChESS strategy. The example is marked `no_run` because loading the
-//! embedded ONNX model on first use is not appropriate for a doctest:
+//! Pick the ML pipeline by selecting `ImageRefiner::Ml` as the image
+//! refiner, with either detector. The example is marked `no_run` because
+//! loading the embedded ONNX model on first use is not appropriate for a
+//! doctest:
 //!
 //! ```no_run
 //! # #[cfg(feature = "ml-refiner")]
 //! # {
-//! use chess_corners::{ChessRefiner, Detector, DetectorConfig};
+//! use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 //! use image::GrayImage;
 //!
-//! let cfg = DetectorConfig::chess()
-//!     .with_chess(|c| c.refiner = ChessRefiner::Ml);
+//! let cfg = DetectorConfig::chess().with_refiner(ImageRefiner::Ml);
 //!
 //! let img: GrayImage = image::open("board.png").unwrap().to_luma8();
 //! let mut detector = Detector::new(cfg).unwrap();
@@ -172,8 +175,10 @@
 //!
 //! [`DetectorConfig`] is strategy-typed: the [`DetectorConfig::strategy`]
 //! field is a [`DetectionStrategy`] enum carrying either a
-//! [`ChessConfig`] (detector ring, refiner) or a [`RadonConfig`]
-//! (whole-image Duda-Frese parameters, refiner). Acceptance is a single
+//! [`ChessConfig`] (detector ring, center-of-mass localizer) or a
+//! [`RadonConfig`] (whole-image Duda-Frese parameters, peak fit). The
+//! optional image refiner ([`DetectorConfig::refiner`]) applies to either
+//! strategy. Acceptance is a single
 //! [`threshold`](DetectorConfig::threshold) number — read as an absolute
 //! response floor by ChESS and as a fraction of the per-frame maximum by
 //! Radon. [`MultiscaleConfig`] and [`UpscaleConfig`] live at the top level
@@ -198,8 +203,8 @@
 //!   refinement of large corner sets, and the multiscale per-seed
 //!   refinement. Combine with `par_pyramid` to parallelize pyramid
 //!   downsampling as well.
-//! - `ml-refiner` – enables the ML-backed refiner entry points via the
-//!   `chess-corners-ml` crate and embedded ONNX model.
+//! - `ml-refiner` – enables the ML image refiner (`ImageRefiner::Ml`) via
+//!   the `chess-corners-ml` crate and embedded ONNX model.
 //! - `simd` – enables portable-SIMD accelerated inner loops for the
 //!   response kernel (requires a nightly compiler). Combine with
 //!   `par_pyramid` to SIMD-accelerate pyramid downsampling.
@@ -247,8 +252,8 @@ mod upscale;
 // deeper internals (ring offsets, SAT views, scalar reference paths)
 // via a direct `chess-corners-core` dependency.
 pub use crate::config::{
-    ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, NoiseLevel, RadonConfig, RadonRefiner, Uncertainty,
+    ChessConfig, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig, ImageRefiner,
+    MultiscaleConfig, NoiseLevel, RadonConfig, Uncertainty,
 };
 pub use crate::error::ChessError;
 

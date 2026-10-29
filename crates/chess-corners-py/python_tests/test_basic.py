@@ -62,29 +62,39 @@ def test_detector_rejects_wrong_dtype():
         detector.detect(img)
 
 
-def test_chess_refiner_variant_and_payload():
-    """ChESS refiner is a tagged class; `payload` returns the active tuning."""
-
-    com = chess_corners.CenterOfMassConfig()
-    com.radius = 3
-    refiner = chess_corners.ChessRefiner.center_of_mass(com)
-    assert refiner.kind == "center_of_mass"
-    assert isinstance(refiner.payload, chess_corners.CenterOfMassConfig)
-    assert refiner.payload.radius == 3
+def test_image_refiner_variant_and_payload():
+    """ImageRefiner is a tagged value; `payload` returns the active tuning."""
 
     scfg = chess_corners.SaddlePointConfig()
     scfg.max_offset = 2.0
-    refiner = chess_corners.ChessRefiner.saddle_point(scfg)
+    refiner = chess_corners.ImageRefiner.saddle_point(scfg)
     assert refiner.kind == "saddle_point"
     assert isinstance(refiner.payload, chess_corners.SaddlePointConfig)
     assert refiner.payload.max_offset == pytest.approx(2.0)
 
+    ml = chess_corners.ImageRefiner.ml()
+    assert ml.kind == "ml"
+    assert ml.payload is None
+    assert ml != refiner
+    assert chess_corners.ImageRefiner.saddle_point() == chess_corners.ImageRefiner.saddle_point()
 
-def test_chess_refiner_attached_to_chess_strategy():
-    cfg = chess_corners.DetectorConfig().with_chess(
-        refiner=chess_corners.ChessRefiner.saddle_point()
-    )
-    assert cfg.strategy.chess.refiner.kind == "saddle_point"
+
+def test_image_refiner_is_off_by_default_and_settable():
+    cfg = chess_corners.DetectorConfig()
+    assert cfg.refiner is None
+    cfg = cfg.with_refiner(chess_corners.ImageRefiner.saddle_point())
+    assert cfg.refiner.kind == "saddle_point"
+    cfg.refiner = None
+    assert cfg.refiner is None
+    assert cfg.with_refiner(chess_corners.ImageRefiner.ml()).without_refiner().refiner is None
+
+
+def test_chess_center_of_mass_is_mutated_in_place():
+    cfg = chess_corners.DetectorConfig()
+    cfg.strategy.chess.center_of_mass.radius = 3
+    assert cfg.strategy.chess.center_of_mass.radius == 3
+    back = chess_corners.DetectorConfig.from_json(cfg.to_json())
+    assert back.strategy.chess.center_of_mass.radius == 3
 
 
 def test_config_roundtrip_and_print_helpers():
@@ -93,9 +103,7 @@ def test_config_roundtrip_and_print_helpers():
     cfg.threshold = 4.5
     saddle = chess_corners.SaddlePointConfig()
     saddle.max_offset = 2.0
-    chess = cfg.strategy.chess
-    chess.refiner = chess_corners.ChessRefiner.saddle_point(saddle)
-    cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+    cfg.refiner = chess_corners.ImageRefiner.saddle_point(saddle)
 
     encoded = cfg.to_json()
     decoded = chess_corners.DetectorConfig.from_json(encoded)
@@ -113,7 +121,9 @@ def test_detector_constructor_signature():
 
     cfg = chess_corners.DetectorConfig()
     assert isinstance(cfg.strategy.chess, chess_corners.ChessConfig)
-    assert isinstance(cfg.strategy.chess.refiner, chess_corners.ChessRefiner)
+    assert isinstance(
+        cfg.strategy.chess.center_of_mass, chess_corners.CenterOfMassConfig
+    )
 
 
 def test_radon_heatmap_shape_and_dtype():
@@ -176,9 +186,7 @@ def test_typed_config_passes_through_ffi_directly():
     cfg.threshold = 0.1
     scfg = chess_corners.SaddlePointConfig()
     scfg.max_offset = 1.75
-    chess = cfg.strategy.chess
-    chess.refiner = chess_corners.ChessRefiner.saddle_point(scfg)
-    cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+    cfg.refiner = chess_corners.ImageRefiner.saddle_point(scfg)
 
     result = chess_corners.Detector(cfg).detect(img)
     assert isinstance(result, chess_corners.Detections)
@@ -204,7 +212,7 @@ def test_descriptor_mode_on_top_level_rejected():
         )
 
 
-def test_refiner_on_top_level_rejected():
+def test_refiner_on_top_level_rejects_non_image_refiners():
     with pytest.raises(chess_corners.ConfigError, match="refiner"):
         chess_corners.DetectorConfig.from_dict(
             {"refiner": {"center_of_mass": {}}}

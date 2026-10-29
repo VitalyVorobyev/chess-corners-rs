@@ -2,7 +2,7 @@
 //!
 //! Exposes a typed [`config::DetectorConfig`] mirroring the Rust
 //! facade tree (strategy-typed `ChessConfig` / `RadonConfig`,
-//! per-detector refiners, tagged `MultiscaleConfig` / `UpscaleConfig`
+//! image refiner, tagged `MultiscaleConfig` / `UpscaleConfig`
 //! classes) plus a [`Detector`] PyClass that wraps the facade's
 //! reusable buffers.
 
@@ -18,9 +18,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
 
 use crate::config::{
-    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, ConfigError, DetectionParams,
-    DetectionStrategy, DetectorConfig, MultiscaleConfig, OrientationMethod, PeakFitMode,
-    RadonConfig, RadonRefiner, SaddlePointConfig, Uncertainty, UpscaleConfig,
+    CenterOfMassConfig, ChessConfig, ChessRing, ConfigError, DetectionParams, DetectionStrategy,
+    DetectorConfig, ImageRefiner, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig,
+    SaddlePointConfig, Uncertainty, UpscaleConfig,
 };
 
 fn extract_image<'py>(
@@ -417,8 +417,7 @@ fn native_module(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DetectionParams>()?;
     m.add_class::<MultiscaleConfig>()?;
     m.add_class::<UpscaleConfig>()?;
-    m.add_class::<ChessRefiner>()?;
-    m.add_class::<RadonRefiner>()?;
+    m.add_class::<ImageRefiner>()?;
     m.add_class::<ChessConfig>()?;
     m.add_class::<RadonConfig>()?;
     m.add_class::<DetectionStrategy>()?;

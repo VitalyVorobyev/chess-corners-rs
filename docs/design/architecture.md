@@ -78,12 +78,16 @@ pub trait CornerRefiner {
 }
 ```
 
-`ChessRefiner` carries `CenterOfMass`, `SaddlePoint`, and optionally
-`Ml`. Each variant owns its tuning struct, so switching
-variants cannot leave old tuning fields active by accident. The Radon
-detector does not use a pluggable refiner; its subpixel step is the
-built-in 3-point Gaussian peak fit configured via
-`RadonConfig.peak_fit`.
+Each detector keeps the localizer that works on its own response map:
+ChESS the center of mass (`ChessConfig::center_of_mass`, a
+`CenterOfMassRefiner`), Radon the 3-point peak fit inside peak detection
+(`RadonConfig::peak_fit`). One optional, detector-independent image
+refiner — `DetectorConfig::refiner: Option<ImageRefiner>` with
+`SaddlePoint` (core `RefinerKind`) or the facade's `Ml` — replaces the
+ChESS center of mass or refines the Radon peak fit (keeping it where it
+does not converge). The facade lowers it once (`core_image_refiner` in
+`multiscale.rs`) into a crate-private `Localizer`; ML runs its own
+traversal step generic over `DenseDetector`.
 
 `RefineResult` reports the refined point, a refiner-specific score,
 `RefineStatus` (`Accepted`, `Rejected`, `OutOfBounds`, or

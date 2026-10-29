@@ -6,14 +6,14 @@
 //! Each wrapper stores its inner Rust value in a shared
 //! `Rc<RefCell<T>>` cell, and compound wrappers (`DetectorConfig`,
 //! `DetectionStrategy`, `ChessConfig`, `RadonConfig`,
-//! `ChessRefiner`) hold `Rc` handles to their children's cells. A
+//! `MultiscaleConfig`) hold `Rc` handles to their children's cells. A
 //! getter returns a wrapper backed by the same cell as the parent,
 //! so chained mutation propagates without a round-trip:
 //!
 //! ```js
 //! const cfg = DetectorConfig.chessMultiscale();
 //! cfg.strategy.chess.ring = ChessRing.Broad;             // works
-//! cfg.strategy.chess.refiner.saddlePoint.maxOffset = 2.0; // works
+//! cfg.strategy.chess.centerOfMass.radius = 3;           // works
 //! cfg.detection.nmsRadius = 3;                           // works
 //! cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3);   // works
 //! ```
@@ -181,7 +181,7 @@ impl From<RsOrientationMethod> for OrientationMethod {
 pub(crate) use detector::config_to_json;
 pub use detector::DetectorConfig;
 pub use multiscale::MultiscaleConfig;
-pub use refiners::{CenterOfMassConfig, ChessRefiner, RadonRefiner, SaddlePointConfig};
+pub use refiners::{CenterOfMassConfig, ImageRefiner, SaddlePointConfig};
 pub use strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig};
 pub use uncertainty::Uncertainty;
 pub use upscale::UpscaleConfig;
@@ -198,39 +198,31 @@ mod tests {
     use super::*;
     use chess_corners::{
         ChessRing as RsChessRingCheck, DetectionStrategy as RsDetectionStrategy,
-        MultiscaleConfig as RsMultiscaleConfig, OrientationMethod as RsOrientationMethod,
-        UpscaleConfig as RsUpscaleConfig,
+        DetectorConfig as RsDetectorConfig, MultiscaleConfig as RsMultiscaleConfig,
+        OrientationMethod as RsOrientationMethod, UpscaleConfig as RsUpscaleConfig,
     };
 
     #[test]
-    fn leaf_edits_propagate_through_chess_refiner_chain() {
-        // Models the JS chain
-        //   cfg.strategy.chess.refiner.saddlePoint.maxOffset = 2.5
-        // by walking the same getter chain in Rust and mutating the
-        // leaf saddle-point cell. Every intermediate wrapper is a clone
-        // that shares the underlying `Rc<RefCell<_>>` cells, so the
-        // edit reaches the cfg's chess refiner cell.
+    fn leaf_edits_propagate_through_center_of_mass_chain() {
+        // Models the JS chain `cfg.strategy.chess.centerOfMass.radius = 3`:
+        // every intermediate wrapper shares the underlying cell.
         let cfg = DetectorConfig::new();
-        // Flip kind to SaddlePoint first (via set_refiner copy-into-cell).
-        let mut chess = cfg.strategy().chess();
-        chess.set_refiner(&ChessRefiner::saddle_point(&SaddlePointConfig::new()));
-        // Edit the leaf saddle-point cell through the chain.
-        cfg.strategy()
-            .chess()
-            .refiner()
-            .get_saddle_point()
-            .set_max_offset(3.5);
+        cfg.strategy().chess().center_of_mass().set_radius(3);
 
-        let snap = cfg.snapshot();
-        let RsDetectionStrategy::Chess(c) = snap.strategy else {
+        let RsDetectionStrategy::Chess(c) = cfg.snapshot().strategy else {
             panic!("expected chess strategy")
         };
-        match c.refiner {
-            chess_corners::ChessRefiner::SaddlePoint(saddle) => {
-                assert!((saddle.max_offset - 3.5).abs() < f32::EPSILON);
-            }
-            other => panic!("expected saddle-point refiner, got {other:?}"),
-        }
+        assert_eq!(c.center_of_mass.radius, 3);
+    }
+
+    #[test]
+    fn assigning_center_of_mass_copies_into_existing_cell() {
+        let cfg = DetectorConfig::new();
+        let observer = cfg.strategy().chess().center_of_mass();
+        let mut com = CenterOfMassConfig::new();
+        com.set_radius(4);
+        cfg.strategy().chess().set_center_of_mass(&com);
+        assert_eq!(observer.radius(), 4);
     }
 
     #[test]
@@ -373,32 +365,6 @@ mod tests {
         assert_eq!(cfg.upscale().kind(), "fixed");
         let snap = cfg.snapshot();
         assert!(matches!(snap.upscale, RsUpscaleConfig::Fixed(4)));
-    }
-
-    #[test]
-    fn assigning_chess_refiner_copies_into_existing_cells() {
-        // `cfg.strategy.chess.refiner = newRefiner` (modelled here as
-        // `chess.set_refiner(&new_refiner)`) copies the new refiner's
-        // payload contents into the cfg's chess refiner cells, so
-        // future `cfg.strategy.chess.refiner.*` getter calls observe
-        // the new state without any re-binding.
-        let cfg = DetectorConfig::new();
-        let mut chess = cfg.strategy().chess();
-        let mut wrapped = SaddlePointConfig::new();
-        wrapped.set_max_offset(3.5);
-        let new_refiner = ChessRefiner::saddle_point(&wrapped);
-        chess.set_refiner(&new_refiner);
-
-        let snap = cfg.snapshot();
-        let RsDetectionStrategy::Chess(c) = snap.strategy else {
-            panic!("expected chess strategy")
-        };
-        match c.refiner {
-            chess_corners::ChessRefiner::SaddlePoint(s) => {
-                assert!((s.max_offset - 3.5).abs() < f32::EPSILON);
-            }
-            other => panic!("expected saddle_point, got {other:?}"),
-        }
     }
 
     #[test]
@@ -616,28 +582,80 @@ mod tests {
     }
 
     #[test]
-    fn with_chess_refiner_builder_sets_saddle_point() {
-        let cfg = DetectorConfig::chess();
+    fn image_refiner_round_trips_through_wrapper_and_json() {
         let mut saddle = SaddlePointConfig::new();
         saddle.set_max_offset(4.0);
-        let refiner = ChessRefiner::saddle_point(&saddle);
-        let cfg2 = cfg.with_chess_refiner(&refiner);
-        let snap = cfg2.snapshot();
-        let RsDetectionStrategy::Chess(c) = snap.strategy else {
-            panic!("expected chess strategy")
-        };
-        assert!(
-            matches!(c.refiner, chess_corners::ChessRefiner::SaddlePoint(f) if (f.max_offset - 4.0).abs() < f32::EPSILON),
-            "with_chess_refiner must set SaddlePoint with max_offset=4.0"
+        let refiner = ImageRefiner::saddle_point_with(&saddle);
+        assert_eq!(refiner.kind(), "saddle_point");
+        assert_eq!(
+            refiner.get_saddle_point().map(|s| s.max_offset()),
+            Some(4.0)
         );
-        // Original is unchanged.
-        let snap_orig = cfg.snapshot();
-        let RsDetectionStrategy::Chess(c_orig) = snap_orig.strategy else {
-            panic!("expected chess strategy")
-        };
-        assert!(
-            !matches!(c_orig.refiner, chess_corners::ChessRefiner::SaddlePoint(_)),
-            "original config must not have SaddlePoint refiner"
+        // The payload is a copy: later edits do not leak in.
+        saddle.set_max_offset(1.0);
+        assert_eq!(
+            refiner.get_saddle_point().map(|s| s.max_offset()),
+            Some(4.0)
+        );
+
+        for base in [RsDetectorConfig::chess(), RsDetectorConfig::radon()] {
+            let cfg = DetectorConfig::from_value_pub(base);
+            assert_eq!(cfg.snapshot().refiner, None);
+            let on = cfg.with_refiner(&refiner);
+            assert_eq!(on.snapshot().refiner, Some(refiner.snapshot()));
+            assert_eq!(cfg.snapshot().refiner, None, "original unchanged");
+            assert!(on.refiner().ok().flatten().is_some());
+
+            let json = serde_json::to_value(on.snapshot()).unwrap();
+            assert_eq!(json["refiner"]["saddle_point"]["max_offset"], 4.0);
+            let back: RsDetectorConfig = serde_json::from_value(json).unwrap();
+            assert_eq!(back, on.snapshot());
+
+            let off = on.without_refiner();
+            assert_eq!(off.snapshot().refiner, None);
+            assert!(off.refiner().ok().flatten().is_none());
+            assert_eq!(
+                serde_json::to_value(off.snapshot()).unwrap()["refiner"],
+                serde_json::Value::Null
+            );
+        }
+
+        let default_payload = ImageRefiner::saddle_point();
+        assert_eq!(
+            default_payload.snapshot(),
+            chess_corners::ImageRefiner::saddle_point()
+        );
+    }
+
+    #[test]
+    fn refiner_survives_strategy_switches() {
+        let refiner = ImageRefiner::saddle_point();
+        let cfg = DetectorConfig::chess().with_refiner(&refiner);
+        let mut switched = cfg.clone();
+        switched.strategy().use_radon();
+        assert_eq!(switched.snapshot().refiner, Some(refiner.snapshot()));
+        assert_eq!(switched.strategy().kind(), "radon");
+        switched.strategy().use_chess();
+        assert_eq!(switched.snapshot().refiner, Some(refiner.snapshot()));
+        let _ = &mut switched;
+    }
+
+    #[test]
+    fn removed_refiner_json_shapes_are_rejected() {
+        for text in [
+            r#"{"strategy": {"chess": {"refiner": "center_of_mass"}}}"#,
+            r#"{"strategy": {"radon": {"refiner": "peak_fit"}}}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<RsDetectorConfig>(text).is_err(),
+                "{text}"
+            );
+        }
+        let ok: RsDetectorConfig =
+            serde_json::from_str(r#"{"refiner": {"saddle_point": {}}}"#).unwrap();
+        assert_eq!(
+            ok.refiner,
+            Some(chess_corners::ImageRefiner::saddle_point())
         );
     }
 

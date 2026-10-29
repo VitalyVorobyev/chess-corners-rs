@@ -13,9 +13,9 @@
 
 use chess_corners_core::{
     chess_response_u8, detect_corners_from_response, detect_peaks_from_radon, radon_response_u8,
-    CenterOfMassConfig, ChessParams, CornerRefiner, DenseDetector, ImageView, RadonBuffers,
-    RadonDetector, RadonDetectorParams, RefineContext, Refiner, RefinerKind, ResponseMap,
-    SaddlePointConfig,
+    CenterOfMassConfig, CenterOfMassRefiner, ChessParams, CornerRefiner, DenseDetector, ImageView,
+    RadonBuffers, RadonDetector, RadonDetectorParams, RefineContext, Refiner, RefinerKind,
+    ResponseMap, SaddlePointConfig,
 };
 use chess_corners_testutil::aa_chessboard;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -74,28 +74,26 @@ fn bench_refiners(c: &mut Criterion) {
         }
         group.throughput(Throughput::Elements(scene.seeds.len() as u64));
 
-        let cases: &[(&str, RefinerKind)] = &[
-            (
-                "center_of_mass",
-                RefinerKind::CenterOfMass(CenterOfMassConfig::default()),
-            ),
-            (
-                "saddle_point",
-                RefinerKind::SaddlePoint(SaddlePointConfig::default()),
-            ),
+        type Build = fn() -> Refiner;
+        let cases: [(&str, Build); 2] = [
+            ("center_of_mass", || {
+                Refiner::CenterOfMass(CenterOfMassRefiner::new(CenterOfMassConfig::default()))
+            }),
+            ("saddle_point", || {
+                Refiner::from_kind(RefinerKind::SaddlePoint(SaddlePointConfig::default()))
+            }),
         ];
 
-        for (label, kind) in cases {
+        for (label, build) in cases {
             for (tier, covariance) in [("propagated", true), ("off", false)] {
                 group.bench_with_input(
                     BenchmarkId::new(
                         format!("{label}/{tier}"),
                         format!("{side}x{side}_n{}", scene.seeds.len()),
                     ),
-                    kind,
-                    |b, kind| {
-                        let mut refiner =
-                            Refiner::from_kind(kind.clone()).with_covariance(covariance);
+                    &build,
+                    |b, build| {
+                        let mut refiner = build().with_covariance(covariance);
                         b.iter(|| {
                             let mut acc = 0.0f32;
                             for seed in &scene.seeds {

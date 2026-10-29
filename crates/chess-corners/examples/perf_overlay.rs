@@ -63,12 +63,12 @@ use std::hint::black_box;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use chess_corners::{ChessRefiner, DetectorConfig, OrientationMethod};
+use chess_corners::{DetectorConfig, ImageRefiner, OrientationMethod};
 use chess_corners_core::{
     chess_response_u8, describe_corners, detect_peaks_from_radon,
     detect_peaks_from_response_with_refine_radius, merge_corners_simple, radon_response_u8,
-    refine_corners_on_image, ChessParams, CornerDescriptor, CornerRefiner, ImageView, RadonBuffers,
-    Refiner,
+    refine_corners_on_image, CenterOfMassRefiner, ChessParams, CornerDescriptor, CornerRefiner,
+    ImageView, RadonBuffers, Refiner, RefinerKind,
 };
 use image::{imageops::FilterType, ImageReader, Rgb, RgbImage};
 use serde_json::json;
@@ -184,16 +184,14 @@ fn with_orientation(cfg: DetectorConfig, orientation: &str) -> DetectorConfig {
 fn build_specs() -> Vec<ConfigSpec> {
     let mut specs = Vec::with_capacity(9);
 
-    let chess_refiners: [(&str, ChessRefiner); 2] = [
-        ("center_of_mass", ChessRefiner::center_of_mass()),
-        ("saddle_point", ChessRefiner::saddle_point()),
+    let chess_refiners: [(&str, Option<ImageRefiner>); 2] = [
+        ("center_of_mass", None),
+        ("saddle_point", Some(ImageRefiner::saddle_point())),
     ];
-    for (refiner, kind) in chess_refiners {
+    for (refiner, image_refiner) in chess_refiners {
         for orientation in ORIENTATIONS {
-            let cfg = with_orientation(
-                DetectorConfig::chess().with_chess(|c| c.refiner = kind),
-                orientation,
-            );
+            let mut cfg = with_orientation(DetectorConfig::chess(), orientation);
+            cfg.refiner = image_refiner;
             specs.push(ConfigSpec {
                 id: format!("chess__{refiner}__{orientation}"),
                 detector: "chess",
@@ -236,7 +234,11 @@ fn measure_chess(
     let desc_radius = params.ring_radius();
     let merge_radius = cfg.merge_radius;
 
-    let mut refiner = Refiner::from_kind(params.refiner.clone());
+    // The image refiner replaces the center of mass, as in the facade.
+    let mut refiner = match cfg.refiner {
+        Some(ImageRefiner::SaddlePoint(c)) => Refiner::from_kind(RefinerKind::SaddlePoint(c)),
+        _ => Refiner::CenterOfMass(CenterOfMassRefiner::new(params.center_of_mass)),
+    };
     let refine_border = refiner.radius();
 
     // Canonical artifacts threaded between stages and used for the final

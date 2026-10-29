@@ -1,8 +1,9 @@
-//! Numerical-regression snapshot for the `ChessRefiner::Ml` pipeline.
+//! Numerical-regression snapshot for the `ImageRefiner::Ml` pipeline.
 //!
 //! ## What this guards
 //!
-//! `ChessRefiner::Ml` has two distinct call paths through the facade: the
+//! `ImageRefiner::Ml` has two distinct call paths through the facade, for
+//! each detector (ChESS and Radon): the
 //! plain single-scale detector loop, and the coarse-to-fine multiscale
 //! traversal (seeds detected on a coarser pyramid level, refined into the
 //! base image — see `crates/chess-corners/src/multiscale.rs`). REVIEW.md
@@ -10,7 +11,7 @@
 //! coverage: its bit-stability during the C5 traversal refactor was proven
 //! by a manual one-off harness across the real test images, not by a test
 //! that runs on every `cargo test`. This file pins the **corner count** of
-//! both `Ml` presets on a small deterministic fixture so a future
+//! the `Ml` presets on a small deterministic fixture so a future
 //! refactor that silently changes the set of corners produced (wrong seed
 //! carried across levels, a merge-radius regression, an ROI off-by-one)
 //! moves the count and fails CI.
@@ -71,7 +72,7 @@
 
 use std::collections::BTreeMap;
 
-use chess_corners::{ChessRefiner, CornerDescriptor, Detector, DetectorConfig};
+use chess_corners::{CornerDescriptor, Detector, DetectorConfig, ImageRefiner};
 use chess_corners_testutil::aa_chessboard;
 use serde::Serialize;
 
@@ -80,7 +81,7 @@ mod snapshot;
 use snapshot::{check_or_update_manifest, ndjson, pinned_pool};
 
 const MANIFEST_FILE: &str = "ml_manifest.txt";
-const MANIFEST_HEADER: &str = "# Per-preset corner count for the ChessRefiner::Ml pipelines.
+const MANIFEST_HEADER: &str = "# Per-preset corner count for the ImageRefiner::Ml pipelines.
 # Refresh with UPDATE_SNAPSHOTS=1 cargo test -p chess-corners --features ml-refiner --test ml_snapshot
 ";
 
@@ -101,11 +102,19 @@ struct Preset {
 }
 
 fn ml_single_scale() -> DetectorConfig {
-    DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::Ml)
+    DetectorConfig::chess().with_refiner(ImageRefiner::Ml)
 }
 
 fn ml_multiscale() -> DetectorConfig {
-    DetectorConfig::chess_multiscale().with_chess(|c| c.refiner = ChessRefiner::Ml)
+    DetectorConfig::chess_multiscale().with_refiner(ImageRefiner::Ml)
+}
+
+fn ml_radon_single_scale() -> DetectorConfig {
+    DetectorConfig::radon().with_refiner(ImageRefiner::Ml)
+}
+
+fn ml_radon_multiscale() -> DetectorConfig {
+    DetectorConfig::radon_multiscale().with_refiner(ImageRefiner::Ml)
 }
 
 const PRESETS: &[Preset] = &[
@@ -116,6 +125,14 @@ const PRESETS: &[Preset] = &[
     Preset {
         name: "ml_multiscale",
         build: ml_multiscale,
+    },
+    Preset {
+        name: "ml_radon_single_scale",
+        build: ml_radon_single_scale,
+    },
+    Preset {
+        name: "ml_radon_multiscale",
+        build: ml_radon_multiscale,
     },
 ];
 
@@ -155,7 +172,7 @@ fn render_snapshot(img: &[u8], preset: &Preset) -> (usize, String) {
     )
 }
 
-/// Single test that exercises both `Ml` presets in one pass. Skipped
+/// Single test that exercises every `Ml` preset in one pass. Skipped
 /// entirely (not failing) when the `ml-refiner` feature is off — see the
 /// `#![cfg(feature = "ml-refiner")]` file-level gate above.
 #[test]

@@ -1,13 +1,13 @@
 //! `#[wasm_bindgen]` wrapper for the top-level `DetectorConfig`.
 
 use chess_corners::{
-    DetectorConfig as RsDetectorConfig, OrientationMethod as RsOrientationMethod,
-    Uncertainty as RsUncertainty,
+    DetectorConfig as RsDetectorConfig, ImageRefiner as RsImageRefiner,
+    OrientationMethod as RsOrientationMethod, Uncertainty as RsUncertainty,
 };
 use wasm_bindgen::prelude::*;
 
 use super::multiscale::MultiscaleConfig;
-use super::refiners::{ChessRefiner, RadonRefiner};
+use super::refiners::ImageRefiner;
 use super::strategy::{DetectionParams, DetectionStrategy};
 use super::uncertainty::Uncertainty;
 use super::upscale::UpscaleConfig;
@@ -38,6 +38,7 @@ pub struct DetectorConfig {
     orientation_method: Cell<Option<RsOrientationMethod>>,
     merge_radius: Cell<f32>,
     uncertainty: Cell<RsUncertainty>,
+    refiner: Cell<Option<RsImageRefiner>>,
 }
 
 impl DetectorConfig {
@@ -55,12 +56,14 @@ impl DetectorConfig {
             orientation_method: cell(value.orientation_method),
             merge_radius: cell(value.merge_radius),
             uncertainty: cell(value.uncertainty),
+            refiner: cell(value.refiner),
         }
     }
 
     /// Build from a plain JS value shaped like `chess_corners::DetectorConfig`
     /// (as produced by `JSON.parse`). Missing fields take their defaults;
-    /// unknown keys are ignored (serde's default behaviour).
+    /// unknown keys are ignored (the JS deserializer does not enforce the
+    /// strict `strategy.chess` / `strategy.radon` key check of the Rust API).
     fn from_js_value(value: JsValue) -> Result<Self, JsError> {
         serde_wasm_bindgen::from_value::<RsDetectorConfig>(value)
             .map(Self::from_value)
@@ -91,6 +94,7 @@ impl DetectorConfig {
         cfg.orientation_method = *self.orientation_method.borrow();
         cfg.merge_radius = *self.merge_radius.borrow();
         cfg.uncertainty = *self.uncertainty.borrow();
+        cfg.refiner = *self.refiner.borrow();
         cfg
     }
 }
@@ -137,7 +141,7 @@ impl DetectorConfig {
     /// externally tagged enums such as `{"chess": {...}}`).
     ///
     /// Every field is optional; omitted fields take their library
-    /// defaults, so `"{}"` yields the default config, and unknown keys are
+    /// defaults, so `"{}"` yields the default config. Unknown keys are
     /// ignored. Throws an `Error` when the text is not valid JSON (the
     /// engine's `SyntaxError`) or a value has the wrong type or an unknown
     /// enum variant (message such as `invalid type: string "high",
@@ -229,31 +233,23 @@ impl DetectorConfig {
         out
     }
 
-    /// Return a copy of this config with the ChESS refiner replaced.
-    ///
-    /// Use this instead of the `refiner` key in `withChess({})` — wasm-bindgen
-    /// Rust structs cannot be passed through plain `js_sys::Object` iteration.
-    /// JS: `cfg.withChessRefiner(ChessRefiner.withSaddlePoint(new SaddlePointConfig()))`.
-    #[wasm_bindgen(js_name = withChessRefiner)]
-    pub fn with_chess_refiner(&self, refiner: &ChessRefiner) -> Self {
-        let mut out = self.deep_clone();
-        if out.strategy.kind() != "chess" {
-            out.strategy.use_chess();
-        }
-        out.strategy.chess().set_refiner(refiner);
+    /// Return a copy of this config with the image refiner replaced. The
+    /// refiner is independent of the detection strategy and survives
+    /// strategy switches.
+    /// JS: `cfg.withRefiner(ImageRefiner.saddlePoint())`.
+    #[wasm_bindgen(js_name = withRefiner)]
+    pub fn with_refiner(&self, refiner: &ImageRefiner) -> Self {
+        let out = self.deep_clone();
+        *out.refiner.borrow_mut() = Some(refiner.snapshot());
         out
     }
 
-    /// Return a copy of this config with the Radon refiner replaced
-    /// (switching to the Radon strategy if needed).
-    /// JS: `cfg.withRadonRefiner(RadonRefiner.withPeakFit())`.
-    #[wasm_bindgen(js_name = withRadonRefiner)]
-    pub fn with_radon_refiner(&self, refiner: &RadonRefiner) -> Self {
-        let mut out = self.deep_clone();
-        if out.strategy.kind() != "radon" {
-            out.strategy.use_radon();
-        }
-        out.strategy.radon().set_refiner(refiner);
+    /// Return a copy of this config with no image refiner: each detector
+    /// keeps its own subpixel localizer. JS: `cfg.withoutRefiner()`.
+    #[wasm_bindgen(js_name = withoutRefiner)]
+    pub fn without_refiner(&self) -> Self {
+        let out = self.deep_clone();
+        *out.refiner.borrow_mut() = None;
         out
     }
 
@@ -263,10 +259,9 @@ impl DetectorConfig {
     /// Accepted keys (all optional):
     /// - `ring`: `ChessRing`
     ///
-    /// To set the refiner use the typed [`Self::with_chess_refiner`] builder
-    /// instead — wasm-bindgen Rust structs cannot be passed via plain options
-    /// objects. The shared NMS / clustering knobs moved to
-    /// [`Self::with_detection`].
+    /// The center-of-mass radius is set through
+    /// `cfg.strategy.chess.centerOfMass.radius`; the shared NMS / clustering
+    /// knobs through [`Self::with_detection`].
     ///
     /// Unknown keys throw `Error("unexpected option: '<key>'")`.
     /// JS: `cfg.withChess({ ring: ChessRing.Broad })`.
@@ -283,9 +278,6 @@ impl DetectorConfig {
             let key_str = key.as_string().unwrap_or_default();
             let val = js_sys::Reflect::get(opts, &key)?;
             match key_str.as_str() {
-                "refiner" => {
-                    apply_chess_refiner_from_js(&mut out, val)?;
-                }
                 "ring" => {
                     let disc = val
                         .as_f64()
@@ -315,7 +307,6 @@ impl DetectorConfig {
     /// - `responseBlurRadius`: integer
     /// - `peakFit`: `PeakFitMode`
     ///
-    /// To set the refiner use the typed [`Self::with_radon_refiner`] builder.
     /// Unknown keys throw `Error("unexpected option: '<key>'")`.
     /// JS: `cfg.withRadon({ rayRadius: 6, imageUpsample: 2, responseBlurRadius: 1, peakFit: PeakFitMode.Gaussian })`.
     #[wasm_bindgen(js_name = withRadon)]
@@ -498,6 +489,17 @@ impl DetectorConfig {
     pub fn set_uncertainty(&mut self, v: &Uncertainty) {
         *self.uncertainty.borrow_mut() = v.snapshot();
     }
+
+    /// Optional image refiner, or `undefined` when each detector keeps its
+    /// own subpixel localizer (the default). Independent of the detection
+    /// strategy. JSON: `"refiner": null`, `{"saddle_point": {...}}` or
+    /// `"ml"`.  Set it with `withRefiner` / `withoutRefiner`.
+    #[wasm_bindgen(getter)]
+    pub fn refiner(&self) -> Result<Option<ImageRefiner>, JsError> {
+        (*self.refiner.borrow())
+            .map(ImageRefiner::try_from)
+            .transpose()
+    }
 }
 
 impl Default for DetectorConfig {
@@ -507,19 +509,8 @@ impl Default for DetectorConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers for with_chess / with_radon options objects
+// Helpers
 // ---------------------------------------------------------------------------
-
-/// Reject an `refiner` key coming from the `with_chess` or `with_radon` options
-/// object. wasm-bindgen Rust structs tagged with `#[wasm_bindgen]` are opaque
-/// pointers to JS — they cannot be extracted from a plain `JsValue` via
-/// `JsCast::dyn_ref`. Callers should use the dedicated typed builder methods
-/// `withChessRefiner` instead.
-fn apply_chess_refiner_from_js(_cfg: &mut DetectorConfig, _val: JsValue) -> Result<(), JsValue> {
-    Err(JsValue::from_str(
-        "refiner cannot be set via the options object; use .withChessRefiner(refiner) instead",
-    ))
-}
 
 /// `serde-wasm-bindgen` errors display as `Error: <message>`; drop the prefix.
 fn error_text(e: &serde_wasm_bindgen::Error) -> String {
@@ -620,40 +611,6 @@ mod json_tests {
         assert!(json["strategy"].get("radon").is_some(), "{json}");
         assert!(json["multiscale"].get("pyramid").is_some(), "{json}");
         assert_eq!(json["upscale"], "disabled");
-    }
-
-    #[test]
-    fn radon_refiner_round_trips_through_wrapper_and_json() {
-        let cfg = DetectorConfig::from_value(RsDetectorConfig::radon());
-        let mut refiner = cfg.strategy().radon().refiner();
-        assert_eq!(refiner.kind(), "peak_fit");
-        refiner.set_saddle_point(&crate::config::SaddlePointConfig::new());
-        assert_eq!(refiner.kind(), "saddle_point");
-        refiner.use_peak_fit();
-        let snap = cfg.snapshot();
-        let chess_corners::DetectionStrategy::Radon(r) = snap.strategy else {
-            panic!("expected radon strategy")
-        };
-        assert_eq!(r.refiner, chess_corners::RadonRefiner::PeakFit);
-        let json = serde_json::to_value(snap).unwrap();
-        assert_eq!(json["strategy"]["radon"]["refiner"], "peak_fit");
-
-        // Setting a saddle-point payload switches back.
-        let mut sp = crate::config::SaddlePointConfig::new();
-        sp.set_max_offset(0.75);
-        refiner.set_saddle_point(&sp);
-        let chess_corners::DetectionStrategy::Radon(r) = cfg.snapshot().strategy else {
-            panic!("expected radon strategy")
-        };
-        match r.refiner {
-            chess_corners::RadonRefiner::SaddlePoint(sp) => assert_eq!(sp.max_offset, 0.75),
-            other => panic!("expected saddle point, got {other:?}"),
-        }
-
-        let parsed: RsDetectorConfig =
-            serde_json::from_str(r#"{"strategy": {"radon": {"refiner": "peak_fit"}}}"#).unwrap();
-        let back = DetectorConfig::from_value(parsed);
-        assert_eq!(back.strategy().radon().refiner().kind(), "peak_fit");
     }
 
     #[test]

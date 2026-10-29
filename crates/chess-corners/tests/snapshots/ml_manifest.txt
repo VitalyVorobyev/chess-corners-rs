@@ -1,4 +1,6 @@
-# Per-preset corner count for the ChessRefiner::Ml pipelines.
+# Per-preset corner count for the ImageRefiner::Ml pipelines.
 # Refresh with UPDATE_SNAPSHOTS=1 cargo test -p chess-corners --features ml-refiner --test ml_snapshot
 ml_multiscale count=36
+ml_radon_multiscale count=36
+ml_radon_single_scale count=64
 ml_single_scale count=36

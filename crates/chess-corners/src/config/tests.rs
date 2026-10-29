@@ -1,13 +1,12 @@
 use chess_corners_core::{
-    CenterOfMassConfig, OrientationMethod, PeakFitMode, RadonDetectorParams, RefinerKind,
-    SaddlePointConfig,
+    CenterOfMassConfig, OrientationMethod, PeakFitMode, RadonDetectorParams, SaddlePointConfig,
 };
 
 use crate::upscale::UpscaleConfig;
 
 use super::{
-    ChessConfig, ChessRefiner, ChessRing, DetectionStrategy, DetectorConfig, MultiscaleConfig,
-    NoiseLevel, RadonConfig, RadonRefiner, Uncertainty,
+    ChessConfig, ChessRing, DetectionStrategy, DetectorConfig, ImageRefiner, MultiscaleConfig,
+    NoiseLevel, RadonConfig, Uncertainty,
 };
 
 fn assert_strategy_chess(cfg: &DetectorConfig) -> &ChessConfig {
@@ -29,10 +28,8 @@ fn default_is_single_scale_chess_with_denoise_floor() {
     let cfg = DetectorConfig::default();
     let chess = assert_strategy_chess(&cfg);
     assert_eq!(chess.ring, ChessRing::Canonical);
-    assert_eq!(
-        chess.refiner,
-        ChessRefiner::CenterOfMass(CenterOfMassConfig::default())
-    );
+    assert_eq!(chess.center_of_mass, CenterOfMassConfig::default());
+    assert_eq!(cfg.refiner, None);
     assert_eq!(cfg.detection.nms_radius, 2);
     assert_eq!(cfg.detection.min_cluster_size, 2);
     assert_eq!(cfg.multiscale, MultiscaleConfig::SingleScale);
@@ -46,10 +43,7 @@ fn default_is_single_scale_chess_with_denoise_floor() {
     assert_eq!(params.threshold, 30.0);
     assert_eq!(params.nms_radius, 2);
     assert_eq!(params.min_cluster_size, 2);
-    assert_eq!(
-        params.refiner,
-        RefinerKind::CenterOfMass(CenterOfMassConfig::default())
-    );
+    assert_eq!(params.center_of_mass, CenterOfMassConfig::default());
 }
 
 #[test]
@@ -148,23 +142,22 @@ fn radon_multiscale_preset_carries_pyramid_params() {
 }
 
 #[test]
-fn broad_ring_and_saddle_point_refiner_propagate_to_params() {
-    // `SaddlePointConfig` is `#[non_exhaustive]`; build via `Default`
+fn broad_ring_and_center_of_mass_propagate_to_params() {
+    // `CenterOfMassConfig` is `#[non_exhaustive]`; build via `Default`
     // and set the field under test.
-    let mut saddle = SaddlePointConfig::default();
-    saddle.max_offset = 2.0;
+    let mut com = CenterOfMassConfig::default();
+    com.radius = 3;
     let cfg = DetectorConfig {
         strategy: DetectionStrategy::Chess(ChessConfig {
             ring: ChessRing::Broad,
-            refiner: ChessRefiner::SaddlePoint(saddle),
-            ..ChessConfig::default()
+            center_of_mass: com,
         }),
         ..DetectorConfig::chess()
     };
 
     let params = cfg.chess_params();
     assert!(params.use_radius10);
-    assert_eq!(params.refiner, RefinerKind::SaddlePoint(saddle));
+    assert_eq!(params.center_of_mass, com);
 }
 
 #[test]
@@ -185,26 +178,55 @@ fn chess_multiscale_preset_round_trips_through_serde() {
 }
 
 #[test]
-fn radon_refiner_defaults_to_the_peak_fit_and_round_trips() {
-    for preset in [DetectorConfig::radon(), DetectorConfig::radon_multiscale()] {
-        assert_eq!(
-            assert_strategy_radon(&preset).refiner,
-            RadonRefiner::PeakFit
+fn image_refiner_defaults_to_none_and_round_trips() {
+    for preset in [
+        DetectorConfig::chess(),
+        DetectorConfig::chess_multiscale(),
+        DetectorConfig::radon(),
+        DetectorConfig::radon_multiscale(),
+    ] {
+        assert_eq!(preset.refiner, None);
+        assert!(serde_json::to_value(preset).unwrap()["refiner"].is_null());
+    }
+    // Configs written without the field keep the detector's own localizer.
+    let old: DetectorConfig = serde_json::from_str(r#"{"threshold": 30.0}"#).unwrap();
+    assert_eq!(old.refiner, None);
+
+    let mut saddle = SaddlePointConfig::default();
+    saddle.max_offset = 0.75;
+    for base in [DetectorConfig::chess(), DetectorConfig::radon()] {
+        let cfg = base.with_refiner(ImageRefiner::SaddlePoint(saddle));
+        let json = serde_json::to_value(cfg).unwrap();
+        assert_eq!(json["refiner"]["saddle_point"]["max_offset"], 0.75);
+        let back: DetectorConfig = serde_json::from_value(json).unwrap();
+        assert_eq!(back, cfg);
+        assert_eq!(back.without_refiner().refiner, None);
+    }
+}
+
+#[test]
+fn refiner_survives_a_strategy_switch() {
+    let cfg = DetectorConfig::chess()
+        .with_refiner(ImageRefiner::saddle_point())
+        .with_radon(|r| r.ray_radius = 5);
+    assert_eq!(cfg.refiner, Some(ImageRefiner::saddle_point()));
+    let cfg = cfg.with_chess(|c| c.ring = ChessRing::Broad);
+    assert_eq!(cfg.refiner, Some(ImageRefiner::saddle_point()));
+}
+
+#[test]
+fn removed_refiner_shapes_are_rejected() {
+    for json in [
+        r#"{"strategy": {"chess": {"refiner": {"center_of_mass": {"radius": 2}}}}}"#,
+        r#"{"strategy": {"radon": {"refiner": "peak_fit"}}}"#,
+        r#"{"refiner": "center_of_mass"}"#,
+        r#"{"refiner": "peak_fit"}"#,
+    ] {
+        assert!(
+            serde_json::from_str::<DetectorConfig>(json).is_err(),
+            "{json} must not parse"
         );
     }
-    // Configs written without the field keep the peak fit.
-    let old: RadonConfig = serde_json::from_str(r#"{"ray_radius": 4}"#).unwrap();
-    assert_eq!(old.refiner, RadonRefiner::PeakFit);
-
-    let cfg = DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point());
-    let json = serde_json::to_value(cfg).unwrap();
-    assert!(json["strategy"]["radon"]["refiner"]["saddle_point"].is_object());
-    let back: DetectorConfig = serde_json::from_value(json).unwrap();
-    assert_eq!(back, cfg);
-    assert_eq!(
-        serde_json::to_value(DetectorConfig::radon()).unwrap()["strategy"]["radon"]["refiner"],
-        "peak_fit"
-    );
 }
 
 #[test]
@@ -255,14 +277,15 @@ fn multiscale_config_round_trips_with_externally_tagged_payload() {
 }
 
 #[test]
-fn chess_refiner_round_trips_each_variant() {
-    let variants = [
-        ChessRefiner::CenterOfMass(CenterOfMassConfig::default()),
-        ChessRefiner::SaddlePoint(SaddlePointConfig::default()),
-    ];
-    for v in variants {
-        let json = serde_json::to_string(&v).expect("serialize chess refiner");
-        let decoded: ChessRefiner = serde_json::from_str(&json).expect("deserialize chess refiner");
+fn image_refiner_round_trips_each_variant() {
+    #[allow(unused_mut)]
+    let mut variants = vec![(ImageRefiner::saddle_point(), r#"{"saddle_point":"#)];
+    #[cfg(feature = "ml-refiner")]
+    variants.push((ImageRefiner::Ml, r#""ml""#));
+    for (v, prefix) in variants {
+        let json = serde_json::to_string(&v).expect("serialize image refiner");
+        assert!(json.starts_with(prefix), "{json}");
+        let decoded: ImageRefiner = serde_json::from_str(&json).expect("deserialize image refiner");
         assert_eq!(decoded, v);
     }
 }
@@ -340,10 +363,7 @@ fn with_chess_mutates_in_place_when_strategy_is_chess() {
     let chess = assert_strategy_chess(&cfg);
     assert_eq!(chess.ring, ChessRing::Broad);
     // Other chess fields untouched
-    assert_eq!(
-        chess.refiner,
-        ChessRefiner::CenterOfMass(CenterOfMassConfig::default())
-    );
+    assert_eq!(chess.center_of_mass, CenterOfMassConfig::default());
 }
 
 #[test]
@@ -402,12 +422,11 @@ fn with_detection_sets_shared_params_for_both_strategies() {
 fn chained_builder_produces_expected_state() {
     let cfg = DetectorConfig::chess()
         .with_threshold(0.15)
-        .with_chess(|c| c.refiner = ChessRefiner::saddle_point());
+        .with_refiner(ImageRefiner::saddle_point());
     assert_eq!(cfg.threshold, 0.15);
-    let chess = assert_strategy_chess(&cfg);
     assert_eq!(
-        chess.refiner,
-        ChessRefiner::SaddlePoint(SaddlePointConfig::default())
+        cfg.refiner,
+        Some(ImageRefiner::SaddlePoint(SaddlePointConfig::default()))
     );
 }
 
@@ -458,14 +477,10 @@ fn with_merge_radius_sets_radius() {
 }
 
 #[test]
-fn chess_refiner_shortcuts_equal_full_constructors() {
+fn image_refiner_shortcut_equals_full_constructor() {
     assert_eq!(
-        ChessRefiner::center_of_mass(),
-        ChessRefiner::CenterOfMass(CenterOfMassConfig::default())
-    );
-    assert_eq!(
-        ChessRefiner::saddle_point(),
-        ChessRefiner::SaddlePoint(SaddlePointConfig::default())
+        ImageRefiner::saddle_point(),
+        ImageRefiner::SaddlePoint(SaddlePointConfig::default())
     );
 }
 
@@ -479,13 +494,4 @@ fn multiscale_config_pyramid_default_equals_literal() {
             refinement_radius: 3
         }
     );
-}
-
-#[cfg(feature = "ml-refiner")]
-#[test]
-fn chess_refiner_ml_serializes_as_bare_string() {
-    let json = serde_json::to_string(&ChessRefiner::Ml).unwrap();
-    assert_eq!(json, "\"ml\"");
-    let decoded: ChessRefiner = serde_json::from_str(&json).expect("deserialize ml refiner");
-    assert_eq!(decoded, ChessRefiner::Ml);
 }

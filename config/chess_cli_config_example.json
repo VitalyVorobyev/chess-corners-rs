@@ -3,13 +3,12 @@
   "strategy": {
     "chess": {
       "ring": "canonical",
-      "refiner": {
-        "center_of_mass": {
-          "radius": 2
-        }
+      "center_of_mass": {
+        "radius": 2
       }
     }
   },
+  "refiner": null,
   "threshold": 30.0,
   "detection": {
     "nms_radius": 2,

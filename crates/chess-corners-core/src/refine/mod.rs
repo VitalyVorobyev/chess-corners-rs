@@ -1,12 +1,16 @@
-//! Pluggable subpixel-refinement backends.
+//! Subpixel refiners.
 //!
-//! All refiners implement the [`CornerRefiner`] trait and are
-//! addressed through the user-facing [`RefinerKind`] enum. Default
-//! settings select the center-of-mass refiner on the response map.
+//! Every refiner implements the sealed [`CornerRefiner`] trait; the
+//! [`Refiner`] enum dispatches over them.
 //!
-//! - [`center_of_mass`] — 5×5 weighted centroid on the response
-//!   map. Cheap; the library default.
-//! - [`saddle_point`] — quadratic surface fit on the image patch.
+//! - [`center_of_mass`] — weighted centroid on the ChESS response map:
+//!   the ChESS detector's own subpixel localizer
+//!   ([`ChessParams::center_of_mass`](crate::ChessParams::center_of_mass)).
+//! - [`saddle_point`] — quadratic surface fit on the image patch: an
+//!   *image refiner*, selected through [`RefinerKind`]. It reads only the
+//!   image, so it refines the peaks of either detector
+//!   ([`refine_corners_on_image`](crate::refine_corners_on_image),
+//!   [`DenseDetector::refine_peaks_on_image`](crate::DenseDetector::refine_peaks_on_image)).
 
 use crate::imageview::ImageView;
 use crate::uncertainty::CovarianceModel;
@@ -277,16 +281,14 @@ impl<'a> RefineContext<'a> {
     }
 }
 
-/// Trait implemented by the built-in subpixel refinement backends.
+/// Trait implemented by the built-in subpixel refiners.
 ///
 /// # Stability
 ///
 /// This trait is **sealed** via a private supertrait bound and cannot
 /// be implemented outside this crate. The built-in implementors are
 /// [`CenterOfMassRefiner`], [`SaddlePointRefiner`], and the [`Refiner`]
-/// dispatcher. It is not a public extension point:
-/// select a backend through [`RefinerKind`] rather than implementing
-/// this trait.
+/// dispatcher. It is not a public extension point.
 pub trait CornerRefiner: private::Sealed {
     /// Half-width of the patch the refiner needs around the seed,
     /// in input-image pixels. The caller must ensure the seed is at
@@ -303,59 +305,52 @@ pub trait CornerRefiner: private::Sealed {
     fn refine(&mut self, seed_xy: [f32; 2], ctx: RefineContext<'_>) -> RefineResult;
 }
 
-/// User-facing enum selecting a refinement backend.
+/// Selects an image refiner: a refiner that reads only the image, so it
+/// refines the peaks of either detector.
 ///
-/// Each variant carries the configuration struct for that backend.
-/// Construct via [`RefinerKind::default`] for center-of-mass with
-/// library defaults, or use one of the variant constructors. The active
-/// backend is instantiated into a [`Refiner`] via [`Refiner::from_kind`].
+/// Each variant carries the configuration of its refiner;
+/// [`Refiner::from_kind`] builds the refiner. The center-of-mass
+/// refiner is not an image refiner: it is the ChESS detector's own
+/// localizer on its response map
+/// ([`ChessParams::center_of_mass`](crate::ChessParams::center_of_mass)).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum RefinerKind {
-    /// 5×5 weighted centroid on the response map.
-    CenterOfMass(CenterOfMassConfig),
     /// Quadratic surface fit on the image patch.
     SaddlePoint(SaddlePointConfig),
 }
 
-impl Default for RefinerKind {
-    fn default() -> Self {
-        Self::CenterOfMass(CenterOfMassConfig::default())
-    }
-}
-
 /// Runtime refiner with reusable scratch buffers.
 ///
-/// Constructed from a [`RefinerKind`] via [`Refiner::from_kind`].
-/// Implements [`CornerRefiner`] by dispatching to the selected backend.
+/// Built from a [`RefinerKind`] via [`Refiner::from_kind`], or from the
+/// ChESS localizer as `Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg))`.
+/// Implements [`CornerRefiner`] by dispatching to the selected refiner.
 /// Reuse across many candidates on the same frame to amortize
 /// allocation; scratch buffers are sized at construction and are not
 /// reallocated on each call.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Refiner {
-    /// 5×5 weighted centroid on the response map.
+    /// Weighted centroid on the ChESS response map (the ChESS localizer).
     CenterOfMass(CenterOfMassRefiner),
     /// Quadratic surface fit on the image patch.
     SaddlePoint(SaddlePointRefiner),
 }
 
 impl Refiner {
-    /// Construct a [`Refiner`] from the given kind, allocating scratch
+    /// Construct the image refiner `kind` selects, allocating scratch
     /// buffers at the configured size. It reports no position covariance;
     /// see [`Self::with_covariance`].
     pub fn from_kind(kind: RefinerKind) -> Self {
         match kind {
-            RefinerKind::CenterOfMass(cfg) => Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg)),
             RefinerKind::SaddlePoint(cfg) => Refiner::SaddlePoint(SaddlePointRefiner::new(cfg)),
         }
     }
 
     /// Select whether the refiner reports a position covariance on every
     /// accepted corner (see
-    /// [`RefineResult::noise_covariance_per_unit_variance`]). A refiner from
-    /// [`Self::from_kind`] reports none. Refined positions are the same
-    /// either way.
+    /// [`RefineResult::noise_covariance_per_unit_variance`]). A newly built
+    /// refiner reports none. Refined positions are the same either way.
     pub fn with_covariance(mut self, report: bool) -> Self {
         match &mut self {
             Refiner::CenterOfMass(r) => r.reports_covariance = report,

@@ -1,10 +1,10 @@
-//! `#[wasm_bindgen]` wrappers for subpixel refiner config types.
+//! `#[wasm_bindgen]` wrappers for the subpixel refiner config types.
 
 use std::rc::Rc;
 
 use chess_corners::{
-    CenterOfMassConfig as RsCenterOfMassConfig, ChessRefiner as RsChessRefiner,
-    RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
+    CenterOfMassConfig as RsCenterOfMassConfig, ImageRefiner as RsImageRefiner,
+    SaddlePointConfig as RsSaddlePointConfig,
 };
 use wasm_bindgen::prelude::*;
 
@@ -117,289 +117,110 @@ impl Default for SaddlePointConfig {
 }
 
 impl SaddlePointConfig {
-    pub(crate) fn share_cell(&self) -> Cell<RsSaddlePointConfig> {
-        Rc::clone(&self.cell)
-    }
     pub(crate) fn from_cell(cell: Cell<RsSaddlePointConfig>) -> Self {
         Self { cell }
     }
 }
 
 // ---------------------------------------------------------------------------
-// ChessRefinerKind (internal discriminant, pub(crate) for strategy.rs)
+// ImageRefiner (immutable value class)
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ChessRefinerKind {
-    CenterOfMass,
-    SaddlePoint,
-    #[cfg(feature = "ml-refiner")]
-    Ml,
-}
-
-impl ChessRefinerKind {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            ChessRefinerKind::CenterOfMass => "center_of_mass",
-            ChessRefinerKind::SaddlePoint => "saddle_point",
-            #[cfg(feature = "ml-refiner")]
-            ChessRefinerKind::Ml => "ml",
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ChessRefiner (tagged class)
-// ---------------------------------------------------------------------------
-
-/// Subpixel refiner selection for the ChESS detector.
+/// The optional image-refinement stage. Mirrors
+/// [`chess_corners::ImageRefiner`]. An immutable value: build one with
+/// `ImageRefiner.saddlePoint()`, `ImageRefiner.saddlePointWith(cfg)` or, when the package is built with the
+/// `ml-refiner` feature, `ImageRefiner.ml()`, and pass it to
+/// `DetectorConfig.withRefiner`.
 ///
-/// Construct one via the static factories
-/// [`ChessRefiner::center_of_mass`], [`ChessRefiner::saddle_point`],
-/// or — when the `ml-refiner` Cargo feature is enabled —
-/// `ChessRefiner::ml`. In JS the factory names are
-/// `ChessRefiner.withCenterOfMass(...)`,
-/// `ChessRefiner.withSaddlePoint(...)`, and `ChessRefiner.withMl()`.
-/// Instance getters (`refiner.centerOfMass`, `refiner.saddlePoint`)
-/// hand back the corresponding payload
-/// wrapper.
+/// Without an image refiner each detector keeps its own subpixel localizer
+/// (ChESS: center of mass; Radon: peak fit). An image refiner reads only the
+/// input image around each corner, so it works with both detectors. On ChESS
+/// it replaces the center of mass, starts from the integer response peak and
+/// drops the corners it rejects. On Radon it starts from the peak fit and
+/// keeps the peak fit where it does not converge.
 ///
-/// The wrapper holds a cell for every payload variant so payload edits
-/// survive across `kind` flips. Only the cell matching the active
-/// `kind` is read at snapshot time.
+/// `saddlePoint` fits a quadratic surface to the image patch at the saddle
+/// point and re-centres it until it converges; it reports a position
+/// covariance on the corners it refines. `ml` predicts the offset with a
+/// small ONNX model, rejects no corner and reports no covariance.
+///
+/// JSON: `{"saddle_point": {...}}` or `"ml"`.
 #[wasm_bindgen]
-#[derive(Clone, Debug)]
-pub struct ChessRefiner {
-    pub(crate) kind: Cell<ChessRefinerKind>,
-    pub(crate) center_of_mass: Cell<RsCenterOfMassConfig>,
-    pub(crate) saddle_point: Cell<RsSaddlePointConfig>,
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ImageRefiner {
+    inner: RsImageRefiner,
 }
 
 #[wasm_bindgen]
-impl ChessRefiner {
-    /// Center-of-mass refinement on the response map. JS:
-    /// `ChessRefiner.withCenterOfMass(cfg)`.
-    #[wasm_bindgen(js_name = withCenterOfMass)]
-    pub fn center_of_mass(cfg: &CenterOfMassConfig) -> Self {
+impl ImageRefiner {
+    /// Saddle-point refinement with default tuning.
+    #[wasm_bindgen(js_name = saddlePoint)]
+    pub fn saddle_point() -> Self {
         Self {
-            kind: cell(ChessRefinerKind::CenterOfMass),
-            center_of_mass: cfg.share_cell(),
-            saddle_point: cell(RsSaddlePointConfig::default()),
+            inner: RsImageRefiner::saddle_point(),
         }
     }
 
-    /// Quadratic saddle-point refinement. JS:
-    /// `ChessRefiner.withSaddlePoint(cfg)`.
-    #[wasm_bindgen(js_name = withSaddlePoint)]
-    pub fn saddle_point(cfg: &SaddlePointConfig) -> Self {
+    /// Saddle-point refinement tuned by `cfg`. The payload is copied: later
+    /// edits to `cfg` do not affect this value.
+    #[wasm_bindgen(js_name = saddlePointWith)]
+    pub fn saddle_point_with(cfg: &SaddlePointConfig) -> Self {
         Self {
-            kind: cell(ChessRefinerKind::SaddlePoint),
-            center_of_mass: cell(RsCenterOfMassConfig::default()),
-            saddle_point: cfg.share_cell(),
+            inner: RsImageRefiner::SaddlePoint(*cfg.cell.borrow()),
         }
     }
 
     /// ML-backed refinement (requires the `ml-refiner` Cargo feature).
-    /// JS: `ChessRefiner.withMl()`.
     #[cfg(feature = "ml-refiner")]
-    #[wasm_bindgen(js_name = withMl)]
     pub fn ml() -> Self {
         Self {
-            kind: cell(ChessRefinerKind::Ml),
-            center_of_mass: cell(RsCenterOfMassConfig::default()),
-            saddle_point: cell(RsSaddlePointConfig::default()),
+            inner: RsImageRefiner::Ml,
         }
     }
 
-    /// Discriminant tag: one of `"center_of_mass"`, `"saddle_point"`,
-    /// `"ml"`.
+    /// Variant tag: `"saddle_point"` or `"ml"`.
     #[wasm_bindgen(getter)]
     pub fn kind(&self) -> String {
-        self.kind.borrow().as_str().into()
-    }
-
-    /// Center-of-mass payload wrapper. Edits propagate even when the
-    /// active `kind` is something else (the cell is preserved for when
-    /// the user flips back).
-    #[wasm_bindgen(getter, js_name = centerOfMass)]
-    pub fn get_center_of_mass(&self) -> CenterOfMassConfig {
-        CenterOfMassConfig::from_cell(Rc::clone(&self.center_of_mass))
-    }
-    #[wasm_bindgen(setter, js_name = centerOfMass)]
-    pub fn set_center_of_mass(&mut self, v: &CenterOfMassConfig) {
-        // Copy contents into the existing cell so cell-sharing
-        // observers (any parent ChessConfig referencing this Rc) see
-        // the update.
-        *self.center_of_mass.borrow_mut() = *v.cell.borrow();
-        *self.kind.borrow_mut() = ChessRefinerKind::CenterOfMass;
-    }
-
-    /// Saddle-point payload wrapper.
-    #[wasm_bindgen(getter, js_name = saddlePoint)]
-    pub fn get_saddle_point(&self) -> SaddlePointConfig {
-        SaddlePointConfig::from_cell(Rc::clone(&self.saddle_point))
-    }
-    #[wasm_bindgen(setter, js_name = saddlePoint)]
-    pub fn set_saddle_point(&mut self, v: &SaddlePointConfig) {
-        *self.saddle_point.borrow_mut() = *v.cell.borrow();
-        *self.kind.borrow_mut() = ChessRefinerKind::SaddlePoint;
-    }
-
-    /// Switch the discriminant to `"ml"` without otherwise mutating the
-    /// payload cells. Available only when the `ml-refiner` feature is
-    /// enabled.
-    #[cfg(feature = "ml-refiner")]
-    #[wasm_bindgen(js_name = useMl)]
-    pub fn use_ml(&mut self) {
-        *self.kind.borrow_mut() = ChessRefinerKind::Ml;
-    }
-}
-
-impl Default for ChessRefiner {
-    fn default() -> Self {
-        Self {
-            kind: cell(ChessRefinerKind::CenterOfMass),
-            center_of_mass: cell(RsCenterOfMassConfig::default()),
-            saddle_point: cell(RsSaddlePointConfig::default()),
-        }
-    }
-}
-
-impl ChessRefiner {
-    pub(crate) fn from_value(value: RsChessRefiner) -> Self {
-        let me = Self::default();
-        match value {
-            RsChessRefiner::CenterOfMass(cfg) => {
-                *me.kind.borrow_mut() = ChessRefinerKind::CenterOfMass;
-                *me.center_of_mass.borrow_mut() = cfg;
-            }
-            RsChessRefiner::SaddlePoint(cfg) => {
-                *me.kind.borrow_mut() = ChessRefinerKind::SaddlePoint;
-                *me.saddle_point.borrow_mut() = cfg;
-            }
+        match self.inner {
+            RsImageRefiner::SaddlePoint(_) => "saddle_point",
             #[cfg(feature = "ml-refiner")]
-            RsChessRefiner::Ml => {
-                *me.kind.borrow_mut() = ChessRefinerKind::Ml;
-            }
-            _ => {}
-        }
-        me
-    }
-
-    pub(crate) fn snapshot(&self) -> RsChessRefiner {
-        match *self.kind.borrow() {
-            ChessRefinerKind::CenterOfMass => {
-                RsChessRefiner::CenterOfMass(*self.center_of_mass.borrow())
-            }
-            ChessRefinerKind::SaddlePoint => {
-                RsChessRefiner::SaddlePoint(*self.saddle_point.borrow())
-            }
-            #[cfg(feature = "ml-refiner")]
-            ChessRefinerKind::Ml => RsChessRefiner::Ml,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// RadonRefiner (tagged class)
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RadonRefinerKind {
-    PeakFit,
-    SaddlePoint,
-}
-
-/// Final subpixel position of a Radon corner. Mirrors
-/// [`chess_corners::RadonRefiner`].
-///
-/// `RadonRefiner.withPeakFit()` (the default) keeps the response-map peak
-/// fit; `RadonRefiner.withSaddlePoint(cfg)` refines each peak with the
-/// saddle-point fit on the input image. The `saddlePoint` getter hands back the payload
-/// wrapper, sharing its cell.
-#[wasm_bindgen]
-#[derive(Clone, Debug)]
-pub struct RadonRefiner {
-    pub(crate) kind: Cell<RadonRefinerKind>,
-    pub(crate) saddle_point: Cell<RsSaddlePointConfig>,
-}
-
-#[wasm_bindgen]
-impl RadonRefiner {
-    /// Keep the response-map peak fit. JS: `RadonRefiner.withPeakFit()`.
-    #[wasm_bindgen(js_name = withPeakFit)]
-    pub fn peak_fit() -> Self {
-        Self {
-            kind: cell(RadonRefinerKind::PeakFit),
-            saddle_point: cell(RsSaddlePointConfig::default()),
-        }
-    }
-
-    /// Saddle-point refinement of each peak on the input image. JS:
-    /// `RadonRefiner.withSaddlePoint(cfg)`.
-    #[wasm_bindgen(js_name = withSaddlePoint)]
-    pub fn saddle_point(cfg: &SaddlePointConfig) -> Self {
-        Self {
-            kind: cell(RadonRefinerKind::SaddlePoint),
-            saddle_point: cfg.share_cell(),
-        }
-    }
-
-    /// Discriminant tag: `"peak_fit"` or `"saddle_point"`.
-    #[wasm_bindgen(getter)]
-    pub fn kind(&self) -> String {
-        match *self.kind.borrow() {
-            RadonRefinerKind::PeakFit => "peak_fit",
-            RadonRefinerKind::SaddlePoint => "saddle_point",
+            RsImageRefiner::Ml => "ml",
+            // `try_from` rejects every variant listed above's complement.
+            _ => "unknown",
         }
         .into()
     }
 
-    /// Saddle-point payload wrapper. Edits propagate even while the
-    /// active `kind` is `"peak_fit"`.
-    #[wasm_bindgen(getter, js_name = saddlePoint)]
-    pub fn get_saddle_point(&self) -> SaddlePointConfig {
-        SaddlePointConfig::from_cell(Rc::clone(&self.saddle_point))
-    }
-    #[wasm_bindgen(setter, js_name = saddlePoint)]
-    pub fn set_saddle_point(&mut self, v: &SaddlePointConfig) {
-        *self.saddle_point.borrow_mut() = *v.cell.borrow();
-        *self.kind.borrow_mut() = RadonRefinerKind::SaddlePoint;
-    }
-
-    /// Switch the discriminant to `"peak_fit"`, keeping the saddle-point
-    /// payload for a later switch back.
-    #[wasm_bindgen(js_name = usePeakFit)]
-    pub fn use_peak_fit(&mut self) {
-        *self.kind.borrow_mut() = RadonRefinerKind::PeakFit;
-    }
-}
-
-impl Default for RadonRefiner {
-    fn default() -> Self {
-        Self::from_value(RsRadonRefiner::default())
-    }
-}
-
-impl RadonRefiner {
-    pub(crate) fn from_value(value: RsRadonRefiner) -> Self {
-        match value {
-            RsRadonRefiner::PeakFit => Self::peak_fit(),
-            RsRadonRefiner::SaddlePoint(cfg) => Self {
-                kind: cell(RadonRefinerKind::SaddlePoint),
-                saddle_point: cell(cfg),
-            },
-            // Unknown future variants map to the documented default.
-            _ => Self::default(),
+    /// A copy of the saddle-point payload, or `undefined` for other kinds
+    /// (named `saddlePointConfig` because `saddlePoint` is the factory).
+    #[wasm_bindgen(getter, js_name = saddlePointConfig)]
+    pub fn get_saddle_point(&self) -> Option<SaddlePointConfig> {
+        match self.inner {
+            RsImageRefiner::SaddlePoint(cfg) => Some(SaddlePointConfig::from_cell(cell(cfg))),
+            _ => None,
         }
     }
+}
 
-    pub(crate) fn snapshot(&self) -> RsRadonRefiner {
-        match *self.kind.borrow() {
-            RadonRefinerKind::PeakFit => RsRadonRefiner::PeakFit,
-            RadonRefinerKind::SaddlePoint => {
-                RsRadonRefiner::SaddlePoint(*self.saddle_point.borrow())
-            }
+impl ImageRefiner {
+    pub(crate) fn snapshot(self) -> RsImageRefiner {
+        self.inner
+    }
+}
+
+impl TryFrom<RsImageRefiner> for ImageRefiner {
+    type Error = JsError;
+
+    /// A variant these bindings do not know is an error, never mapped
+    /// silently to another one.
+    fn try_from(inner: RsImageRefiner) -> Result<Self, Self::Error> {
+        match inner {
+            RsImageRefiner::SaddlePoint(_) => Ok(Self { inner }),
+            #[cfg(feature = "ml-refiner")]
+            RsImageRefiner::Ml => Ok(Self { inner }),
+            other => Err(JsError::new(&format!(
+                "unsupported image refiner {other:?}"
+            ))),
         }
     }
 }

@@ -31,8 +31,7 @@ def build_chess_config() -> chess_corners.DetectorConfig:
     cfg = chess_corners.DetectorConfig.chess_multiscale()
 
     # Strategy-specific knobs live inside ChessConfig.
-    chess = cfg.strategy.chess
-    chess.ring = chess_corners.ChessRing.BROAD
+    cfg.strategy.chess.ring = chess_corners.ChessRing.BROAD
     cfg.detection.nms_radius = 3
     cfg.detection.min_cluster_size = 1
 
@@ -41,9 +40,9 @@ def build_chess_config() -> chess_corners.DetectorConfig:
     scfg.det_margin = 0.001
     scfg.max_offset = 2.0
     scfg.min_abs_det = 0.0001
-    chess.refiner = chess_corners.ChessRefiner.saddle_point(scfg)
+    # The image refiner is independent of the detector.
+    cfg.refiner = chess_corners.ImageRefiner.saddle_point(scfg)
 
-    cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
     cfg.threshold = 0.5
     cfg.merge_radius = 2.5
     cfg.multiscale = chess_corners.MultiscaleConfig.pyramid(

@@ -1,21 +1,88 @@
-# Part V: Subpixel refiners
+# Part V: Subpixel localization
 
-A corner detector (ChESS or Radon) returns integer pixel positions
-plus a response value. Most downstream consumers — camera calibration,
-pose estimation, homography fitting — need positions to better than a
-pixel. A **refiner** takes one seed `(x₀, y₀)` plus a local view into
-either the image or the response map and returns a refined
-`(x, y)` in subpixel coordinates.
+A detector's response peaks are not yet corner positions. ChESS finds
+its peaks on integer pixels; Radon finds them on a 2×-supersampled
+response map. Calibration, pose estimation and homography fitting need
+positions to a small fraction of a pixel, so every corner goes through
+a subpixel localization step.
 
-The library ships four refiners with one trait and one configuration
-enum, so swapping between them is a one-line change. The ChESS
-detector always runs one of these refiners to reach subpixel accuracy.
-The Radon detector already locates its peaks to a fraction of a pixel
-with a 3-point peak fit (see
-[Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline)), and can
-refine them with `SaddlePoint` (§5.3).
+The library splits that step in two layers:
 
-## 5.1 The refiner trait
+1. **Each detector's own localizer**, which works on the detector's
+   response map and is always there: the ChESS **center of mass**
+   (§5.3) and the Radon **peak fit** (§5.4).
+2. An optional **image refiner**, which works on the input image
+   around each corner and does not care which detector found it:
+   **SaddlePoint** (§5.5) or the **ML** model (§5.6). It is set once,
+   on `DetectorConfig::refiner`, and applies to whichever detector is
+   active.
+
+## 5.1 Why two layers
+
+A response map is a smoothed picture of "corner-ness". Its maximum
+sits near the corner, but how near depends on the response shape, not
+on the corner: blur, board rotation and the corner's offset from the
+pixel grid all bend the response, and a localizer that only looks at
+the response inherits that bias. The image itself still holds the
+exact geometry — two edges crossing — so a fit on the pixels can
+remove it.
+
+![Refined positions of one corner over 600 noise draws, for three localizers, with their predicted ellipses](img/uncertainty_bias_precision.png)
+
+The figure repeats one synthetic corner under 600 draws of white
+noise ([Part VIII](part-08-uncertainty.md) explains it in full). The
+two response-map localizers — the center of mass and the Radon peak
+fit — land beside the true corner (`+`) or scatter widely; the
+saddle-point fit on the image lands on it. The response-map localizers
+are cheap and need nothing but the map the detector already computed,
+so they are the default; the image refiner is what to add when
+accuracy matters more than a fraction of a microsecond per corner.
+
+| | Response-map localizer (strategy config) | Image refiner (`DetectorConfig::refiner`) |
+|---|---|---|
+| ChESS | center of mass (`ChessConfig::center_of_mass`) | `None` (default) · `SaddlePoint(SaddlePointConfig)` · `Ml` |
+| Radon | peak fit (`RadonConfig::peak_fit`) | `None` (default) · `SaddlePoint(SaddlePointConfig)` · `Ml` |
+
+Every combination is valid: an image refiner reads only the image, so
+there is no refiner that needs a response map the active detector does
+not have. Where the image refiner starts, and what happens to a corner
+it cannot refine, follows the detector:
+
+- **ChESS** — the image refiner *replaces* the center of mass (which
+  then does not run). It starts from the integer response peak, and a
+  corner it rejects is dropped.
+- **Radon** — the image refiner runs *on top of* the peak fit. It
+  starts from the peak-fit position, and a corner it does not refine to
+  convergence keeps its peak-fit position; no corner is dropped.
+
+The ML refiner rejects no corner: one it cannot refine (its patch
+leaves the image) keeps its seed. Under `Uncertainty::Propagated` a
+corner's position covariance comes from whichever localizer produced
+its final position ([Part VIII](part-08-uncertainty.md)).
+
+```rust
+use chess_corners::{DetectorConfig, ImageRefiner};
+
+// ChESS with its center of mass (the default).
+let cfg = DetectorConfig::chess();
+// ChESS with saddle-point refinement in place of the center of mass.
+let cfg = DetectorConfig::chess().with_refiner(ImageRefiner::saddle_point());
+// Radon peak fit, refined by the saddle point where it converges.
+let cfg = DetectorConfig::radon().with_refiner(ImageRefiner::saddle_point());
+// Tune the ChESS center of mass itself.
+let cfg = DetectorConfig::chess().with_chess(|c| c.center_of_mass.radius = 3);
+```
+
+The image refiner survives a strategy switch (`with_chess` /
+`with_radon` leave it alone), so the same refinement can be compared
+across detectors with a one-line change. In JSON it is the top-level
+`"refiner"` key: `null` (or absent), `{"saddle_point": {...}}`, or
+`"ml"`.
+
+## 5.2 The refiner trait
+
+Below the facade, every localizer that refines one seed at a time is a
+`CornerRefiner` in `chess-corners-core`:
 
 ```rust
 pub trait CornerRefiner {
@@ -34,40 +101,34 @@ A `RefineResult` carries the refined `(x, y)`, a refiner-specific
   below the refiner's rejection thresholds.
 - `OutOfBounds` — the patch would read past the image border.
 - `IllConditioned` — the refiner's local system was singular or too
-  eccentric (edge rather than corner), or the CenterOfMass window holds
-  no positive response.
+  eccentric (edge rather than corner), or the center-of-mass window
+  holds no positive response.
 - `Rejected` — the refined offset exceeded the refiner's
   `max_offset`, or a per-refiner score threshold fired.
 
 Under `Uncertainty::Propagated` (the default is `Off`), an accepted result also
 carries `noise_covariance_per_unit_variance()`: the image noise propagated to
 the refined position through the refiner's exact Jacobian, per unit
-noise variance (px² per gray-level²). Every refiner except ML sets it;
-the saddle-point refiner only when its re-centring converges. The
-detector scales it by the image's noise level and adds the refiner's
+noise variance (px² per gray-level²). The center of mass always sets it,
+the saddle-point refiner when its re-centring converges. The detector
+scales it by the image's noise level and adds the localizer's
 systematic term to give each corner's `position_covariance`
 ([Part VIII](part-08-uncertainty.md)).
 
-The user-facing selector for ChESS is `ChessRefiner` (carrying
-`CenterOfMass`, `SaddlePoint`, and optionally `Ml`),
-nested inside `ChessConfig`. Each enum variant carries its tuning
-struct as a payload, so a refiner kind change cannot leave a stale
-per-refiner config field behind. At runtime the facade stores an owned
-`Refiner` enum (one allocated scratch buffer per concrete refiner) so
-the same instance is reused across seeds — no per-corner allocation.
+The trait is sealed; the built-in implementations are
+`CenterOfMassRefiner`, `SaddlePointRefiner` and the `Refiner` enum that
+dispatches over them. Core's `RefinerKind` selects an image refiner
+(`RefinerKind::SaddlePoint`); the center of mass is configured on
+`ChessParams::center_of_mass`. The pipeline holds one `Refiner` with
+its scratch buffers and reuses it across seeds — no per-corner
+allocation. The ML refiner batches whole frames through an ONNX model,
+so it lives in the facade rather than behind this trait.
 
-The Radon selector is `RadonRefiner`, nested inside `RadonConfig`:
-`PeakFit` (the default), which keeps the 3-point peak fit
-(`RadonConfig.peak_fit`) as the final position, or
-`SaddlePoint(SaddlePointConfig)`.
-`CenterOfMass` reads the ChESS response map and cannot refine Radon
-peaks, and ML is not offered. A Radon corner whose saddle-point
-refinement does not converge keeps its peak-fit position.
+## 5.3 Center of mass (ChESS)
 
-## 5.2 CenterOfMass
-
-Operates on the ChESS response map. Computes the response-weighted
-centroid of a `(2r + 1)²` window around the seed:
+The ChESS localizer. Operates on the ChESS response map and computes
+the response-weighted centroid of a `(2r + 1)²` window around the
+integer peak:
 
 \\[
 x_r = \frac{\sum_{p \in W} x_p \cdot R_p}{\sum_p R_p}, \qquad
@@ -81,17 +142,29 @@ detector's seeds are positive response peaks, so it never hits this.
 
 | Property         | Value                                           |
 |------------------|-------------------------------------------------|
-| Input            | Response map                                    |
+| Input            | ChESS response map                              |
+| Config           | `ChessConfig::center_of_mass` (`radius`)        |
 | Default `radius` | 2 (5×5 window)                                  |
 | Typical cost     | ~20 ns per corner; ~0.5 µs with the covariance |
 | Strengths        | Cheapest option in the benchmark; closed-form   |
 | Weaknesses       | Centroid bias when the response is asymmetric;  |
 |                  | fails when `radius` crosses neighboring corners |
 
-Use when throughput matters more than sub-0.1 px accuracy, or when
-the ChESS response is the only signal you want the refinement to see.
+Keep it when throughput matters more than sub-0.1 px accuracy. When an
+image refiner is set it does not run, except to place the coarse
+pyramid seeds of the ML pipeline (§5.6).
 
-## 5.3 SaddlePoint
+## 5.4 Peak fit (Radon)
+
+The Radon localizer is part of peak detection itself: a closed-form
+3-point fit through the response maximum and its neighbours along each
+axis, on the supersampled response map (`RadonConfig::peak_fit`,
+Gaussian by default, parabolic as the alternative).
+[Part IV §4.4](part-04-radon-detector.md#44-peak-fit-pipeline)
+describes it. Because Radon peaks arrive already subpixel, an image
+refiner on Radon starts from the peak fit and keeps it as a fallback.
+
+## 5.5 SaddlePoint (image refiner)
 
 Fits a 2D quadratic `f(x, y) = a·x² + b·x·y + c·y² + d·x + e·y + g`
 to a `(2r + 1)²` image patch and returns the saddle point (the
@@ -102,8 +175,8 @@ window — Newton steps, refitting on the patch resampled bilinearly at
 each position — until the fitted saddle is within 0.001 px of the window
 centre; re-centred, the window is point-symmetric about the corner and
 that pull vanishes. Where this does not converge it returns the single
-fit without a covariance (a Radon corner keeps its peak-fit position
-instead). [Part VIII §8.3.1](part-08-uncertainty.md#831-noise-through-the-localizer)
+fit without a covariance; on ChESS that single fit is the corner's
+position, on Radon the corner keeps its peak-fit position instead. [Part VIII §8.3.1](part-08-uncertainty.md#831-noise-through-the-localizer)
 derives the covariance at the converged position.
 
 The determinant of the Hessian is `4·a·c − b²`. A true X‑junction is a
@@ -117,6 +190,7 @@ rejects:
 | Property         | Value                                           |
 |------------------|-------------------------------------------------|
 | Input            | Image                                           |
+| Config           | `ImageRefiner::SaddlePoint(SaddlePointConfig)`  |
 | Default `radius` | 2 (5×5 patch)                                   |
 | Typical cost     | ~0.2 µs per corner; ~0.6 µs with the covariance |
 | Strengths        | Lowest error of the geometric refiners, sharp or blurred, synthetic or real |
@@ -127,19 +201,24 @@ sweeps it has the lowest mean error of the built-in refiners on every
 clean, blurred and noisy row up to `σ_noise = 8`, and is within 0.003 px
 of (or below) `cv2.cornerSubPix` on the blurred rows.
 
-## 5.4 ML (ONNX model)
+## 5.6 ML (image refiner)
 
-A learned refiner. Feeds a 21×21 normalized grayscale patch into a
-small CNN and takes `[dx, dy, conf_logit]` back out. The ChESS path
-extracts the patch, stages a batch, runs ONNX inference via
-`tract-onnx`, and adds `[dx, dy]` to each seed.
+A learned refiner. Feeds a 21×21 normalized grayscale patch, centred on
+each corner, into a small CNN and takes `[dx, dy, conf_logit]` back out.
+The pipeline extracts the patches, stages them in batches, runs ONNX
+inference via `tract-onnx`, and adds `[dx, dy]` to each seed: the
+integer peak on ChESS, the peak fit on Radon. A corner whose patch
+leaves the image keeps its seed. It reports no covariance. Under a
+coarse-to-fine pyramid the coarse seeds come from the detector's own
+localizer, and the model runs only at full resolution. ROI detection
+(`Detector::detect_u8_roi`) does not support it.
 
-Available behind the `ml-refiner` feature. The default model
+Selected with `ImageRefiner::Ml`, behind the `ml-refiner` feature. The default model
 `chess_refiner_v4.onnx` is embedded in the
 [`chess-corners-ml`](https://docs.rs/chess-corners-ml) crate at
 `crates/chess-corners-ml/assets/ml/`.
 
-### 5.4.1 Architecture
+### 5.6.1 Architecture
 
 The shipped model is `CornerRefinerNet`, a CoordConv CNN with a
 flatten + MLP head. About 180 K parameters:
@@ -177,7 +256,7 @@ path. The shipped model is the small variant — the larger and
 softargmax variants did not move the held-out error meaningfully in
 our sweeps.
 
-### 5.4.2 Training data and loss
+### 5.6.2 Training data and loss
 
 The training pipeline lives in `tools/ml_refiner/`; the shipped model's
 synthetic dataset is generated by the config at
@@ -205,7 +284,7 @@ Loss: Huber on `(dx, dy)` for positives, binary cross-entropy on
 confidence for all samples. The regression loss is weighted up on
 positives only via `is_pos` (negatives have no valid target).
 
-### 5.4.3 Designing the training distribution
+### 5.6.3 Designing the training distribution
 
 A subpixel ML refiner is only as good as the patches it trains on, and
 synthetic training data has two failure modes that pull in opposite
@@ -222,7 +301,7 @@ directions:
   still feed it (~0.6 px on `tanh` inputs). Neither distribution alone
   spans the range of edge profiles a refiner meets in practice.
 
-The shipped dataset avoids both by mixing the two modes 50/50 (§5.4.2)
+The shipped dataset avoids both by mixing the two modes 50/50 (§5.6.2)
 and augmenting with sensor noise. Two lessons carry over into the
 Part IX benchmark. Noise augmentation is what lets the model take the
 heaviest-noise row (`σ = 12` gray levels), where it posts the lowest
@@ -232,7 +311,7 @@ mildly blurred data the geometric refiners still win (`SaddlePoint`
 on both), so ML earns its cost only
 when noise dominates.
 
-### 5.4.4 ONNX export and inference
+### 5.6.4 ONNX export and inference
 
 The export step (`tools/ml_refiner/export_onnx.py`) writes an ONNX
 graph at opset 17 (falling back to 18 if a conversion is unsupported).
@@ -247,26 +326,25 @@ Rust inference is `chess_corners_ml::MlModel::infer_batch`. It wraps
 `SymbolScope`, so a single loaded model can handle variable-batch
 calls without re-optimization.
 
-## 5.5 Picking a refiner
+## 5.7 Picking a localizer and refiner
 
 The measurement-driven comparison lives in Part IX. In short:
 
-- Budget matters more than anything else: the geometric refiners
-  are orders of magnitude faster than ML per corner.
+- Budget matters more than anything else: the geometric localizers and
+  refiners are orders of magnitude faster than ML per corner.
 - `SaddlePoint` has the lowest mean error of the built-in refiners on
   clean and blurred synthetic frames and on real calibration images, and
-  is the default choice for image-patch refinement.
+  is the default choice for calibration-grade work on either detector
+  ([Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)
+  compares it with the Radon peak fit).
 - ML has the lowest mean error on the heaviest synthetic noise row.
+- With no image refiner, ChESS's center of mass and Radon's peak fit
+  cost almost nothing beyond detection.
 
-The ChESS refiner is selected through `ChessConfig.refiner`:
-`DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::saddle_point())`.
-The Radon refiner through `RadonConfig.refiner`:
-`DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point())`
-refines the peaks
-([Part IV §4.5](part-04-radon-detector.md#45-when-to-pick-chess-vs-radon)).
-Switching is a single-line change, and the comparison numbers
-in Part IX come from running all three ChESS refiners on the same
-fixture at a single build.
+Switching is a single-line change —
+`cfg.with_refiner(ImageRefiner::saddle_point())` or
+`cfg.without_refiner()` — and the comparison numbers in Part IX come
+from running every localizer on the same fixture at a single build.
 
 ---
 

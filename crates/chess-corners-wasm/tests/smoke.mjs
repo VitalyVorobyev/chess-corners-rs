@@ -17,7 +17,7 @@ const {
   default: init,
   DetectorConfig,
   ChessDetector,
-  RadonRefiner,
+  ImageRefiner,
   SaddlePointConfig,
   Uncertainty,
   default_detector_config_json,
@@ -40,7 +40,8 @@ const defaults = JSON.parse(default_detector_config_json());
 assert.equal(default_detector_config_json(), defaultDetectorConfigJson());
 assert.equal(defaults.threshold, 30);
 assert.equal(defaults.merge_radius, 3);
-assert.deepEqual(defaults.strategy, { chess: { ring: "canonical", refiner: { center_of_mass: { radius: 2 } } } });
+assert.deepEqual(defaults.strategy, { chess: { ring: "canonical", center_of_mass: { radius: 2 } } });
+assert.equal("refiner" in defaults, false, "no refiner key when none is set");
 assert.equal(defaults.multiscale, "single_scale");
 assert.equal(defaults.upscale, "disabled");
 assert.equal(defaults.orientation_method, "ring_fit");
@@ -53,7 +54,7 @@ for (const name of ["chess", "chessMultiscale", "radon", "radonMultiscale"]) {
 }
 assert.equal(JSON.parse(DetectorConfig.radon().toJson()).threshold, 0.28);
 assert.equal(
-  JSON.parse(DetectorConfig.fromJson('{"strategy":{"chess":{"refiner":{"saddle_point":{}}}}}').toJson()).strategy.chess.refiner.saddle_point.min_abs_det,
+  JSON.parse(DetectorConfig.fromJson('{"refiner":{"saddle_point":{}}}').toJson()).refiner.saddle_point.min_abs_det,
   0.0001,
 );
 
@@ -124,7 +125,7 @@ for (let y = 0; y < size; y++) {
 }
 const saddle = ChessDetector.withConfig(
   DetectorConfig.fromJson(
-    '{"strategy": {"chess": {"refiner": {"saddle_point": {}}}}, "uncertainty": {"propagated": {"noise": "estimate"}}}',
+    '{"refiner": {"saddle_point": {}}, "uncertainty": {"propagated": {"noise": "estimate"}}}',
   ),
 );
 const found = saddle.detect(board, size, size);
@@ -160,18 +161,46 @@ assert.ok(saddle.positionCovariance().length > 0);
 saddle.applyConfig(DetectorConfig.chess());
 assert.equal(saddle.positionCovariance().length, 0, "cleared by applyConfig");
 
-// Radon keeps its peak fit by default, which reports a covariance as well as
-// the saddle-point refinement.
+// The image refiner is a detector-independent value; Radon keeps its peak fit
+// without one, and both localizers report a covariance.
 const radonCfg = DetectorConfig.radon().withUncertainty(Uncertainty.propagated());
-assert.equal(JSON.parse(radonCfg.toJson()).strategy.radon.refiner, "peak_fit");
+assert.equal(radonCfg.refiner, undefined);
+assert.equal(JSON.parse(radonCfg.toJson()).refiner, undefined);
 const peakFit = ChessDetector.withConfig(radonCfg);
 peakFit.detect(board, size, size);
 assert.ok(peakFit.positionCovariance().every((v) => Number.isFinite(v)));
-const saddleCfg = radonCfg.withRadonRefiner(RadonRefiner.withSaddlePoint(new SaddlePointConfig()));
-assert.equal(JSON.parse(saddleCfg.toJson()).strategy.radon.refiner.saddle_point.radius, 2);
+const sp = new SaddlePointConfig();
+sp.maxOffset = 1.5;
+const refiner = ImageRefiner.saddlePointWith(sp);
+sp.maxOffset = 0.5; // the refiner holds a copy
+assert.equal(refiner.kind, "saddle_point");
+assert.equal(refiner.saddlePointConfig.maxOffset, 1.5);
+assert.equal(ImageRefiner.saddlePoint().saddlePointConfig.maxOffset, new SaddlePointConfig().maxOffset);
+const saddleCfg = radonCfg.withRefiner(refiner);
+assert.equal(radonCfg.refiner, undefined, "withRefiner returns a copy");
+assert.equal(saddleCfg.refiner.kind, "saddle_point");
+assert.equal(JSON.parse(saddleCfg.toJson()).refiner.saddle_point.max_offset, 1.5);
+assert.equal(JSON.parse(saddleCfg.toJson()).refiner.saddle_point.radius, 2);
 const radon = ChessDetector.withConfig(saddleCfg);
 radon.detect(board, size, size);
 assert.ok(radon.positionCovariance().some((v) => Number.isFinite(v) && v > 0));
+// The refiner survives strategy switches and clears with withoutRefiner.
+assert.equal(saddleCfg.withChess({}).refiner.kind, "saddle_point");
+assert.equal(DetectorConfig.chess().withRefiner(refiner).withRadon({}).refiner.kind, "saddle_point");
+assert.equal(saddleCfg.withoutRefiner().refiner, undefined);
+assert.equal(JSON.parse(saddleCfg.withoutRefiner().toJson()).refiner, undefined);
+// The center-of-mass radius is edited through the shared chess payload.
+const comCfg = DetectorConfig.chess();
+comCfg.strategy.chess.centerOfMass.radius = 3;
+assert.equal(JSON.parse(comCfg.toJson()).strategy.chess.center_of_mass.radius, 3);
+// A refiner on a ChESS detector reports covariances too.
+const chessRefined = ChessDetector.withConfig(
+  DetectorConfig.chess().withUncertainty(Uncertainty.propagated()).withRefiner(ImageRefiner.saddlePoint()),
+);
+chessRefined.detect(board, size, size);
+assert.ok(chessRefined.positionCovariance().some((v) => Number.isFinite(v) && v > 0));
+// A refiner key in the strategy option objects is rejected.
+assert.throws(() => DetectorConfig.chess().withChess({ refiner: 1 }), (e) => String(e).includes("unexpected option"));
 
 // Noise estimate: the board carries ±4 gray levels of uniform noise (σ ≈ 2.3).
 const sigma = estimateNoiseSigma(board, size, size);

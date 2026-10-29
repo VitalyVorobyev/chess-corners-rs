@@ -31,7 +31,7 @@ def _radon() -> chess_corners.DetectorConfig:
 
 
 def _saddle_config() -> chess_corners.DetectorConfig:
-    return _chess().with_chess(refiner=chess_corners.ChessRefiner.saddle_point())
+    return _chess().with_refiner(chess_corners.ImageRefiner.saddle_point())
 
 
 def test_saddle_point_reports_position_covariance():
@@ -77,7 +77,7 @@ def test_default_refiner_reports_covariance():
 
 def test_radon_peak_fit_reports_covariance():
     cfg = _radon()
-    assert cfg.strategy.radon.refiner.kind == "peak_fit"
+    assert cfg.refiner is None
     det = chess_corners.Detector(cfg).detect(_noisy_board())
     assert len(det) > 0
     assert np.isfinite(det.position_covariance).all()
@@ -196,8 +196,8 @@ def test_invalid_noise_sigma_is_rejected():
 def test_radon_saddle_point_reports_position_covariance():
     img = _noisy_board()
     cfg = _radon()
-    assert cfg.strategy.radon.refiner.kind == "peak_fit"
-    saddle = cfg.with_radon(refiner=chess_corners.RadonRefiner.saddle_point())
+    assert cfg.refiner is None
+    saddle = cfg.with_refiner(chess_corners.ImageRefiner.saddle_point())
     det = chess_corners.Detector(saddle).detect(img)
     assert len(det) > 0
     present = ~np.isnan(det.position_covariance[:, 0, 0])
@@ -233,3 +233,11 @@ def test_detections_report_the_frame_noise_sigma(make):
     quiet = chess_corners.Detector(off).detect(img)
     assert len(quiet) > 0
     assert quiet.noise_sigma is None
+
+
+def test_ml_refiner_with_radon_detects_corners():
+    img = _noisy_board()
+    cfg = _radon().with_refiner(chess_corners.ImageRefiner.ml())
+    det = chess_corners.Detector(cfg).detect(img)
+    assert len(det) > 0
+    assert np.isfinite(det.xy).all()

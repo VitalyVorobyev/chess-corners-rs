@@ -52,19 +52,19 @@ def test_default_config_dict_roundtrip_fields_match():
 # ---------------------------------------------------------------------------
 
 
-def test_chess_refiner_saddle_point_max_offset_survives_roundtrip():
+def test_image_refiner_saddle_point_max_offset_survives_roundtrip():
     """A mutation in a deeply nested config field must survive JSON roundtrip."""
     scfg = chess_corners.SaddlePointConfig()
     scfg.max_offset = 3.5
-    cfg = chess_corners.DetectorConfig().with_chess(
-        refiner=chess_corners.ChessRefiner.saddle_point(scfg)
+    cfg = chess_corners.DetectorConfig().with_refiner(
+        chess_corners.ImageRefiner.saddle_point(scfg)
     )
 
     json_str = cfg.to_json()
     cfg2 = chess_corners.DetectorConfig.from_json(json_str)
 
-    assert cfg2.strategy.chess.refiner.kind == "saddle_point"
-    assert abs(cfg2.strategy.chess.refiner.payload.max_offset - 3.5) < 1e-6
+    assert cfg2.refiner.kind == "saddle_point"
+    assert abs(cfg2.refiner.payload.max_offset - 3.5) < 1e-6
 
 
 def test_radon_strategy_survives_roundtrip():
@@ -108,9 +108,7 @@ def test_json_and_dict_produce_equivalent_configs():
     """Configs constructed from JSON and from an equivalent dict must be identical."""
     cfg = chess_corners.DetectorConfig()
     cfg.threshold = 0.17
-    chess = cfg.strategy.chess
-    chess.refiner = chess_corners.ChessRefiner.saddle_point()
-    cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
+    cfg.refiner = chess_corners.ImageRefiner.saddle_point()
 
     json_cfg = chess_corners.DetectorConfig.from_json(cfg.to_json())
     dict_cfg = chess_corners.DetectorConfig.from_dict(cfg.to_dict())
@@ -177,30 +175,75 @@ def test_multiscale_unknown_bare_string_raises_clear_error():
 
 
 # ---------------------------------------------------------------------------
-# RadonRefiner
+# ImageRefiner
 # ---------------------------------------------------------------------------
 
 
-def test_radon_refiner_round_trips_and_accepts_serde_shapes():
+def test_refiner_defaults_to_null_and_round_trips_both_variants():
     cfg = chess_corners.DetectorConfig.radon()
-    assert chess_corners.RadonRefiner().kind == "peak_fit"
-    assert json.loads(cfg.to_json())["strategy"]["radon"]["refiner"] == {"peak_fit": None}
+    assert json.loads(cfg.to_json())["refiner"] is None
+    assert chess_corners.DetectorConfig.from_json(cfg.to_json()).refiner is None
+    # An absent key also means no refiner.
+    assert chess_corners.DetectorConfig.from_dict({}).refiner is None
 
     sp = chess_corners.SaddlePointConfig()
     sp.max_offset = 0.75
-    cfg = cfg.with_radon(refiner=chess_corners.RadonRefiner.saddle_point(sp))
+    cfg = cfg.with_refiner(chess_corners.ImageRefiner.saddle_point(sp))
+    assert list(json.loads(cfg.to_json())["refiner"]) == ["saddle_point"]
     back = chess_corners.DetectorConfig.from_json(cfg.to_json())
-    assert back.strategy.radon.refiner.kind == "saddle_point"
-    assert back.strategy.radon.refiner.payload.max_offset == pytest.approx(0.75)
+    assert back.refiner.kind == "saddle_point"
+    assert back.refiner.payload.max_offset == pytest.approx(0.75)
 
-    cfg.strategy.radon.refiner = chess_corners.RadonRefiner.peak_fit()
+    cfg = cfg.with_refiner(chess_corners.ImageRefiner.ml())
+    assert json.loads(cfg.to_json())["refiner"] == {"ml": None}
     back = chess_corners.DetectorConfig.from_dict(cfg.to_dict())
-    assert back.strategy.radon.refiner.kind == "peak_fit"
-    assert back.strategy.radon.refiner.payload is None
+    assert back.refiner == chess_corners.ImageRefiner.ml()
+    assert back.refiner.payload is None
 
-    # Serde's bare-string unit variant.
-    assert chess_corners.RadonRefiner.from_dict("peak_fit").kind == "peak_fit"
+
+def test_image_refiner_dict_shapes():
+    ml = chess_corners.ImageRefiner.ml()
+    sp = chess_corners.ImageRefiner.saddle_point()
+    assert chess_corners.ImageRefiner.from_dict("ml") == ml
+    assert chess_corners.ImageRefiner.from_dict({"ml": None}) == ml
+    assert chess_corners.ImageRefiner.from_dict(sp.to_dict()) == sp
+    assert chess_corners.ImageRefiner.from_dict({"saddle_point": {}}) == sp
+    assert ml.to_dict() == {"ml": None}
+    assert repr(ml) == "ImageRefiner.ml()"
+    assert repr(sp).startswith("ImageRefiner.saddle_point(")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "saddle_point",
+        "center_of_mass",
+        "peak_fit",
+        "bogus",
+        {"center_of_mass": {}},
+        {"peak_fit": None},
+        {"ml": {}},
+        {"ml": None, "saddle_point": {}},
+        {"saddle_point": {"unknown": 1}},
+        {},
+        3,
+    ],
+)
+def test_image_refiner_rejects_unknown_shapes(bad):
     with pytest.raises(chess_corners.ConfigError):
-        chess_corners.RadonRefiner.from_dict("saddle_point")
+        chess_corners.ImageRefiner.from_dict(bad)
+
+
+def test_old_per_strategy_refiner_keys_are_rejected():
     with pytest.raises(chess_corners.ConfigError):
-        chess_corners.RadonRefiner.from_dict({"center_of_mass": {}})
+        chess_corners.DetectorConfig.from_dict(
+            {"strategy": {"chess": {"refiner": {"saddle_point": {}}}}}
+        )
+    with pytest.raises(chess_corners.ConfigError):
+        chess_corners.DetectorConfig.from_dict(
+            {"strategy": {"radon": {"refiner": "peak_fit"}}}
+        )
+    with pytest.raises(chess_corners.ConfigError):
+        chess_corners.ChessConfig.from_dict({"refiner": {"saddle_point": {}}})
+    with pytest.raises(chess_corners.ConfigError):
+        chess_corners.RadonConfig.from_dict({"refiner": "peak_fit"})

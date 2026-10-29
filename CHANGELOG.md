@@ -7,7 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The ML refiner refines Radon corners too: `ImageRefiner::Ml` works with
+  either detector. On Radon it starts from the peak fit, and a corner it
+  cannot refine keeps the peak fit and, under
+  `Uncertainty::Propagated`, its covariance.
+
 ### Changed
+
+- Subpixel refinement is one optional, detector-independent stage. Each
+  detector keeps the localizer that works on its own response map — the
+  ChESS center of mass (`ChessConfig::center_of_mass: CenterOfMassConfig`)
+  and the Radon peak fit (`RadonConfig::peak_fit`) — and
+  `DetectorConfig::refiner: Option<ImageRefiner>` adds an image refiner,
+  `ImageRefiner::SaddlePoint(SaddlePointConfig)` or (feature
+  `ml-refiner`) `ImageRefiner::Ml`, for either detector. `None`, the
+  default, keeps the detector's own localizer. On ChESS an image refiner
+  replaces the center of mass, starts from the integer peak and drops a
+  corner it rejects; on Radon it starts from the peak fit and keeps it
+  where it does not converge. The refiner survives `with_chess` /
+  `with_radon` strategy switches. `ChessRefiner`, `RadonRefiner`,
+  `ChessConfig::refiner` and `RadonConfig::refiner` are removed. Outputs
+  of every configuration that maps across are unchanged bit for bit.
+  Migration:
+
+  | Binding | Before | After |
+  |---------|--------|-------|
+  | Rust | `.with_chess(\|c\| c.refiner = ChessRefiner::SaddlePoint(cfg))` | `.with_refiner(ImageRefiner::SaddlePoint(cfg))` |
+  | Rust | `.with_radon(\|r\| r.refiner = RadonRefiner::saddle_point())` | `.with_refiner(ImageRefiner::saddle_point())` |
+  | Rust | `ChessRefiner::CenterOfMass(cfg)` | `refiner: None` (default) plus `.with_chess(\|c\| c.center_of_mass = cfg)` |
+  | Rust | `RadonRefiner::PeakFit` | `refiner: None` (default) |
+  | Rust | `ChessRefiner::Ml` | `.with_refiner(ImageRefiner::Ml)` |
+  | JSON | `"strategy": {"chess": {"refiner": {"center_of_mass": {...}}}}` | `"strategy": {"chess": {"center_of_mass": {...}}}` |
+  | JSON | `"strategy": {"chess" \| "radon": {"refiner": {"saddle_point": {...}}}}` | top-level `"refiner": {"saddle_point": {...}}` |
+  | JSON | `"strategy": {"radon": {"refiner": "peak_fit"}}` | `"refiner": null` or absent |
+  | JSON | `"strategy": {"chess": {"refiner": "ml"}}`, CLI `"ml": true` | `"refiner": "ml"` |
+  | Python | `cfg.strategy.chess.refiner = ChessRefiner.saddle_point(c)` | `cfg.refiner = ImageRefiner.saddle_point(c)` or `cfg.with_refiner(...)` |
+  | Python | `RadonRefiner.saddle_point()` / `.peak_fit()`, `with_radon(refiner=...)` | `ImageRefiner.saddle_point()` / `None`, `with_refiner(...)` / `without_refiner()` |
+  | Python | `ChessRefiner.center_of_mass(c)`, `ChessRefiner.ml()` | `cfg.strategy.chess.center_of_mass = c`, `ImageRefiner.ml()` |
+  | JS | `withChessRefiner(ChessRefiner.withSaddlePoint(c))`, `withRadonRefiner(RadonRefiner.withSaddlePoint(c))` | `withRefiner(ImageRefiner.saddlePointWith(c))` |
+  | JS | `ChessRefiner.withCenterOfMass(c)`, `RadonRefiner.withPeakFit()` | `cfg.strategy.chess.centerOfMass = c`, `withoutRefiner()` |
+  | C | `CC_REFINER_CENTER_OF_MASS`, `CC_REFINER_PEAK_FIT` | `CC_IMAGE_REFINER_NONE` (`0`, zero-initialised default) |
+  | C | `CC_REFINER_SADDLE_POINT` | `CC_IMAGE_REFINER_SADDLE_POINT`, now valid for either strategy |
+  | CLI | `--chess-refiner center_of_mass\|saddle_point` | `--refiner none\|saddle_point\|ml` |
+  | core | `ChessParams::refiner`, `RefinerKind::CenterOfMass(cfg)` | `ChessParams::center_of_mass = cfg`; `RefinerKind` holds only image refiners, and `Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg))` builds the localizer |
+- `ChessConfig` and `RadonConfig` reject unknown JSON keys (with
+  `serde_json` and in Python), so a configuration written for the removed
+  per-strategy `refiner` field fails to load instead of silently dropping
+  the refiner.
 
 - The uncertainty setting carries its noise level:
   `Uncertainty::{Off, Propagated { noise: NoiseLevel }}` with
@@ -62,10 +110,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - C: `cc_axis::sigma` → `cc_axis::fit_std_error`; C++ `Axis::sigma` →
     `Axis::fit_std_error`.
   - CLI JSON output: `axes[].sigma` → `axes[].fit_std_error`.
-- C ABI: `cc_abi_version` is 8. The `CC_REFINER_*` tags are renumbered to
-  stay contiguous: `CC_REFINER_CENTER_OF_MASS = 0`,
-  `CC_REFINER_SADDLE_POINT = 1`, `CC_REFINER_PEAK_FIT = 2`. Rebuild against
-  the new header; code that uses the named constants needs no other change.
+- C ABI: `cc_abi_version` is 8. `cc_config::refiner` is a
+  `cc_image_refiner_t` (`CC_IMAGE_REFINER_NONE = 0`,
+  `CC_IMAGE_REFINER_SADDLE_POINT = 1`; see the migration table above).
+  Rebuild against the new header.
 - With the `rayon` feature, the subpixel refinement and position covariance
   of large corner sets, the Radon peak-fit covariance, and the multiscale
   per-seed refinement run in parallel. Results are unchanged bit for bit;
@@ -79,8 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ForstnerConfig` and `ChessRefiner.forstner()`, JS `ForstnerConfig` and
   `ChessRefiner.withForstner`, C `CC_REFINER_FORSTNER`, the CLI
   `--chess-refiner forstner` choice and the `"forstner"` refiner in the JSON
-  config. Use `ChessRefiner::SaddlePoint` (`ChessRefiner::saddle_point()`,
-  `"saddle_point"`, `CC_REFINER_SADDLE_POINT`), which is more accurate on
+  config. Use the saddle-point image refiner (`ImageRefiner::saddle_point()`,
+  `"saddle_point"`, `CC_IMAGE_REFINER_SADDLE_POINT`), which is more accurate on
   real calibration images and on almost every synthetic condition.
 - The `covariance_per_noise_variance` fields of `Corner` and
   `RefineResult`: read `noise_covariance_per_unit_variance()`, or

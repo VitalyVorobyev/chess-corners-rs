@@ -1,15 +1,15 @@
 //! PyO3 wrappers for subpixel refiner config types.
 
 use chess_corners::{
-    CenterOfMassConfig as RsCenterOfMassConfig, ChessRefiner as RsChessRefiner,
-    RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
+    CenterOfMassConfig as RsCenterOfMassConfig, ImageRefiner as RsImageRefiner,
+    SaddlePointConfig as RsSaddlePointConfig,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
 
 use super::parse::{
-    config_error, extract_float, extract_int, json_dumps, json_loads, reject_unknown_keys,
-    require_dict, unknown_variant,
+    accept_dict_or_bare_string, config_error, extract_float, extract_int, json_dumps, json_loads,
+    reject_unknown_keys, require_dict, unknown_variant,
 };
 
 // ---------------------------------------------------------------------------
@@ -40,14 +40,14 @@ impl CenterOfMassConfig {
         self.inner.radius = v;
     }
 
-    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+    pub(crate) fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
         d.set_item("radius", self.inner.radius)?;
         Ok(d.unbind())
     }
 
     #[classmethod]
-    fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+    pub(crate) fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let dict = require_dict(data, "center_of_mass")?;
         reject_unknown_keys(&dict, &["radius"], "center_of_mass")?;
         let mut cfg = Self::new();
@@ -198,434 +198,164 @@ impl SaddlePointConfig {
 }
 
 // ---------------------------------------------------------------------------
-// ChessRefiner (variant-tagged wrapper).
+// ImageRefiner (frozen value class).
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum ChessRefinerKind {
-    CenterOfMass,
-    SaddlePoint,
-    #[cfg(feature = "ml-refiner")]
-    Ml,
+/// Subpixel refinement of each corner on the input image, replacing the
+/// detector's own localizer. An immutable value: build one with
+/// `ImageRefiner.saddle_point(cfg=None)` or `ImageRefiner.ml()`.
+///
+/// On the ChESS detector it replaces the center of mass, starts from the
+/// integer peak and drops corners it rejects. On the Radon detector it
+/// starts from the peak fit and keeps the peak fit where it does not
+/// converge. The saddle-point refiner reports a position covariance. The
+/// ML refiner works with both detectors, rejects no corner (one it cannot
+/// refine keeps its seed), reports no covariance and is not supported by
+/// `detect_roi`.
+#[pyclass(module = "chess_corners", frozen, eq, from_py_object)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImageRefiner {
+    inner: RsImageRefiner,
 }
 
-impl ChessRefinerKind {
-    fn as_str(&self) -> &'static str {
-        match self {
-            ChessRefinerKind::CenterOfMass => "center_of_mass",
-            ChessRefinerKind::SaddlePoint => "saddle_point",
+impl ImageRefiner {
+    /// The wrapper of a facade value; an error for a variant these bindings
+    /// do not know.
+    pub(crate) fn from_rs(inner: RsImageRefiner) -> PyResult<Self> {
+        // The facade enum is `#[non_exhaustive]`: the wildcard arm catches
+        // variants added to the library after these bindings.
+        match inner {
+            RsImageRefiner::SaddlePoint(_) => Ok(Self { inner }),
             #[cfg(feature = "ml-refiner")]
-            ChessRefinerKind::Ml => "ml",
+            RsImageRefiner::Ml => Ok(Self { inner }),
+            other => Err(unknown_variant("ImageRefiner", &other)),
         }
     }
-}
 
-/// Subpixel refiner selection for the ChESS detector. Build via one
-/// of `ChessRefiner.center_of_mass(...)`, `.saddle_point(...)`, or
-/// `.ml()` (requires the `ml-refiner` feature). Each variant carries its own tuning struct as a
-/// payload, so switching variants cannot leave a stale field behind.
-#[pyclass(module = "chess_corners")]
-#[derive(Clone, Debug)]
-pub struct ChessRefiner {
-    kind: ChessRefinerKind,
-    center_of_mass: RsCenterOfMassConfig,
-    saddle_point: RsSaddlePointConfig,
-}
-
-impl ChessRefiner {
-    pub(crate) fn from_rs(v: RsChessRefiner) -> PyResult<Self> {
-        let mut cfg = Self {
-            kind: ChessRefinerKind::CenterOfMass,
-            center_of_mass: RsCenterOfMassConfig::default(),
-            saddle_point: RsSaddlePointConfig::default(),
-        };
-        match v {
-            RsChessRefiner::CenterOfMass(c) => {
-                cfg.kind = ChessRefinerKind::CenterOfMass;
-                cfg.center_of_mass = c;
-            }
-            RsChessRefiner::SaddlePoint(c) => {
-                cfg.kind = ChessRefinerKind::SaddlePoint;
-                cfg.saddle_point = c;
-            }
-            #[cfg(feature = "ml-refiner")]
-            RsChessRefiner::Ml => {
-                cfg.kind = ChessRefinerKind::Ml;
-            }
-            other => return Err(unknown_variant("ChessRefiner", &other)),
-        }
-        Ok(cfg)
-    }
-
-    pub(crate) fn to_rs(&self) -> RsChessRefiner {
-        match self.kind {
-            ChessRefinerKind::CenterOfMass => RsChessRefiner::CenterOfMass(self.center_of_mass),
-            ChessRefinerKind::SaddlePoint => RsChessRefiner::SaddlePoint(self.saddle_point),
-            #[cfg(feature = "ml-refiner")]
-            ChessRefinerKind::Ml => RsChessRefiner::Ml,
-        }
+    pub(crate) fn to_rs(&self) -> RsImageRefiner {
+        self.inner
     }
 }
 
 #[pymethods]
-impl ChessRefiner {
-    /// Default-construct: center-of-mass with default tuning.
-    #[new]
-    fn new() -> PyResult<Self> {
-        Self::from_rs(RsChessRefiner::default())
-    }
-
-    /// Center-of-mass refinement on the response map.
-    #[classmethod]
-    #[pyo3(name = "center_of_mass", signature = (cfg=None))]
-    fn ctor_center_of_mass(
-        _cls: &Bound<'_, PyType>,
-        py: Python<'_>,
-        cfg: Option<Py<CenterOfMassConfig>>,
-    ) -> Self {
-        let inner = cfg.map(|c| c.borrow(py).inner).unwrap_or_default();
-        Self {
-            kind: ChessRefinerKind::CenterOfMass,
-            center_of_mass: inner,
-            saddle_point: RsSaddlePointConfig::default(),
-        }
-    }
-
+impl ImageRefiner {
     /// Quadratic surface fit at the saddle point of the image patch.
     #[classmethod]
-    #[pyo3(name = "saddle_point", signature = (cfg=None))]
-    fn ctor_saddle_point(
+    #[pyo3(signature = (cfg=None))]
+    fn saddle_point(
         _cls: &Bound<'_, PyType>,
         py: Python<'_>,
         cfg: Option<Py<SaddlePointConfig>>,
     ) -> Self {
         let inner = cfg.map(|c| c.borrow(py).inner).unwrap_or_default();
         Self {
-            kind: ChessRefinerKind::SaddlePoint,
-            center_of_mass: RsCenterOfMassConfig::default(),
-            saddle_point: inner,
+            inner: RsImageRefiner::SaddlePoint(inner),
         }
     }
 
     /// ML-backed subpixel refinement. Requires the `ml-refiner` feature.
     #[cfg(feature = "ml-refiner")]
     #[classmethod]
-    #[pyo3(name = "ml")]
-    fn ctor_ml(_cls: &Bound<'_, PyType>) -> Self {
+    fn ml(_cls: &Bound<'_, PyType>) -> Self {
         Self {
-            kind: ChessRefinerKind::Ml,
-            center_of_mass: RsCenterOfMassConfig::default(),
-            saddle_point: RsSaddlePointConfig::default(),
+            inner: RsImageRefiner::Ml,
         }
     }
 
-    /// Variant tag: `"center_of_mass"`, `"saddle_point"`, or `"ml"`
-    /// (with the `ml-refiner` feature).
+    /// Variant tag: `"saddle_point"` or `"ml"`.
     #[getter]
     fn kind(&self) -> &'static str {
-        self.kind.as_str()
-    }
-
-    /// Tuning payload of the active variant. Returns the typed config
-    /// struct (`CenterOfMassConfig` or `SaddlePointConfig`); returns `None` for the `ml` variant.
-    /// Modifying the returned object does not affect the refiner;
-    /// rebuild via the appropriate classmethod factory to apply
-    /// changes.
-    #[getter]
-    fn payload(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        match self.kind {
-            ChessRefinerKind::CenterOfMass => Ok(Py::new(
-                py,
-                CenterOfMassConfig {
-                    inner: self.center_of_mass,
-                },
-            )?
-            .into_any()),
-            ChessRefinerKind::SaddlePoint => Ok(Py::new(
-                py,
-                SaddlePointConfig {
-                    inner: self.saddle_point,
-                },
-            )?
-            .into_any()),
-            #[cfg(feature = "ml-refiner")]
-            ChessRefinerKind::Ml => Ok(py.None()),
-        }
-    }
-
-    pub(crate) fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        let d = PyDict::new(py);
-        match self.kind {
-            ChessRefinerKind::CenterOfMass => {
-                let cfg = CenterOfMassConfig {
-                    inner: self.center_of_mass,
-                };
-                d.set_item("center_of_mass", cfg.to_dict(py)?)?;
-            }
-            ChessRefinerKind::SaddlePoint => {
-                let cfg = SaddlePointConfig {
-                    inner: self.saddle_point,
-                };
-                d.set_item("saddle_point", cfg.to_dict(py)?)?;
-            }
-            #[cfg(feature = "ml-refiner")]
-            ChessRefinerKind::Ml => {
-                d.set_item("ml", py.None())?;
-            }
-        }
-        Ok(d.unbind())
-    }
-
-    #[classmethod]
-    pub(crate) fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
-        // Permit only the three (or two, without ml-refiner) variants.
-        #[cfg(feature = "ml-refiner")]
-        let allowed: &[&str] = &["center_of_mass", "saddle_point", "ml"];
-        #[cfg(not(feature = "ml-refiner"))]
-        let allowed: &[&str] = &["center_of_mass", "saddle_point"];
-
-        // Accept the externally-tagged shape produced by serde:
-        //   "ml"          (bare string — unit variant, ml-refiner only)
-        //   { "ml": null } (object form — also accepted)
-        //   { "saddle_point": {...} } (payload variant — object only)
-        #[cfg(feature = "ml-refiner")]
-        let unit_tags: &[&str] = &["ml"];
-        #[cfg(not(feature = "ml-refiner"))]
-        let unit_tags: &[&str] = &[];
-        let payload_tags: &[&str] = &["center_of_mass", "saddle_point"];
-
-        if let Some(_tag) =
-            super::parse::accept_dict_or_bare_string(data, unit_tags, payload_tags, "refiner")?
-        {
-            #[cfg(feature = "ml-refiner")]
-            return Ok(Self {
-                kind: ChessRefinerKind::Ml,
-                center_of_mass: RsCenterOfMassConfig::default(),
-                saddle_point: RsSaddlePointConfig::default(),
-            });
-            // Without ml-refiner the unit_tags slice is empty, so this branch
-            // is unreachable; the cfg below silences the dead-code warning.
-            #[cfg(not(feature = "ml-refiner"))]
-            return Err(config_error("refiner: no unit variants available"));
-        }
-
-        let dict = require_dict(data, "refiner")?;
-        reject_unknown_keys(&dict, allowed, "refiner")?;
-
-        let mut found: Option<&str> = None;
-        for &key in allowed.iter() {
-            if dict.get_item(key)?.is_some() {
-                if found.is_some() {
-                    return Err(config_error(format!(
-                        "refiner must have exactly one of: {}",
-                        allowed.join(", ")
-                    )));
-                }
-                found = Some(key);
-            }
-        }
-        let Some(key) = found else {
-            return Err(config_error(format!(
-                "refiner must have one of: {}",
-                allowed.join(", ")
-            )));
-        };
-
-        let value = dict
-            .get_item(key)?
-            .ok_or_else(|| config_error(format!("refiner.{key} missing")))?;
-
-        let py = data.py();
-        match key {
-            "center_of_mass" => {
-                let cls = py.get_type::<CenterOfMassConfig>();
-                let cfg = CenterOfMassConfig::from_dict(&cls, &value)?;
-                Ok(Self {
-                    kind: ChessRefinerKind::CenterOfMass,
-                    center_of_mass: cfg.inner,
-                    saddle_point: RsSaddlePointConfig::default(),
-                })
-            }
-            "saddle_point" => {
-                let cls = py.get_type::<SaddlePointConfig>();
-                let cfg = SaddlePointConfig::from_dict(&cls, &value)?;
-                Ok(Self {
-                    kind: ChessRefinerKind::SaddlePoint,
-                    center_of_mass: RsCenterOfMassConfig::default(),
-                    saddle_point: cfg.inner,
-                })
-            }
-            #[cfg(feature = "ml-refiner")]
-            "ml" => Ok(Self {
-                kind: ChessRefinerKind::Ml,
-                center_of_mass: RsCenterOfMassConfig::default(),
-                saddle_point: RsSaddlePointConfig::default(),
-            }),
-            other => Err(config_error(format!("refiner.{other} not supported"))),
-        }
-    }
-
-    #[pyo3(signature = (*, indent=None, sort_keys=true))]
-    fn to_json(&self, py: Python<'_>, indent: Option<i64>, sort_keys: bool) -> PyResult<String> {
-        let dict = self.to_dict(py)?;
-        json_dumps(py, dict.bind(py), indent, sort_keys)
-    }
-
-    #[classmethod]
-    fn from_json(cls: &Bound<'_, PyType>, py: Python<'_>, text: &str) -> PyResult<Self> {
-        let value = json_loads(py, text)
-            .map_err(|e| config_error(format!("failed to parse config JSON: {e}")))?;
-        Self::from_dict(cls, &value)
-    }
-
-    #[pyo3(signature = (*, indent=2, sort_keys=true))]
-    fn pretty(&self, py: Python<'_>, indent: i64, sort_keys: bool) -> PyResult<String> {
-        self.to_json(py, Some(indent), sort_keys)
-    }
-
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        self.pretty(py, 2, true)
-    }
-    fn __str__(&self, py: Python<'_>) -> PyResult<String> {
-        self.pretty(py, 2, true)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// RadonRefiner (variant-tagged wrapper).
-// ---------------------------------------------------------------------------
-
-/// Final subpixel position of a Radon corner. Build via
-/// `RadonRefiner.peak_fit()` (the default: keep the response-map peak fit)
-/// or `RadonRefiner.saddle_point(...)` (saddle-point refinement on the
-/// input image, which reports a position covariance).
-#[pyclass(module = "chess_corners")]
-#[derive(Clone, Debug)]
-pub struct RadonRefiner {
-    pub(crate) inner: RsRadonRefiner,
-}
-
-impl RadonRefiner {
-    pub(crate) fn from_rs(inner: RsRadonRefiner) -> Self {
-        Self { inner }
-    }
-
-    pub(crate) fn to_rs(&self) -> RsRadonRefiner {
-        self.inner
-    }
-}
-
-#[pymethods]
-impl RadonRefiner {
-    /// Default-construct: the response-map peak fit.
-    #[new]
-    fn new() -> Self {
-        Self::from_rs(RsRadonRefiner::default())
-    }
-
-    /// Keep the response-map peak fit.
-    #[classmethod]
-    #[pyo3(name = "peak_fit")]
-    fn ctor_peak_fit(_cls: &Bound<'_, PyType>) -> Self {
-        Self::from_rs(RsRadonRefiner::peak_fit())
-    }
-
-    /// Saddle-point refinement of each peak on the input image.
-    #[classmethod]
-    #[pyo3(name = "saddle_point", signature = (cfg=None))]
-    fn ctor_saddle_point(
-        _cls: &Bound<'_, PyType>,
-        py: Python<'_>,
-        cfg: Option<Py<SaddlePointConfig>>,
-    ) -> Self {
-        let inner = cfg.map(|c| c.borrow(py).inner).unwrap_or_default();
-        Self::from_rs(RsRadonRefiner::SaddlePoint(inner))
-    }
-
-    /// Variant tag: `"peak_fit"` or `"saddle_point"`.
-    #[getter]
-    fn kind(&self) -> PyResult<&'static str> {
         match self.inner {
-            RsRadonRefiner::PeakFit => Ok("peak_fit"),
-            RsRadonRefiner::SaddlePoint(_) => Ok("saddle_point"),
-            other => Err(unknown_variant("RadonRefiner", &other)),
+            RsImageRefiner::SaddlePoint(_) => "saddle_point",
+            _ => "ml",
         }
     }
 
-    /// Tuning payload: a `SaddlePointConfig` for `saddle_point`, `None`
-    /// for `peak_fit`. Modifying the returned object does not affect the
-    /// refiner; rebuild via `RadonRefiner.saddle_point(cfg)` to apply it.
+    /// Tuning payload: a fresh `SaddlePointConfig` copy for `saddle_point`,
+    /// `None` for `ml`. Modifying the returned object does not affect the
+    /// refiner; rebuild via `ImageRefiner.saddle_point(cfg)` to apply it.
     #[getter]
     fn payload(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         match self.inner {
-            RsRadonRefiner::SaddlePoint(inner) => {
+            RsImageRefiner::SaddlePoint(inner) => {
                 Ok(Py::new(py, SaddlePointConfig { inner })?.into_any())
             }
-            RsRadonRefiner::PeakFit => Ok(py.None()),
-            other => Err(unknown_variant("RadonRefiner", &other)),
+            _ => Ok(py.None()),
         }
     }
 
+    /// The config dict: `{"saddle_point": {...}}` or `{"ml": None}`.
     pub(crate) fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
         match self.inner {
-            RsRadonRefiner::SaddlePoint(inner) => {
+            RsImageRefiner::SaddlePoint(inner) => {
                 d.set_item("saddle_point", SaddlePointConfig { inner }.to_dict(py)?)?;
             }
-            RsRadonRefiner::PeakFit => d.set_item("peak_fit", py.None())?,
-            other => return Err(unknown_variant("RadonRefiner", &other)),
+            _ => d.set_item("ml", py.None())?,
         }
         Ok(d.unbind())
     }
 
-    /// Accepts the externally-tagged serde shape: the bare string
-    /// `"peak_fit"` (or `{"peak_fit": null}`) and
-    /// `{"saddle_point": {...}}`.
+    /// Parse a config value: `{"saddle_point": {...}}`, and with the
+    /// `ml-refiner` feature `"ml"` or `{"ml": None}`. Any other shape
+    /// raises `ConfigError`.
     #[classmethod]
     pub(crate) fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
-        const PATH: &str = "radon.refiner";
-        if super::parse::accept_dict_or_bare_string(data, &["peak_fit"], &["saddle_point"], PATH)?
-            .is_some()
-        {
-            return Ok(Self::from_rs(RsRadonRefiner::PeakFit));
+        const PATH: &str = "refiner";
+        #[cfg(feature = "ml-refiner")]
+        const UNIT_TAGS: &[&str] = &["ml"];
+        #[cfg(not(feature = "ml-refiner"))]
+        const UNIT_TAGS: &[&str] = &[];
+        #[cfg(feature = "ml-refiner")]
+        const ALLOWED: &[&str] = &["saddle_point", "ml"];
+        #[cfg(not(feature = "ml-refiner"))]
+        const ALLOWED: &[&str] = &["saddle_point"];
+
+        if accept_dict_or_bare_string(data, UNIT_TAGS, &["saddle_point"], PATH)?.is_some() {
+            #[cfg(feature = "ml-refiner")]
+            return Ok(Self {
+                inner: RsImageRefiner::Ml,
+            });
+            #[cfg(not(feature = "ml-refiner"))]
+            return Err(config_error(format!("{PATH}: no unit variants available")));
         }
         let dict = require_dict(data, PATH)?;
-        reject_unknown_keys(&dict, &["peak_fit", "saddle_point"], PATH)?;
-        match (dict.get_item("peak_fit")?, dict.get_item("saddle_point")?) {
-            (Some(_), None) => Ok(Self::from_rs(RsRadonRefiner::PeakFit)),
-            (None, Some(value)) => {
-                let cls = data.py().get_type::<SaddlePointConfig>();
-                let cfg = SaddlePointConfig::from_dict(&cls, &value)?;
-                Ok(Self::from_rs(RsRadonRefiner::SaddlePoint(cfg.inner)))
-            }
-            _ => Err(config_error(format!(
-                "{PATH} must have exactly one of: peak_fit, saddle_point"
-            ))),
+        reject_unknown_keys(&dict, ALLOWED, PATH)?;
+        if dict.len() != 1 {
+            return Err(config_error(format!(
+                "{PATH} must have exactly one of: {}",
+                ALLOWED.join(", ")
+            )));
         }
+        if let Some(value) = dict.get_item("saddle_point")? {
+            let cls = data.py().get_type::<SaddlePointConfig>();
+            let cfg = SaddlePointConfig::from_dict(&cls, &value)?;
+            return Ok(Self {
+                inner: RsImageRefiner::SaddlePoint(cfg.inner),
+            });
+        }
+        #[cfg(feature = "ml-refiner")]
+        if let Some(value) = dict.get_item("ml")? {
+            if !value.is_none() {
+                return Err(config_error(format!("{PATH}.ml must be null")));
+            }
+            return Ok(Self {
+                inner: RsImageRefiner::Ml,
+            });
+        }
+        Err(config_error(format!(
+            "{PATH} must have one of: {}",
+            ALLOWED.join(", ")
+        )))
     }
 
-    #[pyo3(signature = (*, indent=None, sort_keys=true))]
-    fn to_json(&self, py: Python<'_>, indent: Option<i64>, sort_keys: bool) -> PyResult<String> {
-        let dict = self.to_dict(py)?;
-        json_dumps(py, dict.bind(py), indent, sort_keys)
-    }
-
-    #[classmethod]
-    fn from_json(cls: &Bound<'_, PyType>, py: Python<'_>, text: &str) -> PyResult<Self> {
-        let value = json_loads(py, text)
-            .map_err(|e| config_error(format!("failed to parse config JSON: {e}")))?;
-        Self::from_dict(cls, &value)
-    }
-
-    #[pyo3(signature = (*, indent=2, sort_keys=true))]
-    fn pretty(&self, py: Python<'_>, indent: i64, sort_keys: bool) -> PyResult<String> {
-        self.to_json(py, Some(indent), sort_keys)
-    }
-
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        self.pretty(py, 2, true)
-    }
-    fn __str__(&self, py: Python<'_>) -> PyResult<String> {
-        self.pretty(py, 2, true)
+    fn __repr__(&self) -> String {
+        match self.inner {
+            RsImageRefiner::SaddlePoint(c) => format!(
+                "ImageRefiner.saddle_point(radius={}, det_margin={}, max_offset={}, min_abs_det={})",
+                c.radius, c.det_margin, c.max_offset, c.min_abs_det
+            ),
+            _ => "ImageRefiner.ml()".to_string(),
+        }
     }
 }

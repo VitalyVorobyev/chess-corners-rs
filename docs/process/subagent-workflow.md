@@ -141,8 +141,8 @@ conversation. Every prompt should contain:
 2. **Concrete file paths and line numbers.** Not "the refiner code"
    — `crates/chess-corners-core/src/refine/mod.rs:186` (`RefinerKind`).
 3. **Existing functions / utilities to reuse.** "Start from
-   `ChessRefiner::center_of_mass()` in
-   `crates/chess-corners/src/config/chess.rs` rather than constructing
+   `ImageRefiner::saddle_point()` in
+   `crates/chess-corners/src/config/refiner.rs` rather than constructing
    the config by hand."
 4. **Constraints and conventions.** "Must keep `cargo doc` warning-free.
    Must add `#[non_exhaustive]` on new public param structs.

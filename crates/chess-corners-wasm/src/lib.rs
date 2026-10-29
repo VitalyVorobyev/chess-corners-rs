@@ -1,7 +1,7 @@
 //! WebAssembly bindings for the ChESS / Radon corner detector.
 //!
 //! Construct a typed [`DetectorConfig`] (with nested [`DetectionStrategy`],
-//! [`ChessConfig`] / [`RadonConfig`], [`ChessRefiner`],
+//! [`ChessConfig`] / [`RadonConfig`], [`ImageRefiner`],
 //! [`MultiscaleConfig`], [`UpscaleConfig`]), then pass it to
 //! [`ChessDetector::with_config`]. The typed config tree is the single
 //! source of truth for every detector knob.
@@ -14,9 +14,17 @@
 //!
 //! ```ignore
 //! cfg.strategy.chess.ring = ChessRing.Broad;             // propagates
-//! cfg.strategy.chess.refiner.saddlePoint.maxOffset = 2.0; // propagates
-//! cfg.strategy.chess.nmsRadius = 3;                      // propagates
+//! cfg.strategy.chess.centerOfMass.radius = 3;            // propagates
+//! cfg.detection.nmsRadius = 3;                           // propagates
 //! cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3);   // propagates
+//! ```
+//!
+//! The optional image refiner is a detector-independent value set with a
+//! builder:
+//!
+//! ```ignore
+//! const refined = cfg.withRefiner(ImageRefiner.saddlePoint());
+//! const plain = refined.withoutRefiner();
 //! ```
 //!
 //! See [`config`] for the cell-sharing details.
@@ -42,9 +50,9 @@ use chess_corners::{
 use wasm_bindgen::prelude::*;
 
 pub use crate::config::{
-    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DetectionParams, DetectionStrategy,
-    DetectorConfig, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig, RadonRefiner,
-    SaddlePointConfig, Uncertainty, UpscaleConfig,
+    CenterOfMassConfig, ChessConfig, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig,
+    ImageRefiner, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig, SaddlePointConfig,
+    Uncertainty, UpscaleConfig,
 };
 
 /// Default detector configuration as a JSON string, in the same shape as

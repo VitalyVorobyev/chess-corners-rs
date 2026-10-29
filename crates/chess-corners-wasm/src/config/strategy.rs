@@ -7,11 +7,11 @@ use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
     ChessRing as RsChessRing, DetectionParams as RsDetectionParams,
     DetectionStrategy as RsDetectionStrategy, PeakFitMode as RsPeakFitMode,
-    RadonConfig as RsRadonConfig, SaddlePointConfig as RsSaddlePointConfig,
+    RadonConfig as RsRadonConfig,
 };
 use wasm_bindgen::prelude::*;
 
-use super::refiners::{ChessRefiner, ChessRefinerKind, RadonRefiner, RadonRefinerKind};
+use super::refiners::CenterOfMassConfig;
 use super::{cell, Cell, ChessRing, PeakFitMode};
 
 // ---------------------------------------------------------------------------
@@ -40,18 +40,15 @@ impl StrategyKind {
 /// ChESS-detector branch of [`DetectionStrategy`]. Mirrors
 /// [`chess_corners::ChessConfig`].
 ///
-/// All fields — including the refiner discriminant and payloads — are
-/// stored as shared `Rc<RefCell<…>>` cells. The `refiner` getter
-/// assembles a [`ChessRefiner`] wrapper out of clones of those cells,
-/// so edits chained as `cfg.strategy.chess.refiner.saddlePoint.maxOffset
-/// = 2.5` propagate through the chess config without a round-trip.
+/// All fields are stored as shared `Rc<RefCell<…>>` cells. The
+/// `centerOfMass` getter hands back a wrapper over the same cell, so
+/// `cfg.strategy.chess.centerOfMass.radius = 3` propagates through the
+/// chess config without a round-trip.
 #[wasm_bindgen]
 #[derive(Clone, Debug)]
 pub struct ChessConfig {
     ring: Cell<RsChessRing>,
-    refiner_kind: Cell<ChessRefinerKind>,
-    refiner_center_of_mass: Cell<RsCenterOfMassConfig>,
-    refiner_saddle_point: Cell<RsSaddlePointConfig>,
+    center_of_mass: Cell<RsCenterOfMassConfig>,
 }
 
 #[wasm_bindgen]
@@ -70,24 +67,17 @@ impl ChessConfig {
         *self.ring.borrow_mut() = v.into();
     }
 
-    /// Subpixel refiner. Returns a wrapper that shares cells with this
-    /// config; edits propagate without a round-trip.
-    #[wasm_bindgen(getter)]
-    pub fn refiner(&self) -> ChessRefiner {
-        ChessRefiner {
-            kind: Rc::clone(&self.refiner_kind),
-            center_of_mass: Rc::clone(&self.refiner_center_of_mass),
-            saddle_point: Rc::clone(&self.refiner_saddle_point),
-        }
+    /// Center-of-mass localizer used when no image refiner is set. Returns
+    /// a wrapper that shares its cell with this config; edits propagate
+    /// without a round-trip.
+    #[wasm_bindgen(getter, js_name = centerOfMass)]
+    pub fn center_of_mass(&self) -> CenterOfMassConfig {
+        CenterOfMassConfig::from_cell(Rc::clone(&self.center_of_mass))
     }
-    #[wasm_bindgen(setter)]
-    pub fn set_refiner(&mut self, v: &ChessRefiner) {
-        // Copy v's cell contents into this config's existing cells.
-        // Cell-sharing observers (any clone of this ChessConfig
-        // referencing the same Rc) see the update.
-        *self.refiner_kind.borrow_mut() = *v.kind.borrow();
-        *self.refiner_center_of_mass.borrow_mut() = *v.center_of_mass.borrow();
-        *self.refiner_saddle_point.borrow_mut() = *v.saddle_point.borrow();
+    #[wasm_bindgen(setter, js_name = centerOfMass)]
+    pub fn set_center_of_mass(&mut self, v: &CenterOfMassConfig) {
+        // Copy into the existing cell so observers of this config see it.
+        *self.center_of_mass.borrow_mut() = *v.share_cell().borrow();
     }
 }
 
@@ -99,12 +89,9 @@ impl Default for ChessConfig {
 
 impl ChessConfig {
     fn from_value(value: RsChessConfig) -> Self {
-        let refiner = ChessRefiner::from_value(value.refiner);
         Self {
             ring: cell(value.ring),
-            refiner_kind: refiner.kind,
-            refiner_center_of_mass: refiner.center_of_mass,
-            refiner_saddle_point: refiner.saddle_point,
+            center_of_mass: cell(value.center_of_mass),
         }
     }
 
@@ -113,23 +100,13 @@ impl ChessConfig {
     /// see the update.
     fn copy_from(&self, other: &ChessConfig) {
         *self.ring.borrow_mut() = *other.ring.borrow();
-        *self.refiner_kind.borrow_mut() = *other.refiner_kind.borrow();
-        *self.refiner_center_of_mass.borrow_mut() = *other.refiner_center_of_mass.borrow();
-        *self.refiner_saddle_point.borrow_mut() = *other.refiner_saddle_point.borrow();
+        *self.center_of_mass.borrow_mut() = *other.center_of_mass.borrow();
     }
 
     fn snapshot(&self) -> RsChessConfig {
-        // Build a transient ChessRefiner wrapper sharing this config's
-        // cells, then read its snapshot. The wrapper does no work on
-        // construction (cell-handle clones only).
-        let refiner_view = ChessRefiner {
-            kind: Rc::clone(&self.refiner_kind),
-            center_of_mass: Rc::clone(&self.refiner_center_of_mass),
-            saddle_point: Rc::clone(&self.refiner_saddle_point),
-        };
         let mut s = RsChessConfig::default();
         s.ring = *self.ring.borrow();
-        s.refiner = refiner_view.snapshot();
+        s.center_of_mass = *self.center_of_mass.borrow();
         s
     }
 }
@@ -151,8 +128,6 @@ pub struct RadonConfig {
     image_upsample: Cell<u32>,
     response_blur_radius: Cell<u32>,
     peak_fit: Cell<RsPeakFitMode>,
-    refiner_kind: Cell<RadonRefinerKind>,
-    refiner_saddle_point: Cell<RsSaddlePointConfig>,
 }
 
 #[wasm_bindgen]
@@ -197,22 +172,6 @@ impl RadonConfig {
     pub fn set_peak_fit(&mut self, v: PeakFitMode) {
         *self.peak_fit.borrow_mut() = v.into();
     }
-
-    /// Final subpixel position: the peak fit alone (the default) or
-    /// saddle-point refinement. Returns a wrapper that shares cells with this
-    /// config; edits propagate without a round-trip.
-    #[wasm_bindgen(getter)]
-    pub fn refiner(&self) -> RadonRefiner {
-        RadonRefiner {
-            kind: Rc::clone(&self.refiner_kind),
-            saddle_point: Rc::clone(&self.refiner_saddle_point),
-        }
-    }
-    #[wasm_bindgen(setter)]
-    pub fn set_refiner(&mut self, v: &RadonRefiner) {
-        *self.refiner_kind.borrow_mut() = *v.kind.borrow();
-        *self.refiner_saddle_point.borrow_mut() = *v.saddle_point.borrow();
-    }
 }
 
 impl Default for RadonConfig {
@@ -223,14 +182,11 @@ impl Default for RadonConfig {
 
 impl RadonConfig {
     fn from_value(value: RsRadonConfig) -> Self {
-        let refiner = RadonRefiner::from_value(value.refiner);
         Self {
             ray_radius: cell(value.ray_radius),
             image_upsample: cell(value.image_upsample),
             response_blur_radius: cell(value.response_blur_radius),
             peak_fit: cell(value.peak_fit),
-            refiner_kind: refiner.kind,
-            refiner_saddle_point: refiner.saddle_point,
         }
     }
 
@@ -242,8 +198,6 @@ impl RadonConfig {
         *self.image_upsample.borrow_mut() = *other.image_upsample.borrow();
         *self.response_blur_radius.borrow_mut() = *other.response_blur_radius.borrow();
         *self.peak_fit.borrow_mut() = *other.peak_fit.borrow();
-        *self.refiner_kind.borrow_mut() = *other.refiner_kind.borrow();
-        *self.refiner_saddle_point.borrow_mut() = *other.refiner_saddle_point.borrow();
     }
 
     fn snapshot(&self) -> RsRadonConfig {
@@ -252,7 +206,6 @@ impl RadonConfig {
         s.image_upsample = *self.image_upsample.borrow();
         s.response_blur_radius = *self.response_blur_radius.borrow();
         s.peak_fit = *self.peak_fit.borrow();
-        s.refiner = self.refiner().snapshot();
         s
     }
 }

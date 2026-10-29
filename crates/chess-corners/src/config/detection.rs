@@ -1,12 +1,12 @@
 use box_image_pyramid::PyramidParams;
-use chess_corners_core::{ChessParams, OrientationMethod, RadonDetectorParams, RefinerKind};
+use chess_corners_core::{ChessParams, OrientationMethod, RadonDetectorParams};
 use serde::{Deserialize, Serialize};
 
 use crate::multiscale::CoarseToFineParams;
 use crate::upscale::UpscaleConfig;
 use crate::ChessError;
 
-use super::{ChessConfig, ChessRefiner, ChessRing, MultiscaleConfig, RadonConfig, Uncertainty};
+use super::{ChessConfig, ChessRing, ImageRefiner, MultiscaleConfig, RadonConfig, Uncertainty};
 
 // ---------------------------------------------------------------------------
 // Shared detection params
@@ -105,6 +105,8 @@ impl Default for DetectionStrategy {
 /// - [`upscale`](DetectorConfig::upscale) — pre-pipeline integer bilinear
 ///   upscaling for low-resolution inputs where corners have fewer than 5 px
 ///   of ring support. `Disabled` by default.
+/// - [`refiner`](DetectorConfig::refiner) — an optional image refiner that
+///   improves on the detector's own subpixel localizer. `None` by default.
 /// - [`orientation_method`](DetectorConfig::orientation_method) — how corner
 ///   axis orientations are estimated when building descriptors.
 /// - [`uncertainty`](DetectorConfig::uncertainty) — whether each corner
@@ -148,6 +150,11 @@ pub struct DetectorConfig {
     /// `Disabled` skips the stage; `Fixed(k)` upscales by the unitless
     /// factor `k` in `{2, 3, 4}`. Output coordinates stay in input pixels.
     pub upscale: UpscaleConfig,
+    /// Image-refinement stage, or `None` (the default) to keep the
+    /// detector's own subpixel localizer: ChESS's center of mass, Radon's
+    /// peak fit. See [`ImageRefiner`] for where a refiner starts on each
+    /// detector and what it does with a corner it cannot refine.
+    pub refiner: Option<ImageRefiner>,
     /// Orientation-fit method used when building corner descriptors, or
     /// `None` to skip the per-corner fit entirely. When `None`, every
     /// descriptor carries `axes: None`; positions and responses are
@@ -188,6 +195,7 @@ impl DetectorConfig {
             detection: DetectionParams::default(),
             multiscale: MultiscaleConfig::SingleScale,
             upscale: UpscaleConfig::Disabled,
+            refiner: None,
             orientation_method: Some(OrientationMethod::default()),
             merge_radius: 3.0,
             uncertainty: Uncertainty::default(),
@@ -240,8 +248,9 @@ impl DetectorConfig {
     /// If the current strategy is already ChESS, mutate it in place.
     /// Otherwise, replace the strategy with [`ChessConfig::default`] and apply `f`.
     ///
-    /// Top-level fields (threshold, multiscale, upscale, orientation_method,
-    /// merge_radius) are untouched. When switching strategies, prefer the
+    /// Top-level fields (threshold, multiscale, upscale, refiner,
+    /// orientation_method, merge_radius) are untouched. When switching
+    /// strategies, prefer the
     /// preset constructors — ChESS reads `threshold` as an absolute response
     /// floor, Radon as a fraction of the per-frame maximum.
     pub fn with_chess<F: FnOnce(&mut ChessConfig)>(mut self, f: F) -> Self {
@@ -281,6 +290,17 @@ impl DetectorConfig {
         self.upscale = upscale;
         self
     }
+    /// Run `refiner` as the image-refinement stage. See
+    /// [`DetectorConfig::refiner`].
+    pub fn with_refiner(mut self, refiner: ImageRefiner) -> Self {
+        self.refiner = Some(refiner);
+        self
+    }
+    /// Keep the detector's own subpixel localizer: no image refiner.
+    pub fn without_refiner(mut self) -> Self {
+        self.refiner = None;
+        self
+    }
     /// Replace the orientation-fit method used when building descriptors.
     pub fn with_orientation_method(mut self, method: OrientationMethod) -> Self {
         self.orientation_method = Some(method);
@@ -318,7 +338,8 @@ impl DetectorConfig {
     /// `chess-corners-core` response and detection stages. Use this when
     /// driving the core stage functions directly instead of through
     /// [`Detector`](crate::Detector). Only meaningful when
-    /// [`Self::strategy`] is the ChESS variant.
+    /// [`Self::strategy`] is the ChESS variant. The image refiner
+    /// ([`Self::refiner`]) is a separate stage and not part of the result.
     ///
     /// When the active strategy is [`DetectionStrategy::Radon`], the
     /// ChESS-specific fields fall back to their [`ChessParams::default()`]
@@ -330,18 +351,7 @@ impl DetectorConfig {
         params.min_cluster_size = self.detection.min_cluster_size;
         if let DetectionStrategy::Chess(chess) = &self.strategy {
             params.use_radius10 = matches!(chess.ring, ChessRing::Broad);
-            match chess.refiner {
-                ChessRefiner::CenterOfMass(cfg) => params.refiner = RefinerKind::CenterOfMass(cfg),
-                ChessRefiner::SaddlePoint(cfg) => params.refiner = RefinerKind::SaddlePoint(cfg),
-                // The ML refiner runs in the facade, not core: `Detector`
-                // routes `Ml` to the ONNX pipeline. Core only produces the
-                // candidates (and coarse-level seeds) the ML pass consumes,
-                // using its default refiner — so leave `params.refiner` at
-                // the core default rather than substituting an unrelated
-                // kind.
-                #[cfg(feature = "ml-refiner")]
-                ChessRefiner::Ml => {}
-            }
+            params.center_of_mass = chess.center_of_mass;
         }
         // ChESS interprets `threshold` as an absolute floor on the raw response.
         params.threshold = self.threshold;

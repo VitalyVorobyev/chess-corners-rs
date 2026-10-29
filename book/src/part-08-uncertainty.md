@@ -60,9 +60,10 @@ yy }` in px² in the input image frame
 ([Part I §1.4](part-01-orientation.md#14-the-cornerdescriptor-output)):
 how far the reported `(x, y)` is likely to be from the true corner,
 from noise and from the localizer's systematic error together. It is
-reported by every localizer: the ChESS refiners `CenterOfMass` and
-`SaddlePoint`, the Radon peak fit, and
-`RadonRefiner::SaddlePoint`. The ML refiner reports none.
+reported by every localizer that produces a corner's final position:
+the ChESS center of mass, the Radon peak fit, and the `SaddlePoint`
+image refiner on either detector. The ML refiner reports none; a Radon
+corner it does not move keeps the peak fit's.
 
 `DetectorConfig::uncertainty` selects it, together with the image noise
 level that expresses it in px²:
@@ -121,7 +122,7 @@ is a larger part of the work. The default, `Off`, does not pay it.
 
 | Cause | What to do |
 |-------|------------|
-| `uncertainty` is `Off`, or the refiner is the ML refiner | Use `Uncertainty::Propagated` and a classic localizer. |
+| `uncertainty` is `Off`, or the ML refiner placed the corner | Use `Uncertainty::Propagated` and a classic localizer. |
 | ChESS `SaddlePoint` re-centring did not converge for this corner | The position is the single integer-grid fit, which is biased. Leave the corner out, or give it a weight well below its neighbours'. A Radon corner keeps its peak fit and that fit's covariance instead. |
 | The noise estimate declined (too few edge-free areas, or JPEG input; §8.3.2) | Every corner of the frame lacks a covariance. Supply the noise level (`NoiseLevel::Known`, §8.6.2). |
 | `upscale` is active | Interpolation correlates the noise of the upscaled pixels, so no covariance is reported. |
@@ -415,7 +416,7 @@ covariance carries best.
   a jump no smooth noise model describes. \\(\hat\sigma_0^2\\) is
   1.2–4 at 45° from lens blur σ 1.5 px, 3.4–5.3 on every board at blur
   σ 2.5 px and noise σ 8, and 6 under coma; some corners get a very large
-  covariance instead. Use `RadonRefiner::SaddlePoint` on blurred
+  covariance instead. Use `ImageRefiner::SaddlePoint` on blurred
   images.
 - **CenterOfMass on sharp boards rotated a few degrees.** Its error
   depends on the board's rotation, which the edge width cannot see:
@@ -474,7 +475,7 @@ Rust:
 
 ```rust
 use chess_corners::{
-    ChessRefiner, Detector, DetectorConfig, NoiseLevel, PositionCovariance, Uncertainty,
+    Detector, DetectorConfig, ImageRefiner, NoiseLevel, PositionCovariance, Uncertainty,
 };
 
 /// `L⁻¹·r` for `Σ = L·Lᵀ`: its squared norm is `rᵀ·Σ⁻¹·r`.
@@ -488,7 +489,7 @@ fn whiten(r: [f32; 2], c: &PositionCovariance) -> [f32; 2] {
 
 // Any classic localizer reports a covariance; SaddlePoint is the most accurate.
 let cfg = DetectorConfig::chess()
-    .with_chess(|c| c.refiner = ChessRefiner::saddle_point())
+    .with_refiner(ImageRefiner::saddle_point())
     .with_uncertainty(Uncertainty::Propagated { noise: NoiseLevel::Estimate });
 let mut detector = Detector::new(cfg)?;
 for c in detector.detect_u8(&pixels, width, height)? {
@@ -505,8 +506,11 @@ Python:
 import numpy as np
 import chess_corners
 
-cfg = chess_corners.DetectorConfig.chess().with_uncertainty(chess_corners.Uncertainty.propagated())
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point()
+cfg = (
+    chess_corners.DetectorConfig.chess()
+    .with_refiner(chess_corners.ImageRefiner.saddle_point())
+    .with_uncertainty(chess_corners.Uncertainty.propagated())
+)
 det = chess_corners.Detector(cfg).detect(img)
 
 cov = det.position_covariance                      # (N, 2, 2), NaN rows when absent
@@ -548,7 +552,7 @@ the rounding to 8 bits included, as the two-frame difference measures it.
 
 ```rust
 let cfg = DetectorConfig::chess()
-    .with_chess(|c| c.refiner = ChessRefiner::saddle_point())
+    .with_refiner(ImageRefiner::saddle_point())
     .with_uncertainty(Uncertainty::Propagated {
         noise: NoiseLevel::Known(1.8), // gray levels; `Estimate` estimates it per image
     });
@@ -563,7 +567,7 @@ cfg = cfg.withUncertainty(Uncertainty.propagated(1.8));
 ```
 
 ```cpp
-config.refiner = CC_REFINER_SADDLE_POINT;
+config.refiner = CC_IMAGE_REFINER_SADDLE_POINT;
 config.uncertainty = chess_corners::Uncertainty::propagated(1.8f);
 // C: cfg.uncertainty = CC_UNCERTAINTY_PROPAGATED;
 //    cfg.has_noise_sigma = 1; cfg.noise_sigma = 1.8f;
