@@ -3,8 +3,8 @@
 use std::collections::BTreeSet;
 
 use chess_corners::{
-    ChessRing as RsChessRing, OrientationMethod as RsOrientationMethod,
-    PeakFitMode as RsPeakFitMode,
+    ChessRing as RsChessRing, OnRefinerReject as RsOnRefinerReject,
+    OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -221,6 +221,24 @@ py_enum!(
     [
         (Canonical, "CANONICAL", Canonical, "canonical"),
         (Broad, "BROAD", Broad, "broad"),
+    ]
+);
+
+py_enum!(
+    /// What a ChESS detection does with a corner the image refiner rejects.
+    /// `DROP` *(default)* drops it; `KEEP_CENTER_OF_MASS` keeps it at the
+    /// ChESS center-of-mass position, with that localizer's covariance.
+    /// Ignored when no image refiner is set.
+    OnRefinerReject,
+    RsOnRefinerReject,
+    [
+        (Drop, "DROP", Drop, "drop"),
+        (
+            KeepCenterOfMass,
+            "KEEP_CENTER_OF_MASS",
+            KeepCenterOfMass,
+            "keep_center_of_mass"
+        ),
     ]
 );
 

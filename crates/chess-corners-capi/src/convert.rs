@@ -22,14 +22,15 @@
 
 use chess_corners::{
     ChessError, ChessRing, CornerDescriptor, DetectionStrategy, DetectorConfig, ImageRefiner,
-    MultiscaleConfig, NoiseLevel, OrientationMethod, PeakFitMode, RadonConfig, Uncertainty,
-    UpscaleConfig,
+    MultiscaleConfig, NoiseLevel, OnRefinerReject, OrientationMethod, PeakFitMode, RadonConfig,
+    Uncertainty, UpscaleConfig,
 };
 
 use crate::{
     cc_axis, cc_chess_ring_t, cc_config, cc_corner, cc_covariance, cc_image_refiner_t,
-    cc_peak_fit_t, cc_status, cc_uncertainty_t, CC_CHESS_RING_BROAD, CC_CHESS_RING_CANONICAL,
-    CC_IMAGE_REFINER_NONE, CC_IMAGE_REFINER_SADDLE_POINT, CC_ORIENTATION_DISK_FIT,
+    cc_on_refiner_reject_t, cc_peak_fit_t, cc_status, cc_uncertainty_t, CC_CHESS_RING_BROAD,
+    CC_CHESS_RING_CANONICAL, CC_IMAGE_REFINER_NONE, CC_IMAGE_REFINER_SADDLE_POINT,
+    CC_ON_REFINER_REJECT_DROP, CC_ON_REFINER_REJECT_KEEP_CENTER_OF_MASS, CC_ORIENTATION_DISK_FIT,
     CC_ORIENTATION_NONE, CC_ORIENTATION_RING_FIT, CC_PEAK_FIT_GAUSSIAN, CC_PEAK_FIT_PARABOLIC,
     CC_STRATEGY_CHESS, CC_STRATEGY_RADON, CC_UNCERTAINTY_OFF, CC_UNCERTAINTY_PROPAGATED,
 };
@@ -91,7 +92,15 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
                 CC_CHESS_RING_BROAD => ChessRing::Broad,
                 _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
             };
-            DetectorConfig::chess().with_chess(|c| c.ring = ring)
+            let on_refiner_reject = match cfg.on_refiner_reject {
+                CC_ON_REFINER_REJECT_DROP => OnRefinerReject::Drop,
+                CC_ON_REFINER_REJECT_KEEP_CENTER_OF_MASS => OnRefinerReject::KeepCenterOfMass,
+                _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
+            };
+            DetectorConfig::chess().with_chess(|c| {
+                c.ring = ring;
+                c.on_refiner_reject = on_refiner_reject;
+            })
         }
         // Radon has no ring; the `chess_ring` tag is ignored here.
         CC_STRATEGY_RADON => {
@@ -142,12 +151,24 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
 /// flat struct is always fully populated, and round-trip back through
 /// [`to_detector_config`] to the original config.
 pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
-    let (strategy, chess_ring) = match config.strategy {
-        DetectionStrategy::Chess(c) => (CC_STRATEGY_CHESS, chess_ring_tag(c.ring)),
-        // Radon has no ring; report the default tag (ignored for Radon on
-        // the round-trip back).
-        DetectionStrategy::Radon(_) => (CC_STRATEGY_RADON, CC_CHESS_RING_CANONICAL),
-        _ => (CC_STRATEGY_CHESS, CC_CHESS_RING_CANONICAL),
+    let (strategy, chess_ring, on_refiner_reject) = match config.strategy {
+        DetectionStrategy::Chess(c) => (
+            CC_STRATEGY_CHESS,
+            chess_ring_tag(c.ring),
+            on_refiner_reject_tag(c.on_refiner_reject),
+        ),
+        // Radon has no ring and never drops a corner; report the default
+        // tags (ignored for Radon on the round-trip back).
+        DetectionStrategy::Radon(_) => (
+            CC_STRATEGY_RADON,
+            CC_CHESS_RING_CANONICAL,
+            CC_ON_REFINER_REJECT_DROP,
+        ),
+        _ => (
+            CC_STRATEGY_CHESS,
+            CC_CHESS_RING_CANONICAL,
+            CC_ON_REFINER_REJECT_DROP,
+        ),
     };
     let refiner: cc_image_refiner_t = match config.refiner {
         None => CC_IMAGE_REFINER_NONE,
@@ -210,6 +231,17 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
         has_noise_sigma,
         noise_sigma,
         uncertainty,
+        on_refiner_reject,
+    }
+}
+
+fn on_refiner_reject_tag(policy: OnRefinerReject) -> cc_on_refiner_reject_t {
+    match policy {
+        OnRefinerReject::Drop => CC_ON_REFINER_REJECT_DROP,
+        OnRefinerReject::KeepCenterOfMass => CC_ON_REFINER_REJECT_KEEP_CENTER_OF_MASS,
+        // A variant without a C encoding is a bug, never mapped to another
+        // one (the presets trap the panic).
+        other => panic!("on_refiner_reject {other:?} has no C encoding"),
     }
 }
 
@@ -320,5 +352,6 @@ pub(crate) fn zeroed_config() -> cc_config {
         has_noise_sigma: 0,
         noise_sigma: 0.0,
         uncertainty: CC_UNCERTAINTY_OFF,
+        on_refiner_reject: CC_ON_REFINER_REJECT_DROP,
     }
 }

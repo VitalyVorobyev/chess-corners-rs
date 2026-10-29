@@ -218,7 +218,7 @@ mod upscale;
 // via a direct `chess-corners-core` dependency.
 pub use crate::config::{
     ChessConfig, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig, ImageRefiner,
-    MultiscaleConfig, NoiseLevel, RadonConfig, Uncertainty,
+    MultiscaleConfig, NoiseLevel, OnRefinerReject, RadonConfig, Uncertainty,
 };
 pub use crate::error::ChessError;
 

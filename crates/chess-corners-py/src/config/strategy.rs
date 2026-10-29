@@ -3,15 +3,15 @@
 
 use chess_corners::{
     ChessConfig as RsChessConfig, ChessRing as RsChessRing, DetectionParams as RsDetectionParams,
-    DetectionStrategy as RsDetectionStrategy, PeakFitMode as RsPeakFitMode,
-    RadonConfig as RsRadonConfig,
+    DetectionStrategy as RsDetectionStrategy, OnRefinerReject as RsOnRefinerReject,
+    PeakFitMode as RsPeakFitMode, RadonConfig as RsRadonConfig,
 };
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
 
 use super::parse::{
     config_error, extract_int, extract_string, json_dumps, json_loads, reject_unknown_keys,
-    require_dict, unknown_variant, ChessRing, PeakFitMode,
+    require_dict, unknown_variant, ChessRing, OnRefinerReject, PeakFitMode,
 };
 use super::refiners::CenterOfMassConfig;
 
@@ -23,6 +23,7 @@ use super::refiners::CenterOfMassConfig;
 pub struct ChessConfig {
     pub(crate) ring: RsChessRing,
     pub(crate) center_of_mass: Py<CenterOfMassConfig>,
+    pub(crate) on_refiner_reject: RsOnRefinerReject,
 }
 
 impl ChessConfig {
@@ -35,6 +36,7 @@ impl ChessConfig {
                     inner: v.center_of_mass,
                 },
             )?,
+            on_refiner_reject: v.on_refiner_reject,
         })
     }
 
@@ -42,6 +44,7 @@ impl ChessConfig {
         let mut cfg = RsChessConfig::default();
         cfg.ring = self.ring;
         cfg.center_of_mass = self.center_of_mass.borrow(py).inner;
+        cfg.on_refiner_reject = self.on_refiner_reject;
         cfg
     }
 }
@@ -71,6 +74,15 @@ impl ChessConfig {
         self.center_of_mass = v;
     }
 
+    #[getter]
+    fn on_refiner_reject(&self) -> PyResult<OnRefinerReject> {
+        OnRefinerReject::from_rs(self.on_refiner_reject)
+    }
+    #[setter]
+    fn set_on_refiner_reject(&mut self, v: OnRefinerReject) {
+        self.on_refiner_reject = v.into();
+    }
+
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
         d.set_item("ring", ChessRing::config_str(self.ring)?)?;
@@ -78,6 +90,13 @@ impl ChessConfig {
             "center_of_mass",
             self.center_of_mass.borrow(py).to_dict(py)?,
         )?;
+        // The default is an absent key, as the Rust serializer writes it.
+        if self.on_refiner_reject != RsOnRefinerReject::Drop {
+            d.set_item(
+                "on_refiner_reject",
+                OnRefinerReject::config_str(self.on_refiner_reject)?,
+            )?;
+        }
         Ok(d.unbind())
     }
 
@@ -88,7 +107,11 @@ impl ChessConfig {
         data: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let dict = require_dict(data, "chess")?;
-        reject_unknown_keys(&dict, &["ring", "center_of_mass"], "chess")?;
+        reject_unknown_keys(
+            &dict,
+            &["ring", "center_of_mass", "on_refiner_reject"],
+            "chess",
+        )?;
         let mut cfg = Self::from_rs(py, RsChessConfig::default())?;
         if let Some(s) = extract_string(&dict, "ring", "chess")? {
             cfg.ring = ChessRing::parse(&s, "chess.ring")?;
@@ -96,6 +119,9 @@ impl ChessConfig {
         if let Some(value) = dict.get_item("center_of_mass")? {
             let cls = py.get_type::<CenterOfMassConfig>();
             cfg.center_of_mass = Py::new(py, CenterOfMassConfig::from_dict(&cls, &value)?)?;
+        }
+        if let Some(s) = extract_string(&dict, "on_refiner_reject", "chess")? {
+            cfg.on_refiner_reject = OnRefinerReject::parse(&s, "chess.on_refiner_reject")?;
         }
         Ok(cfg)
     }

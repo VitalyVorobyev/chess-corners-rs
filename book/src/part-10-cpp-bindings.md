@@ -224,7 +224,11 @@ The fields group by applicability:
   `CC_IMAGE_REFINER_SADDLE_POINT` refines the corners of either
   detector on the image ([Part V](part-05-refiners.md)).
 - **ChESS only:** `chess_ring` (`CC_CHESS_RING_CANONICAL` for the
-  paper's radius-5 ring, or `CC_CHESS_RING_BROAD` for radius-10).
+  paper's radius-5 ring, or `CC_CHESS_RING_BROAD` for radius-10), and
+  `on_refiner_reject`: `CC_ON_REFINER_REJECT_DROP` (`0`, every preset and
+  a zero-initialised `cc_config`) drops a corner the image refiner
+  rejects, `CC_ON_REFINER_REJECT_KEEP_CENTER_OF_MASS` keeps it at its
+  center-of-mass position.
 - **Radon only:** `ray_radius`, `image_upsample`, `response_blur_radius`,
   and `peak_fit` (`CC_PEAK_FIT_GAUSSIAN` — the Radon default — or
   `CC_PEAK_FIT_PARABOLIC`).

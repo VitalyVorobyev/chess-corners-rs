@@ -32,7 +32,10 @@
 
 use super::{
     chess::{
-        detect::{detect_peaks_from_response_with_refine_radius, refine_corners_on_image},
+        detect::{
+            detect_peaks_from_response_with_refine_radius, refine_corners_on_image,
+            refine_corners_on_image_with_fallback,
+        },
         response::{chess_response_u8, chess_response_u8_patch, Roi},
     },
     radon::{
@@ -200,6 +203,26 @@ pub trait DenseDetector: private::Sealed {
         refiner: &mut dyn CornerRefiner,
     ) -> Vec<Corner>;
 
+    /// [`Self::refine_peaks_on_image`], localizing the peaks `refiner`
+    /// rejects with `fallback` instead of dropping them.
+    ///
+    /// ChESS refines each rejected peak with `fallback` from the integer
+    /// peak ([`crate::refine_corners_on_image_with_fallback`]); the facade
+    /// passes the center-of-mass localizer, so an image refiner then never
+    /// costs a corner the center of mass would have kept. Radon never drops
+    /// a peak, so the default ignores `fallback`.
+    fn refine_peaks_on_image_with_fallback(
+        &self,
+        corners: Vec<Corner>,
+        image: ImageView<'_>,
+        response: &Self::Response<'_>,
+        refiner: &mut dyn CornerRefiner,
+        fallback: &mut dyn CornerRefiner,
+    ) -> Vec<Corner> {
+        let _ = fallback;
+        self.refine_peaks_on_image(corners, image, response, refiner)
+    }
+
     /// Attach the peak fit's own position covariance to every corner of
     /// `corners` that still sits at the subpixel position
     /// [`Self::detect_corners`] fitted, on the `image` (in the peaks' frame)
@@ -326,6 +349,23 @@ impl DenseDetector for ChessDetector {
         // (`detect_corners_from_response_with_refiner`), which always
         // passed `Some(resp)` to the refiner.
         refine_corners_on_image(corners, Some(image), Some(response), refiner)
+    }
+
+    fn refine_peaks_on_image_with_fallback(
+        &self,
+        corners: Vec<Corner>,
+        image: ImageView<'_>,
+        response: &Self::Response<'_>,
+        refiner: &mut dyn CornerRefiner,
+        fallback: &mut dyn CornerRefiner,
+    ) -> Vec<Corner> {
+        refine_corners_on_image_with_fallback(
+            corners,
+            Some(image),
+            Some(response),
+            refiner,
+            fallback,
+        )
     }
 }
 

@@ -6,13 +6,13 @@ use std::rc::Rc;
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessConfig as RsChessConfig,
     ChessRing as RsChessRing, DetectionParams as RsDetectionParams,
-    DetectionStrategy as RsDetectionStrategy, PeakFitMode as RsPeakFitMode,
-    RadonConfig as RsRadonConfig,
+    DetectionStrategy as RsDetectionStrategy, OnRefinerReject as RsOnRefinerReject,
+    PeakFitMode as RsPeakFitMode, RadonConfig as RsRadonConfig,
 };
 use wasm_bindgen::prelude::*;
 
 use super::refiners::CenterOfMassConfig;
-use super::{cell, Cell, ChessRing, PeakFitMode};
+use super::{cell, Cell, ChessRing, OnRefinerReject, PeakFitMode};
 
 // ---------------------------------------------------------------------------
 // Strategy discriminant (internal)
@@ -49,6 +49,7 @@ impl StrategyKind {
 pub struct ChessConfig {
     ring: Cell<RsChessRing>,
     center_of_mass: Cell<RsCenterOfMassConfig>,
+    on_refiner_reject: Cell<RsOnRefinerReject>,
 }
 
 #[wasm_bindgen]
@@ -79,6 +80,17 @@ impl ChessConfig {
         // Copy into the existing cell so observers of this config see it.
         *self.center_of_mass.borrow_mut() = *v.share_cell().borrow();
     }
+
+    /// What happens to a corner the image refiner rejects. Ignored when no
+    /// image refiner is set.
+    #[wasm_bindgen(getter, js_name = onRefinerReject)]
+    pub fn on_refiner_reject(&self) -> OnRefinerReject {
+        (*self.on_refiner_reject.borrow()).into()
+    }
+    #[wasm_bindgen(setter, js_name = onRefinerReject)]
+    pub fn set_on_refiner_reject(&mut self, v: OnRefinerReject) {
+        *self.on_refiner_reject.borrow_mut() = v.into();
+    }
 }
 
 impl Default for ChessConfig {
@@ -92,6 +104,7 @@ impl ChessConfig {
         Self {
             ring: cell(value.ring),
             center_of_mass: cell(value.center_of_mass),
+            on_refiner_reject: cell(value.on_refiner_reject),
         }
     }
 
@@ -101,12 +114,14 @@ impl ChessConfig {
     fn copy_from(&self, other: &ChessConfig) {
         *self.ring.borrow_mut() = *other.ring.borrow();
         *self.center_of_mass.borrow_mut() = *other.center_of_mass.borrow();
+        *self.on_refiner_reject.borrow_mut() = *other.on_refiner_reject.borrow();
     }
 
     fn snapshot(&self) -> RsChessConfig {
         let mut s = RsChessConfig::default();
         s.ring = *self.ring.borrow();
         s.center_of_mass = *self.center_of_mass.borrow();
+        s.on_refiner_reject = *self.on_refiner_reject.borrow();
         s
     }
 }

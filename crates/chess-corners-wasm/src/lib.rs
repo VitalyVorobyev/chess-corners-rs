@@ -51,8 +51,8 @@ use wasm_bindgen::prelude::*;
 
 pub use crate::config::{
     CenterOfMassConfig, ChessConfig, ChessRing, DetectionParams, DetectionStrategy, DetectorConfig,
-    ImageRefiner, MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig, SaddlePointConfig,
-    Uncertainty, UpscaleConfig,
+    ImageRefiner, MultiscaleConfig, OnRefinerReject, OrientationMethod, PeakFitMode, RadonConfig,
+    SaddlePointConfig, Uncertainty, UpscaleConfig,
 };
 
 /// Default detector configuration as a JSON string, in the same shape as
