@@ -38,6 +38,8 @@ pub enum ChessRing {
 /// - [`ring`](ChessConfig::ring) — choose the detector kernel radius.
 /// - [`center_of_mass`](ChessConfig::center_of_mass) — tune the subpixel
 ///   localizer.
+/// - [`on_refiner_reject`](ChessConfig::on_refiner_reject) — keep the
+///   corners an image refiner rejects at their center-of-mass position.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default, deny_unknown_fields)]
@@ -52,4 +54,35 @@ pub struct ChessConfig {
     /// ([`DetectorConfig::refiner`](crate::DetectorConfig::refiner)) is set;
     /// the image refiner then starts from the integer peak instead.
     pub center_of_mass: CenterOfMassConfig,
+    /// What happens to a corner the image refiner
+    /// ([`DetectorConfig::refiner`](crate::DetectorConfig::refiner)) rejects.
+    /// Ignored when no image refiner is set. Default
+    /// [`OnRefinerReject::Drop`].
+    pub on_refiner_reject: OnRefinerReject,
+}
+
+/// What a ChESS detection does with a corner the image refiner rejects (see
+/// [`ChessConfig::on_refiner_reject`]).
+///
+/// The image refiner rejects a peak whose patch it cannot fit — not a clear
+/// saddle, a fit that leaves its window, a seed too close to the border. On
+/// a clean board those are rare; on a cluttered or blurred one they include
+/// real corners the center of mass localizes. The Radon detector always
+/// keeps such a corner at its peak-fit position.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum OnRefinerReject {
+    /// Drop the corner: every reported corner was localized by the image
+    /// refiner.
+    #[default]
+    Drop,
+    /// Keep the corner at the ChESS center-of-mass position (with that
+    /// localizer's position covariance). The corners the image refiner
+    /// accepts are unchanged, so a single-scale detection returns the `Drop`
+    /// output plus these corners. Under a pyramid the coarse seeds follow
+    /// the same rule, so a seed kept at the coarse level can also yield a
+    /// corner the image refiner localizes at the base level.
+    KeepCenterOfMass,
 }

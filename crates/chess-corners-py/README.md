@@ -105,7 +105,8 @@ refiner, `ImageRefiner.saddle_point(cfg=None)`, set with `with_refiner(...)` / `
 detector, so it survives `with_chess` / `with_radon`.
 
 On ChESS the refiner starts from the integer peak and drops corners it
-rejects; on Radon it starts from the peak fit and keeps the peak fit where
+rejects, unless `with_chess(on_refiner_reject=OnRefinerReject.KEEP_CENTER_OF_MASS)`
+keeps them at their center-of-mass position; on Radon it starts from the peak fit and keeps the peak fit where
 it does not converge. `ImageRefiner.saddle_point()` reports a position
 covariance under `Uncertainty.propagated()` with either detector. Its
 tuning is reachable via the `payload` property

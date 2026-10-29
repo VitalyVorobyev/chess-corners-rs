@@ -159,7 +159,9 @@ let cfg = DetectorConfig::radon().with_refiner(ImageRefiner::saddle_point());
 ```
 
 On ChESS the image refiner replaces the center of mass, starts from the
-integer peak and drops a corner it rejects; on Radon it starts from the
+integer peak and drops a corner it rejects, unless
+`ChessConfig::on_refiner_reject` is `OnRefinerReject::KeepCenterOfMass`,
+which keeps it at its center-of-mass position; on Radon it starts from the
 peak fit and keeps the peak fit where it does not converge.
 
 ## CLI config shape

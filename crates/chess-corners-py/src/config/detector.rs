@@ -12,7 +12,7 @@ use pyo3::types::{PyDict, PyString, PyType};
 use super::multiscale::MultiscaleConfig;
 use super::parse::{
     config_error, extract_float, json_dumps, json_loads, reject_unknown_keys, require_dict,
-    ChessRing, OrientationMethod, PeakFitMode,
+    ChessRing, OnRefinerReject, OrientationMethod, PeakFitMode,
 };
 use super::refiners::{CenterOfMassConfig, ImageRefiner};
 use super::strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig, StrategyKind};
@@ -184,11 +184,12 @@ impl DetectorConfig {
     /// it is replaced with a default `ChessConfig` before applying kwargs.
     /// Top-level fields (threshold, multiscale, etc.) are preserved.
     ///
-    /// Accepted kwargs: `ring`, `center_of_mass` (a `CenterOfMassConfig`).
+    /// Accepted kwargs: `ring`, `center_of_mass` (a `CenterOfMassConfig`),
+    /// `on_refiner_reject` (an `OnRefinerReject`).
     /// The shared NMS / clustering knobs are set with `with_detection`.
     #[pyo3(signature = (**kwargs))]
     fn with_chess(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        const CHESS_FIELDS: &[&str] = &["ring", "center_of_mass"];
+        const CHESS_FIELDS: &[&str] = &["ring", "center_of_mass", "on_refiner_reject"];
 
         let mut cfg = self.clone_inner(py)?;
 
@@ -214,6 +215,10 @@ impl DetectorConfig {
             if let Some(v) = kw.get_item("ring")? {
                 let ring: ChessRing = v.extract()?;
                 chess.ring = ring.into();
+            }
+            if let Some(v) = kw.get_item("on_refiner_reject")? {
+                let policy: OnRefinerReject = v.extract()?;
+                chess.on_refiner_reject = policy.into();
             }
         }
 

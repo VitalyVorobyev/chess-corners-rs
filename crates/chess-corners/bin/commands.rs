@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use chess_corners::{
     AxisEstimate, ChessConfig, ChessRing, CornerDescriptor, DetectionStrategy, Detector,
-    DetectorConfig, ImageRefiner, MultiscaleConfig, UpscaleConfig,
+    DetectorConfig, ImageRefiner, MultiscaleConfig, OnRefinerReject, UpscaleConfig,
 };
 use image::{ImageBuffer, ImageReader, Luma};
 use log::info;
@@ -63,6 +63,9 @@ pub struct DetectionOverrides {
     pub min_cluster_size: Option<u32>,
     /// Override the image refiner (either strategy).
     pub refiner: Option<RefinerSel>,
+    /// Override what a ChESS detection does with a corner the image refiner
+    /// rejects.
+    pub on_refiner_reject: Option<OnRefinerReject>,
     /// Integer upscale factor override. `Some(0)` means no override;
     /// `Some(k)` for k >= 2 sets `upscale = Fixed(k)`.
     pub upscale_factor: Option<u32>,
@@ -234,6 +237,7 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
         nms_radius,
         min_cluster_size,
         refiner,
+        on_refiner_reject,
         upscale_factor,
     } = overrides;
 
@@ -282,6 +286,11 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
     if let Some(v) = chess_ring {
         if let Some(chess) = chess_strategy_mut(&mut cfg.detector) {
             chess.ring = v;
+        }
+    }
+    if let Some(v) = on_refiner_reject {
+        if let Some(chess) = chess_strategy_mut(&mut cfg.detector) {
+            chess.on_refiner_reject = v;
         }
     }
     // NMS / clustering are shared detection knobs honoured by both

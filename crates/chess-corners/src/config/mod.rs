@@ -8,7 +8,7 @@ mod uncertainty;
 #[cfg(test)]
 mod tests;
 
-pub use chess::{ChessConfig, ChessRing};
+pub use chess::{ChessConfig, ChessRing, OnRefinerReject};
 pub use detection::{DetectionParams, DetectionStrategy, DetectorConfig};
 pub use multiscale::MultiscaleConfig;
 pub use radon::RadonConfig;

@@ -67,6 +67,29 @@ def test_image_refiner_saddle_point_max_offset_survives_roundtrip():
     assert abs(cfg2.refiner.payload.max_offset - 3.5) < 1e-6
 
 
+def test_on_refiner_reject_survives_roundtrip_and_defaults_to_drop():
+    cfg = chess_corners.DetectorConfig.chess()
+    assert cfg.strategy.chess.on_refiner_reject == chess_corners.OnRefinerReject.DROP
+    assert cfg.to_dict()["strategy"]["chess"]["on_refiner_reject"] == "drop"
+
+    keep = cfg.with_refiner(chess_corners.ImageRefiner.saddle_point()).with_chess(
+        on_refiner_reject=chess_corners.OnRefinerReject.KEEP_CENTER_OF_MASS
+    )
+    data = keep.to_dict()
+    assert data["strategy"]["chess"]["on_refiner_reject"] == "keep_center_of_mass"
+    restored = chess_corners.DetectorConfig.from_dict(data)
+    assert (
+        restored.strategy.chess.on_refiner_reject
+        == chess_corners.OnRefinerReject.KEEP_CENTER_OF_MASS
+    )
+    assert _cfg_to_comparable_dict(restored) == _cfg_to_comparable_dict(keep)
+
+    bad = json.loads(keep.to_json())
+    bad["strategy"]["chess"]["on_refiner_reject"] = "keep"
+    with pytest.raises(chess_corners.ConfigError):
+        chess_corners.DetectorConfig.from_dict(bad)
+
+
 def test_radon_strategy_survives_roundtrip():
     """Radon strategy params must survive a full dict roundtrip."""
     cfg = chess_corners.DetectorConfig.radon()

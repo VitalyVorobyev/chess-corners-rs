@@ -47,9 +47,15 @@ there is no refiner that needs a response map the active detector does
 not have. Where the image refiner starts, and what happens to a corner
 it cannot refine, follows the detector:
 
-- **ChESS** — the image refiner *replaces* the center of mass (which
-  then does not run). It starts from the integer response peak, and a
-  corner it rejects is dropped.
+- **ChESS** — the image refiner *replaces* the center of mass. It
+  starts from the integer response peak, and a corner it rejects is
+  dropped — unless `ChessConfig::on_refiner_reject` is
+  `OnRefinerReject::KeepCenterOfMass`, which keeps that corner at its
+  center-of-mass position instead. The corners the image refiner accepts
+  are the same either way. On cluttered or blurred boards the refiner
+  rejects real corners as well as clutter, so keeping them preserves the
+  center of mass's recall while every corner it can fit gets the image
+  refiner's accuracy.
 - **Radon** — the image refiner runs *on top of* the peak fit. It
   starts from the peak-fit position, and a corner it does not refine to
   convergence keeps its peak-fit position; no corner is dropped.

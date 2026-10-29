@@ -92,6 +92,15 @@ typedef uint32_t cc_peak_fit_t;
 typedef uint32_t cc_uncertainty_t;
 
 /**
+ * What a ChESS detection does with a corner the image refiner rejects,
+ * stored in `cc_config::on_refiner_reject`.
+ *
+ * Applies to the ChESS strategy with an image refiner only; ignored
+ * otherwise.
+ */
+typedef uint32_t cc_on_refiner_reject_t;
+
+/**
  * Flat, C-fillable detector configuration.
  *
  * Construct one with a preset (`cc_config_default`, `cc_config_chess`, …)
@@ -202,6 +211,14 @@ typedef struct cc_config {
    * select `CC_UNCERTAINTY_OFF`.
    */
   cc_uncertainty_t uncertainty;
+  /**
+   * One of the `CC_ON_REFINER_REJECT_*` constants (any other value is
+   * `CC_ERR_INVALID_CONFIG`): what a ChESS detection does with a corner
+   * the image refiner rejects. Applies to the ChESS strategy with an
+   * image refiner only. The presets and a zero-initialised config select
+   * `CC_ON_REFINER_REJECT_DROP`.
+   */
+  cc_on_refiner_reject_t on_refiner_reject;
 } cc_config;
 
 /**
@@ -387,6 +404,17 @@ typedef struct cc_result {
  * the candidate centre.
  */
 #define CC_CHESS_RING_BROAD 1
+
+/**
+ * Drop the corner (the default, and the zero-initialised value).
+ */
+#define CC_ON_REFINER_REJECT_DROP 0
+
+/**
+ * Keep the corner at the ChESS center-of-mass position, with that
+ * localizer's position covariance.
+ */
+#define CC_ON_REFINER_REJECT_KEEP_CENTER_OF_MASS 1
 
 /**
  * Parabolic fit on the raw response values.

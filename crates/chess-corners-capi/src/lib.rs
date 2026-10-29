@@ -107,6 +107,18 @@ pub const CC_CHESS_RING_CANONICAL: cc_chess_ring_t = 0;
 /// the candidate centre.
 pub const CC_CHESS_RING_BROAD: cc_chess_ring_t = 1;
 
+/// What a ChESS detection does with a corner the image refiner rejects,
+/// stored in `cc_config::on_refiner_reject`.
+///
+/// Applies to the ChESS strategy with an image refiner only; ignored
+/// otherwise.
+pub type cc_on_refiner_reject_t = u32;
+/// Drop the corner (the default, and the zero-initialised value).
+pub const CC_ON_REFINER_REJECT_DROP: cc_on_refiner_reject_t = 0;
+/// Keep the corner at the ChESS center-of-mass position, with that
+/// localizer's position covariance.
+pub const CC_ON_REFINER_REJECT_KEEP_CENTER_OF_MASS: cc_on_refiner_reject_t = 1;
+
 /// Radon subpixel peak-fit tag stored in `cc_config::peak_fit`.
 ///
 /// Applies to the Radon strategy only; ignored when `strategy` is
@@ -281,6 +293,12 @@ pub struct cc_config {
     /// `CC_ERR_INVALID_CONFIG`). The presets and a zero-initialised config
     /// select `CC_UNCERTAINTY_OFF`.
     pub uncertainty: cc_uncertainty_t,
+    /// One of the `CC_ON_REFINER_REJECT_*` constants (any other value is
+    /// `CC_ERR_INVALID_CONFIG`): what a ChESS detection does with a corner
+    /// the image refiner rejects. Applies to the ChESS strategy with an
+    /// image refiner only. The presets and a zero-initialised config select
+    /// `CC_ON_REFINER_REJECT_DROP`.
+    pub on_refiner_reject: cc_on_refiner_reject_t,
 }
 
 // ─── Status codes (library returns) ─────────────────────────────────────
@@ -577,7 +595,7 @@ pub extern "C" fn cc_status_str(status: cc_status) -> *const c_char {
 /// ABI version of this library. Bumped manually on any breaking ABI change.
 #[no_mangle]
 pub extern "C" fn cc_abi_version() -> u32 {
-    8
+    9
 }
 
 #[cfg(test)]
@@ -654,7 +672,31 @@ mod tests {
 
     #[test]
     fn abi_version_is_stable() {
-        assert_eq!(cc_abi_version(), 8);
+        assert_eq!(cc_abi_version(), 9);
+    }
+
+    #[test]
+    fn on_refiner_reject_round_trips_and_rejects_unknown_tags() {
+        use chess_corners::{DetectionStrategy, OnRefinerReject};
+
+        let mut cfg = cc_config_chess();
+        assert_eq!(cfg.on_refiner_reject, CC_ON_REFINER_REJECT_DROP);
+        cfg.refiner = CC_IMAGE_REFINER_SADDLE_POINT;
+        cfg.on_refiner_reject = CC_ON_REFINER_REJECT_KEEP_CENTER_OF_MASS;
+        let detector = convert::to_detector_config(&cfg).expect("valid config");
+        let DetectionStrategy::Chess(chess) = detector.strategy else {
+            panic!("expected the ChESS strategy");
+        };
+        assert_eq!(chess.on_refiner_reject, OnRefinerReject::KeepCenterOfMass);
+        assert_eq!(
+            convert::flatten(&detector).on_refiner_reject,
+            CC_ON_REFINER_REJECT_KEEP_CENTER_OF_MASS
+        );
+        cfg.on_refiner_reject = 7;
+        assert_eq!(
+            convert::to_detector_config(&cfg).unwrap_err(),
+            cc_status::CC_ERR_INVALID_CONFIG
+        );
     }
 
     #[test]

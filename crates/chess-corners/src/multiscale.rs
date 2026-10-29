@@ -15,7 +15,9 @@
 //! [`crate::DetectionStrategy`]. End users should reach detection
 //! through [`crate::Detector`].
 
-use crate::{DetectionStrategy, DetectorConfig, ImageRefiner, NoiseLevel, Uncertainty};
+use crate::{
+    DetectionStrategy, DetectorConfig, ImageRefiner, NoiseLevel, OnRefinerReject, Uncertainty,
+};
 use box_image_pyramid::{build_pyramid, PyramidBuffers, PyramidParams};
 use chess_corners_core::{describe_corners, estimate_noise_sigma_u8, merge_corners_simple, Corner};
 use chess_corners_core::{
@@ -64,10 +66,34 @@ impl Default for CoarseToFineParams {
     }
 }
 
+/// The refiners that give detected peaks their final position: `refiner`,
+/// and the `fallback` that localizes the peaks `refiner` rejects (ChESS's
+/// center of mass under [`OnRefinerReject::KeepCenterOfMass`]).
+struct FinalRefiner {
+    refiner: Refiner,
+    fallback: Option<Refiner>,
+}
+
+impl FinalRefiner {
+    /// Patch half-width the refiners need around a seed.
+    fn radius(&self) -> i32 {
+        let fallback = self.fallback.as_ref().map_or(0, |f| f.radius());
+        self.refiner.radius().max(fallback)
+    }
+
+    /// Select whether both refiners report a position covariance.
+    fn with_covariance(self, report: bool) -> Self {
+        Self {
+            refiner: self.refiner.with_covariance(report),
+            fallback: self.fallback.map(|f| f.with_covariance(report)),
+        }
+    }
+}
+
 /// Patch half-width of the final refiner, or `0` when none runs: the
 /// extra ROI margin a refined corner needs.
-fn refiner_radius(refiner: Option<&Refiner>) -> i32 {
-    refiner.map_or(0, |r| r.radius())
+fn refiner_radius(refiner: Option<&FinalRefiner>) -> i32 {
+    refiner.map_or(0, FinalRefiner::radius)
 }
 
 /// Refine `peaks` on `image` with `refiner`, or return them unchanged
@@ -77,10 +103,19 @@ fn refine_peaks<D: DenseDetector>(
     peaks: Vec<Corner>,
     image: ImageView<'_>,
     response: &D::Response<'_>,
-    refiner: Option<&mut Refiner>,
+    refiner: Option<&mut FinalRefiner>,
 ) -> Vec<Corner> {
     match refiner {
-        Some(refiner) => detector.refine_peaks_on_image(peaks, image, response, refiner),
+        Some(FinalRefiner {
+            refiner,
+            fallback: Some(fallback),
+        }) => {
+            detector.refine_peaks_on_image_with_fallback(peaks, image, response, refiner, fallback)
+        }
+        Some(FinalRefiner {
+            refiner,
+            fallback: None,
+        }) => detector.refine_peaks_on_image(peaks, image, response, refiner),
         None => peaks,
     }
 }
@@ -211,7 +246,7 @@ struct FrameStages<'a, D: DenseDetector> {
     detector: &'a D,
     params: &'a D::Params,
     buffers: &'a mut D::Buffers,
-    refiner: Option<Refiner>,
+    refiner: Option<FinalRefiner>,
     /// Builds each parallel ROI job's own refiner.
     #[cfg(feature = "rayon")]
     shape: &'a DetectorShape,
@@ -238,7 +273,7 @@ impl<D: DenseDetector> RoiPass<'_, D> {
     fn corners(
         &self,
         buffers: &mut D::Buffers,
-        refiner: Option<&mut Refiner>,
+        refiner: Option<&mut FinalRefiner>,
         roi: RoiBounds,
     ) -> Vec<Corner> {
         let (detector, params, base) = (self.detector, self.params, self.base);
@@ -342,16 +377,23 @@ enum Localizer {
     CenterOfMass(CenterOfMassConfig),
     /// An image refiner.
     Image(RefinerKind),
+    /// An image refiner, with ChESS's center of mass for the peaks it
+    /// rejects.
+    ImageOverCenterOfMass(RefinerKind, CenterOfMassConfig),
 }
 
 impl Localizer {
     /// The refiner, reporting a covariance when `covariance` is set.
-    fn build(&self, covariance: bool) -> Refiner {
-        match self {
-            Self::CenterOfMass(cfg) => Refiner::CenterOfMass(CenterOfMassRefiner::new(*cfg)),
-            Self::Image(kind) => Refiner::from_kind(kind.clone()),
-        }
-        .with_covariance(covariance)
+    fn build(&self, covariance: bool) -> FinalRefiner {
+        let center_of_mass = |cfg| Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg));
+        let (refiner, fallback) = match self {
+            Self::CenterOfMass(cfg) => (center_of_mass(*cfg), None),
+            Self::Image(kind) => (Refiner::from_kind(kind.clone()), None),
+            Self::ImageOverCenterOfMass(kind, cfg) => {
+                (Refiner::from_kind(kind.clone()), Some(center_of_mass(*cfg)))
+            }
+        };
+        FinalRefiner { refiner, fallback }.with_covariance(covariance)
     }
 }
 
@@ -383,7 +425,7 @@ struct DetectorShape {
 impl DetectorShape {
     /// The final refiner, reporting a covariance when the frame's
     /// uncertainty propagates one.
-    fn refiner(&self) -> Option<Refiner> {
+    fn refiner(&self) -> Option<FinalRefiner> {
         self.localizer
             .as_ref()
             .map(|l| l.build(self.uncertainty.propagates()))
@@ -616,15 +658,23 @@ fn dispatch_strategy(
     radon_buffers: &mut RadonBuffers,
     pipeline: impl StrategyPipeline,
 ) -> Frame {
-    let image_refiner = core_image_refiner(cfg.refiner).map(Localizer::Image);
+    let image_refiner = core_image_refiner(cfg.refiner);
     match &cfg.strategy {
-        DetectionStrategy::Chess(_) => {
+        DetectionStrategy::Chess(chess) => {
             let chess_params = cfg.chess_params();
+            let center_of_mass = chess_params.center_of_mass;
+            // An image refiner replaces the center of mass, which then runs
+            // only on the peaks the image refiner rejects, and only when
+            // asked to.
+            let localizer = match (image_refiner, chess.on_refiner_reject) {
+                (None, _) => Localizer::CenterOfMass(center_of_mass),
+                (Some(kind), OnRefinerReject::Drop) => Localizer::Image(kind),
+                (Some(kind), OnRefinerReject::KeepCenterOfMass) => {
+                    Localizer::ImageOverCenterOfMass(kind, center_of_mass)
+                }
+            };
             let shape = DetectorShape {
-                // An image refiner replaces the center of mass, which then
-                // does not run.
-                localizer: image_refiner
-                    .or(Some(Localizer::CenterOfMass(chess_params.center_of_mass))),
+                localizer: Some(localizer),
                 descriptor_ring_radius: chess_params.ring_radius(),
                 orientation_method: chess_params.orientation_method,
                 uncertainty,
@@ -635,7 +685,7 @@ fn dispatch_strategy(
         DetectionStrategy::Radon(_) => {
             let radon_params = cfg.radon_detector_params();
             let shape = DetectorShape {
-                localizer: image_refiner,
+                localizer: image_refiner.map(Localizer::Image),
                 // Radon strategies don't carry a descriptor-ring knob;
                 // descriptors sample the canonical r=5 ring downstream.
                 // Orientation method is top-level on DetectorConfig.

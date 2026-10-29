@@ -22,6 +22,7 @@ pub mod radon;
 pub use chess::detect::{
     detect_corners_from_response, detect_corners_from_response_with_refiner,
     detect_peaks_from_response_with_refine_radius, find_corners_u8, refine_corners_on_image,
+    refine_corners_on_image_with_fallback,
 };
 pub use merge::merge_corners_simple;
 pub(crate) use neighbors::{count_positive_neighbors, is_local_max};

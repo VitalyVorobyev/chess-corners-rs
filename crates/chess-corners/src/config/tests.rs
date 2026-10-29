@@ -151,6 +151,7 @@ fn broad_ring_and_center_of_mass_propagate_to_params() {
         strategy: DetectionStrategy::Chess(ChessConfig {
             ring: ChessRing::Broad,
             center_of_mass: com,
+            ..ChessConfig::default()
         }),
         ..DetectorConfig::chess()
     };

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chess_corners::ChessRing;
+use chess_corners::{ChessRing, OnRefinerReject};
 use clap::{Parser, Subcommand};
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
@@ -74,6 +74,11 @@ enum Commands {
         /// localizer.
         #[arg(long)]
         refiner: Option<String>,
+        /// What a ChESS detection does with a corner the image refiner
+        /// rejects (`drop` or `keep_center_of_mass`). Has no effect on the
+        /// Radon strategy or without an image refiner.
+        #[arg(long)]
+        on_refiner_reject: Option<String>,
         /// Integer upscale factor (2, 3, or 4). If set, enables
         /// pre-pipeline bilinear upscaling. Pass `0` or omit to leave
         /// the JSON config value unchanged.
@@ -103,6 +108,7 @@ fn main() -> Result<()> {
             nms_radius,
             min_cluster_size,
             refiner,
+            on_refiner_reject,
             upscale_factor,
             #[cfg(feature = "tracing")]
             json_trace,
@@ -122,6 +128,9 @@ fn main() -> Result<()> {
                 nms_radius,
                 min_cluster_size,
                 refiner: parse_flag_enum::<RefinerSel>(refiner.as_deref())?,
+                on_refiner_reject: parse_flag_enum::<OnRefinerReject>(
+                    on_refiner_reject.as_deref(),
+                )?,
                 upscale_factor,
             };
             apply_overrides(&mut cfg, overrides);

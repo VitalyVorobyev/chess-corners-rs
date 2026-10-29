@@ -50,8 +50,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use chess_corners::{
-    ChessRing as RsChessRing, OrientationMethod as RsOrientationMethod,
-    PeakFitMode as RsPeakFitMode,
+    ChessRing as RsChessRing, OnRefinerReject as RsOnRefinerReject,
+    OrientationMethod as RsOrientationMethod, PeakFitMode as RsPeakFitMode,
 };
 use wasm_bindgen::prelude::*;
 
@@ -101,6 +101,37 @@ impl From<RsChessRing> for ChessRing {
             RsChessRing::Canonical => ChessRing::Canonical,
             RsChessRing::Broad => ChessRing::Broad,
             _ => ChessRing::Canonical,
+        }
+    }
+}
+
+/// What a ChESS detection does with a corner the image refiner rejects.
+/// Mirrors [`chess_corners::OnRefinerReject`].
+///
+/// `Drop` (= 0, default): drop it. `KeepCenterOfMass` (= 1): keep it at the
+/// ChESS center-of-mass position, with that localizer's covariance. Ignored
+/// when no image refiner is set.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OnRefinerReject {
+    Drop = 0,
+    KeepCenterOfMass = 1,
+}
+
+impl From<OnRefinerReject> for RsOnRefinerReject {
+    fn from(v: OnRefinerReject) -> Self {
+        match v {
+            OnRefinerReject::Drop => RsOnRefinerReject::Drop,
+            OnRefinerReject::KeepCenterOfMass => RsOnRefinerReject::KeepCenterOfMass,
+        }
+    }
+}
+
+impl From<RsOnRefinerReject> for OnRefinerReject {
+    fn from(v: RsOnRefinerReject) -> Self {
+        match v {
+            RsOnRefinerReject::KeepCenterOfMass => OnRefinerReject::KeepCenterOfMass,
+            _ => OnRefinerReject::Drop,
         }
     }
 }
@@ -223,6 +254,25 @@ mod tests {
         com.set_radius(4);
         cfg.strategy().chess().set_center_of_mass(&com);
         assert_eq!(observer.radius(), 4);
+    }
+
+    #[test]
+    fn on_refiner_reject_reaches_the_rust_config() {
+        let cfg = DetectorConfig::chess();
+        let RsDetectionStrategy::Chess(c) = cfg.snapshot().strategy else {
+            panic!("expected chess strategy")
+        };
+        assert_eq!(c.on_refiner_reject, chess_corners::OnRefinerReject::Drop);
+        cfg.strategy()
+            .chess()
+            .set_on_refiner_reject(OnRefinerReject::KeepCenterOfMass);
+        let RsDetectionStrategy::Chess(c) = cfg.snapshot().strategy else {
+            panic!("expected chess strategy")
+        };
+        assert_eq!(
+            c.on_refiner_reject,
+            chess_corners::OnRefinerReject::KeepCenterOfMass
+        );
     }
 
     #[test]

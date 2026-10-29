@@ -212,6 +212,59 @@ pub fn refine_corners_on_image(
         .collect()
 }
 
+/// [`refine_corners_on_image`] with a second refiner for the peaks the first
+/// rejects.
+///
+/// Each peak is refined with `refiner`; a peak it does not accept is refined
+/// with `fallback` instead, and is dropped only when `fallback` rejects it
+/// too. Both start from the input peak position. The peaks `refiner` accepts
+/// get exactly the result [`refine_corners_on_image`] gives them, so the
+/// output is that function's output plus the corners only `fallback`
+/// localized, in input order.
+///
+/// The facade uses it to keep the ChESS center of mass for the corners an
+/// image refiner rejects.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(level = "debug", skip(corners, image, response, refiner, fallback))
+)]
+pub fn refine_corners_on_image_with_fallback(
+    corners: Vec<Corner>,
+    image: Option<ImageView<'_>>,
+    response: Option<&ResponseMap>,
+    refiner: &mut dyn CornerRefiner,
+    fallback: &mut dyn CornerRefiner,
+) -> Vec<Corner> {
+    if corners.is_empty() {
+        return Vec::new();
+    }
+
+    let ctx = RefineContext { image, response };
+    let mut results = refine_each(refiner, ctx, &corners);
+    let rejected: Vec<usize> = results
+        .iter()
+        .enumerate()
+        .filter(|(_, res)| res.status != RefineStatus::Accepted)
+        .map(|(i, _)| i)
+        .collect();
+    if !rejected.is_empty() {
+        let retry: Vec<Corner> = rejected.iter().map(|&i| corners[i].clone()).collect();
+        for (i, res) in rejected.into_iter().zip(refine_each(fallback, ctx, &retry)) {
+            results[i] = res;
+        }
+    }
+    results
+        .into_iter()
+        .zip(&corners)
+        .filter(|(res, _)| res.status == RefineStatus::Accepted)
+        .map(|(res, c)| {
+            let mut refined = Corner::new(res.x, res.y, c.strength);
+            refined.model = res.model;
+            refined
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,6 +284,60 @@ mod tests {
             }
         }
         img
+    }
+
+    /// A peak the primary refiner accepts keeps the primary's result; a peak
+    /// it rejects gets the fallback's.
+    #[test]
+    fn rejected_peaks_fall_back_and_accepted_peaks_are_unchanged() {
+        use crate::refine::{SaddlePointConfig, SaddlePointRefiner};
+
+        let size = 32u32;
+        let img = make_quadrant_corner(size, 20, 220);
+        let view = ImageView::from_u8_slice(size as usize, size as usize, img.as_raw()).unwrap();
+        let params = ChessParams::default();
+        let resp = chess_response_u8(img.as_raw(), size as usize, size as usize, &params);
+        let peaks = vec![Corner::new(16.0, 16.0, 1.0)];
+        let bits = |c: &[Corner]| -> Vec<[u32; 2]> {
+            c.iter().map(|c| [c.x.to_bits(), c.y.to_bits()]).collect()
+        };
+        let saddle = || SaddlePointRefiner::new(SaddlePointConfig::default());
+        let com = || CenterOfMassRefiner::new(Default::default());
+
+        // Accepted by the primary: the fallback changes nothing.
+        let primary =
+            refine_corners_on_image(peaks.clone(), Some(view), Some(&resp), &mut saddle());
+        assert_eq!(primary.len(), 1);
+        let with_fallback = refine_corners_on_image_with_fallback(
+            peaks.clone(),
+            Some(view),
+            Some(&resp),
+            &mut saddle(),
+            &mut com(),
+        );
+        assert_eq!(bits(&with_fallback), bits(&primary));
+
+        // Rejected by the primary (a radius-0 fit rejects every seed): the
+        // fallback's position, where dropping would lose the corner.
+        let cfg = SaddlePointConfig {
+            radius: 0,
+            ..Default::default()
+        };
+        let rejecting = || SaddlePointRefiner::new(cfg);
+        let dropped =
+            refine_corners_on_image(peaks.clone(), Some(view), Some(&resp), &mut rejecting());
+        assert!(dropped.is_empty());
+        let fallback_only =
+            refine_corners_on_image(peaks.clone(), Some(view), Some(&resp), &mut com());
+        assert_eq!(fallback_only.len(), 1);
+        let kept = refine_corners_on_image_with_fallback(
+            peaks,
+            Some(view),
+            Some(&resp),
+            &mut rejecting(),
+            &mut com(),
+        );
+        assert_eq!(bits(&kept), bits(&fallback_only));
     }
 
     #[test]

@@ -89,7 +89,8 @@ pub use crate::detect::radon::{
 pub use crate::detect::{
     detect_corners_from_response, detect_corners_from_response_with_refiner,
     detect_peaks_from_response_with_refine_radius, find_corners_u8, merge_corners_simple,
-    refine_corners_on_image, AxisEstimate, Corner, CornerDescriptor,
+    refine_corners_on_image, refine_corners_on_image_with_fallback, AxisEstimate, Corner,
+    CornerDescriptor,
 };
 pub use crate::noise::estimate_noise_sigma_u8;
 pub use crate::orientation::{

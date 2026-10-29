@@ -196,7 +196,9 @@ tuning) or `ImageRefiner.saddlePointWith(cfg)` (a copy of a
 `SaddlePointConfig`). Its `kind` is `"saddle_point"`; `saddlePointConfig`
 returns a copy of the payload. `cfg.refiner` is the current refiner or
 `undefined`. On ChESS the refiner replaces the center of mass, starts from the
-integer response peak and drops the corners it rejects; on Radon it starts from
+integer response peak and drops the corners it rejects (unless
+`cfg.strategy.chess.onRefinerReject = OnRefinerReject.KeepCenterOfMass` keeps
+them at their center-of-mass position); on Radon it starts from
 the peak fit and keeps the peak fit where it does not converge. JSON:
 `"refiner"` absent or `null`, or `{"saddle_point": {...}}`.
 

@@ -25,7 +25,7 @@ namespace chess_corners {
 /// Checked against `cc_abi_version()` before each detection (see
 /// `check_abi()`); a mismatch means the header and the linked library are
 /// incompatible and detection throws rather than reading a stale layout.
-inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 8;
+inline constexpr std::uint32_t CHESS_CORNERS_ABI_VERSION = 9;
 
 /// One local grid-axis direction with the standard error of its fit.
 ///
@@ -173,6 +173,10 @@ private:
 /// `CC_IMAGE_REFINER_NONE` (every preset) keeps the detector's own
 /// localizer (ChESS center of mass, Radon peak fit).
 ///
+/// `on_refiner_reject` is one of the `CC_ON_REFINER_REJECT_*` tags: what a
+/// ChESS detection does with a corner the image refiner rejects. Every
+/// preset selects `CC_ON_REFINER_REJECT_DROP`.
+///
 /// `uncertainty` selects the position covariance and its noise level (see
 /// `Uncertainty`); every preset selects `Uncertainty::off()`.
 struct Config {
@@ -191,6 +195,7 @@ struct Config {
     std::uint32_t response_blur_radius;
     cc_peak_fit_t peak_fit;
     Uncertainty uncertainty;
+    cc_on_refiner_reject_t on_refiner_reject;
 
     /// Defaults to the single-scale ChESS preset.
     Config() noexcept : Config(from_c(cc_config_chess())) {}
@@ -213,6 +218,7 @@ struct Config {
         out.response_blur_radius = c.response_blur_radius;
         out.peak_fit = c.peak_fit;
         out.uncertainty = Uncertainty::from_c(c);
+        out.on_refiner_reject = c.on_refiner_reject;
         return out;
     }
 
@@ -234,6 +240,7 @@ struct Config {
         c.response_blur_radius = response_blur_radius;
         c.peak_fit = peak_fit;
         uncertainty.to_c(c);
+        c.on_refiner_reject = on_refiner_reject;
         return c;
     }
 
