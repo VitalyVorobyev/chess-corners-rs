@@ -72,24 +72,19 @@ def test_chess_refiner_variant_and_payload():
     assert isinstance(refiner.payload, chess_corners.CenterOfMassConfig)
     assert refiner.payload.radius == 3
 
-    fcfg = chess_corners.ForstnerConfig()
-    fcfg.max_offset = 2.0
-    refiner = chess_corners.ChessRefiner.forstner(fcfg)
-    assert refiner.kind == "forstner"
-    assert isinstance(refiner.payload, chess_corners.ForstnerConfig)
+    scfg = chess_corners.SaddlePointConfig()
+    scfg.max_offset = 2.0
+    refiner = chess_corners.ChessRefiner.saddle_point(scfg)
+    assert refiner.kind == "saddle_point"
+    assert isinstance(refiner.payload, chess_corners.SaddlePointConfig)
     assert refiner.payload.max_offset == pytest.approx(2.0)
 
 
-def test_forstner_refiner_selection_warns_deprecated():
-    with pytest.warns(DeprecationWarning, match="Forstner"):
-        chess_corners.ChessRefiner.forstner()
-    with pytest.warns(DeprecationWarning, match="Forstner"):
-        chess_corners.ChessRefiner.from_dict({"forstner": {}})
-
-
 def test_chess_refiner_attached_to_chess_strategy():
-    cfg = chess_corners.DetectorConfig().with_chess(refiner=chess_corners.ChessRefiner.forstner())
-    assert cfg.strategy.chess.refiner.kind == "forstner"
+    cfg = chess_corners.DetectorConfig().with_chess(
+        refiner=chess_corners.ChessRefiner.saddle_point()
+    )
+    assert cfg.strategy.chess.refiner.kind == "saddle_point"
 
 
 def test_config_roundtrip_and_print_helpers():
@@ -179,10 +174,10 @@ def test_typed_config_passes_through_ffi_directly():
     img = _checkerboard(square_size=16, squares=8)
     cfg = chess_corners.DetectorConfig()
     cfg.threshold = 0.1
-    fcfg = chess_corners.ForstnerConfig()
-    fcfg.max_offset = 1.75
+    scfg = chess_corners.SaddlePointConfig()
+    scfg.max_offset = 1.75
     chess = cfg.strategy.chess
-    chess.refiner = chess_corners.ChessRefiner.forstner(fcfg)
+    chess.refiner = chess_corners.ChessRefiner.saddle_point(scfg)
     cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
 
     result = chess_corners.Detector(cfg).detect(img)

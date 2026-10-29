@@ -30,9 +30,8 @@ use crate::{
     cc_axis, cc_chess_ring_t, cc_config, cc_corner, cc_covariance, cc_peak_fit_t, cc_refiner_t,
     cc_status, cc_uncertainty_t, CC_CHESS_RING_BROAD, CC_CHESS_RING_CANONICAL,
     CC_ORIENTATION_DISK_FIT, CC_ORIENTATION_NONE, CC_ORIENTATION_RING_FIT, CC_PEAK_FIT_GAUSSIAN,
-    CC_PEAK_FIT_PARABOLIC, CC_REFINER_CENTER_OF_MASS, CC_REFINER_FORSTNER, CC_REFINER_PEAK_FIT,
-    CC_REFINER_SADDLE_POINT, CC_STRATEGY_CHESS, CC_STRATEGY_RADON, CC_UNCERTAINTY_OFF,
-    CC_UNCERTAINTY_PROPAGATED,
+    CC_PEAK_FIT_PARABOLIC, CC_REFINER_CENTER_OF_MASS, CC_REFINER_PEAK_FIT, CC_REFINER_SADDLE_POINT,
+    CC_STRATEGY_CHESS, CC_STRATEGY_RADON, CC_UNCERTAINTY_OFF, CC_UNCERTAINTY_PROPAGATED,
 };
 
 /// Convert a flat [`cc_config`] into a facade [`DetectorConfig`].
@@ -46,7 +45,6 @@ use crate::{
 /// Returns [`cc_status::CC_ERR_INVALID_CONFIG`] on an unknown enum tag or a
 /// refiner tag not valid for the strategy, and [`cc_status::CC_ERR_UPSCALE`]
 /// on an invalid `upscale_factor`.
-#[allow(deprecated)]
 pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_status> {
     let orientation_method: Option<OrientationMethod> = match cfg.orientation_method {
         CC_ORIENTATION_RING_FIT => Some(OrientationMethod::RingFit),
@@ -77,7 +75,6 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
         CC_STRATEGY_CHESS => {
             let refiner = match cfg.refiner {
                 CC_REFINER_CENTER_OF_MASS => ChessRefiner::center_of_mass(),
-                CC_REFINER_FORSTNER => ChessRefiner::forstner(),
                 CC_REFINER_SADDLE_POINT => ChessRefiner::saddle_point(),
                 _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
             };
@@ -219,11 +216,9 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
     }
 }
 
-#[allow(deprecated)]
 fn chess_refiner_tag(refiner: ChessRefiner) -> cc_refiner_t {
     match refiner {
         ChessRefiner::CenterOfMass(_) => CC_REFINER_CENTER_OF_MASS,
-        ChessRefiner::Forstner(_) => CC_REFINER_FORSTNER,
         ChessRefiner::SaddlePoint(_) => CC_REFINER_SADDLE_POINT,
         // Future / feature-gated variants (e.g. the ML refiner) have no flat
         // tag; fall back to the universally valid center-of-mass tag.

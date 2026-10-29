@@ -139,8 +139,8 @@ chess-corners-testutil (Dev-only shared test fixtures; publish = false)
 
 1. **Response** (`core/detect/chess/response.rs`, `core/detect/radon/response.rs`) — Dense ChESS / Radon response computation
 2. **Detection** (`core/detect/`) — Thresholding + NMS + cluster filtering
-3. **Refinement** (`core/refine/`) — Refiners are built-in variants behind the sealed `CornerRefiner` trait: three in core (CenterOfMass, Förstner, SaddlePoint) plus the facade's optional ML refiner (`ml-refiner`)
-4. **Descriptors** (`core/orientation/descriptor.rs`) — Corner descriptors lifted from raw detections via `describe_corners`. Carries two-axis orientation with per-axis 1σ uncertainty.
+3. **Refinement** (`core/refine/`) — Refiners are built-in variants behind the sealed `CornerRefiner` trait: two in core (CenterOfMass, SaddlePoint) plus the facade's optional ML refiner (`ml-refiner`)
+4. **Descriptors** (`core/orientation/descriptor.rs`) — Corner descriptors lifted from raw detections via `describe_corners`. Carries two-axis orientation with a per-axis fit-quality score (radians; not a calibrated 1σ).
 5. **Orientation methods** (`core/orientation/`) — Detector-agnostic. `RingFit` (default) runs a 16-sample ring Gauss-Newton fit; `DiskFit` is a full-disk crossing-line estimator with a lazy-gate fallback to `RingFit`. Both ChESS and Radon detectors share this stage.
 
 ### Multiscale Pipeline (`chess-corners`)

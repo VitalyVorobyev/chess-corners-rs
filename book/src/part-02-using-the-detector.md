@@ -36,7 +36,7 @@ Inside `ChessConfig`:
 | Field               | Meaning                                                                                                          |
 |---------------------|------------------------------------------------------------------------------------------------------------------|
 | `ring`              | `ChessRing::Canonical` (r=5, paper default) or `ChessRing::Broad` (r=10, wider support window). Descriptors always sample at this same radius. |
-| `refiner`           | `ChessRefiner::CenterOfMass(_)`, `Forstner(_)` (deprecated since 1.7.0), `SaddlePoint(_)`, or `Ml` (with `ml-refiner`). Each variant carries its own tuning struct. |
+| `refiner`           | `ChessRefiner::CenterOfMass(_)`, `SaddlePoint(_)`, or `Ml` (with `ml-refiner`). Each variant carries its own tuning struct. |
 
 Inside `RadonConfig`:
 
@@ -63,8 +63,7 @@ Three guarantees follow from this shape:
    is the only way to request the wider ChESS sampling ring. There is
    no parallel top-level "broad" flag.
 2. **Per-detector refiners.** `ChessRefiner` lists the refiners that
-   operate on ChESS output (`CenterOfMass`, `Forstner`, `SaddlePoint`,
-   `Ml`); `RadonRefiner` lists the two that apply to Radon peaks
+   operate on ChESS output (`CenterOfMass`, `SaddlePoint`, `Ml`); `RadonRefiner` lists the two that apply to Radon peaks
    (`PeakFit`, `SaddlePoint`), so a refiner that cannot run on the
    active detector cannot be configured.
 3. **Enum-with-payload everywhere a knob has an "on/off + tuning"
@@ -79,7 +78,7 @@ Add the facade crate:
 
 ```toml
 [dependencies]
-chess-corners = "1.7"
+chess-corners = "2.0"
 image = "0.25"          # optional, for GrayImage integration
 ```
 
@@ -279,8 +278,7 @@ supports `to_dict()`, `from_dict()`, `to_json()`, `from_json()`,
 `cfg.threshold` is a plain `float` — assign it directly. The tagged
 enum classes follow a common idiom: `MultiscaleConfig.single_scale()` /
 `.pyramid(...)`, `UpscaleConfig.disabled()` / `.fixed(k)`,
-`ChessRefiner.center_of_mass(...)` / `.forstner(...)` /
-`.saddle_point(...)` / `.ml()`. Orientation can be turned off entirely
+`ChessRefiner.center_of_mass(...)` / `.saddle_point(...)` / `.ml()`. Orientation can be turned off entirely
 with `cfg.without_orientation()`, after which `det.angles` and
 `det.sigmas` are `None`.
 
@@ -338,8 +336,8 @@ import init, {
   ChessRing,
   DetectionStrategy,
   DetectorConfig,
-  ForstnerConfig,
   MultiscaleConfig,
+  SaddlePointConfig,
 } from '@vitavision/chess-corners';
 
 await init();
@@ -351,7 +349,7 @@ cfg.multiscale = MultiscaleConfig.pyramid(3, 128, 3); // levels, minSize, refine
 
 const chess = new ChessConfig();
 chess.ring = ChessRing.Broad;
-chess.refiner = ChessRefiner.withForstner(new ForstnerConfig());
+chess.refiner = ChessRefiner.withSaddlePoint(new SaddlePointConfig());
 cfg.strategy = DetectionStrategy.fromChess(chess);
 
 const detector = ChessDetector.withConfig(cfg);
@@ -376,8 +374,7 @@ const response = detector.diagnostics_response_rgba(imageData.data, width, heigh
 typed tree — `detector.getConfig()` returns an independent
 `DetectorConfig` snapshot and `detector.applyConfig(cfg)` commits
 edits. The factory functions on the tagged classes follow the same
-`with*` idiom: `ChessRefiner.withForstner(cfg)`,
-`ChessRefiner.withCenterOfMass(cfg)`,
+`with*` idiom: `ChessRefiner.withCenterOfMass(cfg)`,
 `ChessRefiner.withSaddlePoint(cfg)`, `MultiscaleConfig.singleScale()`,
 `MultiscaleConfig.pyramid(levels, minSize, refinementRadius)`, `UpscaleConfig.disabled()`,
 `UpscaleConfig.fixed(factor)`.
@@ -441,7 +438,7 @@ Per-flag overrides (applied on top of the JSON):
 
 - `--threshold <v>` (ChESS: absolute response floor; Radon: fraction of the per-frame max)
 - `--chess-ring canonical|broad`
-- `--chess-refiner center_of_mass|forstner|saddle_point`
+- `--chess-refiner center_of_mass|saddle_point`
 - `--pyramid-levels <n>` (1 = single-scale)
 - `--upscale-factor 0|2|3|4`
 
@@ -484,7 +481,7 @@ The ML path:
   rejects or times out.
 
 The algorithm and its limits are covered in
-[Part V §5.5](part-05-refiners.md#55-ml-onnx-model). Compared to the
+[Part V §5.4](part-05-refiners.md#54-ml-onnx-model). Compared to the
 geometric refiners: `SaddlePoint` has lower error on clean and blurred
 data while ML leads on the heaviest noise row (see the comparison in
 Part IX).

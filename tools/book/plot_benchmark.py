@@ -29,7 +29,6 @@ import numpy as np
 # Consistent colours per refiner — carried across all figures.
 COLOURS: Dict[str, str] = {
     "CenterOfMass": "#1f77b4",
-    "Forstner": "#ff7f0e",
     "SaddlePoint": "#2ca02c",
     "ML": "#9467bd",
     "OpenCV_subpix": "#17becf",
@@ -37,7 +36,6 @@ COLOURS: Dict[str, str] = {
 
 LABELS: Dict[str, str] = {
     "CenterOfMass": "CenterOfMass",
-    "Forstner": "Förstner",
     "SaddlePoint": "SaddlePoint",
     "ML": "ML (ONNX)",
     "OpenCV_subpix": "cv2.cornerSubPix",
@@ -45,7 +43,6 @@ LABELS: Dict[str, str] = {
 
 MARKERS: Dict[str, str] = {
     "CenterOfMass": "o",
-    "Forstner": "s",
     "SaddlePoint": "^",
     "ML": "P",
     "OpenCV_subpix": "X",
@@ -234,7 +231,7 @@ def plot_throughput_vs_accuracy(rows: List[dict], fixed: Dict, out_path: Path) -
     ax.set_title("Throughput-accuracy trade-off (clean cell=8)")
     _setup_axes(ax, "Time per refinement (µs, log scale)",
                 ylabel="Mean error (px, log scale)")
-    ax.legend(loc="upper left", fontsize=8, frameon=False)
+    ax.legend(loc="lower right", fontsize=8, frameon=False)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)

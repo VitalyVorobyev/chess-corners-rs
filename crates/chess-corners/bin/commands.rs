@@ -4,11 +4,10 @@
 //! detector APIs so both the CLI and examples can share the same behavior.
 
 use anyhow::{Context, Result};
-#[allow(deprecated)]
 use chess_corners::{
     AxisEstimate, CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, CornerDescriptor,
-    DetectionStrategy, Detector, DetectorConfig, ForstnerConfig, MultiscaleConfig,
-    SaddlePointConfig, UpscaleConfig,
+    DetectionStrategy, Detector, DetectorConfig, MultiscaleConfig, SaddlePointConfig,
+    UpscaleConfig,
 };
 use image::{ImageBuffer, ImageReader, Luma};
 use log::info;
@@ -23,7 +22,6 @@ use std::{fs::File, io::Write, path::Path, path::PathBuf};
 #[serde(rename_all = "snake_case")]
 pub enum ChessRefinerSel {
     CenterOfMass,
-    Forstner,
     SaddlePoint,
 }
 
@@ -238,14 +236,12 @@ fn chess_strategy_mut(cfg: &mut DetectorConfig) -> Option<&mut ChessConfig> {
     }
 }
 
-#[allow(deprecated)]
 fn apply_chess_refiner(cfg: &mut DetectorConfig, sel: ChessRefinerSel) {
     if let DetectionStrategy::Chess(chess) = &mut cfg.strategy {
         chess.refiner = match sel {
             ChessRefinerSel::CenterOfMass => {
                 ChessRefiner::CenterOfMass(CenterOfMassConfig::default())
             }
-            ChessRefinerSel::Forstner => ChessRefiner::Forstner(ForstnerConfig::default()),
             ChessRefinerSel::SaddlePoint => ChessRefiner::SaddlePoint(SaddlePointConfig::default()),
         };
     }

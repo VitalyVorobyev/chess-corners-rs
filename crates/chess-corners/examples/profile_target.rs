@@ -13,14 +13,13 @@
 //!
 //! ```sh
 //! profile_target --mode <chess|radon> \
-//!                [--refiner <com|forstner|saddle|radon>] \
+//!                [--refiner <com|saddle|radon>] \
 //!                --image <path> \
 //!                [--iters N]
 //! ```
 
-#[allow(deprecated)]
 use chess_corners::{
-    CenterOfMassConfig, ChessRefiner, Detector, DetectorConfig, ForstnerConfig, SaddlePointConfig,
+    CenterOfMassConfig, ChessRefiner, Detector, DetectorConfig, SaddlePointConfig,
 };
 use image::ImageReader;
 use std::env;
@@ -37,7 +36,6 @@ enum Mode {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RefinerSel {
     CenterOfMass,
-    Forstner,
     Saddle,
     Radon,
 }
@@ -53,20 +51,17 @@ fn parse_mode(s: &str) -> Result<Mode, String> {
 fn parse_refiner(s: &str) -> Result<RefinerSel, String> {
     match s {
         "com" | "center_of_mass" | "centerofmass" => Ok(RefinerSel::CenterOfMass),
-        "forstner" => Ok(RefinerSel::Forstner),
         "saddle" | "saddle_point" | "saddlepoint" => Ok(RefinerSel::Saddle),
         "radon" | "none" => Ok(RefinerSel::Radon),
         other => Err(format!(
-            "unknown refiner '{other}' (expected com|forstner|saddle|radon)"
+            "unknown refiner '{other}' (expected com|saddle|radon)"
         )),
     }
 }
 
-#[allow(deprecated)]
 fn chess_refiner_from_sel(sel: RefinerSel) -> Option<ChessRefiner> {
     match sel {
         RefinerSel::CenterOfMass => Some(ChessRefiner::CenterOfMass(CenterOfMassConfig::default())),
-        RefinerSel::Forstner => Some(ChessRefiner::Forstner(ForstnerConfig::default())),
         RefinerSel::Saddle => Some(ChessRefiner::SaddlePoint(SaddlePointConfig::default())),
         // The Radon strategy has no pluggable refiner (Gaussian peak fit).
         RefinerSel::Radon => None,
@@ -107,7 +102,7 @@ fn parse_args() -> Result<Args, Box<dyn Error>> {
             }
             "--help" | "-h" => {
                 println!(
-                    "profile_target --mode <chess|radon> [--refiner <com|forstner|saddle|radon>] --image <path> [--iters N]"
+                    "profile_target --mode <chess|radon> [--refiner <com|saddle|radon>] --image <path> [--iters N]"
                 );
                 std::process::exit(0);
             }
@@ -179,7 +174,6 @@ fn as_str_mode(m: Mode) -> &'static str {
 fn as_str_refiner(r: RefinerSel) -> &'static str {
     match r {
         RefinerSel::CenterOfMass => "com",
-        RefinerSel::Forstner => "forstner",
         RefinerSel::Saddle => "saddle",
         RefinerSel::Radon => "radon",
     }

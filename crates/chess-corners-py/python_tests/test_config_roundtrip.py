@@ -52,18 +52,18 @@ def test_default_config_dict_roundtrip_fields_match():
 # ---------------------------------------------------------------------------
 
 
-def test_chess_refiner_forstner_max_offset_survives_roundtrip():
+def test_chess_refiner_saddle_point_max_offset_survives_roundtrip():
     """A mutation in a deeply nested config field must survive JSON roundtrip."""
-    fcfg = chess_corners.ForstnerConfig()
-    fcfg.max_offset = 3.5
+    scfg = chess_corners.SaddlePointConfig()
+    scfg.max_offset = 3.5
     cfg = chess_corners.DetectorConfig().with_chess(
-        refiner=chess_corners.ChessRefiner.forstner(fcfg)
+        refiner=chess_corners.ChessRefiner.saddle_point(scfg)
     )
 
     json_str = cfg.to_json()
     cfg2 = chess_corners.DetectorConfig.from_json(json_str)
 
-    assert cfg2.strategy.chess.refiner.kind == "forstner"
+    assert cfg2.strategy.chess.refiner.kind == "saddle_point"
     assert abs(cfg2.strategy.chess.refiner.payload.max_offset - 3.5) < 1e-6
 
 
@@ -109,7 +109,7 @@ def test_json_and_dict_produce_equivalent_configs():
     cfg = chess_corners.DetectorConfig()
     cfg.threshold = 0.17
     chess = cfg.strategy.chess
-    chess.refiner = chess_corners.ChessRefiner.forstner()
+    chess.refiner = chess_corners.ChessRefiner.saddle_point()
     cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
 
     json_cfg = chess_corners.DetectorConfig.from_json(cfg.to_json())

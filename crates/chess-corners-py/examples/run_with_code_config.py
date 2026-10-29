@@ -36,13 +36,12 @@ def build_chess_config() -> chess_corners.DetectorConfig:
     cfg.detection.nms_radius = 3
     cfg.detection.min_cluster_size = 1
 
-    fcfg = chess_corners.ForstnerConfig()
-    fcfg.radius = 3
-    fcfg.min_trace = 20.0
-    fcfg.min_det = 0.001
-    fcfg.max_condition_number = 60.0
-    fcfg.max_offset = 2.0
-    chess.refiner = chess_corners.ChessRefiner.forstner(fcfg)
+    scfg = chess_corners.SaddlePointConfig()
+    scfg.radius = 3
+    scfg.det_margin = 0.001
+    scfg.max_offset = 2.0
+    scfg.min_abs_det = 0.0001
+    chess.refiner = chess_corners.ChessRefiner.saddle_point(scfg)
 
     cfg.strategy = chess_corners.DetectionStrategy.from_chess(chess)
     cfg.threshold = 0.5

@@ -11,7 +11,6 @@ import init, {
   OrientationMethod,
   ChessRefiner,
   CenterOfMassConfig,
-  ForstnerConfig,
   SaddlePointConfig,
   RadonRefiner,
   Uncertainty,
@@ -55,8 +54,6 @@ export function isReady(): boolean {
 
 function mapChessRefiner(kind: string): ChessRefinerKind {
   switch (kind) {
-    case "forstner":
-      return "forstner";
     case "saddle_point":
       return "saddlePoint";
     default:
@@ -92,13 +89,11 @@ export function defaultSettings(): DetectorSettings {
 
 function buildChessRefiner(kind: ChessRefinerKind): ChessRefiner {
   switch (kind) {
-    case "centerOfMass":
-      return ChessRefiner.withCenterOfMass(new CenterOfMassConfig());
     case "saddlePoint":
       return ChessRefiner.withSaddlePoint(new SaddlePointConfig());
-    case "forstner":
+    case "centerOfMass":
     default:
-      return ChessRefiner.withForstner(new ForstnerConfig());
+      return ChessRefiner.withCenterOfMass(new CenterOfMassConfig());
   }
 }
 

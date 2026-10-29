@@ -117,12 +117,12 @@ def test_chainable_form_produces_expected_nested_values():
     cfg = (
         chess_corners.DetectorConfig.chess_multiscale()
         .with_threshold(0.12)
-        .with_chess(refiner=chess_corners.ChessRefiner.forstner())
+        .with_chess(refiner=chess_corners.ChessRefiner.saddle_point())
     )
     assert cfg.strategy.kind == "chess"
     assert cfg.multiscale.kind == "pyramid"
     assert abs(cfg.threshold - 0.12) < 1e-6
-    assert cfg.strategy.chess.refiner.kind == "forstner"
+    assert cfg.strategy.chess.refiner.kind == "saddle_point"
 
 
 # ---------------------------------------------------------------------------
@@ -132,9 +132,9 @@ def test_chainable_form_produces_expected_nested_values():
 
 def test_with_chess_refiner_kwarg_sets_nested_refiner():
     cfg = chess_corners.DetectorConfig.chess().with_chess(
-        refiner=chess_corners.ChessRefiner.forstner()
+        refiner=chess_corners.ChessRefiner.saddle_point()
     )
-    assert cfg.strategy.chess.refiner.kind == "forstner"
+    assert cfg.strategy.chess.refiner.kind == "saddle_point"
 
 
 def test_with_chess_ring_kwarg_sets_ring():
@@ -152,10 +152,10 @@ def test_with_chess_nms_radius_kwarg_now_rejected():
 
 def test_with_chess_multiple_kwargs_at_once():
     cfg = chess_corners.DetectorConfig.chess().with_chess(
-        refiner=chess_corners.ChessRefiner.forstner(),
+        refiner=chess_corners.ChessRefiner.saddle_point(),
         ring=chess_corners.ChessRing.BROAD,
     )
-    assert cfg.strategy.chess.refiner.kind == "forstner"
+    assert cfg.strategy.chess.refiner.kind == "saddle_point"
     assert cfg.strategy.chess.ring == chess_corners.ChessRing.BROAD
 
 
@@ -194,10 +194,10 @@ def test_with_chess_on_radon_config_switches_strategy_and_preserves_threshold():
     radon_cfg = chess_corners.DetectorConfig.radon()
     original_threshold = radon_cfg.threshold
 
-    chess_cfg = radon_cfg.with_chess(refiner=chess_corners.ChessRefiner.forstner())
+    chess_cfg = radon_cfg.with_chess(refiner=chess_corners.ChessRefiner.saddle_point())
 
     assert chess_cfg.strategy.kind == "chess"
-    assert chess_cfg.strategy.chess.refiner.kind == "forstner"
+    assert chess_cfg.strategy.chess.refiner.kind == "saddle_point"
     # Threshold is preserved (not reset to chess preset defaults).
     assert abs(chess_cfg.threshold - original_threshold) < 1e-6
 
@@ -230,7 +230,7 @@ def test_with_radon_refiner_kwarg_takes_a_radon_refiner():
     # A ChESS refiner is not a Radon refiner.
     with pytest.raises(TypeError):
         chess_corners.DetectorConfig.radon().with_radon(
-            refiner=chess_corners.ChessRefiner.forstner()
+            refiner=chess_corners.ChessRefiner.saddle_point()
         )
 
 

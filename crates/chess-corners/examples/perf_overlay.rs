@@ -6,8 +6,8 @@
 //! [`DetectorConfig`] builders so the numbers match a real
 //! `Detector::detect` run:
 //!
-//! - **ChESS**: refiner ∈ {`center_of_mass`, `forstner`, `saddle_point`}
-//!   × orientation ∈ {`ring_fit`, `disk_fit`, `off`} = 9 configs.
+//! - **ChESS**: refiner ∈ {`center_of_mass`, `saddle_point`}
+//!   × orientation ∈ {`ring_fit`, `disk_fit`, `off`} = 6 configs.
 //! - **Radon**: no pluggable refiner (built-in Gaussian peak fit)
 //!   × orientation ∈ {`ring_fit`, `disk_fit`, `off`} = 3 configs.
 //!
@@ -180,14 +180,12 @@ fn with_orientation(cfg: DetectorConfig, orientation: &str) -> DetectorConfig {
     }
 }
 
-/// Build the 9 ChESS + 3 Radon configs measured per image.
-#[allow(deprecated)]
+/// Build the 6 ChESS + 3 Radon configs measured per image.
 fn build_specs() -> Vec<ConfigSpec> {
-    let mut specs = Vec::with_capacity(12);
+    let mut specs = Vec::with_capacity(9);
 
-    let chess_refiners: [(&str, ChessRefiner); 3] = [
+    let chess_refiners: [(&str, ChessRefiner); 2] = [
         ("center_of_mass", ChessRefiner::center_of_mass()),
-        ("forstner", ChessRefiner::forstner()),
         ("saddle_point", ChessRefiner::saddle_point()),
     ];
     for (refiner, kind) in chess_refiners {

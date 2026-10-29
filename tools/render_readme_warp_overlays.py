@@ -163,7 +163,7 @@ CASES = [
 
 def detect(img: np.ndarray) -> np.ndarray:
     cfg = cc.DetectorConfig.chess_multiscale()
-    cfg.strategy.chess.refiner = cc.ChessRefiner.forstner()
+    cfg.strategy.chess.refiner = cc.ChessRefiner.saddle_point()
     cfg.orientation_method = cc.OrientationMethod.DISK_FIT
     detector = cc.Detector(cfg)
     return detector.detect(np.ascontiguousarray(img))

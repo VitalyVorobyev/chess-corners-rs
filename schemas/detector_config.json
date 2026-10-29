@@ -52,20 +52,6 @@
         },
         {
           "additionalProperties": false,
-          "deprecated": true,
-          "description": "Förstner structure-tensor refinement on the image patch.",
-          "properties": {
-            "forstner": {
-              "$ref": "#/$defs/ForstnerConfig"
-            }
-          },
-          "required": [
-            "forstner"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
           "description": "Quadratic surface fit at the saddle point.",
           "properties": {
             "saddle_point": {
@@ -150,50 +136,6 @@
           "type": "object"
         }
       ]
-    },
-    "ForstnerConfig": {
-      "deprecated": true,
-      "description": "Configuration for the `ForstnerRefiner`.",
-      "properties": {
-        "max_condition_number": {
-          "default": 50.0,
-          "description": "Maximum ratio of the larger to the smaller structure-tensor\neigenvalue (unitless, `>= 1`). A high ratio indicates an edge\nrather than a corner; the default `50.0` is permissive (literature\nvalues span roughly 10–100).",
-          "format": "float",
-          "minimum": 1.0,
-          "type": "number"
-        },
-        "max_offset": {
-          "default": 1.5,
-          "description": "Maximum displacement from the initial integer seed to the refined\nlocation, in pixels (`>= 0`). Larger offsets suggest a mislocated\nseed and the result is rejected; the default is `1.5`.",
-          "format": "float",
-          "minimum": 0.0,
-          "type": "number",
-          "x-unit": "px"
-        },
-        "min_det": {
-          "default": 0.001,
-          "description": "Minimum determinant of the structure tensor (product of\neigenvalues; `>= 0`). Guards against singular systems where the\nleast-squares solution is numerically unstable; the default `1e-3`\nrejects only truly degenerate cases.",
-          "format": "float",
-          "minimum": 0.0,
-          "type": "number"
-        },
-        "min_trace": {
-          "default": 25.0,
-          "description": "Minimum trace of the structure tensor (sum of eigenvalues; `>= 0`,\nin squared gradient units). Rejects flat regions with too little\ngradient energy; the default `25.0` is roughly a mean gradient\nmagnitude of 5 per pixel in a 5×5 window.",
-          "format": "float",
-          "minimum": 0.0,
-          "type": "number"
-        },
-        "radius": {
-          "default": 2,
-          "description": "Half-size of the local gradient window, in image pixels (integer\n`>= 1`; the window is `(2·radius+1)²`). Default `2` gives a 5×5\npatch, large enough to capture the gradient structure around a\ncorner while staying local.",
-          "format": "int32",
-          "minimum": 1,
-          "type": "integer",
-          "x-unit": "px"
-        }
-      },
-      "type": "object"
     },
     "MultiscaleConfig": {
       "description": "Coarse-to-fine multiscale configuration.\n\nJSON shape mirrors `crate::UpscaleConfig`:\n\n- `\"single_scale\"` — run the detector once on the full image.\n- `{ \"pyramid\": { \"levels\": 3, \"min_size\": 128, \"refinement_radius\": 3 } }`\n  — build an image pyramid, detect seeds on the coarsest level, and\n  refine each seed into the base image. Honoured by both ChESS and\n  Radon strategies.",
@@ -399,7 +341,7 @@
         },
         {
           "const": "propagated",
-          "description": "Image noise propagated through the localizer to first order, plus\nthe localizer's systematic-error model (from the corner's offset to\nthe localizer's fit window and the width of its edges).\n\nThe systematic part includes a per-localizer floor measured on real\ncalibration images (about 0.05 px per axis for the saddle-point fit\nand the Radon peak fit, 0.07 center of mass, 0.11 Förstner). On\nreal, well-exposed images this floor is usually the largest part of\nthe covariance, so the reported σ varies little from corner to\ncorner there. Weighting a calibration by it has not been shown to\nbeat uniform weighting on real data. Errors shared by all corners of\nan image (defocus, lens-model error) are outside it. The floor was\nfitted on one camera pair and is likely low for other optics. Within\nthat pair the two cameras' own floors differed by up to 2×.",
+          "description": "Image noise propagated through the localizer to first order, plus\nthe localizer's systematic-error model (from the corner's offset to\nthe localizer's fit window and the width of its edges).\n\nThe systematic part includes a per-localizer floor measured on real\ncalibration images (about 0.05 px per axis for the saddle-point fit\nand the Radon peak fit, 0.07 center of mass). On\nreal, well-exposed images this floor is usually the largest part of\nthe covariance, so the reported σ varies little from corner to\ncorner there. Weighting a calibration by it has not been shown to\nbeat uniform weighting on real data. Errors shared by all corners of\nan image (defocus, lens-model error) are outside it. The floor was\nfitted on one camera pair and is likely low for other optics. Within\nthat pair the two cameras' own floors differed by up to 2×.",
           "type": "string"
         }
       ],

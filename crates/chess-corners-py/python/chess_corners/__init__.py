@@ -6,7 +6,7 @@ The config classes (`DetectorConfig`, `ChessConfig`, `RadonConfig`,
 types defined in the compiled `_native` extension. They expose
 attribute access, classmethod factories
 (`DetectorConfig.multiscale()`, `MultiscaleConfig.pyramid(...)`,
-`ChessRefiner.forstner(cfg)`), and `to_dict` / `from_dict` /
+`ChessRefiner.saddle_point(cfg)`), and `to_dict` / `from_dict` /
 `to_json` / `from_json` helpers.
 
 The detector itself is the :class:`Detector` PyClass - build once,
@@ -31,7 +31,6 @@ from ._native import (
     Detector,
     DetectorConfig,
     Detections,
-    ForstnerConfig,
     MultiscaleConfig,
     OrientationMethod,
     Uncertainty,
@@ -70,7 +69,6 @@ def _rich_console(self: Any, console: Any, options: Any) -> Any:
 
 for _cls in (
     CenterOfMassConfig,
-    ForstnerConfig,
     SaddlePointConfig,
     DetectionParams,
     MultiscaleConfig,
@@ -97,7 +95,6 @@ __all__ = [
     "Detector",
     "DetectorConfig",
     "Detections",
-    "ForstnerConfig",
     "MultiscaleConfig",
     "OrientationMethod",
     "Uncertainty",

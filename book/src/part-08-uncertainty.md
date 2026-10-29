@@ -17,7 +17,7 @@ estimate by the same amount on every frame: that is **bias**. A
 covariance that describes only the scatter is overconfident by the
 bias.
 
-![Refined positions of one corner over 600 noise draws, for four localizers, with their predicted ellipses](img/uncertainty_bias_precision.png)
+![Refined positions of one corner over 600 noise draws, for three localizers, with their predicted ellipses](img/uncertainty_bias_precision.png)
 
 Each dot is the refined position of the same synthetic corner under a
 new draw of white noise, relative to the true corner (`+`). The cloud
@@ -25,9 +25,6 @@ centre (`×`) is where the localizer lands on average; its distance from
 `+` is the bias. The ellipses are the covariance the detector reports,
 drawn around the true corner, where the error should be centred.
 
-- **Förstner** scatters by 0.065 px per axis but lands 0.29 px from the
-  truth on this blurred corner. Its reported σ is 0.28 px per axis: the
-  ellipse is wide enough to hold the whole cloud, bias included.
 - **CenterOfMass** scatters by 0.017 px and lands 0.10 px off; its
   ellipse reaches the cloud.
 - **SaddlePoint** lands on the truth of this symmetric corner and
@@ -46,7 +43,6 @@ aligned with the pixel grid, by the σ of the lens blur:
 | Refiner      | blur σ 0 | 0.8   | 1.5   | 2.5   |
 |--------------|----------|-------|-------|-------|
 | CenterOfMass | 0.085    | 0.057 | 0.061 | 0.063 |
-| Förstner     | 0.056    | 0.142 | 0.289 | 0.433 |
 | SaddlePoint  | 0.000    | 0.002 | 0.006 | 0.007 |
 
 These corners are point-symmetric: straight edges and a symmetric lens
@@ -64,8 +60,8 @@ yy }` in px² in the input image frame
 ([Part I §1.4](part-01-orientation.md#14-the-cornerdescriptor-output)):
 how far the reported `(x, y)` is likely to be from the true corner,
 from noise and from the localizer's systematic error together. It is
-reported by every localizer: the ChESS refiners `CenterOfMass`,
-`Förstner` and `SaddlePoint`, the Radon peak fit, and
+reported by every localizer: the ChESS refiners `CenterOfMass` and
+`SaddlePoint`, the Radon peak fit, and
 `RadonRefiner::SaddlePoint`. The ML refiner reports none.
 
 `DetectorConfig::uncertainty` selects it:
@@ -147,8 +143,6 @@ resampling on the way. With white pixel noise of variance
 - **CenterOfMass** differentiates the response-weighted centroid
   through the ChESS response of every positive pixel in its window, and
   that response through its 16 ring samples, back to the image.
-- **Förstner** differentiates the solution of its structure-tensor
-  system through the image gradients in its window.
 - **The Radon peak fit** differentiates the 3-point peak fit through the
   response blur, the ray sums and the 2× upsampling of the image. Its
   response is a squared difference, so the noise term carries a
@@ -201,9 +195,9 @@ refiner returns the single integer-grid fit with no covariance.
 The ellipses are the reported 1σ regions, enlarged 30×, on a synthetic
 sheared board whose lens blur grows from left to right. `SaddlePoint`'s
 ellipses grow slowly with blur, from 0.06 to 0.10 px at this noise
-level, and tilt with the board's axes. `Förstner`'s grow from 0.15 px to
-more than half a pixel: under blur its estimate stops following the
-corner (§8.3.3), and the covariance says so. Core callers get the noise
+level, and tilt with the board's axes. The Radon peak fit's grow faster,
+from 0.07 px to 0.10–0.14 px by a lens blur σ of 1.3 px; on this board
+the Radon detector finds no corner blurrier than that (§8.4.2). Core callers get the noise
 term per unit noise variance, \\(J J^\top\\), as
 `RefineResult::noise_covariance_per_unit_variance()`.
 
@@ -264,13 +258,10 @@ from getting an overconfident covariance.
 ### 8.3.3 The systematic term
 
 A localizer that fits once, on a window centred on its seed pixel
-(CenterOfMass, Förstner, the Radon peak fit), is pulled toward that
+(CenterOfMass, the Radon peak fit), is pulled toward that
 pixel. For a corner at offset \\(u\\) from the window centre it reports
 about \\(g\,u\\), where the gain \\(g\\) depends on the localizer and on
-how sharp the corner's edges are. Sharp edges give Förstner a gain of
-about 0.8; as the blur grows its gain falls through zero (near a lens
-blur σ of 2–2.5 px), and from there on its estimate no longer moves
-with the corner. CenterOfMass has no pull on average, but a rotation-dependent
+how sharp the corner's edges are. CenterOfMass has no pull on average, but a rotation-dependent
 error the edge width cannot see; the Radon peak fit has a gain of
 0.65–0.95.
 
@@ -285,8 +276,7 @@ within the pixel, it takes that position as uniform over the pixel:
   u\\) and a small spread.
 - As \\(g\\) approaches 0, \\(\hat u\\) says nothing about where the
   corner is, and \\(\Sigma_{\text{sys}}\\) grows to the variance of a
-  position anywhere in the pixel. This is Förstner on blurred corners in
-  the figure above.
+  position anywhere in the pixel.
 - `SaddlePoint` re-centres, so it has no pull; its term keeps only the
   small error it has where a corner sits between pixels (0.004–0.011 px).
 
@@ -303,7 +293,6 @@ added to both axes, measured on real calibration images (§8.4.2):
 | SaddlePoint (ChESS or Radon seeds) | 0.053 px |
 | Radon peak fit | 0.045 px |
 | CenterOfMass | 0.074 px |
-| Förstner | 0.110 px |
 
 The floor is why the covariance is conservative on the ideal corners of
 §8.1. It is sized for the corner-local error of real images, not for
@@ -346,13 +335,13 @@ conditions), supplied to the detector; estimating it gives the same
 medians. Corners are matched within 2 px, so large errors count.
 
 - **Most points sit on or above the diagonal**: median
-  \\(\hat\sigma_0^2\\) is 0.14 for SaddlePoint, 0.37 for CenterOfMass,
-  0.58 for Förstner and 0.64 for the Radon peak fit. The horizontal run
+  \\(\hat\sigma_0^2\\) is 0.14 for SaddlePoint, 0.37 for CenterOfMass
+  and 0.64 for the Radon peak fit. The horizontal run
   of SaddlePoint points at 0.055 px is the floor: on ideal corners σ is
   overstated by up to about 3× at low noise, by design.
 - **Points below the diagonal** are the limits of §8.5: the Radon peak
-  fit on blurred corners (\\(\hat\sigma_0^2\\) up to 5.9), Förstner at
-  45° and under coma (up to 2.2), SaddlePoint under strong illumination
+  fit on blurred corners (\\(\hat\sigma_0^2\\) up to 5.9), SaddlePoint
+  under strong illumination
   shading (1.7) and CenterOfMass on sharp boards rotated 8° (1.6).
 
 `Radon + SaddlePoint` gives the same numbers as `SaddlePoint` wherever
@@ -388,11 +377,11 @@ and what is left at each corner.
 - **The corner-local error ranks the localizers**: Radon + SaddlePoint
   and SaddlePoint lowest (0.038–0.040 px per axis), then
   `cv2.cornerSubPix` with an 11×11 window (0.045), the Radon peak fit
-  (0.056), CenterOfMass (0.10) and Förstner (0.16). Including the
+  (0.056) and CenterOfMass (0.10). Including the
   blurred corners that the Radon detector misses here (about 30% of
   them) widens the gaps: SaddlePoint stays lowest, and the error over it
-  is about 0.07 px per axis for CenterOfMass, 0.16 for `cornerSubPix`
-  and 0.29 for Förstner.
+  is about 0.07 px per axis for CenterOfMass and 0.16 for
+  `cornerSubPix`.
 
 Against the corner-local error, the reported covariances give
 \\(\hat\sigma_0^2\\) between 0.5 and 1.0 for every localizer: the floors
@@ -400,8 +389,8 @@ were fitted on this set, so that agreement is by construction, not a
 test. The independent evidence is how well the reported σ ranks the
 error of individual corners. It does, weakly: the rank correlation
 between σ and the corner-local error is 0.13–0.19 for SaddlePoint,
-CenterOfMass and the Radon peak fit, and 0.56 for Förstner, rising
-(0.23–0.72) when blurred corners are included. Blur is the signal the
+CenterOfMass and the Radon peak fit, rising (0.23–0.36) when blurred
+corners are included. Blur is the signal the
 covariance carries best.
 
 ## 8.5 Where it does not hold
@@ -426,9 +415,6 @@ covariance carries best.
 - **CenterOfMass on sharp boards rotated a few degrees.** Its error
   depends on the board's rotation, which the edge width cannot see:
   \\(\hat\sigma_0^2\\) up to 1.6 at 8° and lens blur σ 0.5 px.
-- **Förstner on blurred corners.** The covariance mostly holds (up to
-  1.9 at 45° and blur σ 1.5 px, 2.2 under coma), but it grows toward a
-  pixel: the position carries little information. Use SaddlePoint.
 - **Small, sheared, blurred cells.** With 5 px cells, a 40–60° shear and
   blur σ ≥ 1.5 px, the saddle-point window also covers the neighbouring
   corners; the re-centred position can then be worse than the single
@@ -459,8 +445,7 @@ covariance carries best.
   \\(\hat\sigma_0^2\\) above 1 on other optics.
 - **Weighting is neutral on real data.** Weighting the real calibration
   of §8.4.2 by these covariances did not lower its held-out error
-  (SaddlePoint: unchanged within 0.1%; Förstner: 0.4% higher, 2% with
-  blurred corners). Most of a corner's error there repeats across views (blur
+  (SaddlePoint: unchanged within 0.1%). Most of a corner's error there repeats across views (blur
   bias, target error), and down-weighting blurred corners removes
   geometry without removing that error.
 

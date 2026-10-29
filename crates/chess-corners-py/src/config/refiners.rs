@@ -1,12 +1,9 @@
 //! PyO3 wrappers for subpixel refiner config types.
 
-#[allow(deprecated)]
 use chess_corners::{
     CenterOfMassConfig as RsCenterOfMassConfig, ChessRefiner as RsChessRefiner,
-    ForstnerConfig as RsForstnerConfig, RadonRefiner as RsRadonRefiner,
-    SaddlePointConfig as RsSaddlePointConfig,
+    RadonRefiner as RsRadonRefiner, SaddlePointConfig as RsSaddlePointConfig,
 };
-use pyo3::exceptions::PyDeprecationWarning;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
 
@@ -56,166 +53,6 @@ impl CenterOfMassConfig {
         let mut cfg = Self::new();
         if let Some(v) = extract_int(&dict, "radius", "center_of_mass")? {
             cfg.inner.radius = v as i32;
-        }
-        Ok(cfg)
-    }
-
-    #[pyo3(signature = (*, indent=None, sort_keys=true))]
-    fn to_json(&self, py: Python<'_>, indent: Option<i64>, sort_keys: bool) -> PyResult<String> {
-        let dict = self.to_dict(py)?;
-        json_dumps(py, dict.bind(py), indent, sort_keys)
-    }
-
-    #[classmethod]
-    fn from_json(cls: &Bound<'_, PyType>, py: Python<'_>, text: &str) -> PyResult<Self> {
-        let value = json_loads(py, text)
-            .map_err(|e| config_error(format!("failed to parse config JSON: {e}")))?;
-        Self::from_dict(cls, &value)
-    }
-
-    #[pyo3(signature = (*, indent=2, sort_keys=true))]
-    fn pretty(&self, py: Python<'_>, indent: i64, sort_keys: bool) -> PyResult<String> {
-        self.to_json(py, Some(indent), sort_keys)
-    }
-
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        self.pretty(py, 2, true)
-    }
-    fn __str__(&self, py: Python<'_>) -> PyResult<String> {
-        self.pretty(py, 2, true)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ForstnerConfig
-// ---------------------------------------------------------------------------
-
-/// Emit the `DeprecationWarning` for selecting the Förstner refiner.
-fn warn_forstner_deprecated(py: Python<'_>) -> PyResult<()> {
-    PyErr::warn(
-        py,
-        &py.get_type::<PyDeprecationWarning>(),
-        c"the Forstner refiner is deprecated since 1.7.0 and will be removed in 2.0; use ChessRefiner.saddle_point(), which is more accurate on every tested condition",
-        2,
-    )
-}
-
-#[pyclass(module = "chess_corners")]
-#[derive(Clone, Debug)]
-#[allow(deprecated)]
-pub struct ForstnerConfig {
-    pub(crate) inner: RsForstnerConfig,
-}
-
-#[pymethods]
-impl ForstnerConfig {
-    #[new]
-    #[allow(deprecated)]
-    fn new() -> Self {
-        Self {
-            inner: RsForstnerConfig::default(),
-        }
-    }
-
-    #[getter]
-    #[allow(deprecated)]
-    fn radius(&self) -> i32 {
-        self.inner.radius
-    }
-    #[setter]
-    #[allow(deprecated)]
-    fn set_radius(&mut self, v: i32) {
-        self.inner.radius = v;
-    }
-
-    #[getter]
-    #[allow(deprecated)]
-    fn min_trace(&self) -> f32 {
-        self.inner.min_trace
-    }
-    #[setter]
-    #[allow(deprecated)]
-    fn set_min_trace(&mut self, v: f32) {
-        self.inner.min_trace = v;
-    }
-
-    #[getter]
-    #[allow(deprecated)]
-    fn min_det(&self) -> f32 {
-        self.inner.min_det
-    }
-    #[setter]
-    #[allow(deprecated)]
-    fn set_min_det(&mut self, v: f32) {
-        self.inner.min_det = v;
-    }
-
-    #[getter]
-    #[allow(deprecated)]
-    fn max_condition_number(&self) -> f32 {
-        self.inner.max_condition_number
-    }
-    #[setter]
-    #[allow(deprecated)]
-    fn set_max_condition_number(&mut self, v: f32) {
-        self.inner.max_condition_number = v;
-    }
-
-    #[getter]
-    #[allow(deprecated)]
-    fn max_offset(&self) -> f32 {
-        self.inner.max_offset
-    }
-    #[setter]
-    #[allow(deprecated)]
-    fn set_max_offset(&mut self, v: f32) {
-        self.inner.max_offset = v;
-    }
-
-    #[allow(deprecated)]
-    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        let d = PyDict::new(py);
-        d.set_item("radius", self.inner.radius)?;
-        d.set_item("min_trace", self.inner.min_trace as f64)?;
-        d.set_item("min_det", self.inner.min_det as f64)?;
-        d.set_item(
-            "max_condition_number",
-            self.inner.max_condition_number as f64,
-        )?;
-        d.set_item("max_offset", self.inner.max_offset as f64)?;
-        Ok(d.unbind())
-    }
-
-    #[classmethod]
-    #[allow(deprecated)]
-    fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let dict = require_dict(data, "forstner")?;
-        reject_unknown_keys(
-            &dict,
-            &[
-                "radius",
-                "min_trace",
-                "min_det",
-                "max_condition_number",
-                "max_offset",
-            ],
-            "forstner",
-        )?;
-        let mut cfg = Self::new();
-        if let Some(v) = extract_int(&dict, "radius", "forstner")? {
-            cfg.inner.radius = v as i32;
-        }
-        if let Some(v) = extract_float(&dict, "min_trace", "forstner")? {
-            cfg.inner.min_trace = v as f32;
-        }
-        if let Some(v) = extract_float(&dict, "min_det", "forstner")? {
-            cfg.inner.min_det = v as f32;
-        }
-        if let Some(v) = extract_float(&dict, "max_condition_number", "forstner")? {
-            cfg.inner.max_condition_number = v as f32;
-        }
-        if let Some(v) = extract_float(&dict, "max_offset", "forstner")? {
-            cfg.inner.max_offset = v as f32;
         }
         Ok(cfg)
     }
@@ -367,7 +204,6 @@ impl SaddlePointConfig {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum ChessRefinerKind {
     CenterOfMass,
-    Forstner,
     SaddlePoint,
     #[cfg(feature = "ml-refiner")]
     Ml,
@@ -377,7 +213,6 @@ impl ChessRefinerKind {
     fn as_str(&self) -> &'static str {
         match self {
             ChessRefinerKind::CenterOfMass => "center_of_mass",
-            ChessRefinerKind::Forstner => "forstner",
             ChessRefinerKind::SaddlePoint => "saddle_point",
             #[cfg(feature = "ml-refiner")]
             ChessRefinerKind::Ml => "ml",
@@ -386,37 +221,28 @@ impl ChessRefinerKind {
 }
 
 /// Subpixel refiner selection for the ChESS detector. Build via one
-/// of `ChessRefiner.center_of_mass(...)`, `.forstner(...)`,
-/// `.saddle_point(...)`, or `.ml()` (requires the `ml-refiner`
-/// feature). Each variant carries its own tuning struct as a
+/// of `ChessRefiner.center_of_mass(...)`, `.saddle_point(...)`, or
+/// `.ml()` (requires the `ml-refiner` feature). Each variant carries its own tuning struct as a
 /// payload, so switching variants cannot leave a stale field behind.
 #[pyclass(module = "chess_corners")]
 #[derive(Clone, Debug)]
-#[allow(deprecated)]
 pub struct ChessRefiner {
     kind: ChessRefinerKind,
     center_of_mass: RsCenterOfMassConfig,
-    forstner: RsForstnerConfig,
     saddle_point: RsSaddlePointConfig,
 }
 
 impl ChessRefiner {
-    #[allow(deprecated)]
     pub(crate) fn from_rs(v: RsChessRefiner) -> PyResult<Self> {
         let mut cfg = Self {
             kind: ChessRefinerKind::CenterOfMass,
             center_of_mass: RsCenterOfMassConfig::default(),
-            forstner: RsForstnerConfig::default(),
             saddle_point: RsSaddlePointConfig::default(),
         };
         match v {
             RsChessRefiner::CenterOfMass(c) => {
                 cfg.kind = ChessRefinerKind::CenterOfMass;
                 cfg.center_of_mass = c;
-            }
-            RsChessRefiner::Forstner(c) => {
-                cfg.kind = ChessRefinerKind::Forstner;
-                cfg.forstner = c;
             }
             RsChessRefiner::SaddlePoint(c) => {
                 cfg.kind = ChessRefinerKind::SaddlePoint;
@@ -431,11 +257,9 @@ impl ChessRefiner {
         Ok(cfg)
     }
 
-    #[allow(deprecated)]
     pub(crate) fn to_rs(&self) -> RsChessRefiner {
         match self.kind {
             ChessRefinerKind::CenterOfMass => RsChessRefiner::CenterOfMass(self.center_of_mass),
-            ChessRefinerKind::Forstner => RsChessRefiner::Forstner(self.forstner),
             ChessRefinerKind::SaddlePoint => RsChessRefiner::SaddlePoint(self.saddle_point),
             #[cfg(feature = "ml-refiner")]
             ChessRefinerKind::Ml => RsChessRefiner::Ml,
@@ -454,7 +278,6 @@ impl ChessRefiner {
     /// Center-of-mass refinement on the response map.
     #[classmethod]
     #[pyo3(name = "center_of_mass", signature = (cfg=None))]
-    #[allow(deprecated)]
     fn ctor_center_of_mass(
         _cls: &Bound<'_, PyType>,
         py: Python<'_>,
@@ -464,37 +287,13 @@ impl ChessRefiner {
         Self {
             kind: ChessRefinerKind::CenterOfMass,
             center_of_mass: inner,
-            forstner: RsForstnerConfig::default(),
             saddle_point: RsSaddlePointConfig::default(),
         }
-    }
-
-    /// Förstner structure-tensor refinement on the image patch.
-    ///
-    /// Deprecated since 1.7.0 (emits a `DeprecationWarning`): use
-    /// `ChessRefiner.saddle_point()`, which is more accurate on every
-    /// tested condition. Will be removed in 2.0.
-    #[classmethod]
-    #[pyo3(name = "forstner", signature = (cfg=None))]
-    fn ctor_forstner(
-        _cls: &Bound<'_, PyType>,
-        py: Python<'_>,
-        cfg: Option<Py<ForstnerConfig>>,
-    ) -> PyResult<Self> {
-        warn_forstner_deprecated(py)?;
-        let inner = cfg.map(|c| c.borrow(py).inner).unwrap_or_default();
-        Ok(Self {
-            kind: ChessRefinerKind::Forstner,
-            center_of_mass: RsCenterOfMassConfig::default(),
-            forstner: inner,
-            saddle_point: RsSaddlePointConfig::default(),
-        })
     }
 
     /// Quadratic surface fit at the saddle point of the image patch.
     #[classmethod]
     #[pyo3(name = "saddle_point", signature = (cfg=None))]
-    #[allow(deprecated)]
     fn ctor_saddle_point(
         _cls: &Bound<'_, PyType>,
         py: Python<'_>,
@@ -504,7 +303,6 @@ impl ChessRefiner {
         Self {
             kind: ChessRefinerKind::SaddlePoint,
             center_of_mass: RsCenterOfMassConfig::default(),
-            forstner: RsForstnerConfig::default(),
             saddle_point: inner,
         }
     }
@@ -513,26 +311,23 @@ impl ChessRefiner {
     #[cfg(feature = "ml-refiner")]
     #[classmethod]
     #[pyo3(name = "ml")]
-    #[allow(deprecated)]
     fn ctor_ml(_cls: &Bound<'_, PyType>) -> Self {
         Self {
             kind: ChessRefinerKind::Ml,
             center_of_mass: RsCenterOfMassConfig::default(),
-            forstner: RsForstnerConfig::default(),
             saddle_point: RsSaddlePointConfig::default(),
         }
     }
 
-    /// Variant tag: `"center_of_mass"`, `"forstner"`, `"saddle_point"`,
-    /// or `"ml"` (with the `ml-refiner` feature).
+    /// Variant tag: `"center_of_mass"`, `"saddle_point"`, or `"ml"`
+    /// (with the `ml-refiner` feature).
     #[getter]
     fn kind(&self) -> &'static str {
         self.kind.as_str()
     }
 
     /// Tuning payload of the active variant. Returns the typed config
-    /// struct (`CenterOfMassConfig`, `ForstnerConfig`, or
-    /// `SaddlePointConfig`); returns `None` for the `ml` variant.
+    /// struct (`CenterOfMassConfig` or `SaddlePointConfig`); returns `None` for the `ml` variant.
     /// Modifying the returned object does not affect the refiner;
     /// rebuild via the appropriate classmethod factory to apply
     /// changes.
@@ -543,13 +338,6 @@ impl ChessRefiner {
                 py,
                 CenterOfMassConfig {
                     inner: self.center_of_mass,
-                },
-            )?
-            .into_any()),
-            ChessRefinerKind::Forstner => Ok(Py::new(
-                py,
-                ForstnerConfig {
-                    inner: self.forstner,
                 },
             )?
             .into_any()),
@@ -574,12 +362,6 @@ impl ChessRefiner {
                 };
                 d.set_item("center_of_mass", cfg.to_dict(py)?)?;
             }
-            ChessRefinerKind::Forstner => {
-                let cfg = ForstnerConfig {
-                    inner: self.forstner,
-                };
-                d.set_item("forstner", cfg.to_dict(py)?)?;
-            }
             ChessRefinerKind::SaddlePoint => {
                 let cfg = SaddlePointConfig {
                     inner: self.saddle_point,
@@ -595,23 +377,22 @@ impl ChessRefiner {
     }
 
     #[classmethod]
-    #[allow(deprecated)]
     pub(crate) fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
-        // Permit only the four (or three, without ml-refiner) variants.
+        // Permit only the three (or two, without ml-refiner) variants.
         #[cfg(feature = "ml-refiner")]
-        let allowed: &[&str] = &["center_of_mass", "forstner", "saddle_point", "ml"];
+        let allowed: &[&str] = &["center_of_mass", "saddle_point", "ml"];
         #[cfg(not(feature = "ml-refiner"))]
-        let allowed: &[&str] = &["center_of_mass", "forstner", "saddle_point"];
+        let allowed: &[&str] = &["center_of_mass", "saddle_point"];
 
         // Accept the externally-tagged shape produced by serde:
         //   "ml"          (bare string — unit variant, ml-refiner only)
         //   { "ml": null } (object form — also accepted)
-        //   { "forstner": {...} } (payload variant — object only)
+        //   { "saddle_point": {...} } (payload variant — object only)
         #[cfg(feature = "ml-refiner")]
         let unit_tags: &[&str] = &["ml"];
         #[cfg(not(feature = "ml-refiner"))]
         let unit_tags: &[&str] = &[];
-        let payload_tags: &[&str] = &["center_of_mass", "forstner", "saddle_point"];
+        let payload_tags: &[&str] = &["center_of_mass", "saddle_point"];
 
         if let Some(_tag) =
             super::parse::accept_dict_or_bare_string(data, unit_tags, payload_tags, "refiner")?
@@ -620,7 +401,6 @@ impl ChessRefiner {
             return Ok(Self {
                 kind: ChessRefinerKind::Ml,
                 center_of_mass: RsCenterOfMassConfig::default(),
-                forstner: RsForstnerConfig::default(),
                 saddle_point: RsSaddlePointConfig::default(),
             });
             // Without ml-refiner the unit_tags slice is empty, so this branch
@@ -663,18 +443,6 @@ impl ChessRefiner {
                 Ok(Self {
                     kind: ChessRefinerKind::CenterOfMass,
                     center_of_mass: cfg.inner,
-                    forstner: RsForstnerConfig::default(),
-                    saddle_point: RsSaddlePointConfig::default(),
-                })
-            }
-            "forstner" => {
-                warn_forstner_deprecated(py)?;
-                let cls = py.get_type::<ForstnerConfig>();
-                let cfg = ForstnerConfig::from_dict(&cls, &value)?;
-                Ok(Self {
-                    kind: ChessRefinerKind::Forstner,
-                    center_of_mass: RsCenterOfMassConfig::default(),
-                    forstner: cfg.inner,
                     saddle_point: RsSaddlePointConfig::default(),
                 })
             }
@@ -684,7 +452,6 @@ impl ChessRefiner {
                 Ok(Self {
                     kind: ChessRefinerKind::SaddlePoint,
                     center_of_mass: RsCenterOfMassConfig::default(),
-                    forstner: RsForstnerConfig::default(),
                     saddle_point: cfg.inner,
                 })
             }
@@ -692,7 +459,6 @@ impl ChessRefiner {
             "ml" => Ok(Self {
                 kind: ChessRefinerKind::Ml,
                 center_of_mass: RsCenterOfMassConfig::default(),
-                forstner: RsForstnerConfig::default(),
                 saddle_point: RsSaddlePointConfig::default(),
             }),
             other => Err(config_error(format!("refiner.{other} not supported"))),

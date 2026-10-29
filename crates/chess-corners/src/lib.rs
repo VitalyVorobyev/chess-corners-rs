@@ -49,7 +49,7 @@
 //!
 //! let cfg = DetectorConfig::chess_multiscale()
 //!     .with_threshold(120.0)
-//!     .with_chess(|c| c.refiner = ChessRefiner::forstner());
+//!     .with_chess(|c| c.refiner = ChessRefiner::saddle_point());
 //!
 //! let mut detector = Detector::new(cfg)?;
 //! let corners = detector.detect(&img)?;
@@ -258,10 +258,9 @@ pub use crate::error::ChessError;
 pub use crate::upscale::{
     rescale_descriptors_to_input, upscale_bilinear_u8, UpscaleBuffers, UpscaleConfig, UpscaleError,
 };
-#[allow(deprecated)]
 pub use chess_corners_core::{
-    AxisEstimate, CenterOfMassConfig, CornerDescriptor, ForstnerConfig, OrientationMethod,
-    PeakFitMode, PositionCovariance, Roi, SaddlePointConfig, Uncertainty,
+    AxisEstimate, CenterOfMassConfig, CornerDescriptor, OrientationMethod, PeakFitMode,
+    PositionCovariance, Roi, SaddlePointConfig, Uncertainty,
 };
 
 // Primary detector entry point.

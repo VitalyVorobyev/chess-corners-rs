@@ -71,7 +71,7 @@ camera calibration — those are downstream concerns. The pipeline:
    or the Radon SAT detector), behind the `DenseDetector` trait.
 2. **Detection** — threshold → non-maximum suppression → cluster filter
    (Radon adds a 3-point Gaussian peak fit).
-3. **Refinement** — one of four built-in subpixel refiners: three in
+3. **Refinement** — one of three built-in subpixel refiners: two in
    core's `RefinerKind`, plus the ML refiner in the facade's
    `ChessRefiner` (see §6).
 4. **Orientation** — two-axis grid-direction fit per corner (`RingFit`
@@ -204,10 +204,9 @@ new refiner is added as an in-crate variant, not via a downstream `impl`.
 * Input: image / response view + initial point + params (+ optional context like orientation)
 * Output: refined point + score + status (accepted/rejected/out-of-bounds/ill-conditioned)
 
-The four built-in refiners:
+The three built-in refiners:
 
 * **CenterOfMass** (default; response-map centroid)
-* **Förstner** (structure-tensor)
 * **SaddlePoint** (quadratic Hessian fit)
 * **Ml** (ONNX patch model; facade `ChessRefiner::Ml`, `ml-refiner` feature)
 

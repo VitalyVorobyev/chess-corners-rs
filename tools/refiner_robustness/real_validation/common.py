@@ -47,7 +47,7 @@ TOKEN = re.compile(r"^Cam\d+_(?P<tok>([+-]\d+\.\d)Rx([+-]\d+\.\d)Ry([+-]\d+\.\d)
 # Localizers. Each yields positions and, when the bindings report one, a
 # position covariance. `cSP-11` is cv2.cornerSubPix with an 11x11 window,
 # seeded from the rounded reference corners.
-LOCALIZERS = ["CoM", "Forstner", "SaddlePoint", "Radon", "Radon+SP", "cSP-11"]
+LOCALIZERS = ["CoM", "SaddlePoint", "Radon", "Radon+SP", "cSP-11"]
 
 
 def parse_token(name: str):
@@ -170,7 +170,6 @@ def _detector(name: str):
             cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(cc.Uncertainty.PROPAGATED)
             cfg.strategy.chess.refiner = {
                 "CoM": cc.ChessRefiner.center_of_mass(),
-                "Forstner": cc.ChessRefiner.forstner(),
                 "SaddlePoint": cc.ChessRefiner.saddle_point(),
             }[name]
         _DET[name] = cc.Detector(cfg)

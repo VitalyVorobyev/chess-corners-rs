@@ -30,6 +30,7 @@ docs/
     architecture.md          crate layering & data flow
     algorithms-index.md      atomic-algorithm map + DAG
     api-v1.0.md              public API stabilization RFC
+    api-v2.0.md              2.0 API: refinement stage, uncertainty tier, removals
     cpp-vcpkg-bindings.md    C++/vcpkg binding design
     site-architecture.md     GitHub Pages site design
     perf-profiling.md        performance method + plan

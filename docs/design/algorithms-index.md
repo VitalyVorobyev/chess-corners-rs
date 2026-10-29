@@ -6,7 +6,7 @@
 > math. The book (`book/src/`, Parts III–VIII) is the teaching reference;
 > each row links to the relevant Part.
 
-**How to read it.** Each algorithm has a stable ID (`R1`, `F2`, …) used in
+**How to read it.** Each algorithm has a stable ID (`R1`, `F3`, …) used in
 the DAG and in cross-references. "In → Out" is the data contract; "Consumed
 by" lists the downstream stages. Paths are relative to the repo root.
 
@@ -17,11 +17,10 @@ by" lists the downstream stages. Paths are relative to the repo root.
 | **R1** | ChESS 16-sample ring response | Response | `crates/chess-corners-core/src/detect/chess/response.rs` | III | `simd`, `rayon` | `u8` image → `ResponseMap` (f32) | D1 |
 | **R2** | Radon SAT ray response | Response | `crates/chess-corners-core/src/detect/radon/response.rs` | IV | `radon-sat-u32` | `u8` image → Radon response view | D2 |
 | **H1** | Ring offsets / angles (radius 5, 10) | Response helper | `crates/chess-corners-core/src/detect/chess/ring.rs` | III | — | radius → coord table | R1, X1, O1 |
-| **D1** | ChESS detection: threshold → NMS → cluster filter | Detection | `crates/chess-corners-core/src/detect/chess/detect.rs` | III | — | `ResponseMap` → `Vec<Corner>` | F1–F3, X1 |
+| **D1** | ChESS detection: threshold → NMS → cluster filter | Detection | `crates/chess-corners-core/src/detect/chess/detect.rs` | III | — | `ResponseMap` → `Vec<Corner>` | F1, F3, X1 |
 | **D2** | Radon detection: threshold → NMS → cluster → saddle test + 3-pt Gaussian fit | Detection | `crates/chess-corners-core/src/detect/radon/detect.rs` | IV | — | Radon view → `Vec<Corner>` | F3 (opt-in), X1 |
 | **T1** | `DenseDetector` trait (drives both detectors) | Detection abstraction | `crates/chess-corners-core/src/detect/dense.rs` | III–IV | — | image → response + peaks | S3 |
 | **F1** | CenterOfMass refiner | Refinement | `crates/chess-corners-core/src/refine/center_of_mass.rs` | V | — | response patch → subpixel `(x,y)` | X1 |
-| **F2** | Förstner refiner (structure tensor) | Refinement | `crates/chess-corners-core/src/refine/forstner.rs` | V | — | image patch → subpixel `(x,y)` | X1 |
 | **F3** | SaddlePoint refiner (quadratic Hessian, re-centred refit) | Refinement | `crates/chess-corners-core/src/refine/saddle_point.rs` | V | — | image patch → subpixel `(x,y)` + position covariance | X1 |
 | **T2** | `CornerRefiner` trait + `Refiner` dispatch enum | Refinement abstraction | `crates/chess-corners-core/src/refine/mod.rs` | V | — | corner → refined corner | D1, D2 |
 | **O1** | RingFit two-axis orientation (Gauss-Newton + σ-LUT) | Orientation | `crates/chess-corners-core/src/orientation/ring_fit/` | VI | `rayon` | ring samples → 2 axes + σ | X1 |
@@ -49,7 +48,7 @@ u8 image
 [D1] detect: threshold→NMS→cluster   [D2] detect: …→Gaussian peak fit
         │                              │
         ▼                              ▼
-[F1/F2/F3] subpixel refine        [F3] refine (opt-in; non-converged
+[F1/F3] subpixel refine           [F3] refine (opt-in; non-converged
         │                              keep the peak fit)   (via T2; [M1] optional post-step)
         └──────────────┬──────────────┘
                        ▼
@@ -68,7 +67,7 @@ u8 image
 | Crate | Stages it owns |
 |-------|----------------|
 | `box-image-pyramid` | S1 (fully standalone; zero chess coupling) |
-| `chess-corners-core` | R1, R2, H1, D1, D2, T1, F1–F3, T2, O1, O2, U1, X1, N1 |
+| `chess-corners-core` | R1, R2, H1, D1, D2, T1, F1, F3, T2, O1, O2, U1, X1, N1 |
 | `chess-corners` (facade) | S2, S3, C1 + the high-level `Detector`/config that selects R*/D*/F*/O* |
 | `chess-corners-ml` | M1 (only with `ml-refiner`) |
 | `chess-corners-py` / `-wasm` | bindings over the facade; own no algorithm |

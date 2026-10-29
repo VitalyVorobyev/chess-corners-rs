@@ -13,7 +13,7 @@
 //! ```js
 //! const cfg = DetectorConfig.chessMultiscale();
 //! cfg.strategy.chess.ring = ChessRing.Broad;             // works
-//! cfg.strategy.chess.refiner.forstner.maxOffset = 2.0;   // works
+//! cfg.strategy.chess.refiner.saddlePoint.maxOffset = 2.0; // works
 //! cfg.detection.nmsRadius = 3;                           // works
 //! cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3);   // works
 //! ```
@@ -227,9 +227,7 @@ impl TryFrom<RsUncertainty> for Uncertainty {
 pub(crate) use detector::config_to_json;
 pub use detector::DetectorConfig;
 pub use multiscale::MultiscaleConfig;
-pub use refiners::{
-    CenterOfMassConfig, ChessRefiner, ForstnerConfig, RadonRefiner, SaddlePointConfig,
-};
+pub use refiners::{CenterOfMassConfig, ChessRefiner, RadonRefiner, SaddlePointConfig};
 pub use strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig};
 pub use upscale::UpscaleConfig;
 
@@ -250,23 +248,22 @@ mod tests {
     };
 
     #[test]
-    #[allow(deprecated)]
     fn leaf_edits_propagate_through_chess_refiner_chain() {
         // Models the JS chain
-        //   cfg.strategy.chess.refiner.forstner.maxOffset = 2.5
+        //   cfg.strategy.chess.refiner.saddlePoint.maxOffset = 2.5
         // by walking the same getter chain in Rust and mutating the
-        // leaf forstner cell. Every intermediate wrapper is a clone
+        // leaf saddle-point cell. Every intermediate wrapper is a clone
         // that shares the underlying `Rc<RefCell<_>>` cells, so the
         // edit reaches the cfg's chess refiner cell.
         let cfg = DetectorConfig::new();
-        // Flip kind to Forstner first (via set_refiner copy-into-cell).
+        // Flip kind to SaddlePoint first (via set_refiner copy-into-cell).
         let mut chess = cfg.strategy().chess();
-        chess.set_refiner(&ChessRefiner::forstner(&ForstnerConfig::new()));
-        // Edit the leaf forstner cell through the chain.
+        chess.set_refiner(&ChessRefiner::saddle_point(&SaddlePointConfig::new()));
+        // Edit the leaf saddle-point cell through the chain.
         cfg.strategy()
             .chess()
             .refiner()
-            .get_forstner()
+            .get_saddle_point()
             .set_max_offset(3.5);
 
         let snap = cfg.snapshot();
@@ -274,10 +271,10 @@ mod tests {
             panic!("expected chess strategy")
         };
         match c.refiner {
-            chess_corners::ChessRefiner::Forstner(forstner) => {
-                assert!((forstner.max_offset - 3.5).abs() < f32::EPSILON);
+            chess_corners::ChessRefiner::SaddlePoint(saddle) => {
+                assert!((saddle.max_offset - 3.5).abs() < f32::EPSILON);
             }
-            other => panic!("expected forstner refiner, got {other:?}"),
+            other => panic!("expected saddle-point refiner, got {other:?}"),
         }
     }
 
@@ -664,20 +661,19 @@ mod tests {
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn with_chess_refiner_builder_sets_forstner() {
+    fn with_chess_refiner_builder_sets_saddle_point() {
         let cfg = DetectorConfig::chess();
-        let mut forstner = ForstnerConfig::new();
-        forstner.set_max_offset(4.0);
-        let refiner = ChessRefiner::forstner(&forstner);
+        let mut saddle = SaddlePointConfig::new();
+        saddle.set_max_offset(4.0);
+        let refiner = ChessRefiner::saddle_point(&saddle);
         let cfg2 = cfg.with_chess_refiner(&refiner);
         let snap = cfg2.snapshot();
         let RsDetectionStrategy::Chess(c) = snap.strategy else {
             panic!("expected chess strategy")
         };
         assert!(
-            matches!(c.refiner, chess_corners::ChessRefiner::Forstner(f) if (f.max_offset - 4.0).abs() < f32::EPSILON),
-            "with_chess_refiner must set Forstner with max_offset=4.0"
+            matches!(c.refiner, chess_corners::ChessRefiner::SaddlePoint(f) if (f.max_offset - 4.0).abs() < f32::EPSILON),
+            "with_chess_refiner must set SaddlePoint with max_offset=4.0"
         );
         // Original is unchanged.
         let snap_orig = cfg.snapshot();
@@ -685,8 +681,8 @@ mod tests {
             panic!("expected chess strategy")
         };
         assert!(
-            !matches!(c_orig.refiner, chess_corners::ChessRefiner::Forstner(_)),
-            "original config must not have Forstner refiner"
+            !matches!(c_orig.refiner, chess_corners::ChessRefiner::SaddlePoint(_)),
+            "original config must not have SaddlePoint refiner"
         );
     }
 

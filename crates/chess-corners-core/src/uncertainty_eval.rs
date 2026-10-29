@@ -11,12 +11,11 @@
 
 use crate::detect::radon::{detect_peaks_from_radon, radon_response_u8, RadonBuffers};
 use crate::uncertainty::{edge_width, PixelTile, ROUNDING_VAR};
-#[allow(deprecated)]
 use crate::{
     chess_response_u8, detect_peaks_from_response_with_refine_radius, CenterOfMassConfig,
-    ChessParams, Corner, CornerRefiner, DenseDetector, ForstnerConfig, ImageView,
-    PositionCovariance, RadonDetector, RadonDetectorParams, RefineContext, RefineStatus, Refiner,
-    RefinerKind, SaddlePointConfig, Uncertainty,
+    ChessParams, Corner, CornerRefiner, DenseDetector, ImageView, PositionCovariance,
+    RadonDetector, RadonDetectorParams, RefineContext, RefineStatus, Refiner, RefinerKind,
+    SaddlePointConfig, Uncertainty,
 };
 use chess_corners_testutil::{optical_chessboard, Lattice};
 use std::path::PathBuf;
@@ -25,16 +24,14 @@ use std::path::PathBuf;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Localizer {
     CenterOfMass,
-    Forstner,
     SaddlePoint,
     RadonPeak,
     RadonSaddle,
 }
 
 impl Localizer {
-    pub(crate) const ALL: [Localizer; 5] = [
+    pub(crate) const ALL: [Localizer; 4] = [
         Localizer::CenterOfMass,
-        Localizer::Forstner,
         Localizer::SaddlePoint,
         Localizer::RadonPeak,
         Localizer::RadonSaddle,
@@ -43,7 +40,6 @@ impl Localizer {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Localizer::CenterOfMass => "CoM",
-            Localizer::Forstner => "Forstner",
             Localizer::SaddlePoint => "SaddlePoint",
             Localizer::RadonPeak => "RadonPeak",
             Localizer::RadonSaddle => "RadonSaddle",
@@ -78,7 +74,6 @@ fn chess_params(kind: RefinerKind) -> ChessParams {
 }
 
 /// Localize every corner of `img` with `loc` under `unc`.
-#[allow(deprecated)]
 pub(crate) fn localize(
     img: &[u8],
     w: usize,
@@ -89,7 +84,6 @@ pub(crate) fn localize(
     let view = ImageView::from_u8_slice(w, h, img).unwrap();
     let chess_kind = match loc {
         Localizer::CenterOfMass => Some(RefinerKind::CenterOfMass(CenterOfMassConfig::default())),
-        Localizer::Forstner => Some(RefinerKind::Forstner(ForstnerConfig::default())),
         Localizer::SaddlePoint => Some(RefinerKind::SaddlePoint(SaddlePointConfig::default())),
         _ => None,
     };
@@ -107,7 +101,7 @@ pub(crate) fn localize(
                 continue;
             }
             let mut corner = Corner::new(res.x, res.y, p.strength);
-            corner.set_model(res.covariance_model());
+            corner.model = res.model;
             let centre = if loc == Localizer::SaddlePoint {
                 [res.x.round(), res.y.round()]
             } else {
@@ -346,7 +340,7 @@ pub(crate) fn mc_z_std(
             let Some(t) = scene.truth(det.xy(), 0.75) else {
                 continue;
             };
-            let by_window = matches!(loc, Localizer::CenterOfMass | Localizer::Forstner);
+            let by_window = loc == Localizer::CenterOfMass;
             let centre = if by_window { det.centre } else { [0.0; 2] };
             let key = [t[0], t[1], centre[0], centre[1]].map(f32::to_bits);
             per.entry(key)
@@ -451,24 +445,22 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    /// ±25% about the measured σ̂₀² (cell 10, 8°, blur 1, σ 2): 0.88, 0.24,
-    /// 0.08, 0.18, 0.08. Below 1 by design: each localizer's systematic term
+    /// ±25% about the measured σ̂₀² (cell 10, 8°, blur 1, σ 2): 0.88, 0.08,
+    /// 0.18, 0.08. Below 1 by design: each localizer's systematic term
     /// carries a floor measured on real images, larger than the error of
     /// these ideal synthetic corners. The center of mass's error depends on
     /// the board's rotation, which its model does not see (high at 8°).
-    const BANDS_A: [(f64, f64); 5] = [
+    const BANDS_A: [(f64, f64); 4] = [
         (0.662, 1.1),
-        (0.182, 0.304),
         (0.0585, 0.0975),
         (0.136, 0.226),
         (0.0585, 0.0975),
     ];
-    /// ±25% about the measured σ̂₀² (cell 12, 30°, blur 2, σ 4): 0.22, 0.84,
-    /// 0.54, 1.22, 0.53. The Radon peak fit is the least conservative on
+    /// ±25% about the measured σ̂₀² (cell 12, 30°, blur 2, σ 4): 0.22, 0.54,
+    /// 1.22, 0.53. The Radon peak fit is the least conservative on
     /// rotated, blurred boards, where noise moves its peak between pixels.
-    const BANDS_B: [(f64, f64); 5] = [
+    const BANDS_B: [(f64, f64); 4] = [
         (0.164, 0.274),
-        (0.63, 1.05),
         (0.407, 0.679),
         (0.918, 1.53),
         (0.399, 0.665),
@@ -505,9 +497,9 @@ mod tests {
     /// deterministic boards; the full grid is `sigma0_sweep`.
     #[test]
     fn sigma0_regression_bands() {
-        // (cell, rotation, blur, noise σ, [CoM, Förstner, SaddlePoint, RadonPeak, RadonSaddle] bands)
+        // (cell, rotation, blur, noise σ, [CoM, SaddlePoint, RadonPeak, RadonSaddle] bands)
         type Band = (f64, f64);
-        let cases: [(f32, f32, f32, f32, [Band; 5]); 2] = [
+        let cases: [(f32, f32, f32, f32, [Band; 4]); 2] = [
             (10.0, 8.0, 1.0, 2.0, BANDS_A),
             (12.0, 30.0, 2.0, 4.0, BANDS_B),
         ];
