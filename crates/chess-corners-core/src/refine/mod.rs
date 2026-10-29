@@ -9,7 +9,7 @@
 //! - [`saddle_point`] — quadratic surface fit on the image patch.
 
 use crate::imageview::ImageView;
-use crate::uncertainty::{CovarianceModel, Uncertainty};
+use crate::uncertainty::CovarianceModel;
 use crate::ResponseMap;
 use serde::{Deserialize, Serialize};
 
@@ -200,12 +200,12 @@ impl RefineResult {
     /// causes. Spatially correlated noise (upscaling, demosaicing, JPEG,
     /// blur applied after the noise) makes it underestimate the scatter.
     ///
-    /// Set on accepted corners by every refiner under
-    /// [`Uncertainty::Propagated`] (see [`Refiner::with_uncertainty`]): the
-    /// saddle-point refiner when its re-centred refinement converged, and
-    /// the center-of-mass refiner when the image and a ChESS response map
-    /// are both in the [`RefineContext`]. `None` otherwise, and always under
-    /// [`Uncertainty::Off`] (the default).
+    /// Set on accepted corners by every refiner that reports a covariance
+    /// (see [`Refiner::with_covariance`]): the saddle-point refiner when its
+    /// re-centred refinement converged, and the center-of-mass refiner when
+    /// the image and a ChESS response map are both in the
+    /// [`RefineContext`]. `None` otherwise, and always when the refiner
+    /// reports none (the default).
     #[inline]
     pub fn noise_covariance_per_unit_variance(&self) -> Option<PositionCovariance> {
         self.model.map(|m| m.noise)
@@ -304,8 +304,8 @@ pub enum Refiner {
 
 impl Refiner {
     /// Construct a [`Refiner`] from the given kind, allocating scratch
-    /// buffers at the configured size. It reports no position covariance
-    /// ([`Uncertainty::Off`]); see [`Self::with_uncertainty`].
+    /// buffers at the configured size. It reports no position covariance;
+    /// see [`Self::with_covariance`].
     pub fn from_kind(kind: RefinerKind) -> Self {
         match kind {
             RefinerKind::CenterOfMass(cfg) => Refiner::CenterOfMass(CenterOfMassRefiner::new(cfg)),
@@ -313,14 +313,15 @@ impl Refiner {
         }
     }
 
-    /// Select which position uncertainty the refiner reports. A refiner
-    /// from [`Self::from_kind`] reports none; pass
-    /// [`Uncertainty::Propagated`] for a covariance on every accepted
-    /// corner. Refined positions do not depend on the tier.
-    pub fn with_uncertainty(mut self, uncertainty: Uncertainty) -> Self {
+    /// Select whether the refiner reports a position covariance on every
+    /// accepted corner (see
+    /// [`RefineResult::noise_covariance_per_unit_variance`]). A refiner from
+    /// [`Self::from_kind`] reports none. Refined positions are the same
+    /// either way.
+    pub fn with_covariance(mut self, report: bool) -> Self {
         match &mut self {
-            Refiner::CenterOfMass(r) => r.uncertainty = uncertainty,
-            Refiner::SaddlePoint(r) => r.uncertainty = uncertainty,
+            Refiner::CenterOfMass(r) => r.reports_covariance = report,
+            Refiner::SaddlePoint(r) => r.reports_covariance = report,
         }
         self
     }

@@ -88,13 +88,28 @@ assert.throws(
   (e) => String(e).includes("7"),
 );
 
-// Noise level: JSON and typed accessors agree; `undefined` estimates per image.
-assert.equal(DetectorConfig.chess().noiseSigma, undefined);
-assert.equal(DetectorConfig.fromJson('{"noise_sigma": 2.5}').noiseSigma, 2.5);
-assert.equal(JSON.parse(DetectorConfig.chess().withNoiseSigma(2.5).toJson()).noise_sigma, 2.5);
+// Uncertainty: an immutable value carrying its noise level; JSON and typed
+// accessors agree.
+const off = Uncertainty.off();
+const est = Uncertainty.propagated();
+const known = Uncertainty.propagated(2.5);
+assert.deepEqual([off.kind, off.noiseSigma], ["off", undefined]);
+assert.deepEqual([est.kind, est.noiseSigma], ["propagated", undefined]);
+assert.deepEqual([known.kind, known.noiseSigma], ["propagated", 2.5]);
+assert.equal(DetectorConfig.chess().noiseSigma, undefined, "no noise-sigma field");
+assert.equal(DetectorConfig.chess().withNoiseSigma, undefined, "no noise-sigma builder");
+const jsonOf = (u) => JSON.parse(DetectorConfig.chess().withUncertainty(u).toJson()).uncertainty;
+assert.equal(jsonOf(off), "off");
+assert.deepEqual(jsonOf(est), { propagated: { noise: "estimate" } });
+assert.deepEqual(jsonOf(known), { propagated: { noise: { known: 2.5 } } });
+const knownBack = DetectorConfig.fromJson('{"uncertainty": {"propagated": {"noise": {"known": 2.5}}}}');
+assert.deepEqual([knownBack.uncertainty.kind, knownBack.uncertainty.noiseSigma], ["propagated", 2.5]);
+for (const bad of ['"propagated"', '{"propagated": {}}', '{"propagated": {"noise": "known"}}', '"bogus"']) {
+  assert.throws(() => DetectorConfig.fromJson(`{"uncertainty": ${bad}}`), undefined, bad);
+}
 
 // Position covariance: stride 3 per corner, aligned with `detect`; finite with
-// every localizer under `uncertainty: "propagated"`, NaN under the default
+// every localizer under `Uncertainty.propagated()`, NaN under the default
 // `"off"`.
 const size = 128;
 const board = new Uint8Array(size * size);
@@ -109,7 +124,7 @@ for (let y = 0; y < size; y++) {
 }
 const saddle = ChessDetector.withConfig(
   DetectorConfig.fromJson(
-    '{"strategy": {"chess": {"refiner": {"saddle_point": {}}}}, "uncertainty": "propagated"}',
+    '{"strategy": {"chess": {"refiner": {"saddle_point": {}}}}, "uncertainty": {"propagated": {"noise": "estimate"}}}',
   ),
 );
 const found = saddle.detect(board, size, size);
@@ -117,7 +132,7 @@ const cov = saddle.positionCovariance();
 assert.ok(found.length > 0);
 assert.equal(cov.length, (found.length / 7) * 3);
 assert.ok(cov.some((v) => Number.isFinite(v) && v > 0), "saddle point reports covariances");
-const plain = ChessDetector.withConfig(DetectorConfig.chess().withUncertainty(Uncertainty.Propagated));
+const plain = ChessDetector.withConfig(DetectorConfig.chess().withUncertainty(Uncertainty.propagated()));
 const plainFound = plain.detect(board, size, size);
 assert.equal(plain.positionCovariance().length, (plainFound.length / 7) * 3);
 assert.ok(plain.positionCovariance().every((v) => Number.isFinite(v)), "default refiner reports covariances");
@@ -127,15 +142,11 @@ for (const cfg of [
   DetectorConfig.radon(),
   DetectorConfig.radonMultiscale(),
 ]) {
-  assert.equal(cfg.uncertainty, Uncertainty.Off, "Off is the default tier");
+  assert.equal(cfg.uncertainty.kind, "off", "off is the default");
 }
 assert.equal(JSON.parse(DetectorConfig.chess().toJson()).uncertainty, "off");
-assert.equal(DetectorConfig.fromJson('{"uncertainty": "propagated"}').uncertainty, Uncertainty.Propagated);
-assert.equal(DetectorConfig.fromJson("{}").uncertainty, Uncertainty.Off);
-assert.equal(
-  JSON.parse(DetectorConfig.chess().withUncertainty(Uncertainty.Propagated).toJson()).uncertainty,
-  "propagated",
-);
+assert.equal(DetectorConfig.fromJson('{"uncertainty": {"propagated": {"noise": "estimate"}}}').uncertainty.kind, "propagated");
+assert.equal(DetectorConfig.fromJson("{}").uncertainty.kind, "off");
 const quiet = new ChessDetector();
 const quietFound = quiet.detect(board, size, size);
 assert.equal(quiet.positionCovariance().length, (quietFound.length / 7) * 3);
@@ -151,7 +162,7 @@ assert.equal(saddle.positionCovariance().length, 0, "cleared by applyConfig");
 
 // Radon keeps its peak fit by default, which reports a covariance as well as
 // the saddle-point refinement.
-const radonCfg = DetectorConfig.radon().withUncertainty(Uncertainty.Propagated);
+const radonCfg = DetectorConfig.radon().withUncertainty(Uncertainty.propagated());
 assert.equal(JSON.parse(radonCfg.toJson()).strategy.radon.refiner, "peak_fit");
 const peakFit = ChessDetector.withConfig(radonCfg);
 peakFit.detect(board, size, size);
@@ -177,16 +188,20 @@ assert.equal(estimateNoiseSigma(new Uint8Array(4 * 4).fill(128), 4, 4), undefine
 assert.throws(() => estimateNoiseSigma(board, size + 1, size));
 
 // The noise σ behind a detection's covariances: estimated, supplied, or none.
-saddle.applyConfig(DetectorConfig.fromJson('{"uncertainty": "propagated"}'));
+saddle.applyConfig(DetectorConfig.fromJson('{"uncertainty": {"propagated": {"noise": "estimate"}}}'));
 assert.equal(saddle.noiseSigma(), undefined, "cleared by applyConfig");
 saddle.detect(board, size, size);
 assert.equal(saddle.noiseSigma(), sigma, "the per-image estimate");
 assert.throws(() => saddle.detect(board, size + 1, size));
 assert.equal(saddle.noiseSigma(), undefined, "cleared by a failed detection");
-const supplied = ChessDetector.withConfig(DetectorConfig.fromJson('{"uncertainty": "propagated", "noise_sigma": 1.25}'));
+const supplied = ChessDetector.withConfig(DetectorConfig.chess().withUncertainty(Uncertainty.propagated(1.25)));
 supplied.detect(board, size, size);
 assert.equal(supplied.noiseSigma(), 1.25);
 quiet.detect(board, size, size);
-assert.equal(quiet.noiseSigma(), undefined, "none under Uncertainty.Off");
+assert.equal(quiet.noiseSigma(), undefined, "none under Uncertainty.off()");
+assert.throws(
+  () => ChessDetector.withConfig(DetectorConfig.chess().withUncertainty(Uncertainty.propagated(-1))),
+  (e) => String(e).includes("noise sigma"),
+);
 
 console.log("chess-corners-wasm JSON smoke test: ok");

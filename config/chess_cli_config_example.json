@@ -19,7 +19,7 @@
   "upscale": "disabled",
   "orientation_method": "ring_fit",
   "merge_radius": 3.0,
-  "uncertainty": "propagated",
+  "uncertainty": {"propagated": {"noise": "estimate"}},
   "output_json": null,
   "output_png": null,
   "log_level": "info"

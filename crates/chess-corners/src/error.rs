@@ -19,7 +19,7 @@ pub enum ChessError {
     },
     /// An upscale configuration or execution error.
     Upscale(UpscaleError),
-    /// [`DetectorConfig::noise_sigma`](crate::DetectorConfig::noise_sigma)
+    /// A known noise level ([`NoiseLevel::Known`](crate::NoiseLevel::Known))
     /// is negative or not finite.
     InvalidNoiseSigma(f32),
     /// The configured refiner is not available on the single-scale ROI
@@ -45,7 +45,7 @@ impl fmt::Display for ChessError {
             ),
             Self::Upscale(e) => write!(f, "upscale error: {e}"),
             Self::InvalidNoiseSigma(s) => {
-                write!(f, "noise_sigma must be finite and >= 0, got {s}")
+                write!(f, "known noise sigma must be finite and >= 0, got {s}")
             }
             #[cfg(feature = "ml-refiner")]
             Self::RoiRefinerUnsupported => write!(

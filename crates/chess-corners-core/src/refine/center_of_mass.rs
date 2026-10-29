@@ -8,7 +8,7 @@ use super::{CornerRefiner, RefineContext, RefineResult, RefineStatus};
 use crate::detect::chess::response::ResponseStencil;
 use crate::imageview::ImageView;
 use crate::uncertainty::{
-    knot, CovarianceModel, PixelGradients, PixelTile, SystematicModel, Uncertainty, EDGE_REACH,
+    knot, CovarianceModel, PixelGradients, PixelTile, SystematicModel, EDGE_REACH,
 };
 use crate::ResponseMap;
 use serde::{Deserialize, Serialize};
@@ -81,7 +81,7 @@ impl Default for CenterOfMassConfig {
 #[derive(Debug)]
 pub struct CenterOfMassRefiner {
     cfg: CenterOfMassConfig,
-    pub(crate) uncertainty: Uncertainty,
+    pub(crate) reports_covariance: bool,
     grads: PixelGradients,
     tile: PixelTile,
 }
@@ -91,7 +91,7 @@ impl CenterOfMassRefiner {
     pub fn new(cfg: CenterOfMassConfig) -> Self {
         Self {
             cfg,
-            uncertainty: Uncertainty::default(),
+            reports_covariance: false,
             grads: PixelGradients::default(),
             tile: PixelTile::default(),
         }
@@ -179,7 +179,7 @@ impl CornerRefiner for CenterOfMassRefiner {
         if sw > 0.0 {
             let xy = [sx / sw, sy / sw];
             let mut res = RefineResult::accepted(xy, sw);
-            if let (true, Some(img)) = (self.uncertainty.reports(), ctx.image) {
+            if let (true, Some(img)) = (self.reports_covariance, ctx.image) {
                 res.model = self.covariance(&img, resp, [x, y], xy, sw);
             }
             res
@@ -201,7 +201,7 @@ mod tests {
     /// A refiner reporting a covariance, which these tests examine.
     fn propagated(cfg: CenterOfMassConfig) -> CenterOfMassRefiner {
         let mut refiner = CenterOfMassRefiner::new(cfg);
-        refiner.uncertainty = Uncertainty::Propagated;
+        refiner.reports_covariance = true;
         refiner
     }
 
@@ -337,7 +337,7 @@ mod tests {
             assert_eq!([res.x, res.y], [with.x, with.y]);
             assert!(res.noise_covariance_per_unit_variance().is_none());
         }
-        refiner.uncertainty = Uncertainty::Off;
+        refiner.reports_covariance = false;
         let off = refiner.refine([10.0, 10.0], RefineContext::new(Some(view), Some(&resp)));
         assert_eq!([off.x, off.y], [with.x, with.y]);
         assert!(off.noise_covariance_per_unit_variance().is_none());

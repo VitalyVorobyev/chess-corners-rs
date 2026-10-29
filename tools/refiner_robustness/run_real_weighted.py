@@ -5,7 +5,7 @@ Datasets (read-only): ``stereo_simple`` (20 views per camera, 11 x 7 inner
 corners, 30 mm squares, board IDs from ``cv2.findChessboardCornersSB``) and
 ``table`` (ChArUco 22 x 22 squares, 1.35 mm, DICT_4X4_1000, non-legacy layout,
 board IDs from ``cv2.aruco.CharucoDetector``). Per localizer (ChESS + CenterOfMass / SaddlePoint,
-the Radon peak fit, Radon + SaddlePoint; ``Uncertainty.PROPAGATED``,
+the Radon peak fit, Radon + SaddlePoint; ``Uncertainty.propagated()``,
 noise sigma estimated per image), on the corners every localizer matched and
 gave a covariance:
 
@@ -86,11 +86,11 @@ _DETS: dict = {}
 def detector(name: str):
     if name not in _DETS:
         if name.startswith("Radon"):
-            cfg = cc.DetectorConfig.radon().without_orientation().with_uncertainty(cc.Uncertainty.PROPAGATED)
+            cfg = cc.DetectorConfig.radon().without_orientation().with_uncertainty(cc.Uncertainty.propagated())
             if name == "RadonSaddle":
                 cfg.strategy.radon.refiner = cc.RadonRefiner.saddle_point()
         else:
-            cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(cc.Uncertainty.PROPAGATED)
+            cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(cc.Uncertainty.propagated())
             cfg.strategy.chess.refiner = {
                 "CoM": cc.ChessRefiner.center_of_mass(),
                 "SaddlePoint": cc.ChessRefiner.saddle_point(),

@@ -12,13 +12,15 @@ pub(crate) mod multiscale;
 pub(crate) mod parse;
 pub(crate) mod refiners;
 pub(crate) mod strategy;
+pub(crate) mod uncertainty;
 pub(crate) mod upscale;
 
 create_exception!(_native, ConfigError, PyValueError);
 
 pub use detector::DetectorConfig;
 pub use multiscale::MultiscaleConfig;
-pub use parse::{ChessRing, OrientationMethod, PeakFitMode, Uncertainty};
+pub use parse::{ChessRing, OrientationMethod, PeakFitMode};
 pub use refiners::{CenterOfMassConfig, ChessRefiner, RadonRefiner, SaddlePointConfig};
 pub use strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig};
+pub use uncertainty::Uncertainty;
 pub use upscale::UpscaleConfig;

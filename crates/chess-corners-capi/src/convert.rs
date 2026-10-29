@@ -22,8 +22,8 @@
 
 use chess_corners::{
     ChessError, ChessRefiner, ChessRing, CornerDescriptor, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, OrientationMethod, PeakFitMode, RadonConfig, RadonRefiner, Uncertainty,
-    UpscaleConfig,
+    MultiscaleConfig, NoiseLevel, OrientationMethod, PeakFitMode, RadonConfig, RadonRefiner,
+    Uncertainty, UpscaleConfig,
 };
 
 use crate::{
@@ -53,9 +53,17 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
     };
 
+    // The noise level is read only under `CC_UNCERTAINTY_PROPAGATED`; a
+    // negative or non-finite σ is rejected by `Detector::new`
+    // (`CC_ERR_INVALID_CONFIG`).
     let uncertainty = match cfg.uncertainty {
         CC_UNCERTAINTY_OFF => Uncertainty::Off,
-        CC_UNCERTAINTY_PROPAGATED => Uncertainty::Propagated,
+        CC_UNCERTAINTY_PROPAGATED => Uncertainty::Propagated {
+            noise: match cfg.has_noise_sigma {
+                0 => NoiseLevel::Estimate,
+                _ => NoiseLevel::Known(cfg.noise_sigma),
+            },
+        },
         _ => return Err(cc_status::CC_ERR_INVALID_CONFIG),
     };
 
@@ -117,7 +125,7 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
         (true, DetectionStrategy::Radon(_)) => DetectorConfig::radon_multiscale().multiscale,
         (true, _) => DetectorConfig::chess_multiscale().multiscale,
     };
-    let mut base = base
+    let base = base
         .with_threshold(cfg.threshold)
         .with_multiscale(multiscale)
         .with_upscale(upscale)
@@ -127,11 +135,6 @@ pub(crate) fn to_detector_config(cfg: &cc_config) -> Result<DetectorConfig, cc_s
             d.nms_radius = cfg.nms_radius;
             d.min_cluster_size = cfg.min_cluster_size;
         });
-    // A negative or non-finite σ is rejected by `Detector::new`
-    // (`CC_ERR_INVALID_CONFIG`).
-    if cfg.has_noise_sigma != 0 {
-        base = base.with_noise_sigma(cfg.noise_sigma);
-    }
     Ok(match orientation_method {
         Some(method) => base.with_orientation_method(method),
         None => base.without_orientation(),
@@ -182,13 +185,19 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
         Some(OrientationMethod::DiskFit) => CC_ORIENTATION_DISK_FIT,
         Some(_) => CC_ORIENTATION_RING_FIT,
     };
-    let uncertainty: cc_uncertainty_t = match config.uncertainty {
-        Uncertainty::Off => CC_UNCERTAINTY_OFF,
-        Uncertainty::Propagated => CC_UNCERTAINTY_PROPAGATED,
-        // A tier without a C tag is a bug, never mapped to another tier
-        // (the presets trap the panic).
-        other => panic!("uncertainty tier {other:?} has no C tag"),
-    };
+    let (uncertainty, has_noise_sigma, noise_sigma): (cc_uncertainty_t, u32, f32) =
+        match config.uncertainty {
+            Uncertainty::Off => (CC_UNCERTAINTY_OFF, 0, 0.0),
+            Uncertainty::Propagated {
+                noise: NoiseLevel::Estimate,
+            } => (CC_UNCERTAINTY_PROPAGATED, 0, 0.0),
+            Uncertainty::Propagated {
+                noise: NoiseLevel::Known(sigma),
+            } => (CC_UNCERTAINTY_PROPAGATED, 1, sigma),
+            // A variant without a C encoding is a bug, never mapped to
+            // another one (the presets trap the panic).
+            other => panic!("uncertainty {other:?} has no C encoding"),
+        };
     let upscale_factor = match config.upscale {
         UpscaleConfig::Disabled => 0,
         UpscaleConfig::Fixed(k) => k,
@@ -210,8 +219,8 @@ pub(crate) fn flatten(config: &DetectorConfig) -> cc_config {
         image_upsample: radon.image_upsample,
         response_blur_radius: radon.response_blur_radius,
         peak_fit: peak_fit_tag(radon.peak_fit),
-        has_noise_sigma: u32::from(config.noise_sigma.is_some()),
-        noise_sigma: config.noise_sigma.unwrap_or(0.0),
+        has_noise_sigma,
+        noise_sigma,
         uncertainty,
     }
 }
@@ -320,8 +329,8 @@ pub(crate) fn map_error(err: &ChessError) -> cc_status {
 /// Fallback config returned only if a preset constructor were to panic (it
 /// cannot in practice). Zero tags select single-scale ChESS with the
 /// center-of-mass refiner, the canonical ring, no upscaling, and a zero
-/// threshold; the uncertainty tier is the presets' `CC_UNCERTAINTY_OFF`. The Radon geometry fields carry harmless defaults (ignored
-/// under the ChESS strategy).
+/// threshold, and `CC_UNCERTAINTY_OFF`. The Radon geometry fields carry
+/// harmless defaults (ignored under the ChESS strategy).
 pub(crate) fn zeroed_config() -> cc_config {
     let radon = RadonConfig::default();
     cc_config {

@@ -15,7 +15,7 @@ use crate::{
     chess_response_u8, detect_peaks_from_response_with_refine_radius, CenterOfMassConfig,
     ChessParams, Corner, CornerRefiner, DenseDetector, ImageView, PositionCovariance,
     RadonDetector, RadonDetectorParams, RefineContext, RefineStatus, Refiner, RefinerKind,
-    SaddlePointConfig, Uncertainty,
+    SaddlePointConfig,
 };
 use chess_corners_testutil::{optical_chessboard, Lattice};
 use std::path::PathBuf;
@@ -73,13 +73,14 @@ fn chess_params(kind: RefinerKind) -> ChessParams {
     }
 }
 
-/// Localize every corner of `img` with `loc` under `unc`.
+/// Localize every corner of `img` with `loc`, reporting a covariance when
+/// `covariance` is set.
 pub(crate) fn localize(
     img: &[u8],
     w: usize,
     h: usize,
     loc: Localizer,
-    unc: Uncertainty,
+    covariance: bool,
 ) -> Vec<Det> {
     let view = ImageView::from_u8_slice(w, h, img).unwrap();
     let chess_kind = match loc {
@@ -90,7 +91,7 @@ pub(crate) fn localize(
     if let Some(kind) = chess_kind {
         let params = chess_params(kind.clone());
         let resp = chess_response_u8(img, w, h, &params);
-        let mut refiner = Refiner::from_kind(kind).with_uncertainty(unc);
+        let mut refiner = Refiner::from_kind(kind).with_covariance(covariance);
         let peaks = detect_peaks_from_response_with_refine_radius(&resp, &params, refiner.radius());
         let ctx = RefineContext::new(Some(view), Some(&resp));
         let mut out = Vec::new();
@@ -122,10 +123,10 @@ pub(crate) fn localize(
     let mut peaks = detect_peaks_from_radon(&resp, &params);
     if loc == Localizer::RadonSaddle {
         let mut sp = Refiner::from_kind(RefinerKind::SaddlePoint(SaddlePointConfig::default()))
-            .with_uncertainty(unc);
+            .with_covariance(covariance);
         peaks = RadonDetector.refine_peaks_on_image(peaks, view, &resp, &mut sp);
     }
-    if unc.reports() {
+    if covariance {
         RadonDetector.attach_peak_covariance(&mut peaks, view, &params, &mut buffers);
     }
     let mut tile = PixelTile::default();
@@ -327,7 +328,7 @@ pub(crate) fn mc_z_std(
     let mut per: HashMap<[u32; 4], Vec<([f64; 2], PositionCovariance)>> = HashMap::new();
     for d in 0..draws {
         let img = noisy(scene.image(), sigma, seed * 1_000 + d + 1);
-        for det in localize(&img, w, h, loc, Uncertainty::Propagated) {
+        for det in localize(&img, w, h, loc, true) {
             let Some(model) = det.corner.model else {
                 continue;
             };
@@ -382,7 +383,7 @@ pub(crate) fn sigma0_sq(
     for d in 0..draws {
         let img = noisy(scene.image(), sigma, seed * 1_000 + d + 1);
         let s = sigma_used(&img);
-        for det in localize(&img, w, h, loc, Uncertainty::Propagated) {
+        for det in localize(&img, w, h, loc, true) {
             if !interior(det.xy(), (w, h), 12.0) {
                 continue;
             }
@@ -655,7 +656,7 @@ mod tests {
             } else {
                 1.0
             };
-            for det in localize(img, w, h, loc, Uncertainty::Propagated) {
+            for det in localize(img, w, h, loc, true) {
                 let Some(model) = det.corner.model else {
                     continue;
                 };
@@ -795,7 +796,7 @@ mod tests {
         let mut write = |gen: &str, cond: &str, meta: [f32; 4], scene: &dyn Scene| {
             let (w, h) = scene.size();
             for loc in Localizer::ALL {
-                for det in localize(scene.image(), w, h, loc, Uncertainty::Propagated) {
+                for det in localize(scene.image(), w, h, loc, true) {
                     if !interior(det.xy(), (w, h), 12.0) {
                         continue;
                     }

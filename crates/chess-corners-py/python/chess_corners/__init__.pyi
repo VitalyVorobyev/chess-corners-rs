@@ -32,15 +32,43 @@ class OrientationMethod(Enum):
     RING_FIT = ...
     DISK_FIT = ...
 
-class Uncertainty(Enum):
-    """Position-uncertainty tier. ``OFF`` (default) reports no covariance
-    and makes no noise estimate. ``PROPAGATED`` propagates image noise
-    through the localizer and adds its systematic error, including a
-    per-localizer floor measured on real images that usually dominates the
-    covariance there."""
+class Uncertainty:
+    """Which position uncertainty each corner reports, and the image noise
+    level behind it. An immutable value, compared by value.
 
-    OFF = ...
-    PROPAGATED = ...
+    ``Uncertainty.off()`` (the default) reports no covariance and makes no
+    noise estimate. ``Uncertainty.propagated(noise_sigma=None)`` propagates
+    image noise through the localizer and adds its systematic error,
+    including a per-localizer floor measured on real images that usually
+    dominates the covariance there. ``noise_sigma`` is the known image noise
+    in gray levels (rounding included); ``None`` estimates it from each
+    image. A negative or non-finite ``noise_sigma`` is rejected when the
+    ``Detector`` is built."""
+
+    @classmethod
+    def off(cls) -> "Uncertainty": ...
+    @classmethod
+    def propagated(cls, noise_sigma: float | None = None) -> "Uncertainty": ...
+    @property
+    def kind(self) -> str:
+        """``"off"`` or ``"propagated"``."""
+        ...
+    @property
+    def noise_sigma(self) -> float | None:
+        """The known noise σ in gray levels, or ``None`` when it is
+        estimated per image (or the variant is ``off``)."""
+        ...
+    def to_dict(self) -> dict[str, Any]:
+        """``{"off": None}``, ``{"propagated": {"noise": "estimate"}}`` or
+        ``{"propagated": {"noise": {"known": sigma}}}``."""
+        ...
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | str) -> "Uncertainty":
+        """Parse a :meth:`to_dict` value or the bare string ``"off"``. Any
+        other shape raises :class:`ConfigError`."""
+        ...
+    def __eq__(self, other: object) -> bool: ...
+    def __repr__(self) -> str: ...
 
 # ---------------------------------------------------------------------------
 # Leaf tuning configs
@@ -250,7 +278,6 @@ class DetectorConfig:
     upscale: UpscaleConfig
     orientation_method: Optional[OrientationMethod]
     merge_radius: float
-    noise_sigma: Optional[float]
     uncertainty: Uncertainty
     def __init__(self) -> None: ...
     @classmethod
@@ -267,7 +294,6 @@ class DetectorConfig:
     def with_orientation_method(self, method: OrientationMethod) -> "DetectorConfig": ...
     def without_orientation(self) -> "DetectorConfig": ...
     def with_merge_radius(self, radius: float) -> "DetectorConfig": ...
-    def with_noise_sigma(self, sigma: float) -> "DetectorConfig": ...
     def with_uncertainty(self, uncertainty: Uncertainty) -> "DetectorConfig": ...
     def with_chess(self, **kwargs: Any) -> "DetectorConfig": ...
     def with_radon(self, **kwargs: Any) -> "DetectorConfig": ...
@@ -321,20 +347,21 @@ class Detections:
         """``(N, 2, 2)`` float32 array of per-corner position covariance in px²
         (``[[xx, xy], [xy, yy]]``). Rows are ``NaN`` for corners without one:
         every localizer except the ML refiner reports it under
-        ``Uncertainty.PROPAGATED``; none does under ``Uncertainty.OFF`` (the
-        default) or on upscaled input. The covariance includes a per-localizer floor measured
-        on real images that usually dominates it there; weighting by it has
-        not been shown to beat uniform weighting on real data."""
+        ``Uncertainty.propagated()``; none does under ``Uncertainty.off()``
+        (the default) or on upscaled input. The covariance includes a
+        per-localizer floor measured on real images that usually dominates
+        it there; weighting by it has not been shown to beat uniform
+        weighting on real data."""
         ...
 
     @property
     def noise_sigma(self) -> float | None:
         """Image noise σ in gray levels that ``position_covariance`` was
-        computed with: ``DetectorConfig.noise_sigma`` when set, otherwise the
-        per-image estimate (what ``estimate_noise_sigma`` returns for the same
-        image). ``None`` when no corner has a covariance (``Uncertainty.OFF``,
-        the default; upscaled input; the ML refiner) or the estimate
-        declined."""
+        computed with: the known ``noise_sigma`` of
+        ``Uncertainty.propagated(...)``, otherwise the per-image estimate
+        (what ``estimate_noise_sigma`` returns for the same image). ``None``
+        when no corner has a covariance (``Uncertainty.off()``, the default;
+        upscaled input; the ML refiner) or the estimate declined."""
         ...
 
     def __len__(self) -> int: ...
@@ -369,7 +396,8 @@ class Detector:
 def estimate_noise_sigma(image: np.ndarray) -> Optional[float]:
     """Standard deviation of the pixel noise of a ``(H, W)`` ``uint8`` image,
     in gray levels: the per-image estimate the detector uses for position
-    covariances when ``DetectorConfig.noise_sigma`` is ``None``. ``None`` when
+    covariances under ``Uncertainty.propagated()`` without a known
+    ``noise_sigma``. ``None`` when
     the image is smaller than 4×4 or has too few structure-free areas."""
     ...
 

@@ -7,7 +7,7 @@ use crate::upscale::UpscaleConfig;
 
 use super::{
     ChessConfig, ChessRefiner, ChessRing, DetectionStrategy, DetectorConfig, MultiscaleConfig,
-    RadonConfig, RadonRefiner,
+    NoiseLevel, RadonConfig, RadonRefiner, Uncertainty,
 };
 
 fn assert_strategy_chess(cfg: &DetectorConfig) -> &ChessConfig {
@@ -265,6 +265,61 @@ fn chess_refiner_round_trips_each_variant() {
         let decoded: ChessRefiner = serde_json::from_str(&json).expect("deserialize chess refiner");
         assert_eq!(decoded, v);
     }
+}
+
+#[test]
+fn uncertainty_json_shapes() {
+    let shapes = [
+        (Uncertainty::Off, r#""off""#),
+        (
+            Uncertainty::Propagated {
+                noise: NoiseLevel::Estimate,
+            },
+            r#"{"propagated":{"noise":"estimate"}}"#,
+        ),
+        (
+            Uncertainty::Propagated {
+                noise: NoiseLevel::Known(1.25),
+            },
+            r#"{"propagated":{"noise":{"known":1.25}}}"#,
+        ),
+    ];
+    for (value, json) in shapes {
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        assert_eq!(serde_json::from_str::<Uncertainty>(json).unwrap(), value);
+    }
+    // A bare "propagated" and a missing noise level are rejected, not
+    // defaulted.
+    for bad in [
+        r#""propagated""#,
+        r#"{"propagated":{}}"#,
+        r#"{"propagated":{"noise":"known"}}"#,
+    ] {
+        assert!(serde_json::from_str::<Uncertainty>(bad).is_err(), "{bad}");
+    }
+    // The map form of the unit variant, as the Python `to_dict` writes it.
+    assert_eq!(
+        serde_json::from_str::<Uncertainty>(r#"{"off":null}"#).unwrap(),
+        Uncertainty::Off
+    );
+    assert_eq!(DetectorConfig::default().uncertainty, Uncertainty::Off);
+}
+
+#[test]
+fn known_noise_level_is_validated() {
+    let known = |sigma| {
+        DetectorConfig::chess().with_uncertainty(Uncertainty::Propagated {
+            noise: NoiseLevel::Known(sigma),
+        })
+    };
+    for bad in [-1.0f32, f32::NAN, f32::INFINITY] {
+        assert!(matches!(
+            known(bad).validate(),
+            Err(crate::ChessError::InvalidNoiseSigma(_))
+        ));
+    }
+    assert!(known(0.0).validate().is_ok());
+    assert!(DetectorConfig::chess().validate().is_ok());
 }
 
 #[test]

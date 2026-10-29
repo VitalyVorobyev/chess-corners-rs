@@ -9,8 +9,9 @@ use wasm_bindgen::prelude::*;
 use super::multiscale::MultiscaleConfig;
 use super::refiners::{ChessRefiner, RadonRefiner};
 use super::strategy::{DetectionParams, DetectionStrategy};
+use super::uncertainty::Uncertainty;
 use super::upscale::UpscaleConfig;
-use super::{cell, Cell, ChessRing, OrientationMethod, PeakFitMode, Uncertainty};
+use super::{cell, Cell, ChessRing, OrientationMethod, PeakFitMode};
 
 // ---------------------------------------------------------------------------
 // DetectorConfig
@@ -36,7 +37,6 @@ pub struct DetectorConfig {
     upscale: UpscaleConfig,
     orientation_method: Cell<Option<RsOrientationMethod>>,
     merge_radius: Cell<f32>,
-    noise_sigma: Cell<Option<f32>>,
     uncertainty: Cell<RsUncertainty>,
 }
 
@@ -54,7 +54,6 @@ impl DetectorConfig {
             upscale: UpscaleConfig::from_value(value.upscale),
             orientation_method: cell(value.orientation_method),
             merge_radius: cell(value.merge_radius),
-            noise_sigma: cell(value.noise_sigma),
             uncertainty: cell(value.uncertainty),
         }
     }
@@ -91,7 +90,6 @@ impl DetectorConfig {
         cfg.upscale = self.upscale.snapshot();
         cfg.orientation_method = *self.orientation_method.borrow();
         cfg.merge_radius = *self.merge_radius.borrow();
-        cfg.noise_sigma = *self.noise_sigma.borrow();
         cfg.uncertainty = *self.uncertainty.borrow();
         cfg
     }
@@ -220,22 +218,12 @@ impl DetectorConfig {
         out
     }
 
-    /// Return a copy of this config that uses a known image noise level
-    /// instead of estimating it per image: the total noise standard
-    /// deviation of the 8-bit image in gray levels, rounding included (what
-    /// `estimateNoiseSigma` measures).
-    /// JS: `cfg.withNoiseSigma(2.0)`.
-    #[wasm_bindgen(js_name = withNoiseSigma)]
-    pub fn with_noise_sigma(&self, sigma: f32) -> Self {
-        let mut out = self.deep_clone();
-        out.set_noise_sigma(Some(sigma));
-        out
-    }
-
-    /// Return a copy of this config with the position-uncertainty tier
-    /// replaced. JS: `cfg.withUncertainty(Uncertainty.Propagated)`.
+    /// Return a copy of this config with the position uncertainty (and its
+    /// noise level) replaced.
+    /// JS: `cfg.withUncertainty(Uncertainty.propagated())`, or
+    /// `Uncertainty.propagated(1.2)` for a known noise σ.
     #[wasm_bindgen(js_name = withUncertainty)]
-    pub fn with_uncertainty(&self, uncertainty: Uncertainty) -> Self {
+    pub fn with_uncertainty(&self, uncertainty: &Uncertainty) -> Self {
         let mut out = self.deep_clone();
         out.set_uncertainty(uncertainty);
         out
@@ -497,29 +485,18 @@ impl DetectorConfig {
         *self.merge_radius.borrow_mut() = v;
     }
 
-    /// Standard deviation of the image's pixel noise in gray levels (the
-    /// total noise of the 8-bit image, rounding included), used to express
-    /// each corner's position covariance in px²; `undefined` estimates it
-    /// from each image.
-    #[wasm_bindgen(getter, js_name = noiseSigma)]
-    pub fn noise_sigma(&self) -> Option<f32> {
-        *self.noise_sigma.borrow()
-    }
-    #[wasm_bindgen(setter, js_name = noiseSigma)]
-    pub fn set_noise_sigma(&mut self, v: Option<f32>) {
-        *self.noise_sigma.borrow_mut() = v;
-    }
-
-    /// Position-uncertainty tier: `Uncertainty.Off` (default) reports no
-    /// position covariance, `Uncertainty.Propagated` reports one per corner.
-    /// JSON: `"uncertainty": "off" | "propagated"`.
+    /// Position uncertainty and its noise level: `Uncertainty.off()`
+    /// (default) reports no position covariance,
+    /// `Uncertainty.propagated(sigma?)` reports one per corner. JSON:
+    /// `"uncertainty": "off"`, `{"propagated": {"noise": "estimate"}}` or
+    /// `{"propagated": {"noise": {"known": 1.2}}}`.
     #[wasm_bindgen(getter)]
     pub fn uncertainty(&self) -> Result<Uncertainty, JsError> {
         Uncertainty::try_from(*self.uncertainty.borrow())
     }
     #[wasm_bindgen(setter)]
-    pub fn set_uncertainty(&mut self, v: Uncertainty) {
-        *self.uncertainty.borrow_mut() = v.into();
+    pub fn set_uncertainty(&mut self, v: &Uncertainty) {
+        *self.uncertainty.borrow_mut() = v.snapshot();
     }
 }
 
