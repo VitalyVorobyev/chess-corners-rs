@@ -24,7 +24,7 @@ sub-pixel precision. It is the kind of detector that sits at the
 front of a camera calibration, pose estimation, or AR alignment
 pipeline.
 
-Two independent detectors and five subpixel refiners live behind a
+Two independent detectors and an optional image refiner live behind a
 single configuration type:
 
 - **ChESS response detector** — a ring-based kernel from
@@ -43,10 +43,11 @@ single configuration type:
 Both produce the same `CornerDescriptor` output, and both feed the
 same [multiscale pipeline](part-07-multiscale-and-pyramids.md).
 
-Once a detector has produced integer-pixel seeds, one of three
-subpixel refiners brings the coordinates under a pixel:
-`CenterOfMass`, `SaddlePoint`, or an ONNX-backed `ML` refiner. Each is selected through the active
-strategy's `refiner` field. The refiners are described in
+Each detector brings its peaks under a pixel with its own localizer on
+its response map: the ChESS center of mass, the Radon peak fit. An
+optional image refiner — `SaddlePoint` or an ONNX-backed `ML` model,
+set on the top-level `refiner` field — refines the corners of either
+detector further on the image. Localizers and refiners are described in
 [Part V](part-05-refiners.md) and benchmarked in
 [Part IX](part-09-benchmarks.md).
 
@@ -150,7 +151,7 @@ positions you use.
 - To run the detector on an image: [Part II](part-02-using-the-detector.md).
 - To understand the ChESS response: [Part III](part-03-chess-detector.md).
 - To understand the Radon response: [Part IV](part-04-radon-detector.md).
-- To pick a refiner: [Part V](part-05-refiners.md) for algorithms,
+- To pick a localizer or image refiner: [Part V](part-05-refiners.md) for algorithms,
   [Part IX](part-09-benchmarks.md) for measurements.
 - Orientation methods (`RingFit` / `DiskFit`): [Part VI](part-06-orientation-methods.md).
 - Multiscale pipeline and pyramid tuning: [Part VII](part-07-multiscale-and-pyramids.md).

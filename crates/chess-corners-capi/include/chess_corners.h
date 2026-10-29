@@ -40,7 +40,7 @@ typedef enum cc_status {
   CC_ERR_UPSCALE,
   /**
    * The configuration was invalid (e.g. an enum tag was out of range, or
-   * a refiner not valid for the selected strategy).
+   * a known noise σ was negative or not finite).
    */
   CC_ERR_INVALID_CONFIG,
   /**
@@ -55,13 +55,15 @@ typedef enum cc_status {
 typedef uint32_t cc_strategy_t;
 
 /**
- * Subpixel-refiner tag stored in `cc_config::refiner`.
+ * Image-refiner tag stored in `cc_config::refiner`.
  *
- * Refiner-specific tuning is not exposed over the flat ABI; the selected
- * refiner runs with its library defaults. A tag not valid for the
- * selected strategy is rejected with `CC_ERR_INVALID_CONFIG`.
+ * Each detector places its corners with its own subpixel localizer (the
+ * ChESS center of mass, the Radon peak fit); an image refiner refines them
+ * further on the input image, for either strategy. Refiner tuning is not
+ * exposed over the flat ABI; the selected refiner runs with its library
+ * defaults.
  */
-typedef uint32_t cc_refiner_t;
+typedef uint32_t cc_image_refiner_t;
 
 /**
  * Orientation-fit tag stored in `cc_config::orientation_method`.
@@ -95,9 +97,10 @@ typedef uint32_t cc_uncertainty_t;
  * Construct one with a preset (`cc_config_default`, `cc_config_chess`, …)
  * and tweak the exposed fields. Every `DetectorConfig` knob is
  * representable here except two that fall back to library defaults:
- * refiner-specific tuning (only the refiner *kind* is exposed) and the
- * multiscale pyramid detail (level count, minimum size, refinement
- * radius) behind the on/off `multiscale` switch.
+ * localizer and refiner tuning (only the image refiner *kind* is exposed)
+ * and the multiscale pyramid detail (level count, minimum size, refinement
+ * radius) behind the on/off `multiscale` switch. A zero-initialised
+ * `refiner` (`CC_IMAGE_REFINER_NONE`) keeps each detector's own localizer.
  *
  * Fields are grouped by applicability: `chess_ring` applies to the
  * ChESS strategy only, while `ray_radius` / `image_upsample` /
@@ -123,9 +126,10 @@ typedef struct cc_config {
    */
   uint32_t min_cluster_size;
   /**
-   * One of the `CC_REFINER_*` constants. Must be valid for `strategy`.
+   * One of the `CC_IMAGE_REFINER_*` constants. Applies to either
+   * strategy.
    */
-  cc_refiner_t refiner;
+  cc_image_refiner_t refiner;
   /**
    * One of the `CC_ORIENTATION_*` constants.
    */
@@ -326,22 +330,17 @@ typedef struct cc_result {
 #define CC_STRATEGY_RADON 1
 
 /**
- * Center-of-mass refiner. ChESS strategy only (the ChESS default).
+ * No image refiner (the default): each detector keeps its own localizer.
  */
-#define CC_REFINER_CENTER_OF_MASS 0
+#define CC_IMAGE_REFINER_NONE 0
 
 /**
- * Saddle-point refiner. Valid for both strategies. Under Radon a corner
- * whose refinement does not converge keeps its peak-fit position and
- * covariance.
+ * Saddle-point refiner. Under ChESS it replaces the center of mass, starts
+ * from the integer peak and drops a corner it rejects; under Radon it
+ * starts from the peak fit, and a corner whose refinement does not
+ * converge keeps its peak-fit position and covariance.
  */
-#define CC_REFINER_SADDLE_POINT 1
-
-/**
- * Radon's response-map peak fit, with no image refinement. Radon strategy
- * only (the Radon default).
- */
-#define CC_REFINER_PEAK_FIT 2
+#define CC_IMAGE_REFINER_SADDLE_POINT 1
 
 /**
  * 16-sample ring Gauss-Newton fit (the default).

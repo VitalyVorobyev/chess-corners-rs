@@ -11,8 +11,8 @@
 use std::sync::OnceLock;
 
 use chess_corners::{
-    ChessRefiner, CornerDescriptor, Detector, DetectorConfig, MultiscaleConfig, NoiseLevel,
-    RadonRefiner, Roi, Uncertainty, UpscaleConfig,
+    CornerDescriptor, Detector, DetectorConfig, ImageRefiner, MultiscaleConfig, NoiseLevel, Roi,
+    Uncertainty, UpscaleConfig,
 };
 use chess_corners_core::estimate_noise_sigma_u8;
 use chess_corners_testutil::{add_gaussian_noise, optical_chessboard, Lattice};
@@ -110,11 +110,11 @@ fn with_known_noise(cfg: DetectorConfig, sigma: f32) -> DetectorConfig {
 }
 
 fn saddle() -> DetectorConfig {
-    propagated(DetectorConfig::chess()).with_chess(|c| c.refiner = ChessRefiner::saddle_point())
+    propagated(DetectorConfig::chess()).with_refiner(ImageRefiner::saddle_point())
 }
 
 fn radon_saddle() -> DetectorConfig {
-    propagated(DetectorConfig::radon()).with_radon(|r| r.refiner = RadonRefiner::saddle_point())
+    propagated(DetectorConfig::radon()).with_refiner(ImageRefiner::saddle_point())
 }
 
 /// Every localizer, as the facade composes them.

@@ -8,7 +8,7 @@
 
 use crate::detect::chess::ring::RingOffsets;
 use crate::orientation::OrientationMethod;
-use crate::refine::RefinerKind;
+use crate::refine::CenterOfMassConfig;
 use serde::{Deserialize, Serialize};
 
 /// Tunable parameters for the ChESS response computation and corner detection.
@@ -27,9 +27,11 @@ pub struct ChessParams {
     /// Minimum count of positive-response neighbors in NMS window
     /// to accept a corner (rejects isolated noise).
     pub min_cluster_size: u32,
-    /// Subpixel refinement backend and its configuration. Defaults to
-    /// center-of-mass on the response map.
-    pub refiner: RefinerKind,
+    /// ChESS's subpixel localizer: the response-weighted center of mass
+    /// of the response map around each peak. An image refiner, run as a
+    /// separate stage ([`refine_corners_on_image`](crate::refine_corners_on_image)),
+    /// replaces it.
+    pub center_of_mass: CenterOfMassConfig,
     /// Orientation-fit method used to estimate the two grid axes at
     /// each detected corner, or `None` to skip the fit entirely (every
     /// descriptor then carries `axes: None`). Default
@@ -57,7 +59,7 @@ impl Default for ChessParams {
             threshold: 0.0,
             nms_radius: Self::DEFAULT_NMS_RADIUS,
             min_cluster_size: Self::DEFAULT_MIN_CLUSTER_SIZE,
-            refiner: RefinerKind::default(),
+            center_of_mass: CenterOfMassConfig::default(),
             orientation_method: Some(OrientationMethod::default()),
         }
     }

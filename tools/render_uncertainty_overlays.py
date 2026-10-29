@@ -93,26 +93,24 @@ plt.rcParams.update(
 class Localizer:
     name: str
     radon: bool
-    refiner: str  # ChessRefiner / RadonRefiner constructor name
+    saddle_point: bool  # image refiner: saddle point, else the detector's own localizer
     color: str
 
     def detector(self, noise_sigma: float | None = None) -> "cc.Detector":
         """Detector with this localizer; ``noise_sigma=None`` estimates the
         noise from each image."""
         uncertainty = cc.Uncertainty.propagated(noise_sigma)
-        if self.radon:
-            cfg = cc.DetectorConfig.radon().without_orientation().with_uncertainty(uncertainty)
-            cfg = cfg.with_radon(refiner=getattr(cc.RadonRefiner, self.refiner)())
-        else:
-            cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(uncertainty)
-            cfg.strategy.chess.refiner = getattr(cc.ChessRefiner, self.refiner)()
+        base = cc.DetectorConfig.radon() if self.radon else cc.DetectorConfig.chess()
+        cfg = base.without_orientation().with_uncertainty(uncertainty)
+        if self.saddle_point:
+            cfg = cfg.with_refiner(cc.ImageRefiner.saddle_point())
         return cc.Detector(cfg)
 
 
-COM = Localizer("CenterOfMass", False, "center_of_mass", AQUA)
-SADDLE = Localizer("SaddlePoint", False, "saddle_point", BLUE)
-RADON = Localizer("Radon peak fit", True, "peak_fit", RED)
-RADON_SP = Localizer("Radon + SaddlePoint", True, "saddle_point", VIOLET)
+COM = Localizer("CenterOfMass", False, False, AQUA)
+SADDLE = Localizer("SaddlePoint", False, True, BLUE)
+RADON = Localizer("Radon peak fit", True, False, RED)
+RADON_SP = Localizer("Radon + SaddlePoint", True, True, VIOLET)
 LOCALIZERS = [COM, SADDLE, RADON]
 
 

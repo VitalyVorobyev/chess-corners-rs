@@ -71,9 +71,10 @@ camera calibration — those are downstream concerns. The pipeline:
    or the Radon SAT detector), behind the `DenseDetector` trait.
 2. **Detection** — threshold → non-maximum suppression → cluster filter
    (Radon adds a 3-point Gaussian peak fit).
-3. **Refinement** — one of three built-in subpixel refiners: two in
-   core's `RefinerKind`, plus the ML refiner in the facade's
-   `ChessRefiner` (see §6).
+3. **Refinement** — each detector's own localizer (ChESS center of
+   mass, Radon peak fit), optionally replaced/refined by one
+   detector-independent image refiner, `DetectorConfig::refiner`:
+   SaddlePoint (core's `RefinerKind`) or the facade's ML refiner (see §6).
 4. **Orientation** — two-axis grid-direction fit per corner (`RingFit`
    default, or `DiskFit`) with calibrated per-axis uncertainty.
 5. **Descriptors** — the output `CornerDescriptor { x, y, response, axes }`.
@@ -192,9 +193,13 @@ Any change that could affect performance should include at least one of:
 
 ## 6) Subpixel refinement: required design pattern
 
-Refinement is selected via the `RefinerKind` config enum and dispatched
-through the `CornerRefiner` trait in `chess-corners-core`, exposed
-ergonomically in `chess-corners`. As of the v1.0 surface,
+Each detector keeps the localizer that works on its own response map
+(ChESS center of mass: `ChessParams::center_of_mass` /
+`ChessConfig::center_of_mass`; Radon peak fit: `peak_fit`). Image
+refiners are selected via core's `RefinerKind` (facade:
+`DetectorConfig::refiner: Option<ImageRefiner>`, lowered in one place in
+`multiscale.rs`) and dispatched through the `CornerRefiner` trait in
+`chess-corners-core`. As of the v1.0 surface,
 **`CornerRefiner` is sealed**: downstream crates cannot add their own
 refiners. "Pluggable" therefore means *choose among the built-ins* — a
 new refiner is added as an in-crate variant, not via a downstream `impl`.
@@ -204,11 +209,11 @@ new refiner is added as an in-crate variant, not via a downstream `impl`.
 * Input: image / response view + initial point + params (+ optional context like orientation)
 * Output: refined point + score + status (accepted/rejected/out-of-bounds/ill-conditioned)
 
-The three built-in refiners:
+The built-in refiners:
 
-* **CenterOfMass** (default; response-map centroid)
-* **SaddlePoint** (quadratic Hessian fit)
-* **Ml** (ONNX patch model; facade `ChessRefiner::Ml`, `ml-refiner` feature)
+* **CenterOfMass** (the ChESS localizer; response-map centroid)
+* **SaddlePoint** (image refiner; quadratic Hessian fit)
+* **Ml** (image refiner; ONNX patch model, facade `ImageRefiner::Ml`, `ml-refiner` feature)
 
 **Rule:** default settings must reproduce existing behavior unless the user opts in.
 

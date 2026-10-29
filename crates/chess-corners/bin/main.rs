@@ -13,7 +13,7 @@ use log::LevelFilter;
 #[cfg(not(feature = "tracing"))]
 use std::str::FromStr;
 
-use commands::{apply_overrides, load_config, run_detection, ChessRefinerSel, DetectionOverrides};
+use commands::{apply_overrides, load_config, run_detection, DetectionOverrides, RefinerSel};
 
 #[cfg(feature = "tracing")]
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -69,11 +69,11 @@ enum Commands {
         /// Min cluster size override (applied to whichever strategy is active).
         #[arg(long)]
         min_cluster_size: Option<u32>,
-        /// Override the ChESS subpixel refiner (`center_of_mass`,
-        /// `saddle_point`). Has no effect when the active
-        /// strategy is Radon.
+        /// Override the image refiner (`none`, `saddle_point`, or `ml`
+        /// with the `ml-refiner` feature). Applies to either strategy;
+        /// `none` keeps the detector's own subpixel localizer.
         #[arg(long)]
-        chess_refiner: Option<String>,
+        refiner: Option<String>,
         /// Integer upscale factor (2, 3, or 4). If set, enables
         /// pre-pipeline bilinear upscaling. Pass `0` or omit to leave
         /// the JSON config value unchanged.
@@ -102,7 +102,7 @@ fn main() -> Result<()> {
             chess_ring,
             nms_radius,
             min_cluster_size,
-            chess_refiner,
+            refiner,
             upscale_factor,
             #[cfg(feature = "tracing")]
             json_trace,
@@ -121,7 +121,7 @@ fn main() -> Result<()> {
                 chess_ring: parse_flag_enum::<ChessRing>(chess_ring.as_deref())?,
                 nms_radius,
                 min_cluster_size,
-                chess_refiner: parse_flag_enum::<ChessRefinerSel>(chess_refiner.as_deref())?,
+                refiner: parse_flag_enum::<RefinerSel>(refiner.as_deref())?,
                 upscale_factor,
             };
             apply_overrides(&mut cfg, overrides);

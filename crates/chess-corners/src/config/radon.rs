@@ -1,50 +1,5 @@
-use chess_corners_core::{PeakFitMode, RadonDetectorParams, RefinerKind, SaddlePointConfig};
+use chess_corners_core::{PeakFitMode, RadonDetectorParams};
 use serde::{Deserialize, Serialize};
-
-/// Final subpixel position of a Radon corner.
-///
-/// The Radon detector always locates its peaks with a 3-point fit on the
-/// response map ([`RadonConfig::peak_fit`]); this selects whether that
-/// position is final or seeds a saddle-point refinement on the input
-/// image. Either reports a
-/// [`position_covariance`](crate::CornerDescriptor::position_covariance)
-/// under [`Uncertainty::Propagated`](crate::Uncertainty::Propagated).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum RadonRefiner {
-    /// Keep the response-map peak fit (the default).
-    #[default]
-    PeakFit,
-    /// Refine each peak with the saddle-point fit on the input image. A
-    /// corner whose saddle-point refinement does not converge keeps its
-    /// peak-fit position and covariance. On synthetic boards it is several
-    /// times more accurate
-    /// than the peak fit under lens blur and board rotation, except on
-    /// cells of about 4 px, where the fit window spans the neighbouring
-    /// corners.
-    SaddlePoint(SaddlePointConfig),
-}
-
-impl RadonRefiner {
-    /// Response-map peak fit only.
-    pub fn peak_fit() -> Self {
-        Self::PeakFit
-    }
-    /// Saddle-point refinement with default tuning.
-    pub fn saddle_point() -> Self {
-        Self::SaddlePoint(SaddlePointConfig::default())
-    }
-
-    /// The image-domain refiner this selection runs, if any.
-    pub(crate) fn image_refiner(self) -> Option<RefinerKind> {
-        match self {
-            Self::PeakFit => None,
-            Self::SaddlePoint(cfg) => Some(RefinerKind::SaddlePoint(cfg)),
-        }
-    }
-}
 
 /// Configuration for the whole-image Radon detector branch of
 /// [`crate::DetectionStrategy`].
@@ -59,8 +14,6 @@ impl RadonRefiner {
 /// - [`image_upsample`](RadonConfig::image_upsample) — `2` (the default)
 ///   reproduces the paper's 2× supersampled detection; `1` is faster but
 ///   less accurate on low-resolution inputs.
-/// - [`refiner`](RadonConfig::refiner) — the response-map peak fit alone
-///   (the default) or saddle-point refinement on the input image.
 ///
 /// # Advanced tuning
 ///
@@ -70,7 +23,7 @@ impl RadonRefiner {
 /// reason (e.g. a non-standard image resolution or SNR budget).
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct RadonConfig {
     /// Advanced tuning. Half-length of each Radon ray, in
@@ -93,15 +46,14 @@ pub struct RadonConfig {
     /// 3×3 box that smooths quantisation noise.
     #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub response_blur_radius: u32,
-    /// Advanced tuning. Peak-fit mode for the 3-point subpixel
-    /// refinement of the response-map argmax. `Gaussian` (default) fits
-    /// on log-response (more accurate near the peak); `Parabolic` fits
-    /// directly on the response values. See [`PeakFitMode`].
+    /// Advanced tuning. Radon's subpixel localizer: the 3-point fit of the
+    /// response-map argmax. `Gaussian` (default) fits on log-response (more
+    /// accurate near the peak); `Parabolic` fits directly on the response
+    /// values. See [`PeakFitMode`]. It gives every corner its final position
+    /// unless an image refiner
+    /// ([`DetectorConfig::refiner`](crate::DetectorConfig::refiner))
+    /// converges on it.
     pub peak_fit: PeakFitMode,
-    /// Final subpixel position: the peak fit alone (the default), or
-    /// saddle-point refinement of each peak on the input image. See
-    /// [`RadonRefiner`].
-    pub refiner: RadonRefiner,
 }
 
 impl Default for RadonConfig {
@@ -114,7 +66,6 @@ impl Default for RadonConfig {
             image_upsample: core_defaults.image_upsample,
             response_blur_radius: core_defaults.response_blur_radius,
             peak_fit: core_defaults.peak_fit,
-            refiner: RadonRefiner::default(),
         }
     }
 }

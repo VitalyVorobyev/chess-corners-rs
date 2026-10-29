@@ -54,7 +54,7 @@ resemble sensor output.
 
 ![Hard cells vs tanh saddle](img/bench/synth_modes.png)
 
-We use hard cells as the primary fixture. [Part V §5.4.3](part-05-refiners.md#543-designing-the-training-distribution) discusses
+We use hard cells as the primary fixture. [Part V §5.6.3](part-05-refiners.md#563-designing-the-training-distribution) discusses
 what happens when an ML refiner is trained on `tanh` data only.
 
 ## 9.2 Accuracy on clean cells
@@ -151,7 +151,7 @@ every localizer; the last ranks them
 
 | Localizer | Corner-local error, RMS per axis | Error over SaddlePoint, blurred corners included |
 |-----------|---------------------------------:|-------------------------------------------------:|
-| Radon + `RadonRefiner::SaddlePoint` | 0.038 px | — |
+| Radon + `ImageRefiner::SaddlePoint` | 0.038 px | — |
 | `SaddlePoint`                       | 0.040 px | — |
 | `cv2.cornerSubPix`, 11×11 window    | 0.045 px | +0.16 px |
 | Radon peak fit                      | 0.056 px | — |
@@ -337,12 +337,12 @@ When a frame returns fewer corners than expected:
 1. Check the `coarse_detect` span's candidate count. If it is zero
    or very low, the detector failed to seed and no refinement ran.
    Consider switching `DetectorConfig::strategy` (ChESS ↔ Radon) or
-   lowering the threshold (`cfg.threshold = Threshold::Relative(_)` or
-   `Threshold::Absolute(_)`).
+   lowering `cfg.threshold`.
 2. If seeds are present but most `refine` results are rejected,
-   the refiner's thresholds are firing. Swap via
-   `DetectorConfig.refiner.kind` or relax the specific rejection
-   (e.g. raise `SaddlePointConfig.max_offset`).
+   the image refiner's thresholds are firing. Swap it via
+   `DetectorConfig::refiner` (`None` keeps the detector's own
+   localizer) or relax the specific rejection (e.g. raise
+   `SaddlePointConfig.max_offset`).
 3. If accuracy is fine but wall time is large, inspect the `refine`
    span. On the measured refiner benchmark, replacing ML
    with a geometric refiner (SaddlePoint or CenterOfMass) is much
@@ -353,10 +353,9 @@ When a frame returns fewer corners than expected:
 ### Real-time loop, 30+ fps
 
 ```rust
-use chess_corners::{ChessRefiner, Detector, DetectorConfig};
+use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 
-let cfg = DetectorConfig::chess_multiscale()
-    .with_chess(|c| c.refiner = ChessRefiner::saddle_point());
+let cfg = DetectorConfig::chess_multiscale().with_refiner(ImageRefiner::saddle_point());
 
 let mut detector = Detector::new(cfg)?;
 
@@ -377,10 +376,10 @@ among the built-in refiners on clean and blurred data alike (§9.2, §9.3),
 and on real calibration images (§9.6).
 
 ```rust
-use chess_corners::{ChessRefiner, Detector, DetectorConfig};
+use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 
 let cfg = DetectorConfig::chess_multiscale()
-    .with_chess(|c| c.refiner = ChessRefiner::saddle_point())
+    .with_refiner(ImageRefiner::saddle_point())
     .with_merge_radius(2.0);
 
 let mut detector = Detector::new(cfg)?;
@@ -392,10 +391,9 @@ let corners = detector.detect(&image)?;
 ```rust
 # #[cfg(feature = "ml-refiner")]
 # {
-use chess_corners::{ChessRefiner, Detector, DetectorConfig};
+use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 
-let cfg = DetectorConfig::chess_multiscale()
-    .with_chess(|c| c.refiner = ChessRefiner::Ml);
+let cfg = DetectorConfig::chess_multiscale().with_refiner(ImageRefiner::Ml);
 
 let mut detector = Detector::new(cfg).unwrap();
 let corners = detector.detect(&image).unwrap();

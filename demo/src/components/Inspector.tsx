@@ -8,7 +8,7 @@ import { OVERLAY_COLORS, RAMP_STEPS, rampCss } from "./overlays";
 import type { CornerColoring, LayerId } from "./Viewer";
 import { formatSigma, type UncertaintySummary } from "../lib/uncertainty";
 import { defaultThreshold, type DetectResult } from "../lib/detector";
-import type { ChessRefinerKind, DetectorSettings, OrientationKind, RadonRefinerKind, Strategy, UncertaintyKind } from "../types/chess-corners";
+import type { DetectorSettings, OrientationKind, RefinerKind, Strategy, UncertaintyKind } from "../types/chess-corners";
 
 export const SAMPLES = [
   { label: "Small", url: "./samples/small.png" },
@@ -108,30 +108,19 @@ export function Inspector(p: InspectorProps) {
                   ]}
                 />
               </Field>
-              {chess && (
-                <Field label="Refiner">
-                  <Select
-                    value={s.chessRefiner}
-                    onValueChange={(v) => p.onSettings({ chessRefiner: v as ChessRefinerKind })}
-                    options={[
-                      { value: "centerOfMass", label: "Center of mass" },
-                      { value: "saddlePoint", label: "Saddle point" },
-                    ]}
-                  />
-                </Field>
-              )}
-              {!chess && (
-                <Field label="Refiner">
-                  <Select
-                    value={s.radonRefiner}
-                    onValueChange={(v) => p.onSettings({ radonRefiner: v as RadonRefinerKind })}
-                    options={[
-                      { value: "peakFit", label: "Peak fit" },
-                      { value: "saddlePoint", label: "Saddle point" },
-                    ]}
-                  />
-                </Field>
-              )}
+              <Field
+                label="Image refiner"
+                annotation={<InfoHint>Without one, each detector keeps its own subpixel localizer (ChESS: center of mass, Radon: peak fit). Saddle point refines on the input image with either detector.</InfoHint>}
+              >
+                <Select
+                  value={s.refiner}
+                  onValueChange={(v) => p.onSettings({ refiner: v as RefinerKind })}
+                  options={[
+                    { value: "none", label: "None (detector's own)" },
+                    { value: "saddlePoint", label: "Saddle point" },
+                  ]}
+                />
+              </Field>
               <Field
                 label={chess ? "Threshold" : "Relative threshold"}
                 annotation={

@@ -1,9 +1,6 @@
 //! ML subpixel refiner integration (feature-gated).
 
-use chess_corners_core::{
-    detect_peaks_from_response_with_refine_radius, ChessParams, Corner, CornerRefiner, ImageView,
-    RefineContext, RefineStatus, Refiner, RefinerKind, ResponseMap,
-};
+use chess_corners_core::{Corner, ImageView};
 use chess_corners_ml::{MlModel, ModelSource};
 use log::{info, warn};
 use std::path::PathBuf;
@@ -12,153 +9,82 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "tracing")]
 use tracing::info_span;
 
-/// ML refiner fallback behavior when inference is unavailable.
-#[derive(Clone, Debug)]
-pub(crate) enum MlFallback {
-    /// Keep the original candidate without refinement.
-    KeepCandidate,
-    /// Use the classic refiner configured in `ChessParams::refiner`.
-    UseClassicRefiner,
-    /// Drop the candidate entirely.
-    Reject,
-}
-
 /// Configuration for the ML subpixel refiner.
 #[derive(Clone, Debug)]
 pub(crate) struct MlRefinerParams {
     pub model_path: Option<PathBuf>,
     pub patch_size: u32,
     pub batch_size: u32,
-    pub fallback: MlFallback,
 }
 
 impl Default for MlRefinerParams {
     fn default() -> Self {
-        // Keep fallback variants reachable for internal use without exposing them in the public API.
-        let _ = (MlFallback::UseClassicRefiner, MlFallback::Reject);
         Self {
             model_path: None,
             patch_size: 21,
             batch_size: 64,
-            fallback: MlFallback::KeepCandidate,
         }
     }
 }
 
+/// The loaded model and its reusable batch buffers.
 pub(crate) struct MlRefinerState {
-    params: MlRefinerParams,
     model: Option<MlModel>,
     patch_size: usize,
     patch_area: usize,
     batch_size: usize,
     buffer: Vec<f32>,
     indices: Vec<usize>,
-    fallback_refiner: Option<Refiner>,
 }
 
 impl MlRefinerState {
-    pub(crate) fn new(params: &MlRefinerParams, fallback_kind: &RefinerKind) -> Self {
+    pub(crate) fn new(params: &MlRefinerParams) -> Self {
         let patch_size = params.patch_size.max(1) as usize;
         let patch_area = patch_size * patch_size;
         let batch_size = params.batch_size.max(1) as usize;
-        let buffer = vec![0.0f32; batch_size * patch_area];
-        let indices = Vec::with_capacity(batch_size);
-        let fallback_refiner = match params.fallback {
-            // ML corners carry no covariance, so neither does the fallback.
-            MlFallback::UseClassicRefiner => Some(Refiner::from_kind(fallback_kind.clone())),
-            _ => None,
-        };
-        let model = load_model(params, patch_size);
-
         Self {
-            params: params.clone(),
-            model,
+            model: load_model(params, patch_size),
             patch_size,
             patch_area,
             batch_size,
-            buffer,
-            indices,
-            fallback_refiner,
+            buffer: vec![0.0f32; batch_size * patch_area],
+            indices: Vec::with_capacity(batch_size),
         }
     }
 }
 
-pub(crate) fn patch_radius(params: &MlRefinerParams) -> i32 {
-    let size = params.patch_size.max(1) as i32;
-    (size - 1) / 2
+impl MlRefinerState {
+    /// Half-width of the model's patch: the margin a refined corner needs.
+    pub(crate) fn patch_radius(&self) -> i32 {
+        (self.patch_size as i32 - 1) / 2
+    }
 }
 
-pub(crate) fn detect_corners_with_ml(
-    resp: &ResponseMap,
-    params: &ChessParams,
-    image: Option<ImageView<'_>>,
+/// Refine every corner of `corners` on `image` with the model, in order.
+///
+/// The model predicts each corner's offset from a patch centred on it. A
+/// corner it cannot refine — its patch leaves the image, inference fails,
+/// or the model is unavailable — is returned unchanged, so a detector's own
+/// subpixel peak (and the state that says so) survives.
+pub(crate) fn refine_corners(
     state: &mut MlRefinerState,
+    mut corners: Vec<Corner>,
+    image: ImageView<'_>,
 ) -> Vec<Corner> {
-    // Seed candidates without applying a classic refiner — the ML model
-    // performs the subpixel refinement below. The refine border is set to
-    // the ML patch radius so every accepted peak has full patch support.
-    let candidates =
-        detect_peaks_from_response_with_refine_radius(resp, params, patch_radius(&state.params));
-
-    if candidates.is_empty() {
-        return candidates;
+    if corners.is_empty() {
+        return corners;
     }
 
     let mut stats = MlRefineStats {
-        total: candidates.len(),
+        total: corners.len(),
         ..Default::default()
     };
 
-    let image = match image {
-        Some(view) => view,
-        None => {
-            warn!("ML refiner requires an image; falling back for all candidates");
-            info!("ml refiner: total={} fallback=all (no image)", stats.total);
-            return apply_fallbacks(
-                resp,
-                None,
-                &state.params,
-                &mut state.fallback_refiner,
-                candidates,
-            );
-        }
+    let Some(model) = state.model.as_ref() else {
+        warn!("ML model unavailable; keeping every candidate");
+        info!("ml refiner: total={} kept=all (no model)", stats.total);
+        return corners;
     };
-
-    let model = match state.model.as_ref() {
-        Some(model) => model,
-        None => {
-            warn!("ML model unavailable; falling back for all candidates");
-            info!("ml refiner: total={} fallback=all (no model)", stats.total);
-            return apply_fallbacks(
-                resp,
-                Some(image),
-                &state.params,
-                &mut state.fallback_refiner,
-                candidates,
-            );
-        }
-    };
-
-    if model.patch_size() != state.patch_size {
-        warn!(
-            "ML patch size mismatch (model {}, config {}); falling back",
-            model.patch_size(),
-            state.patch_size
-        );
-        info!(
-            "ml refiner: total={} fallback=all (patch size mismatch)",
-            stats.total
-        );
-        return apply_fallbacks(
-            resp,
-            Some(image),
-            &state.params,
-            &mut state.fallback_refiner,
-            candidates,
-        );
-    }
-
-    let ctx = RefineContext::new(Some(image), Some(resp));
 
     #[cfg(feature = "tracing")]
     let ml_span = info_span!(
@@ -172,89 +98,63 @@ pub(crate) fn detect_corners_with_ml(
     #[cfg(feature = "tracing")]
     let total_start = Instant::now();
     #[cfg(feature = "tracing")]
-    let mut infer_time = Duration::ZERO;
-    #[cfg(feature = "tracing")]
-    let mut infer_batches = 0usize;
+    let mut timing = BatchTiming::default();
 
-    let mut results: Vec<Option<Corner>> = vec![None; candidates.len()];
     state.indices.clear();
-
-    // Flush the currently-batched patches: run inference (with per-slot
-    // fallback on failure) and reset the index list. A macro rather than
-    // a closure or helper fn because it borrows several disjoint `state`
-    // fields plus the cfg-gated tracing accumulators — a closure would
-    // capture `state` wholesale (conflicting with the loop's own field
-    // borrows) and a free fn would need a dozen arguments.
-    macro_rules! flush_batch {
-        () => {{
-            let input = BatchInput {
-                model,
-                patch_size: state.patch_size,
-                buffer: &state.buffer,
-                candidates: &candidates,
-                params: &state.params,
-                ctx: &ctx,
-                #[cfg(feature = "tracing")]
-                infer_time: &mut infer_time,
-                #[cfg(feature = "tracing")]
-                infer_batches: &mut infer_batches,
-            };
-            run_batch(
-                input,
-                state.indices.len(),
-                &state.indices,
-                &mut state.fallback_refiner,
-                &mut results,
-                &mut stats,
-            );
-            state.indices.clear();
-        }};
-    }
-
-    for (idx, corner) in candidates.iter().enumerate() {
+    for idx in 0..corners.len() {
+        let corner = &corners[idx];
         let offset = state.indices.len() * state.patch_area;
         let patch_slice = &mut state.buffer[offset..offset + state.patch_area];
         if extract_patch_u8_to_f32(image, corner.x, corner.y, state.patch_size, patch_slice)
             .is_none()
         {
             stats.oob += 1;
-            results[idx] = apply_fallback(corner, &state.params, &ctx, &mut state.fallback_refiner);
             continue;
         }
 
         stats.extracted += 1;
         state.indices.push(idx);
         if state.indices.len() == state.batch_size {
-            flush_batch!();
+            run_batch(
+                model,
+                &state.buffer[..state.indices.len() * state.patch_area],
+                &state.indices,
+                &mut corners,
+                &mut stats,
+                #[cfg(feature = "tracing")]
+                &mut timing,
+            );
+            state.indices.clear();
         }
     }
-
     if !state.indices.is_empty() {
-        flush_batch!();
+        run_batch(
+            model,
+            &state.buffer[..state.indices.len() * state.patch_area],
+            &state.indices,
+            &mut corners,
+            &mut stats,
+            #[cfg(feature = "tracing")]
+            &mut timing,
+        );
+        state.indices.clear();
     }
 
-    let mut out = Vec::with_capacity(candidates.len());
-    for (corner, refined) in candidates.into_iter().zip(results) {
-        if let Some(mut c) = refined {
-            c.strength = corner.strength;
-            out.push(c);
-        }
-    }
     #[cfg(feature = "tracing")]
     {
         let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
-        let infer_ms = infer_time.as_secs_f64() * 1000.0;
+        let infer_ms = timing.infer.as_secs_f64() * 1000.0;
         tracing::info!(
             target: "chess_corners::ml",
             total_ms,
             infer_ms,
-            infer_batches,
+            infer_batches = timing.batches,
             candidates = stats.total,
             extracted = stats.extracted,
             oob = stats.oob,
             inferred = stats.inferred,
             applied = stats.applied,
-            output = out.len(),
+            output = corners.len(),
             "ml refiner timing"
         );
     }
@@ -265,9 +165,9 @@ pub(crate) fn detect_corners_with_ml(
         stats.oob,
         stats.inferred,
         stats.applied,
-        out.len()
+        corners.len()
     );
-    out
+    corners
 }
 
 fn load_model(params: &MlRefinerParams, patch_size: usize) -> Option<MlModel> {
@@ -280,7 +180,7 @@ fn load_model(params: &MlRefinerParams, patch_size: usize) -> Option<MlModel> {
         Ok(model) => {
             if model.patch_size() != patch_size {
                 warn!(
-                    "ML model patch size {} does not match config {}; using fallback",
+                    "ML model patch size {} does not match config {}; keeping candidates",
                     model.patch_size(),
                     patch_size
                 );
@@ -296,80 +196,59 @@ fn load_model(params: &MlRefinerParams, patch_size: usize) -> Option<MlModel> {
     }
 }
 
-struct BatchInput<'a> {
-    model: &'a MlModel,
-    patch_size: usize,
-    buffer: &'a [f32],
-    candidates: &'a [Corner],
-    params: &'a MlRefinerParams,
-    ctx: &'a RefineContext<'a>,
-    #[cfg(feature = "tracing")]
-    infer_time: &'a mut Duration,
-    #[cfg(feature = "tracing")]
-    infer_batches: &'a mut usize,
+/// Inference time and batch count, for the tracing summary.
+#[cfg(feature = "tracing")]
+#[derive(Default)]
+struct BatchTiming {
+    infer: Duration,
+    batches: usize,
 }
 
+/// Run the model on the patches in `patches` (one per index of `indices`)
+/// and move each corner `indices` names by its predicted offset. A corner
+/// without a prediction keeps its position.
 fn run_batch(
-    input: BatchInput<'_>,
-    batch_count: usize,
+    model: &MlModel,
+    patches: &[f32],
     indices: &[usize],
-    fallback_refiner: &mut Option<Refiner>,
-    results: &mut [Option<Corner>],
+    corners: &mut [Corner],
     stats: &mut MlRefineStats,
+    #[cfg(feature = "tracing")] timing: &mut BatchTiming,
 ) {
-    let patch_area = input.patch_size * input.patch_size;
-    let end = batch_count * patch_area;
     #[cfg(feature = "tracing")]
     let infer_start = Instant::now();
-    let preds_result = input.model.infer_batch(&input.buffer[..end], batch_count);
+    let preds_result = model.infer_batch(patches, indices.len());
     #[cfg(feature = "tracing")]
     {
-        *input.infer_time += infer_start.elapsed();
-        *input.infer_batches += 1;
+        timing.infer += infer_start.elapsed();
+        timing.batches += 1;
     }
     let preds = match preds_result {
         Ok(preds) => preds,
         Err(err) => {
-            warn!("ML inference failed: {err}");
+            warn!(
+                "ML inference failed: {err}; keeping {} candidates",
+                indices.len()
+            );
             stats.infer_fail += indices.len();
-            for &idx in indices {
-                results[idx] = apply_fallback(
-                    &input.candidates[idx],
-                    input.params,
-                    input.ctx,
-                    fallback_refiner,
-                );
-            }
             return;
         }
     };
 
     let used = preds.len().min(indices.len());
     stats.inferred += used;
-    for (slot, pred) in preds.iter().take(used).enumerate() {
-        let idx = indices[slot];
-        let corner = &input.candidates[idx];
-        let dx = pred[0];
-        let dy = pred[1];
-
+    for (&idx, pred) in indices.iter().zip(&preds) {
+        let corner = &mut corners[idx];
         stats.applied += 1;
-        results[idx] = Some(Corner::new(corner.x + dx, corner.y + dy, corner.strength));
+        *corner = Corner::new(corner.x + pred[0], corner.y + pred[1], corner.strength);
     }
     if preds.len() < indices.len() {
         warn!(
-            "ML output length {} shorter than batch size {}; falling back",
+            "ML output length {} shorter than batch size {}; keeping the rest",
             preds.len(),
             indices.len()
         );
         stats.infer_fail += indices.len() - preds.len();
-        for &idx in &indices[preds.len()..] {
-            results[idx] = apply_fallback(
-                &input.candidates[idx],
-                input.params,
-                input.ctx,
-                fallback_refiner,
-            );
-        }
     }
 }
 
@@ -381,44 +260,6 @@ struct MlRefineStats {
     inferred: usize,
     applied: usize,
     infer_fail: usize,
-}
-
-fn apply_fallbacks(
-    resp: &ResponseMap,
-    image: Option<ImageView<'_>>,
-    params: &MlRefinerParams,
-    fallback_refiner: &mut Option<Refiner>,
-    candidates: Vec<Corner>,
-) -> Vec<Corner> {
-    let ctx = RefineContext::new(image, Some(resp));
-    let mut out = Vec::with_capacity(candidates.len());
-    for corner in candidates {
-        if let Some(refined) = apply_fallback(&corner, params, &ctx, fallback_refiner) {
-            out.push(refined);
-        }
-    }
-    out
-}
-
-fn apply_fallback(
-    corner: &Corner,
-    params: &MlRefinerParams,
-    ctx: &RefineContext<'_>,
-    fallback_refiner: &mut Option<Refiner>,
-) -> Option<Corner> {
-    match params.fallback {
-        MlFallback::KeepCandidate => Some(Corner::new(corner.x, corner.y, corner.strength)),
-        MlFallback::Reject => None,
-        MlFallback::UseClassicRefiner => {
-            let refiner = fallback_refiner.as_mut()?;
-            let res = refiner.refine([corner.x, corner.y], *ctx);
-            if matches!(res.status, RefineStatus::Accepted) {
-                Some(Corner::new(res.x, res.y, corner.strength))
-            } else {
-                None
-            }
-        }
-    }
 }
 
 pub(crate) fn extract_patch_u8_to_f32(
@@ -529,36 +370,21 @@ mod tests {
     }
 
     #[test]
-    fn ml_fallback_respects_refiner_config() {
-        let w = 32;
-        let h = 32;
-        let mut resp = ResponseMap::new(w, h, vec![0.0f32; w * h]);
-        let idx = |x: usize, y: usize| y * w + x;
-        resp.data_mut()[idx(16, 16)] = 10.0;
-        resp.data_mut()[idx(16, 17)] = 1.0;
-        resp.data_mut()[idx(17, 16)] = 1.0;
-        resp.data_mut()[idx(18, 16)] = 5.0;
-
-        let mut params = ChessParams::default();
-        let mut com = crate::CenterOfMassConfig::default();
-        com.radius = 1;
-        params.refiner = RefinerKind::CenterOfMass(com);
-
-        let ml_params = MlRefinerParams {
+    fn missing_model_keeps_every_candidate() {
+        let (w, h) = (32, 32);
+        let img = vec![128u8; w * h];
+        let view = ImageView::from_u8_slice(w, h, &img).unwrap();
+        let params = MlRefinerParams {
             model_path: Some(PathBuf::from("missing.onnx")),
             patch_size: 3,
-            fallback: MlFallback::UseClassicRefiner,
             ..Default::default()
         };
-
-        let mut state = MlRefinerState::new(&ml_params, &params.refiner);
-        let corners = detect_corners_with_ml(&resp, &params, None, &mut state);
-        assert_eq!(corners.len(), 1);
-
-        let expected_x = (16.0 * 10.0 + 16.0 + 17.0) / 12.0;
-        let expected_y = (16.0 * 10.0 + 17.0 + 16.0) / 12.0;
-        let c = &corners[0];
-        assert!((c.x - expected_x).abs() < 1e-4);
-        assert!((c.y - expected_y).abs() < 1e-4);
+        let mut state = MlRefinerState::new(&params);
+        let corners = vec![Corner::new(16.25, 15.5, 10.0), Corner::new(8.0, 9.0, 4.0)];
+        let out = refine_corners(&mut state, corners.clone(), view);
+        assert_eq!(out.len(), corners.len());
+        for (a, b) in corners.iter().zip(&out) {
+            assert_eq!((a.x, a.y, a.strength), (b.x, b.y, b.strength));
+        }
     }
 }

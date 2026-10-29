@@ -9,10 +9,7 @@ import init, {
   ChessDetector,
   DetectorConfig,
   OrientationMethod,
-  ChessRefiner,
-  CenterOfMassConfig,
-  SaddlePointConfig,
-  RadonRefiner,
+  ImageRefiner,
   Uncertainty,
   estimateNoiseSigmaRgba,
 } from "@vitavision/chess-corners";
@@ -21,8 +18,7 @@ import type {
   DetectedCorner,
   DetectorSettings,
   HeatmapData,
-  ChessRefinerKind,
-  RadonRefinerKind,
+  RefinerKind,
   Strategy,
 } from "../types/chess-corners";
 
@@ -52,15 +48,6 @@ export function isReady(): boolean {
 // Defaults (read from the WASM presets so the initial run matches the library)
 // ---------------------------------------------------------------------------
 
-function mapChessRefiner(kind: string): ChessRefinerKind {
-  switch (kind) {
-    case "saddle_point":
-      return "saddlePoint";
-    default:
-      return "centerOfMass";
-  }
-}
-
 /** Return the preset threshold for the given strategy (reads from the WASM preset). */
 export function defaultThreshold(strategy: Strategy): number {
   return strategy === "radon" ? DetectorConfig.radon().threshold : DetectorConfig.chess().threshold;
@@ -74,8 +61,7 @@ export function defaultSettings(): DetectorSettings {
     multiscale: false,
     threshold: chess.threshold,
     orientation: "ringFit",
-    chessRefiner: mapChessRefiner(chess.strategy.chess.refiner.kind),
-    radonRefiner: "peakFit",
+    refiner: chess.refiner ? "saddlePoint" : "none",
     uncertainty: chess.uncertainty.kind === "propagated" ? "propagated" : "off",
     noiseSigma: null,
     nmsRadius: chess.detection.nmsRadius,
@@ -87,18 +73,8 @@ export function defaultSettings(): DetectorSettings {
 // Config construction
 // ---------------------------------------------------------------------------
 
-function buildChessRefiner(kind: ChessRefinerKind): ChessRefiner {
-  switch (kind) {
-    case "saddlePoint":
-      return ChessRefiner.withSaddlePoint(new SaddlePointConfig());
-    case "centerOfMass":
-    default:
-      return ChessRefiner.withCenterOfMass(new CenterOfMassConfig());
-  }
-}
-
-function buildRadonRefiner(kind: RadonRefinerKind): RadonRefiner {
-  return kind === "saddlePoint" ? RadonRefiner.withSaddlePoint(new SaddlePointConfig()) : RadonRefiner.withPeakFit();
+function buildRefiner(cfg: DetectorConfig, kind: RefinerKind): DetectorConfig {
+  return kind === "saddlePoint" ? cfg.withRefiner(ImageRefiner.saddlePoint()) : cfg.withoutRefiner();
 }
 
 /** The per-image noise σ (gray levels) the detector derives when none is supplied; `null` when it declines. */
@@ -122,10 +98,7 @@ function buildConfig(s: DetectorSettings): DetectorConfig {
       ? OrientationMethod.DiskFit
       : OrientationMethod.RingFit,
   );
-  cfg =
-    s.strategy === "radon"
-      ? cfg.withRadonRefiner(buildRadonRefiner(s.radonRefiner))
-      : cfg.withChessRefiner(buildChessRefiner(s.chessRefiner));
+  cfg = buildRefiner(cfg, s.refiner);
   cfg = cfg.withUncertainty(
     s.uncertainty === "off" ? Uncertainty.off() : Uncertainty.propagated(s.noiseSigma ?? undefined),
   );

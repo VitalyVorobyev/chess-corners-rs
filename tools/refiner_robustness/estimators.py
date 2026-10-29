@@ -37,10 +37,7 @@ def _det(name: str):
             cfg = cc.DetectorConfig.radon().without_orientation().with_uncertainty(cc.Uncertainty.propagated())
         else:
             cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(cc.Uncertainty.propagated())
-            cfg.strategy.chess.refiner = {
-                "CoM": cc.ChessRefiner.center_of_mass(),
-                "SaddlePoint": cc.ChessRefiner.saddle_point(),
-            }[name]
+            cfg.refiner = {"CoM": None, "SaddlePoint": cc.ImageRefiner.saddle_point()}[name]
         _DETS[name] = cc.Detector(cfg)
     return _DETS[name]
 
@@ -55,7 +52,7 @@ def chess(img: np.ndarray, name: str):
 def saddle_with_sigma(img: np.ndarray, sigma: float):
     """SaddlePoint detections with a supplied noise sigma (book section 8.5.2)."""
     cfg = cc.DetectorConfig.chess().without_orientation().with_uncertainty(cc.Uncertainty.propagated(float(sigma)))
-    cfg.strategy.chess.refiner = cc.ChessRefiner.saddle_point()
+    cfg.refiner = cc.ImageRefiner.saddle_point()
     d = cc.Detector(cfg).detect(img)
     return np.asarray(d.xy, dtype=np.float64), np.asarray(d.position_covariance, dtype=np.float64)
 

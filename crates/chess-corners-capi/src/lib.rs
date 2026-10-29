@@ -54,21 +54,21 @@ pub const CC_STRATEGY_CHESS: cc_strategy_t = 0;
 /// Whole-image Radon detector.
 pub const CC_STRATEGY_RADON: cc_strategy_t = 1;
 
-/// Subpixel-refiner tag stored in `cc_config::refiner`.
+/// Image-refiner tag stored in `cc_config::refiner`.
 ///
-/// Refiner-specific tuning is not exposed over the flat ABI; the selected
-/// refiner runs with its library defaults. A tag not valid for the
-/// selected strategy is rejected with `CC_ERR_INVALID_CONFIG`.
-pub type cc_refiner_t = u32;
-/// Center-of-mass refiner. ChESS strategy only (the ChESS default).
-pub const CC_REFINER_CENTER_OF_MASS: cc_refiner_t = 0;
-/// Saddle-point refiner. Valid for both strategies. Under Radon a corner
-/// whose refinement does not converge keeps its peak-fit position and
-/// covariance.
-pub const CC_REFINER_SADDLE_POINT: cc_refiner_t = 1;
-/// Radon's response-map peak fit, with no image refinement. Radon strategy
-/// only (the Radon default).
-pub const CC_REFINER_PEAK_FIT: cc_refiner_t = 2;
+/// Each detector places its corners with its own subpixel localizer (the
+/// ChESS center of mass, the Radon peak fit); an image refiner refines them
+/// further on the input image, for either strategy. Refiner tuning is not
+/// exposed over the flat ABI; the selected refiner runs with its library
+/// defaults.
+pub type cc_image_refiner_t = u32;
+/// No image refiner (the default): each detector keeps its own localizer.
+pub const CC_IMAGE_REFINER_NONE: cc_image_refiner_t = 0;
+/// Saddle-point refiner. Under ChESS it replaces the center of mass, starts
+/// from the integer peak and drops a corner it rejects; under Radon it
+/// starts from the peak fit, and a corner whose refinement does not
+/// converge keeps its peak-fit position and covariance.
+pub const CC_IMAGE_REFINER_SADDLE_POINT: cc_image_refiner_t = 1;
 
 /// Orientation-fit tag stored in `cc_config::orientation_method`.
 pub type cc_orientation_method_t = u32;
@@ -209,9 +209,10 @@ pub struct cc_result {
 /// Construct one with a preset (`cc_config_default`, `cc_config_chess`, …)
 /// and tweak the exposed fields. Every `DetectorConfig` knob is
 /// representable here except two that fall back to library defaults:
-/// refiner-specific tuning (only the refiner *kind* is exposed) and the
-/// multiscale pyramid detail (level count, minimum size, refinement
-/// radius) behind the on/off `multiscale` switch.
+/// localizer and refiner tuning (only the image refiner *kind* is exposed)
+/// and the multiscale pyramid detail (level count, minimum size, refinement
+/// radius) behind the on/off `multiscale` switch. A zero-initialised
+/// `refiner` (`CC_IMAGE_REFINER_NONE`) keeps each detector's own localizer.
 ///
 /// Fields are grouped by applicability: `chess_ring` applies to the
 /// ChESS strategy only, while `ray_radius` / `image_upsample` /
@@ -229,8 +230,9 @@ pub struct cc_config {
     pub nms_radius: u32,
     /// Minimum positive-response neighbours required to accept a candidate.
     pub min_cluster_size: u32,
-    /// One of the `CC_REFINER_*` constants. Must be valid for `strategy`.
-    pub refiner: cc_refiner_t,
+    /// One of the `CC_IMAGE_REFINER_*` constants. Applies to either
+    /// strategy.
+    pub refiner: cc_image_refiner_t,
     /// One of the `CC_ORIENTATION_*` constants.
     pub orientation_method: cc_orientation_method_t,
     /// `0` runs single-scale detection; any non-zero value enables the
@@ -301,7 +303,7 @@ pub enum cc_status {
     /// The upscale configuration was invalid.
     CC_ERR_UPSCALE,
     /// The configuration was invalid (e.g. an enum tag was out of range, or
-    /// a refiner not valid for the selected strategy).
+    /// a known noise σ was negative or not finite).
     CC_ERR_INVALID_CONFIG,
     /// A panic was trapped at the FFI boundary.
     CC_ERR_PANIC,
@@ -768,7 +770,7 @@ mod tests {
     fn saddle_point_corners_carry_a_covariance() {
         let mut cfg = cc_config_chess();
         cfg.uncertainty = CC_UNCERTAINTY_PROPAGATED;
-        cfg.refiner = CC_REFINER_SADDLE_POINT;
+        cfg.refiner = CC_IMAGE_REFINER_SADDLE_POINT;
         let corners = detect_board(&cfg).expect("detection");
         assert!(!corners.is_empty());
         assert!(corners.iter().any(|c| c.has_position_covariance == 1));
@@ -776,8 +778,9 @@ mod tests {
             let p = c.position_covariance;
             assert!(p.xx > 0.0 && p.yy > 0.0 && p.xx * p.yy > p.xy * p.xy);
         }
-        // The default refiner reports one too.
+        // The center of mass (no image refiner) reports one too.
         cfg.refiner = cc_config_chess().refiner;
+        assert_eq!(cfg.refiner, CC_IMAGE_REFINER_NONE);
         let plain = detect_board(&cfg).expect("detection");
         assert!(plain.iter().any(|c| c.has_position_covariance == 1));
     }
@@ -864,26 +867,24 @@ mod tests {
     }
 
     #[test]
-    fn radon_refiner_tags_are_validated_and_round_trip() {
-        let mut cfg = cc_config_radon();
-        assert_eq!(cfg.refiner, CC_REFINER_PEAK_FIT);
-        cfg.refiner = CC_REFINER_SADDLE_POINT;
-        let rs = convert::to_detector_config(&cfg).expect("valid");
-        assert_eq!(convert::flatten(&rs).refiner, CC_REFINER_SADDLE_POINT);
-        for bad in [CC_REFINER_CENTER_OF_MASS, 99] {
-            cfg.refiner = bad;
+    fn image_refiner_tags_round_trip_for_both_strategies() {
+        for mut cfg in [cc_config_chess(), cc_config_radon()] {
+            assert_eq!(cfg.refiner, CC_IMAGE_REFINER_NONE);
+            let rs = convert::to_detector_config(&cfg).expect("valid");
+            assert_eq!(rs.refiner, None);
+            cfg.refiner = CC_IMAGE_REFINER_SADDLE_POINT;
+            let rs = convert::to_detector_config(&cfg).expect("valid");
+            assert_eq!(
+                rs.refiner,
+                Some(chess_corners::ImageRefiner::saddle_point())
+            );
+            assert_eq!(convert::flatten(&rs).refiner, CC_IMAGE_REFINER_SADDLE_POINT);
+            cfg.refiner = 2;
             assert_eq!(
                 convert::to_detector_config(&cfg),
-                Err(cc_status::CC_ERR_INVALID_CONFIG),
-                "tag {bad} under Radon"
+                Err(cc_status::CC_ERR_INVALID_CONFIG)
             );
         }
-        let mut chess = cc_config_chess();
-        chess.refiner = CC_REFINER_PEAK_FIT;
-        assert_eq!(
-            convert::to_detector_config(&chess),
-            Err(cc_status::CC_ERR_INVALID_CONFIG)
-        );
     }
 
     #[test]
@@ -892,10 +893,10 @@ mod tests {
         cfg.uncertainty = CC_UNCERTAINTY_PROPAGATED;
         cfg.has_noise_sigma = 1;
         cfg.noise_sigma = 2.0;
-        cfg.refiner = CC_REFINER_SADDLE_POINT;
+        cfg.refiner = CC_IMAGE_REFINER_SADDLE_POINT;
         let corners = detect_board(&cfg).expect("detection");
         assert!(corners.iter().any(|c| c.has_position_covariance == 1));
-        cfg.refiner = CC_REFINER_PEAK_FIT;
+        cfg.refiner = CC_IMAGE_REFINER_NONE;
         let plain = detect_board(&cfg).expect("detection");
         assert!(!plain.is_empty());
         assert!(plain.iter().any(|c| c.has_position_covariance == 1));

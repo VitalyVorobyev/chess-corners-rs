@@ -2,8 +2,8 @@
 
 use chess_corners::{
     ChessConfig as RsChessConfig, DetectorConfig as RsDetectorConfig,
-    OrientationMethod as RsOrientationMethod, RadonConfig as RsRadonConfig,
-    Uncertainty as RsUncertainty,
+    ImageRefiner as RsImageRefiner, OrientationMethod as RsOrientationMethod,
+    RadonConfig as RsRadonConfig, Uncertainty as RsUncertainty,
 };
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -14,7 +14,7 @@ use super::parse::{
     config_error, extract_float, json_dumps, json_loads, reject_unknown_keys, require_dict,
     ChessRing, OrientationMethod, PeakFitMode,
 };
-use super::refiners::{ChessRefiner, RadonRefiner};
+use super::refiners::{CenterOfMassConfig, ImageRefiner};
 use super::strategy::{ChessConfig, DetectionParams, DetectionStrategy, RadonConfig, StrategyKind};
 use super::uncertainty::Uncertainty;
 use super::upscale::UpscaleConfig;
@@ -33,6 +33,7 @@ pub struct DetectorConfig {
     pub(crate) orientation_method: Option<RsOrientationMethod>,
     pub(crate) merge_radius: f32,
     pub(crate) uncertainty: RsUncertainty,
+    pub(crate) refiner: Option<RsImageRefiner>,
 }
 
 impl DetectorConfig {
@@ -46,6 +47,7 @@ impl DetectorConfig {
             orientation_method: src.orientation_method,
             merge_radius: src.merge_radius,
             uncertainty: src.uncertainty,
+            refiner: src.refiner,
         })
     }
 
@@ -69,6 +71,7 @@ impl DetectorConfig {
         cfg.orientation_method = self.orientation_method;
         cfg.merge_radius = self.merge_radius;
         cfg.uncertainty = self.uncertainty;
+        cfg.refiner = self.refiner;
         cfg
     }
 }
@@ -159,16 +162,34 @@ impl DetectorConfig {
         Ok(cfg)
     }
 
+    /// Return a new `DetectorConfig` with the image refiner replaced:
+    /// `ImageRefiner.saddle_point(cfg=None)` or `ImageRefiner.ml()`. The
+    /// refiner is independent of the detector and survives `with_chess` /
+    /// `with_radon`.
+    fn with_refiner(&self, py: Python<'_>, refiner: ImageRefiner) -> PyResult<Self> {
+        let mut cfg = self.clone_inner(py)?;
+        cfg.refiner = Some(refiner.to_rs());
+        Ok(cfg)
+    }
+
+    /// Return a new `DetectorConfig` with no image refiner: each detector
+    /// keeps its own localizer (ChESS center of mass, Radon peak fit).
+    fn without_refiner(&self, py: Python<'_>) -> PyResult<Self> {
+        let mut cfg = self.clone_inner(py)?;
+        cfg.refiner = None;
+        Ok(cfg)
+    }
+
     /// Return a new `DetectorConfig` with the ChESS strategy fields updated
     /// from the provided keyword arguments. If the current strategy is Radon,
     /// it is replaced with a default `ChessConfig` before applying kwargs.
     /// Top-level fields (threshold, multiscale, etc.) are preserved.
     ///
-    /// Accepted kwargs: `refiner`, `ring`. The shared
-    /// NMS / clustering knobs moved to `with_detection`.
+    /// Accepted kwargs: `ring`, `center_of_mass` (a `CenterOfMassConfig`).
+    /// The shared NMS / clustering knobs are set with `with_detection`.
     #[pyo3(signature = (**kwargs))]
     fn with_chess(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        const CHESS_FIELDS: &[&str] = &["refiner", "ring"];
+        const CHESS_FIELDS: &[&str] = &["ring", "center_of_mass"];
 
         let mut cfg = self.clone_inner(py)?;
 
@@ -188,8 +209,8 @@ impl DetectorConfig {
                     )));
                 }
             }
-            if let Some(v) = kw.get_item("refiner")? {
-                chess.refiner = v.extract::<Py<ChessRefiner>>()?;
+            if let Some(v) = kw.get_item("center_of_mass")? {
+                chess.center_of_mass = v.extract::<Py<CenterOfMassConfig>>()?;
             }
             if let Some(v) = kw.get_item("ring")? {
                 let ring: ChessRing = v.extract()?;
@@ -200,7 +221,7 @@ impl DetectorConfig {
         let strategy = DetectionStrategy {
             kind: StrategyKind::Chess,
             chess: Py::new(py, chess)?,
-            radon: Py::new(py, RadonConfig::from_rs(py, RsRadonConfig::default())?)?,
+            radon: Py::new(py, RadonConfig::from_rs(RsRadonConfig::default()))?,
         };
         cfg.strategy = Py::new(py, strategy)?;
         Ok(cfg)
@@ -212,8 +233,8 @@ impl DetectorConfig {
     /// Top-level fields (threshold, multiscale, etc.) are preserved.
     ///
     /// Accepted kwargs: `ray_radius`, `image_upsample`,
-    /// `response_blur_radius`, `peak_fit`, `refiner`. The shared NMS /
-    /// clustering knobs moved to `with_detection`.
+    /// `response_blur_radius`, `peak_fit`. The shared NMS / clustering
+    /// knobs are set with `with_detection`.
     #[pyo3(signature = (**kwargs))]
     fn with_radon(&self, py: Python<'_>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         const RADON_FIELDS: &[&str] = &[
@@ -221,16 +242,15 @@ impl DetectorConfig {
             "image_upsample",
             "response_blur_radius",
             "peak_fit",
-            "refiner",
         ];
 
         let mut cfg = self.clone_inner(py)?;
 
         let base_radon = match cfg.strategy.borrow(py).kind {
-            StrategyKind::Radon => cfg.strategy.borrow(py).radon.borrow(py).to_rs(py),
+            StrategyKind::Radon => cfg.strategy.borrow(py).radon.borrow(py).to_rs(),
             StrategyKind::Chess => RsRadonConfig::default(),
         };
-        let mut radon = RadonConfig::from_rs(py, base_radon)?;
+        let mut radon = RadonConfig::from_rs(base_radon);
 
         if let Some(kw) = kwargs {
             for key in kw.keys().iter() {
@@ -253,9 +273,6 @@ impl DetectorConfig {
             if let Some(v) = kw.get_item("peak_fit")? {
                 let pf: PeakFitMode = v.extract()?;
                 radon.peak_fit = pf.into();
-            }
-            if let Some(v) = kw.get_item("refiner")? {
-                radon.refiner = v.extract::<Py<RadonRefiner>>()?;
             }
         }
 
@@ -375,6 +392,15 @@ impl DetectorConfig {
         self.uncertainty = v.to_rs();
     }
 
+    #[getter]
+    fn refiner(&self) -> PyResult<Option<ImageRefiner>> {
+        self.refiner.map(ImageRefiner::from_rs).transpose()
+    }
+    #[setter]
+    fn set_refiner(&mut self, v: Option<ImageRefiner>) {
+        self.refiner = v.map(|r| r.to_rs());
+    }
+
     // ---- serialization ----
 
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
@@ -396,6 +422,13 @@ impl DetectorConfig {
             "uncertainty",
             Uncertainty::from_rs(self.uncertainty)?.to_dict(py)?,
         )?;
+        // `None` (no image refiner) serialises to a JSON `null`.
+        d.set_item(
+            "refiner",
+            self.refiner
+                .map(|r| ImageRefiner::from_rs(r)?.to_dict(py))
+                .transpose()?,
+        )?;
         Ok(d.unbind())
     }
 
@@ -406,11 +439,6 @@ impl DetectorConfig {
         data: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let dict = require_dict(data, "config")?;
-        if dict.get_item("refiner")?.is_some() {
-            return Err(config_error(
-                "refiner moved into strategy.{chess,radon}.refiner in 0.10.0",
-            ));
-        }
         if dict.get_item("noise_sigma")?.is_some() {
             return Err(config_error(
                 "noise_sigma moved into uncertainty in 2.0.0: \
@@ -428,6 +456,7 @@ impl DetectorConfig {
                 "orientation_method",
                 "merge_radius",
                 "uncertainty",
+                "refiner",
             ],
             "config",
         )?;
@@ -476,6 +505,15 @@ impl DetectorConfig {
         if let Some(value) = dict.get_item("uncertainty")? {
             let cls = py.get_type::<Uncertainty>();
             cfg.uncertainty = Uncertainty::from_dict(&cls, &value)?.to_rs();
+        }
+        // A JSON `null` (or an absent key) means no image refiner.
+        if let Some(value) = dict.get_item("refiner")? {
+            cfg.refiner = if value.is_none() {
+                None
+            } else {
+                let cls = py.get_type::<ImageRefiner>();
+                Some(ImageRefiner::from_dict(&cls, &value)?.to_rs())
+            };
         }
         Ok(cfg)
     }

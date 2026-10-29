@@ -13,9 +13,9 @@ use crate::detect::radon::{detect_peaks_from_radon, radon_response_u8, RadonBuff
 use crate::uncertainty::{edge_width, PixelTile, ROUNDING_VAR};
 use crate::{
     chess_response_u8, detect_peaks_from_response_with_refine_radius, CenterOfMassConfig,
-    ChessParams, Corner, CornerRefiner, DenseDetector, ImageView, PositionCovariance,
-    RadonDetector, RadonDetectorParams, RefineContext, RefineStatus, Refiner, RefinerKind,
-    SaddlePointConfig,
+    CenterOfMassRefiner, ChessParams, Corner, CornerRefiner, DenseDetector, ImageView,
+    PositionCovariance, RadonDetector, RadonDetectorParams, RefineContext, RefineStatus, Refiner,
+    RefinerKind, SaddlePointConfig,
 };
 use chess_corners_testutil::{optical_chessboard, Lattice};
 use std::path::PathBuf;
@@ -63,11 +63,10 @@ impl Det {
     }
 }
 
-fn chess_params(kind: RefinerKind) -> ChessParams {
+fn chess_params() -> ChessParams {
     ChessParams {
         // The facade's ChESS preset.
         threshold: 30.0,
-        refiner: kind,
         orientation_method: None,
         ..ChessParams::default()
     }
@@ -83,15 +82,19 @@ pub(crate) fn localize(
     covariance: bool,
 ) -> Vec<Det> {
     let view = ImageView::from_u8_slice(w, h, img).unwrap();
-    let chess_kind = match loc {
-        Localizer::CenterOfMass => Some(RefinerKind::CenterOfMass(CenterOfMassConfig::default())),
-        Localizer::SaddlePoint => Some(RefinerKind::SaddlePoint(SaddlePointConfig::default())),
+    let chess_refiner = match loc {
+        Localizer::CenterOfMass => Some(Refiner::CenterOfMass(CenterOfMassRefiner::new(
+            CenterOfMassConfig::default(),
+        ))),
+        Localizer::SaddlePoint => Some(Refiner::from_kind(RefinerKind::SaddlePoint(
+            SaddlePointConfig::default(),
+        ))),
         _ => None,
     };
-    if let Some(kind) = chess_kind {
-        let params = chess_params(kind.clone());
+    if let Some(refiner) = chess_refiner {
+        let params = chess_params();
         let resp = chess_response_u8(img, w, h, &params);
-        let mut refiner = Refiner::from_kind(kind).with_covariance(covariance);
+        let mut refiner = refiner.with_covariance(covariance);
         let peaks = detect_peaks_from_response_with_refine_radius(&resp, &params, refiner.radius());
         let ctx = RefineContext::new(Some(view), Some(&resp));
         let mut out = Vec::new();

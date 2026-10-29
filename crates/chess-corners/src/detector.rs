@@ -52,7 +52,7 @@ pub struct Detector {
 }
 
 /// ML-refiner parameters and the per-detector model state built from them
-/// on first use.
+/// on first use; it does not depend on the config.
 #[cfg(feature = "ml-refiner")]
 struct MlSlot {
     state: Option<ml_refiner::MlRefinerState>,
@@ -108,12 +108,6 @@ impl Detector {
     pub fn set_config(&mut self, cfg: DetectorConfig) -> Result<(), ChessError> {
         cfg.validate()?;
         self.cfg = cfg;
-        // Drop ML state on config change so the next `detect` call
-        // re-builds it against the (possibly new) fallback refiner.
-        #[cfg(feature = "ml-refiner")]
-        {
-            self.ml.state = None;
-        }
         Ok(())
     }
 
@@ -209,7 +203,8 @@ impl Detector {
     ///
     /// Returns the corners whose detected peak lies inside `roi`, each
     /// refined and described exactly as [`Detector::detect_u8`] would: the
-    /// same configured refiner and the same orientation/descriptor stage.
+    /// same localizer and image refiner and the same orientation/descriptor
+    /// stage.
     /// Coordinates are in the full input-image pixel frame. Both detection
     /// strategies (ChESS and Radon) are supported.
     ///
@@ -261,9 +256,10 @@ impl Detector {
     /// Returns [`ChessError::DimensionMismatch`] if `img.len() != width *
     /// height`. With the `ml-refiner` feature, returns
     /// `ChessError::RoiRefinerUnsupported` when the configuration selects
-    /// the ML refiner: the ML refiner runs a whole-frame model pipeline
-    /// this path does not carry, and the refiner selection is never
-    /// silently downgraded — use [`Detector::detect_u8`] for ML refinement.
+    /// the ML refiner ([`ImageRefiner::Ml`](crate::ImageRefiner::Ml)): the ML
+    /// refiner runs a whole-frame model pipeline this path does not carry,
+    /// and the refiner selection is never silently downgraded — use
+    /// [`Detector::detect_u8`] for ML refinement.
     pub fn detect_u8_roi(
         &mut self,
         img: &[u8],
@@ -335,8 +331,8 @@ impl Detector {
     ///
     /// `None` when that frame has no position covariance: under
     /// [`Uncertainty::Off`](crate::Uncertainty::Off) (the default), on
-    /// upscaled input, with the ML refiner, when no corner's localizer
-    /// reported one, or when the estimate declined. Also `None` before the
+    /// upscaled input, when no corner's localizer reported one (the ML
+    /// refiner reports none), or when the estimate declined. Also `None` before the
     /// first detection and after a detection that returned an error.
     pub fn last_noise_sigma(&self) -> Option<f32> {
         self.last_noise_sigma
@@ -372,19 +368,16 @@ impl Detector {
     ) -> Frame {
         #[cfg(feature = "ml-refiner")]
         if Self::is_ml_refiner(cfg) {
-            if ml.state.is_none() {
-                let fallback = chess_corners_core::RefinerKind::CenterOfMass(
-                    chess_corners_core::CenterOfMassConfig::default(),
-                );
-                ml.state = Some(ml_refiner::MlRefinerState::new(&ml.params, &fallback));
-            }
-            let state = ml.state.as_mut().expect("ml state initialised above");
+            let state = ml
+                .state
+                .get_or_insert_with(|| ml_refiner::MlRefinerState::new(&ml.params));
             return multiscale::detect_with_ml(
                 view,
                 cfg,
+                uncertainty,
                 pyramid,
                 chess_buffers,
-                &ml.params,
+                radon_buffers,
                 state,
             );
         }
@@ -399,16 +392,11 @@ impl Detector {
         )
     }
 
-    /// Whether the active config selects the ML refiner. Only true on
-    /// the ChESS path, since the Radon strategy carries a separate
-    /// refiner enum that has no ML variant.
+    /// Whether the active config selects the ML refiner.
     #[cfg(feature = "ml-refiner")]
     #[inline]
     fn is_ml_refiner(cfg: &DetectorConfig) -> bool {
-        matches!(
-            &cfg.strategy,
-            crate::DetectionStrategy::Chess(c) if matches!(c.refiner, crate::ChessRefiner::Ml)
-        )
+        matches!(cfg.refiner, Some(crate::ImageRefiner::Ml))
     }
 }
 
@@ -747,11 +735,13 @@ mod tests {
     fn roi_rejects_ml_refiner_without_silent_downgrade() {
         let size = 64usize;
         let img = synthetic_board(size);
-        let cfg = DetectorConfig::chess().with_chess(|c| c.refiner = crate::ChessRefiner::Ml);
-        let mut det = Detector::new(cfg).unwrap();
-        let err = det
-            .detect_u8_roi(&img, size as u32, size as u32, roi(10, 10, 50, 50))
-            .unwrap_err();
-        assert!(matches!(err, ChessError::RoiRefinerUnsupported));
+        for base in [DetectorConfig::chess(), DetectorConfig::radon()] {
+            let cfg = base.with_refiner(crate::ImageRefiner::Ml);
+            let mut det = Detector::new(cfg).unwrap();
+            let err = det
+                .detect_u8_roi(&img, size as u32, size as u32, roi(10, 10, 50, 50))
+                .unwrap_err();
+            assert!(matches!(err, ChessError::RoiRefinerUnsupported));
+        }
     }
 }

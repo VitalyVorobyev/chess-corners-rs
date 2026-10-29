@@ -12,8 +12,10 @@ The crate exposes three orthogonal components via its crate root:
   - Whole-image Duda-Frese localized Radon detector with
     summed-area-table ray sums (`radon_response_u8`,
     `detect_peaks_from_radon`, and friends).
-- **Refinement** — pluggable subpixel-refinement backends:
-  center-of-mass, saddle-point, and Radon-peak
+- **Subpixel localization** — each detector's own localizer (the ChESS
+  center of mass on the response map, configured by
+  `ChessParams::center_of_mass`; the Radon peak fit inside peak
+  detection) and the saddle-point image refiner for either detector
   (`refine_corners_on_image`, `Refiner`, `RefinerKind`).
 - **Orientation** — two-axis orientation fit at each detected corner:
   ring-fit (parametric tanh model with robust seeding) and
@@ -46,17 +48,23 @@ builds on stable.
 Basic usage:
 
 ```rust
-use chess_corners_core::{find_corners_u8, ChessParams, RefinerKind};
+use chess_corners_core::{
+    chess_response_u8, detect_corners_from_response_with_refiner, find_corners_u8, ChessParams,
+    ImageView, Refiner, RefinerKind,
+};
 
 fn detect(img: &[u8], w: usize, h: usize) {
-    let mut params = ChessParams::default();
-    // Default = center-of-mass refinement on the response map.
+    let params = ChessParams::default();
+    // ChESS peaks placed by the center of mass of the response map.
     let corners = find_corners_u8(img, w, h, &params);
     println!("found {} corners", corners.len());
 
-    // Opt into the saddle-point refiner on the image intensities:
-    params.refiner = RefinerKind::SaddlePoint(Default::default());
-    let refined = find_corners_u8(img, w, h, &params);
+    // Refine the peaks on the image intensities with the saddle-point
+    // image refiner instead:
+    let resp = chess_response_u8(img, w, h, &params);
+    let view = ImageView::from_u8_slice(w, h, img).unwrap();
+    let mut saddle = Refiner::from_kind(RefinerKind::SaddlePoint(Default::default()));
+    let refined = detect_corners_from_response_with_refiner(&resp, &params, Some(view), &mut saddle);
     println!("found {} corners with SaddlePoint", refined.len());
 }
 ```

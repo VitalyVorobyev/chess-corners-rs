@@ -235,12 +235,13 @@ carrying:
 ### 3.3.2 Subpixel refinement
 
 Each candidate is refined from its integer peak to a subpixel
-position by one of the refiners in
-[Part V](part-05-refiners.md). The ChESS detector is selected via
-`DetectorConfig.refiner.kind`; the default is `CenterOfMass`, which
-operates directly on the response map, but any of the five refiners
-can be used. Refinement is a per-candidate call and adds at most a
-few tens of nanoseconds for the fastest options.
+position. By default the ChESS localizer does it: the response-weighted
+center of mass of the response map around the peak
+(`ChessConfig::center_of_mass`), a per-candidate call of a few tens of
+nanoseconds. An image refiner (`DetectorConfig::refiner`, e.g.
+`ImageRefiner::SaddlePoint`) replaces it, starting from the same integer
+peak and dropping a candidate it rejects. Both are described in
+[Part V](part-05-refiners.md).
 
 The internal type representing a refined candidate is
 `descriptor::Corner`:
@@ -304,7 +305,7 @@ Fields:
 - `position_covariance` – the 2×2 covariance `{ xx, xy, yy }` of
   `(x, y)` in px²: the scatter due to white pixel noise plus the
   localizer's systematic error (the `Corner::position_covariance` rustdoc
-  gives the model). Every refiner except the ML one reports it when
+  gives the model). Every localizer except the ML refiner reports it when
   `DetectorConfig::uncertainty` is `Propagated` (the default is `Off`); the
   detector scales it by the image noise level that `Propagated` carries,
   estimated per image or supplied, and leaves it `None` on upscaled

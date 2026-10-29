@@ -150,9 +150,9 @@ import init, {
   ChessDetector,
   DetectorConfig,
   ChessConfig,
-  ChessRefiner,
   ChessRing,
   DetectionStrategy,
+  ImageRefiner,
   MultiscaleConfig,
   OrientationMethod,
   PeakFitMode,
@@ -176,12 +176,31 @@ cfg.mergeRadius = 2.5;
 // Strategy selects ChESS vs Radon and carries the detector tuning:
 const chess = new ChessConfig();
 chess.ring = ChessRing.Broad;
-chess.nmsRadius = 3;
-chess.refiner = ChessRefiner.withSaddlePoint(new SaddlePointConfig());
+chess.centerOfMass.radius = 3; // the ChESS detector's own subpixel localizer
 cfg.strategy = DetectionStrategy.fromChess(chess);
+
+// Optional image refiner, independent of the strategy. Without one each
+// detector keeps its own localizer (ChESS: center of mass, Radon: peak fit).
+// `withRefiner` / `withoutRefiner` return copies.
+const refined = cfg.withRefiner(ImageRefiner.saddlePoint());
+const sp = new SaddlePointConfig();
+sp.maxOffset = 2.0;
+const tuned = cfg.withRefiner(ImageRefiner.saddlePointWith(sp));
+const plain = refined.withoutRefiner();
 
 const detector = ChessDetector.withConfig(cfg);
 ```
+
+`ImageRefiner` is an immutable value: `ImageRefiner.saddlePoint()` (default
+tuning), `ImageRefiner.saddlePointWith(cfg)` (a copy of a `SaddlePointConfig`),
+and `ImageRefiner.ml()` in builds with the `ml-refiner` feature. Its `kind`
+is `"saddle_point"` or `"ml"`; `saddlePointConfig` returns a copy of the payload
+(`undefined` for `ml`). `cfg.refiner` is the current refiner or `undefined`.
+On ChESS the refiner replaces the center of mass, starts from the integer
+response peak and drops the corners it rejects; on Radon it starts from the
+peak fit and keeps the peak fit where it does not converge. The ML refiner
+rejects no corner and reports no covariance. JSON: `"refiner"` absent or `null`,
+`{"saddle_point": {...}}` or `"ml"`.
 
 ### Nested edits propagate
 
@@ -190,8 +209,8 @@ mutation works without a round-trip:
 
 ```ts
 cfg.strategy.chess.ring = ChessRing.Broad;
-cfg.strategy.chess.refiner.saddlePoint.maxOffset = 2.0;
-cfg.strategy.chess.nmsRadius = 3;
+cfg.strategy.chess.centerOfMass.radius = 3;
+cfg.detection.nmsRadius = 3;
 cfg.multiscale = MultiscaleConfig.pyramid(4, 64, 3);
 ```
 
@@ -201,7 +220,7 @@ snapshot:
 
 ```ts
 const snapshot = detector.getConfig();
-snapshot.strategy.chess.nmsRadius = 4;
+snapshot.detection.nmsRadius = 4;
 detector.applyConfig(snapshot);
 ```
 
@@ -219,6 +238,7 @@ await init();
 const json = JSON.parse(default_detector_config_json()); // plain object, snake_case keys
 json.threshold = 40;
 json.strategy = { radon: { ray_radius: 4 } };            // externally tagged enum
+json.refiner = { saddle_point: { radius: 2 } };           // or null for none
 const cfg = DetectorConfig.fromJson(JSON.stringify(json)); // throws Error on bad JSON
 const detector = ChessDetector.withConfig(cfg);
 const roundTrip = JSON.parse(cfg.toJson());

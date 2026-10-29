@@ -17,7 +17,7 @@ img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.DetectorConfig.chess_multiscale()
 cfg.threshold = 60.0  # ChESS: absolute floor on the raw response (default 30)
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point()
+cfg.refiner = chess_corners.ImageRefiner.saddle_point()
 
 detector = chess_corners.Detector(cfg)
 det = detector.detect(img)
@@ -91,29 +91,34 @@ named fields replaced:
 ```python
 cfg = (
     chess_corners.DetectorConfig.chess_multiscale()
-    .with_chess(
-        refiner=chess_corners.ChessRefiner.saddle_point(),
-        ring=chess_corners.ChessRing.BROAD,
-    )
+    .with_chess(ring=chess_corners.ChessRing.BROAD)
     .with_detection(nms_radius=2, min_cluster_size=2)
+    .with_refiner(chess_corners.ImageRefiner.saddle_point())
 )
 ```
 
-Refiners are per-detector: `ChessRefiner` carries one of
-`center_of_mass`, `saddle_point`, or `ml` (with the
-`ml-refiner` feature). `RadonRefiner` carries `peak_fit` (the default:
-keep the response-map peak fit) or `saddle_point` (refine each Radon peak
-on the image; more accurate).
-The active `ChessRefiner` variant's tuning is reachable via the
-`payload` property:
+By default each detector keeps its own localizer: the center of mass on
+the ChESS response (tuned by `cfg.strategy.chess.center_of_mass`) or the
+peak fit on the Radon response. `cfg.refiner` replaces it with an image
+refiner, `ImageRefiner.saddle_point(cfg=None)` or `ImageRefiner.ml()`,
+set with `with_refiner(...)` / `cfg.refiner = ...` and cleared with
+`without_refiner()` / `cfg.refiner = None`. It is independent of the
+detector, so it survives `with_chess` / `with_radon`.
+
+On ChESS the refiner starts from the integer peak and drops corners it
+rejects; on Radon it starts from the peak fit and keeps the peak fit where
+it does not converge. `ImageRefiner.saddle_point()` reports a position
+covariance under `Uncertainty.propagated()` with either detector. The
+tuning of the active variant is reachable via the `payload` property
+(a copy; rebuild the refiner to change it):
 
 ```python
 scfg = chess_corners.SaddlePointConfig()
 scfg.max_offset = 2.0
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point(scfg)
+cfg.refiner = chess_corners.ImageRefiner.saddle_point(scfg)
 
-assert cfg.strategy.chess.refiner.kind == "saddle_point"
-assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
+assert cfg.refiner.kind == "saddle_point"
+assert cfg.refiner.payload.max_offset == 2.0
 ```
 
 Tagged classes:
@@ -125,8 +130,8 @@ Tagged classes:
 - `UpscaleConfig`: `UpscaleConfig.disabled()` /
   `UpscaleConfig.fixed(factor)`; read `cfg.upscale.kind` and (when
   `fixed`) `factor`.
-- `ChessRefiner`: `center_of_mass()`, `saddle_point()`,
-  `ml()` (with the `ml-refiner` feature).
+- `ImageRefiner`: `saddle_point()`, `ml()` (with the `ml-refiner`
+  feature); read `cfg.refiner.kind` and `cfg.refiner.payload`.
 
 Enums:
 
@@ -173,14 +178,15 @@ The same algorithm config schema is used by Rust, Python, docs, and the CLI:
   "strategy": {
     "chess": {
       "ring": "broad",
-      "refiner": {
-        "saddle_point": {
-          "radius": 3,
-          "det_margin": 0.001,
-          "max_offset": 2.0,
-          "min_abs_det": 0.0001
-        }
-      }
+      "center_of_mass": { "radius": 2 }
+    }
+  },
+  "refiner": {
+    "saddle_point": {
+      "radius": 3,
+      "det_margin": 0.001,
+      "max_offset": 2.0,
+      "min_abs_det": 0.0001
     }
   },
   "threshold": 60.0,
@@ -207,8 +213,7 @@ Switch to the Radon strategy by replacing the `strategy` object and setting the 
       "ray_radius": 4,
       "image_upsample": 2,
       "response_blur_radius": 1,
-      "peak_fit": "gaussian",
-      "refiner": "peak_fit"
+      "peak_fit": "gaussian"
     }
   },
   "detection": { "nms_radius": 4, "min_cluster_size": 2 }
@@ -244,8 +249,10 @@ uv pip install --python .venv/bin/python Pillow
 ## ML refiner
 
 The published wheel is built with the `ml-refiner` feature on by
-default (pip install cannot toggle Cargo features), so `ChessRefiner.ml()`
-is always available out of the box. The ML pipeline is selected by
-passing `ChessRefiner.ml()` as the active variant on the ChESS
-strategy. The ML refiner runs a small ONNX model on normalized
-intensity patches around each candidate.
+default (pip install cannot toggle Cargo features), so `ImageRefiner.ml()`
+is always available out of the box. The ML pipeline is selected with
+`cfg.with_refiner(ImageRefiner.ml())` and works with both the ChESS and
+Radon detectors. The ML refiner runs a small ONNX model on normalized
+intensity patches around each candidate; it rejects no corner (one it
+cannot refine keeps its seed), reports no position covariance, and is not
+supported by `detect_roi`.

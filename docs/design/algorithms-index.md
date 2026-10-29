@@ -20,8 +20,8 @@ by" lists the downstream stages. Paths are relative to the repo root.
 | **D1** | ChESS detection: threshold → NMS → cluster filter | Detection | `crates/chess-corners-core/src/detect/chess/detect.rs` | III | — | `ResponseMap` → `Vec<Corner>` | F1, F3, X1 |
 | **D2** | Radon detection: threshold → NMS → cluster → saddle test + 3-pt Gaussian fit | Detection | `crates/chess-corners-core/src/detect/radon/detect.rs` | IV | — | Radon view → `Vec<Corner>` | F3 (opt-in), X1 |
 | **T1** | `DenseDetector` trait (drives both detectors) | Detection abstraction | `crates/chess-corners-core/src/detect/dense.rs` | III–IV | — | image → response + peaks | S3 |
-| **F1** | CenterOfMass refiner | Refinement | `crates/chess-corners-core/src/refine/center_of_mass.rs` | V | — | response patch → subpixel `(x,y)` | X1 |
-| **F3** | SaddlePoint refiner (quadratic Hessian, re-centred refit) | Refinement | `crates/chess-corners-core/src/refine/saddle_point.rs` | V | — | image patch → subpixel `(x,y)` + position covariance | X1 |
+| **F1** | CenterOfMass refiner (the ChESS localizer) | Refinement | `crates/chess-corners-core/src/refine/center_of_mass.rs` | V | — | response patch → subpixel `(x,y)` | X1 |
+| **F3** | SaddlePoint image refiner (quadratic Hessian, re-centred refit; either detector) | Refinement | `crates/chess-corners-core/src/refine/saddle_point.rs` | V | — | image patch → subpixel `(x,y)` + position covariance | X1 |
 | **T2** | `CornerRefiner` trait + `Refiner` dispatch enum | Refinement abstraction | `crates/chess-corners-core/src/refine/mod.rs` | V | — | corner → refined corner | D1, D2 |
 | **O1** | RingFit two-axis orientation (Gauss-Newton + σ-LUT) | Orientation | `crates/chess-corners-core/src/orientation/ring_fit/` | VI | `rayon` | ring samples → 2 axes + σ | X1 |
 | **O2** | DiskFit two-axis orientation (full-disk, lazy RingFit fallback) | Orientation | `crates/chess-corners-core/src/orientation/disk_sector/` | VI | — | disk samples → 2 axes + σ | X1 |
@@ -32,7 +32,7 @@ by" lists the downstream stages. Paths are relative to the repo root.
 | **S1** | Box pyramid 2× downsample | Scale | `crates/box-image-pyramid/src/lib.rs` | VII | `par_pyramid` | `u8` image → pyramid levels | S3 |
 | **S2** | Integer bilinear upscale (×2/3/4) | Scale | `crates/chess-corners/src/upscale.rs` | VII | — | low-res `u8` → upscaled `u8` | S1, R1/R2 |
 | **S3** | Multiscale coarse-to-fine pipeline | Orchestration | `crates/chess-corners/src/multiscale.rs` | VII | — | image → `CornerDescriptor[]` | output |
-| **M1** | ONNX ML refiner (optional) | Refinement (post) | `crates/chess-corners/src/ml_refiner.rs` | V | `ml-refiner` | corner + patch → refined corner | (post-F*) |
+| **M1** | ONNX ML image refiner (optional; either detector) | Refinement (post) | `crates/chess-corners/src/ml_refiner.rs` | V | `ml-refiner` | corner + patch → refined corner | (post-F*) |
 
 ## Interconnection DAG
 

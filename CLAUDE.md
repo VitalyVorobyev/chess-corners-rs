@@ -139,13 +139,13 @@ chess-corners-testutil (Dev-only shared test fixtures; publish = false)
 
 1. **Response** (`core/detect/chess/response.rs`, `core/detect/radon/response.rs`) — Dense ChESS / Radon response computation
 2. **Detection** (`core/detect/`) — Thresholding + NMS + cluster filtering
-3. **Refinement** (`core/refine/`) — Refiners are built-in variants behind the sealed `CornerRefiner` trait: two in core (CenterOfMass, SaddlePoint) plus the facade's optional ML refiner (`ml-refiner`)
+3. **Refinement** (`core/refine/`) — Each detector's own localizer (ChESS CenterOfMass, Radon peak fit) plus one optional detector-independent image refiner (`DetectorConfig::refiner`: SaddlePoint in core, or the facade's ML refiner under `ml-refiner`), behind the sealed `CornerRefiner` trait
 4. **Descriptors** (`core/orientation/descriptor.rs`) — Corner descriptors lifted from raw detections via `describe_corners`. Carries two-axis orientation with a per-axis `fit_std_error` (the least-squares standard error of the axis fit, radians; a fit-quality score, not a calibrated 1σ).
 5. **Orientation methods** (`core/orientation/`) — Detector-agnostic. `RingFit` (default) runs a 16-sample ring Gauss-Newton fit; `DiskFit` is a full-disk crossing-line estimator with a lazy-gate fallback to `RingFit`. Both ChESS and Radon detectors share this stage.
 
 ### Multiscale Pipeline (`chess-corners`)
 
-Coarse-to-fine pyramid detection with reusable `PyramidBuffers` for successive frames. Configured via `DetectorConfig.multiscale: MultiscaleConfig` (`SingleScale` or `Pyramid { levels, min_size, refinement_radius }`). Both ChESS and Radon detectors are driven by the `DenseDetector` trait and share `multiscale`, `upscale`, `threshold`, `detection` and `orientation_method` on `DetectorConfig`; detector-specific tuning lives in the `DetectionStrategy` payload (`ChessConfig` carries the subpixel `refiner: ChessRefiner`; `RadonConfig` carries its own peak-fit mode).
+Coarse-to-fine pyramid detection with reusable `PyramidBuffers` for successive frames. Configured via `DetectorConfig.multiscale: MultiscaleConfig` (`SingleScale` or `Pyramid { levels, min_size, refinement_radius }`). Both ChESS and Radon detectors are driven by the `DenseDetector` trait and share `multiscale`, `upscale`, `threshold`, `detection` and `orientation_method` on `DetectorConfig`; detector-specific tuning lives in the `DetectionStrategy` payload (`ChessConfig` carries its `center_of_mass` localizer tuning; `RadonConfig` carries its peak-fit mode); the image refiner `refiner: Option<ImageRefiner>` is top-level.
 
 Optional pre-pipeline **integer bilinear upscaling** (`chess_corners::upscale`, configured via `DetectorConfig.upscale`) runs ahead of the pyramid for low-resolution inputs where target corners lack the 5 px ring support. Output descriptor coordinates are always rescaled back to the original input pixel frame.
 

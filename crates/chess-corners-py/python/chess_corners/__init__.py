@@ -1,12 +1,12 @@
 """Python-first public API for the chess_corners detector.
 
 The config classes (`DetectorConfig`, `ChessConfig`, `RadonConfig`,
-`ChessRefiner`, `RadonRefiner`, `Uncertainty`, ...) and enums
+`ImageRefiner`, `Uncertainty`, ...) and enums
 (`ChessRing`, `PeakFitMode`, `OrientationMethod`) are native PyO3
 types defined in the compiled `_native` extension. They expose
 attribute access, classmethod factories
 (`DetectorConfig.multiscale()`, `MultiscaleConfig.pyramid(...)`,
-`ChessRefiner.saddle_point(cfg)`), and `to_dict` / `from_dict` /
+`ImageRefiner.saddle_point(cfg)`), and `to_dict` / `from_dict` /
 `to_json` / `from_json` helpers.
 
 The detector itself is the :class:`Detector` PyClass - build once,
@@ -23,7 +23,6 @@ from . import _native
 from ._native import (
     CenterOfMassConfig,
     ChessConfig,
-    ChessRefiner,
     ChessRing,
     ConfigError,
     DetectionParams,
@@ -31,12 +30,12 @@ from ._native import (
     Detector,
     DetectorConfig,
     Detections,
+    ImageRefiner,
     MultiscaleConfig,
     OrientationMethod,
     Uncertainty,
     PeakFitMode,
     RadonConfig,
-    RadonRefiner,
     SaddlePointConfig,
     UpscaleConfig,
     estimate_noise_sigma,
@@ -73,8 +72,6 @@ for _cls in (
     DetectionParams,
     MultiscaleConfig,
     UpscaleConfig,
-    ChessRefiner,
-    RadonRefiner,
     ChessConfig,
     RadonConfig,
     DetectionStrategy,
@@ -87,7 +84,6 @@ for _cls in (
 __all__ = [
     "CenterOfMassConfig",
     "ChessConfig",
-    "ChessRefiner",
     "ChessRing",
     "ConfigError",
     "DetectionParams",
@@ -95,12 +91,12 @@ __all__ = [
     "Detector",
     "DetectorConfig",
     "Detections",
+    "ImageRefiner",
     "MultiscaleConfig",
     "OrientationMethod",
     "Uncertainty",
     "PeakFitMode",
     "RadonConfig",
-    "RadonRefiner",
     "SaddlePointConfig",
     "UpscaleConfig",
     "estimate_noise_sigma",

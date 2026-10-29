@@ -1,4 +1,4 @@
-use chess_corners_core::{CenterOfMassConfig, SaddlePointConfig};
+use chess_corners_core::CenterOfMassConfig;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -21,81 +21,35 @@ pub enum ChessRing {
 }
 
 // ---------------------------------------------------------------------------
-// Refiner enum
-// ---------------------------------------------------------------------------
-
-/// Subpixel refiner selection for the ChESS detector.
-///
-/// Each variant carries its own tuning struct as a payload: there is
-/// no shared discriminator + parallel-tuning-struct shape, so
-/// switching variants can never leave a stale config field behind.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum ChessRefiner {
-    /// Center-of-mass (intensity centroid) refinement on the response
-    /// map. Cheapest refiner in the shipped benchmark; the library default.
-    CenterOfMass(CenterOfMassConfig),
-    /// Quadratic surface fit at the saddle point.
-    SaddlePoint(SaddlePointConfig),
-    /// ML-backed subpixel refinement. Runs a small ONNX model on a
-    /// normalized intensity patch around each candidate. Requires the
-    /// `ml-refiner` feature.
-    #[cfg(feature = "ml-refiner")]
-    Ml,
-}
-
-impl Default for ChessRefiner {
-    fn default() -> Self {
-        Self::CenterOfMass(CenterOfMassConfig::default())
-    }
-}
-
-impl ChessRefiner {
-    /// Center-of-mass refinement with default tuning.
-    pub fn center_of_mass() -> Self {
-        Self::CenterOfMass(CenterOfMassConfig::default())
-    }
-    /// Saddle-point quadratic fit with default tuning.
-    pub fn saddle_point() -> Self {
-        Self::SaddlePoint(SaddlePointConfig::default())
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Per-strategy config
 // ---------------------------------------------------------------------------
 
 /// Configuration for the ChESS detector branch of [`crate::DetectionStrategy`].
 ///
-/// Carries the detector ring choice and the subpixel refiner. The shared
-/// NMS / clustering thresholds ([`crate::DetectionParams`]), multiscale, and
-/// upscale live at the top level of [`crate::DetectorConfig`] and apply to both
-/// strategies. Descriptors always sample at the detector ring radius.
+/// Carries the detector ring choice and the tuning of ChESS's own subpixel
+/// localizer. The shared NMS / clustering thresholds
+/// ([`crate::DetectionParams`]), multiscale, upscale and the optional image
+/// refiner ([`crate::DetectorConfig::refiner`]) live at the top level of
+/// [`crate::DetectorConfig`] and apply to both strategies. Descriptors
+/// always sample at the detector ring radius.
 ///
 /// # Common knobs
 ///
 /// - [`ring`](ChessConfig::ring) — choose the detector kernel radius.
-/// - [`refiner`](ChessConfig::refiner) — select and configure the
-///   subpixel refinement backend.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// - [`center_of_mass`](ChessConfig::center_of_mass) — tune the subpixel
+///   localizer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 #[non_exhaustive]
 pub struct ChessConfig {
     /// Detector ring radius. `Canonical` selects the paper's `r=5`,
     /// `Broad` selects `r=10`. Descriptors sample at this same radius.
     pub ring: ChessRing,
-    /// Subpixel refiner. Each variant carries its tuning struct.
-    pub refiner: ChessRefiner,
-}
-
-impl Default for ChessConfig {
-    fn default() -> Self {
-        Self {
-            ring: ChessRing::Canonical,
-            refiner: ChessRefiner::default(),
-        }
-    }
+    /// ChESS's subpixel localizer: the response-weighted center of mass of
+    /// the response map around each integer peak. It gives every corner its
+    /// final position unless an image refiner
+    /// ([`DetectorConfig::refiner`](crate::DetectorConfig::refiner)) is set;
+    /// the image refiner then starts from the integer peak instead.
+    pub center_of_mass: CenterOfMassConfig,
 }

@@ -30,7 +30,7 @@ use the same `DetectorConfig` schema.
 | Stage | Options | More detail |
 |-------|---------|-------------|
 | Detector | `ChESS` ring response, `Radon` ray-sum response | [ChESS](book/src/part-03-chess-detector.md) · [atlas](https://vitavision.dev/atlas/chess-corners), [Radon](book/src/part-04-radon-detector.md) · [atlas](https://vitavision.dev/atlas/duda-radon-corners) |
-| Refiner | `CenterOfMass`, `SaddlePoint`, optional `ML` | [Refiners](book/src/part-05-refiners.md) |
+| Subpixel localization | Each detector's own localizer (ChESS center of mass, Radon peak fit), plus an optional image refiner for either: `SaddlePoint`, optional `ML` | [Localization](book/src/part-05-refiners.md) |
 | Scale handling | Single-scale or coarse-to-fine 2× pyramid | [Multiscale](book/src/part-07-multiscale-and-pyramids.md) |
 | Uncertainty | Per-corner position covariance (noise plus each localizer's systematic error), or `Off` | [Uncertainty](book/src/part-08-uncertainty.md) |
 | Benchmarks | Synthetic sweeps and pipeline timings | [Benchmarks](book/src/part-09-benchmarks.md) |
@@ -65,13 +65,12 @@ image = "0.25"
 ```
 
 ```rust
-use chess_corners::{ChessRefiner, Detector, DetectorConfig};
+use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 use image::ImageReader;
 
 let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
-let cfg = DetectorConfig::chess_multiscale()
-    .with_chess(|c| c.refiner = ChessRefiner::saddle_point());
+let cfg = DetectorConfig::chess_multiscale().with_refiner(ImageRefiner::saddle_point());
 
 let mut detector = Detector::new(cfg)?;
 let corners = detector.detect(&img)?;
@@ -90,7 +89,8 @@ Presets:
 | `DetectorConfig::radon()` | Radon | Single-scale |
 | `DetectorConfig::radon_multiscale()` | Radon | 2-level pyramid |
 
-Switching detector families is a config change:
+Switching detector families is a config change; the image refiner
+applies to either:
 
 ```rust
 let cfg = DetectorConfig::radon();
@@ -107,7 +107,7 @@ Each Rust detection is a `CornerDescriptor`:
 | `x`, `y` | Subpixel position in input-image pixels |
 | `response` | Raw detector response at the detected peak |
 | `axes` | `Option` of two local grid-axis directions, each with `fit_std_error`, the standard error of its fit in radians (a fit-quality score, not a calibrated error bound); `None` when the orientation fit is disabled |
-| `position_covariance` | `Option` of the 2×2 position covariance in px² (image noise plus the localizer's systematic error); `None` under `Uncertainty::Off` (the default; select `Uncertainty::Propagated { noise }` to report it), with the ML refiner, or on upscaled input ([Uncertainty](book/src/part-08-uncertainty.md)) |
+| `position_covariance` | `Option` of the 2×2 position covariance in px² (image noise plus the localizer's systematic error); `None` under `Uncertainty::Off` (the default; select `Uncertainty::Propagated { noise }` to report it), for corners placed by the ML refiner, or on upscaled input ([Uncertainty](book/src/part-08-uncertainty.md)) |
 
 The two axes are not forced to be orthogonal. This lets the descriptor
 represent perspective warp and lens distortion instead of collapsing the
@@ -140,7 +140,7 @@ Use the Radon presets when the ChESS ring response does not produce
 enough reliable seeds. The repository has synthetic tests and benchmark
 sections for small cells, blur, and low contrast; those are the cases
 where the Radon ray-sum response was added. Radon corners can be
-refined with the saddle-point fit (`RadonRefiner::SaddlePoint`), which
+refined with the saddle-point fit (`ImageRefiner::SaddlePoint`), which
 is more accurate than the default peak fit on synthetic boards and on a
 real calibration set. Treat this as a measured configuration choice, not a
 universal statement about all camera data: validate on your own images
@@ -193,7 +193,7 @@ import chess_corners
 img = np.zeros((128, 128), dtype=np.uint8)
 
 cfg = chess_corners.DetectorConfig.chess_multiscale()
-cfg.strategy.chess.refiner = chess_corners.ChessRefiner.saddle_point()
+cfg.refiner = chess_corners.ImageRefiner.saddle_point()
 
 detector = chess_corners.Detector(cfg)
 det = detector.detect(img)
@@ -207,7 +207,7 @@ print(det.response.shape) # (N,)  float32
 - `det.response` — `(N,)` float32, raw detector response at each peak
 - `det.angles` — `(N, 2)` float32, `[axis0_angle, axis1_angle]` in radians `[0, π)`, or `None` when orientation is disabled
 - `det.fit_std_errors` — `(N, 2)` float32, the standard error of each axis fit in radians (a fit-quality score: larger means a less reliable axis; not a calibrated error bound), or `None` when orientation is disabled
-- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (`Uncertainty.off()`, the default — select `cfg.with_uncertainty(Uncertainty.propagated())` to report it — the ML refiner, or upscaling). The covariance includes a per-localizer floor measured on real images that usually dominates it there; weighting by it has not been shown to beat uniform weighting on real data
+- `det.position_covariance` — `(N, 2, 2)` float32, each corner's position covariance in px²; rows are `NaN` for corners without one (`Uncertainty.off()`, the default — select `cfg.with_uncertainty(Uncertainty.propagated())` to report it — corners placed by the ML refiner, or upscaling). The covariance includes a per-localizer floor measured on real images that usually dominates it there; weighting by it has not been shown to beat uniform weighting on real data
 
 With `cfg.without_orientation()`, `det.angles` and `det.fit_std_errors` are `None`.
 
@@ -247,7 +247,7 @@ WebP and GIF input images. Useful config examples:
 - [`config/chess_cli_config_example.json`](config/chess_cli_config_example.json)
   — `DetectorConfig` plus CLI input/output fields.
 - [`config/chess_cli_config_example_ml.json`](config/chess_cli_config_example_ml.json)
-  — ML refiner example; requires `--features ml-refiner`.
+  — ML refiner example (`"refiner": "ml"`); requires `--features ml-refiner`.
 
 ## Feature Flags
 

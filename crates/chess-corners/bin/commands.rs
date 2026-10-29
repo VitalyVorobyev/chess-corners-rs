@@ -5,24 +5,34 @@
 
 use anyhow::{Context, Result};
 use chess_corners::{
-    AxisEstimate, CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, CornerDescriptor,
-    DetectionStrategy, Detector, DetectorConfig, MultiscaleConfig, SaddlePointConfig,
-    UpscaleConfig,
+    AxisEstimate, ChessConfig, ChessRing, CornerDescriptor, DetectionStrategy, Detector,
+    DetectorConfig, ImageRefiner, MultiscaleConfig, UpscaleConfig,
 };
 use image::{ImageBuffer, ImageReader, Luma};
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::Write, path::Path, path::PathBuf};
 
-/// Refiner selector for the ChESS strategy, exposed by the CLI.
-///
-/// Accepts only the variants valid for ChESS; passing a Radon-only
-/// refiner via `--chess-refiner` is rejected at clap parse time.
+/// Image-refiner selector exposed by the CLI (`--refiner`), with default
+/// tuning. `none` keeps the detector's own subpixel localizer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ChessRefinerSel {
-    CenterOfMass,
+pub enum RefinerSel {
+    None,
     SaddlePoint,
+    #[cfg(feature = "ml-refiner")]
+    Ml,
+}
+
+impl RefinerSel {
+    fn image_refiner(self) -> Option<ImageRefiner> {
+        match self {
+            Self::None => None,
+            Self::SaddlePoint => Some(ImageRefiner::saddle_point()),
+            #[cfg(feature = "ml-refiner")]
+            Self::Ml => Some(ImageRefiner::Ml),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -31,8 +41,6 @@ pub struct DetectionConfig {
     pub output_json: Option<PathBuf>,
     pub output_png: Option<PathBuf>,
     pub log_level: Option<String>,
-    /// Enable the ML refiner pipeline (requires the `ml-refiner` feature).
-    pub ml: Option<bool>,
     #[serde(flatten, default)]
     pub algorithm: DetectorConfig,
 }
@@ -52,9 +60,8 @@ pub struct DetectionOverrides {
     pub chess_ring: Option<ChessRing>,
     pub nms_radius: Option<u32>,
     pub min_cluster_size: Option<u32>,
-    /// Override the ChESS subpixel refiner. Ignored when the active
-    /// strategy is not ChESS.
-    pub chess_refiner: Option<ChessRefinerSel>,
+    /// Override the image refiner (either strategy).
+    pub refiner: Option<RefinerSel>,
     /// Integer upscale factor override. `Some(0)` means no override;
     /// `Some(k)` for k >= 2 sets `upscale = Fixed(k)`.
     pub upscale_factor: Option<u32>,
@@ -80,7 +87,7 @@ pub struct CornerOut {
     pub response: f32,
     /// `null` when the orientation fit was skipped.
     pub axes: Option<[AxisOut; 2]>,
-    /// Position covariance in px²; `null` when the refiner reports none.
+    /// Position covariance in px²; `null` when the localizer reports none.
     pub position_covariance: Option<CovarianceOut>,
 }
 
@@ -110,27 +117,8 @@ pub fn run_detection(cfg: DetectionConfig) -> Result<()> {
 
     let img = ImageReader::open(&cfg.image)?.decode()?.to_luma8();
 
-    #[cfg_attr(not(feature = "ml-refiner"), allow(unused_mut))]
-    let mut algorithm = cfg.algorithm;
-    if cfg.ml.unwrap_or(false) {
-        #[cfg(feature = "ml-refiner")]
-        {
-            info!("ml refiner: enabled");
-            if let DetectionStrategy::Chess(ref mut chess) = algorithm.strategy {
-                chess.refiner = ChessRefiner::Ml;
-            } else {
-                anyhow::bail!(
-                    "ml refiner is only valid with the ChESS strategy; the active config selects Radon"
-                );
-            }
-        }
-        #[cfg(not(feature = "ml-refiner"))]
-        {
-            anyhow::bail!("ml refiner requires the \"ml-refiner\" feature")
-        }
-    }
-    log_active_refiner(&algorithm);
-    let mut detector = Detector::new(algorithm).map_err(|e| anyhow::anyhow!(e))?;
+    log_active_refiner(&cfg.algorithm);
+    let mut detector = Detector::new(cfg.algorithm).map_err(|e| anyhow::anyhow!(e))?;
     let corners = detector.detect(&img).map_err(|e| anyhow::anyhow!(e))?;
 
     let multiscale_active = matches!(cfg.algorithm.multiscale, MultiscaleConfig::Pyramid { .. });
@@ -217,33 +205,18 @@ pub fn validate_algorithm_config(cfg: &DetectorConfig) -> Result<()> {
 }
 
 fn log_active_refiner(cfg: &DetectorConfig) {
-    match &cfg.strategy {
-        DetectionStrategy::Chess(chess) => info!("refiner: {:?}", chess.refiner),
-        DetectionStrategy::Radon(radon) => {
-            info!(
-                "refiner: {:?} ({:?} peak fit)",
-                radon.refiner, radon.peak_fit
-            )
-        }
-        _ => info!("refiner: <unknown strategy>"),
-    }
+    let localizer = match &cfg.strategy {
+        DetectionStrategy::Chess(chess) => format!("{:?}", chess.center_of_mass),
+        DetectionStrategy::Radon(radon) => format!("{:?} peak fit", radon.peak_fit),
+        _ => "<unknown strategy>".to_string(),
+    };
+    info!("localizer: {localizer}; image refiner: {:?}", cfg.refiner);
 }
 
 fn chess_strategy_mut(cfg: &mut DetectorConfig) -> Option<&mut ChessConfig> {
     match &mut cfg.strategy {
         DetectionStrategy::Chess(c) => Some(c),
         _ => None,
-    }
-}
-
-fn apply_chess_refiner(cfg: &mut DetectorConfig, sel: ChessRefinerSel) {
-    if let DetectionStrategy::Chess(chess) = &mut cfg.strategy {
-        chess.refiner = match sel {
-            ChessRefinerSel::CenterOfMass => {
-                ChessRefiner::CenterOfMass(CenterOfMassConfig::default())
-            }
-            ChessRefinerSel::SaddlePoint => ChessRefiner::SaddlePoint(SaddlePointConfig::default()),
-        };
     }
 }
 
@@ -259,7 +232,7 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
         chess_ring,
         nms_radius,
         min_cluster_size,
-        chess_refiner,
+        refiner,
         upscale_factor,
     } = overrides;
 
@@ -318,8 +291,8 @@ pub fn apply_overrides(cfg: &mut DetectionConfig, overrides: DetectionOverrides)
     if let Some(v) = min_cluster_size {
         cfg.algorithm.detection.min_cluster_size = v;
     }
-    if let Some(v) = chess_refiner {
-        apply_chess_refiner(&mut cfg.algorithm, v);
+    if let Some(v) = refiner {
+        cfg.algorithm.refiner = v.image_refiner();
     }
     // `Some(0)` is the documented sentinel for "no override — keep the value
     // parsed from the JSON config". Any other value is forwarded to
@@ -390,7 +363,6 @@ mod tests {
             output_json: None,
             output_png: None,
             log_level: None,
-            ml: None,
             algorithm,
         }
     }
@@ -436,7 +408,6 @@ mod tests {
             output_json: None,
             output_png: None,
             log_level: None,
-            ml: None,
             algorithm: DetectorConfig::chess(),
         };
         apply_overrides(
@@ -485,7 +456,6 @@ mod tests {
             output_json: None,
             output_png: None,
             log_level: None,
-            ml: None,
             algorithm,
         }
     }

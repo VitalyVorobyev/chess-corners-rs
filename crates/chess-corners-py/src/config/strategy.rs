@@ -13,7 +13,7 @@ use super::parse::{
     config_error, extract_int, extract_string, json_dumps, json_loads, reject_unknown_keys,
     require_dict, unknown_variant, ChessRing, PeakFitMode,
 };
-use super::refiners::{ChessRefiner, RadonRefiner};
+use super::refiners::CenterOfMassConfig;
 
 // ---------------------------------------------------------------------------
 // ChessConfig
@@ -22,21 +22,26 @@ use super::refiners::{ChessRefiner, RadonRefiner};
 #[pyclass(module = "chess_corners")]
 pub struct ChessConfig {
     pub(crate) ring: RsChessRing,
-    pub(crate) refiner: Py<ChessRefiner>,
+    pub(crate) center_of_mass: Py<CenterOfMassConfig>,
 }
 
 impl ChessConfig {
     pub(crate) fn from_rs(py: Python<'_>, v: RsChessConfig) -> PyResult<Self> {
         Ok(Self {
             ring: v.ring,
-            refiner: Py::new(py, ChessRefiner::from_rs(v.refiner)?)?,
+            center_of_mass: Py::new(
+                py,
+                CenterOfMassConfig {
+                    inner: v.center_of_mass,
+                },
+            )?,
         })
     }
 
     pub(crate) fn to_rs(&self, py: Python<'_>) -> RsChessConfig {
         let mut cfg = RsChessConfig::default();
         cfg.ring = self.ring;
-        cfg.refiner = self.refiner.borrow(py).to_rs();
+        cfg.center_of_mass = self.center_of_mass.borrow(py).inner;
         cfg
     }
 }
@@ -58,18 +63,21 @@ impl ChessConfig {
     }
 
     #[getter]
-    fn refiner(&self, py: Python<'_>) -> Py<ChessRefiner> {
-        self.refiner.clone_ref(py)
+    fn center_of_mass(&self, py: Python<'_>) -> Py<CenterOfMassConfig> {
+        self.center_of_mass.clone_ref(py)
     }
     #[setter]
-    fn set_refiner(&mut self, v: Py<ChessRefiner>) {
-        self.refiner = v;
+    fn set_center_of_mass(&mut self, v: Py<CenterOfMassConfig>) {
+        self.center_of_mass = v;
     }
 
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
         d.set_item("ring", ChessRing::config_str(self.ring)?)?;
-        d.set_item("refiner", self.refiner.borrow(py).to_dict(py)?)?;
+        d.set_item(
+            "center_of_mass",
+            self.center_of_mass.borrow(py).to_dict(py)?,
+        )?;
         Ok(d.unbind())
     }
 
@@ -80,14 +88,14 @@ impl ChessConfig {
         data: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let dict = require_dict(data, "chess")?;
-        reject_unknown_keys(&dict, &["ring", "refiner"], "chess")?;
+        reject_unknown_keys(&dict, &["ring", "center_of_mass"], "chess")?;
         let mut cfg = Self::from_rs(py, RsChessConfig::default())?;
         if let Some(s) = extract_string(&dict, "ring", "chess")? {
             cfg.ring = ChessRing::parse(&s, "chess.ring")?;
         }
-        if let Some(value) = dict.get_item("refiner")? {
-            let cls = py.get_type::<ChessRefiner>();
-            cfg.refiner = Py::new(py, ChessRefiner::from_dict(&cls, &value)?)?;
+        if let Some(value) = dict.get_item("center_of_mass")? {
+            let cls = py.get_type::<CenterOfMassConfig>();
+            cfg.center_of_mass = Py::new(py, CenterOfMassConfig::from_dict(&cls, &value)?)?;
         }
         Ok(cfg)
     }
@@ -128,27 +136,24 @@ pub struct RadonConfig {
     pub(crate) image_upsample: u32,
     pub(crate) response_blur_radius: u32,
     pub(crate) peak_fit: RsPeakFitMode,
-    pub(crate) refiner: Py<RadonRefiner>,
 }
 
 impl RadonConfig {
-    pub(crate) fn from_rs(py: Python<'_>, v: RsRadonConfig) -> PyResult<Self> {
-        Ok(Self {
+    pub(crate) fn from_rs(v: RsRadonConfig) -> Self {
+        Self {
             ray_radius: v.ray_radius,
             image_upsample: v.image_upsample,
             response_blur_radius: v.response_blur_radius,
             peak_fit: v.peak_fit,
-            refiner: Py::new(py, RadonRefiner::from_rs(v.refiner))?,
-        })
+        }
     }
 
-    pub(crate) fn to_rs(&self, py: Python<'_>) -> RsRadonConfig {
+    pub(crate) fn to_rs(&self) -> RsRadonConfig {
         let mut cfg = RsRadonConfig::default();
         cfg.ray_radius = self.ray_radius;
         cfg.image_upsample = self.image_upsample;
         cfg.response_blur_radius = self.response_blur_radius;
         cfg.peak_fit = self.peak_fit;
-        cfg.refiner = self.refiner.borrow(py).to_rs();
         cfg
     }
 }
@@ -156,8 +161,8 @@ impl RadonConfig {
 #[pymethods]
 impl RadonConfig {
     #[new]
-    fn py_new(py: Python<'_>) -> PyResult<Self> {
-        Self::from_rs(py, RsRadonConfig::default())
+    fn py_new() -> Self {
+        Self::from_rs(RsRadonConfig::default())
     }
 
     #[getter]
@@ -196,31 +201,17 @@ impl RadonConfig {
         self.peak_fit = v.into();
     }
 
-    #[getter]
-    fn refiner(&self, py: Python<'_>) -> Py<RadonRefiner> {
-        self.refiner.clone_ref(py)
-    }
-    #[setter]
-    fn set_refiner(&mut self, v: Py<RadonRefiner>) {
-        self.refiner = v;
-    }
-
     fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         let d = PyDict::new(py);
         d.set_item("ray_radius", self.ray_radius)?;
         d.set_item("image_upsample", self.image_upsample)?;
         d.set_item("response_blur_radius", self.response_blur_radius)?;
         d.set_item("peak_fit", PeakFitMode::config_str(self.peak_fit)?)?;
-        d.set_item("refiner", self.refiner.borrow(py).to_dict(py)?)?;
         Ok(d.unbind())
     }
 
     #[classmethod]
-    fn from_dict(
-        _cls: &Bound<'_, PyType>,
-        py: Python<'_>,
-        data: &Bound<'_, PyAny>,
-    ) -> PyResult<Self> {
+    fn from_dict(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let dict = require_dict(data, "radon")?;
         reject_unknown_keys(
             &dict,
@@ -229,11 +220,10 @@ impl RadonConfig {
                 "image_upsample",
                 "response_blur_radius",
                 "peak_fit",
-                "refiner",
             ],
             "radon",
         )?;
-        let mut cfg = Self::from_rs(py, RsRadonConfig::default())?;
+        let mut cfg = Self::from_rs(RsRadonConfig::default());
         if let Some(v) = extract_int(&dict, "ray_radius", "radon")? {
             cfg.ray_radius = v as u32;
         }
@@ -245,10 +235,6 @@ impl RadonConfig {
         }
         if let Some(s) = extract_string(&dict, "peak_fit", "radon")? {
             cfg.peak_fit = PeakFitMode::parse(&s, "radon.peak_fit")?;
-        }
-        if let Some(value) = dict.get_item("refiner")? {
-            let cls = py.get_type::<RadonRefiner>();
-            cfg.refiner = Py::new(py, RadonRefiner::from_dict(&cls, &value)?)?;
         }
         Ok(cfg)
     }
@@ -263,7 +249,7 @@ impl RadonConfig {
     fn from_json(cls: &Bound<'_, PyType>, py: Python<'_>, text: &str) -> PyResult<Self> {
         let value = json_loads(py, text)
             .map_err(|e| config_error(format!("failed to parse config JSON: {e}")))?;
-        Self::from_dict(cls, py, &value)
+        Self::from_dict(cls, &value)
     }
 
     #[pyo3(signature = (*, indent=2, sort_keys=true))]
@@ -409,12 +395,12 @@ impl DetectionStrategy {
             RsDetectionStrategy::Chess(c) => Ok(Self {
                 kind: StrategyKind::Chess,
                 chess: Py::new(py, ChessConfig::from_rs(py, c)?)?,
-                radon: Py::new(py, RadonConfig::from_rs(py, RsRadonConfig::default())?)?,
+                radon: Py::new(py, RadonConfig::from_rs(RsRadonConfig::default()))?,
             }),
             RsDetectionStrategy::Radon(r) => Ok(Self {
                 kind: StrategyKind::Radon,
                 chess: Py::new(py, ChessConfig::from_rs(py, RsChessConfig::default())?)?,
-                radon: Py::new(py, RadonConfig::from_rs(py, r)?)?,
+                radon: Py::new(py, RadonConfig::from_rs(r))?,
             }),
             other => Err(unknown_variant("DetectionStrategy", &other)),
         }
@@ -423,7 +409,7 @@ impl DetectionStrategy {
     pub(crate) fn to_rs(&self, py: Python<'_>) -> RsDetectionStrategy {
         match self.kind {
             StrategyKind::Chess => RsDetectionStrategy::Chess(self.chess.borrow(py).to_rs(py)),
-            StrategyKind::Radon => RsDetectionStrategy::Radon(self.radon.borrow(py).to_rs(py)),
+            StrategyKind::Radon => RsDetectionStrategy::Radon(self.radon.borrow(py).to_rs()),
         }
     }
 }
@@ -446,7 +432,7 @@ impl DetectionStrategy {
         Ok(Self {
             kind: StrategyKind::Chess,
             chess: strategy,
-            radon: Py::new(py, RadonConfig::from_rs(py, RsRadonConfig::default())?)?,
+            radon: Py::new(py, RadonConfig::from_rs(RsRadonConfig::default()))?,
         })
     }
 
@@ -527,7 +513,7 @@ impl DetectionStrategy {
             return Ok(Self {
                 kind: StrategyKind::Chess,
                 chess,
-                radon: Py::new(py, RadonConfig::from_rs(py, RsRadonConfig::default())?)?,
+                radon: Py::new(py, RadonConfig::from_rs(RsRadonConfig::default()))?,
             });
         }
         if has_radon {
@@ -535,7 +521,7 @@ impl DetectionStrategy {
                 .get_item("radon")?
                 .ok_or_else(|| config_error("strategy.radon missing"))?;
             let radon_type = py.get_type::<RadonConfig>();
-            let radon = Py::new(py, RadonConfig::from_dict(&radon_type, py, &value)?)?;
+            let radon = Py::new(py, RadonConfig::from_dict(&radon_type, &value)?)?;
             return Ok(Self {
                 kind: StrategyKind::Radon,
                 chess: Py::new(py, ChessConfig::from_rs(py, RsChessConfig::default())?)?,

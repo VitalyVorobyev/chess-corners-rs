@@ -207,8 +207,8 @@ startup. In plain C, compare `cc_abi_version()` against the value you
 built against and refuse to proceed if they differ.
 
 **Configuration surface.** `cc_config` (and the C++ `Config`) expose every
-`DetectorConfig` knob except refiner-specific tuning (only the refiner
-*kind* is selectable) and the multiscale pyramid detail (level count,
+`DetectorConfig` knob except localizer and refiner tuning (only the
+image refiner *kind* is selectable) and the multiscale pyramid detail (level count,
 minimum size, refinement radius) behind the on/off `multiscale` switch.
 The fields group by applicability:
 
@@ -218,10 +218,11 @@ The fields group by applicability:
   noise level `has_noise_sigma` / `noise_sigma` (read only under
   `CC_UNCERTAINTY_PROPAGATED`; `has_noise_sigma = 0` estimates it from
   each image; a `chess_corners::Uncertainty` value in C++), and
-  `refiner` (a `CC_REFINER_*` tag
-  valid for the strategy: ChESS takes `CENTER_OF_MASS` — its default —
-  or `SADDLE_POINT`; Radon takes `PEAK_FIT` — its default —
-  or `SADDLE_POINT`).
+  the image refiner `refiner`: `CC_IMAGE_REFINER_NONE` (`0`, every
+  preset and a zero-initialised `cc_config`) keeps each detector's own
+  localizer — the ChESS center of mass, the Radon peak fit — and
+  `CC_IMAGE_REFINER_SADDLE_POINT` refines the corners of either
+  detector on the image ([Part V](part-05-refiners.md)).
 - **ChESS only:** `chess_ring` (`CC_CHESS_RING_CANONICAL` for the
   paper's radius-5 ring, or `CC_CHESS_RING_BROAD` for radius-10).
 - **Radon only:** `ray_radius`, `image_upsample`, `response_blur_radius`,
@@ -235,8 +236,8 @@ safe to start from any preset and set only what you need.
 upscaling (the explicit off-state), or `2`/`3`/`4` to bilinearly upscale
 the input by that factor before detection; output coordinates are rescaled
 back to the input pixel frame. Any other value (including `1`) is rejected
-with `CC_ERR_UPSCALE`. An unknown enum tag in any field, or a refiner tag
-not valid for the strategy, is rejected with `CC_ERR_INVALID_CONFIG`. In both cases `cc_detect_u8` returns the status
+with `CC_ERR_UPSCALE`. An unknown enum tag in any field is rejected with
+`CC_ERR_INVALID_CONFIG`. In both cases `cc_detect_u8` returns the status
 without allocating a result — invalid configuration never panics or reads
 past the struct.
 
@@ -260,7 +261,7 @@ between them crossing a dark sector. The `axes` are valid only when
 skips the per-corner fit, sets `has_orientation` to `0`, and zeroes
 `axes`. `position_covariance` (`xx`, `xy`, `yy`, in px²) is valid when
 `has_position_covariance` is `1` (a `std::optional<Covariance>` in
-C++): every refiner reports it under
+C++): every localizer reports it under
 `uncertainty = CC_UNCERTAINTY_PROPAGATED` (C++
 `Uncertainty::propagated(sigma)`), none under `CC_UNCERTAINTY_OFF` (the
 default of the presets and of a zero-initialised `cc_config`) or when

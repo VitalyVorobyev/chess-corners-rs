@@ -78,11 +78,11 @@ int main(void) {
         return 5;
     }
 
-    /* Every refiner reports a position covariance; check the saddle-point
-     * one. This board is saturated (0/255), so its noise cannot be
+    /* Every localizer reports a position covariance; check the saddle-point
+     * image refiner. This board is saturated (0/255), so its noise cannot be
      * estimated: supply it. */
     cc_config saddle = cc_config_chess();
-    saddle.refiner = CC_REFINER_SADDLE_POINT;
+    saddle.refiner = CC_IMAGE_REFINER_SADDLE_POINT;
     saddle.uncertainty = CC_UNCERTAINTY_PROPAGATED;
     saddle.has_noise_sigma = 1;
     saddle.noise_sigma = 1.0f;
@@ -108,7 +108,7 @@ int main(void) {
     }
 
     /* The presets and a zero-initialised config select CC_UNCERTAINTY_OFF.
-     * Propagated reports a covariance for the center-of-mass refiner too;
+     * Propagated reports a covariance for the center of mass too;
      * CC_UNCERTAINTY_OFF reports none, and an unknown tag is rejected. */
     if (cc_config_default().uncertainty != CC_UNCERTAINTY_OFF ||
         cc_config_chess().uncertainty != CC_UNCERTAINTY_OFF ||
@@ -129,7 +129,7 @@ int main(void) {
     plain.noise_sigma = 1.0f;
     cc_result plain_out = {NULL, 0, 0, 0.0f};
     if (cc_detect_u8(img, w, h, &plain, &plain_out) != CC_OK) {
-        fprintf(stderr, "default-refiner detection failed\n");
+        fprintf(stderr, "center-of-mass detection failed\n");
         free(img);
         return 10;
     }
@@ -142,7 +142,7 @@ int main(void) {
         plain_out.has_noise_sigma == 1 && plain_out.noise_sigma == 1.0f;
     cc_result_free(&plain_out);
     if (plain_cov == 0) {
-        fprintf(stderr, "default refiner carried no position covariance\n");
+        fprintf(stderr, "center of mass carried no position covariance\n");
         free(img);
         return 10;
     }
@@ -189,17 +189,29 @@ int main(void) {
         return 8;
     }
 
-    /* Radon keeps its peak fit by default and accepts only the peak-fit and
-     * saddle-point refiner tags. */
+    /* Every preset and a zero-initialised config run no image refiner; the
+     * saddle-point refiner applies to Radon too, and an unknown tag is
+     * rejected. */
     cc_config radon = cc_config_radon();
-    if (radon.refiner != CC_REFINER_PEAK_FIT) {
-        fprintf(stderr, "Radon preset does not default to the peak fit\n");
+    if (radon.refiner != CC_IMAGE_REFINER_NONE ||
+        cc_config_chess().refiner != CC_IMAGE_REFINER_NONE ||
+        zeroed.refiner != CC_IMAGE_REFINER_NONE) {
+        fprintf(stderr, "default config runs an image refiner\n");
         free(img);
         return 9;
     }
-    radon.refiner = CC_REFINER_CENTER_OF_MASS;
+    radon.refiner = CC_IMAGE_REFINER_SADDLE_POINT;
+    cc_result radon_out = {NULL, 0, 0, 0.0f};
+    if (cc_detect_u8(img, w, h, &radon, &radon_out) != CC_OK || radon_out.len == 0) {
+        fprintf(stderr, "Radon saddle-point detection failed\n");
+        cc_result_free(&radon_out);
+        free(img);
+        return 9;
+    }
+    cc_result_free(&radon_out);
+    radon.refiner = 99;
     if (cc_detect_u8(img, w, h, &radon, &ignored) != CC_ERR_INVALID_CONFIG) {
-        fprintf(stderr, "center-of-mass under Radon was not rejected\n");
+        fprintf(stderr, "unknown image-refiner tag was not rejected\n");
         free(img);
         return 10;
     }

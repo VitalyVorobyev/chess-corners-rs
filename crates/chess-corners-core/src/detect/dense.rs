@@ -3,8 +3,9 @@
 //! [`DenseDetector`] is the contract the multiscale orchestrator drives
 //! over: each implementor computes a dense per-pixel response over an
 //! [`ImageView`] (stage 1) and extracts subpixel corner peaks from it
-//! (stage 2); [`DenseDetector::refine_peaks_on_image`] then refines the
-//! peaks on the input image with one of the built-in refiners.
+//! (stage 2); [`DenseDetector::refine_peaks_on_image`] then gives the
+//! peaks their final position: the ChESS center-of-mass localizer, or an
+//! image refiner on either detector.
 //!
 //! Two zero-sized implementors live alongside the trait:
 //!
@@ -15,8 +16,9 @@
 //! - [`RadonDetector`] — wraps the whole-image Duda-Frese Radon
 //!   response ([`crate::radon_response_u8`]) and the
 //!   threshold + NMS + 3-point Gaussian peak-fit stage
-//!   ([`crate::detect_peaks_from_radon`]); image refinement keeps the
-//!   peak-fit position unless the refiner reports a covariance.
+//!   ([`crate::detect_peaks_from_radon`]), which is its subpixel
+//!   localizer; image refinement keeps the peak-fit position unless the
+//!   refiner converges.
 //!
 //! The free functions named above remain public; the trait is an
 //! additive uniform interface, not a replacement.
@@ -59,9 +61,12 @@ mod private {
 /// reusable scratch through [`Self::Buffers`] so a multiscale
 /// orchestrator can amortise allocations across frames.
 ///
-/// Subpixel refinement on the *input image* (center-of-mass,
-/// saddle-point) runs on the detected peaks through
-/// [`Self::refine_peaks_on_image`].
+/// Each detector has its own subpixel localizer on its response map:
+/// ChESS's center of mass runs through [`Self::refine_peaks_on_image`];
+/// Radon's peak fit runs inside [`Self::detect_corners`]. An optional
+/// image refiner (see [`RefinerKind`](crate::RefinerKind)) also runs
+/// through [`Self::refine_peaks_on_image`], in place of ChESS's center of
+/// mass and on top of Radon's peak fit.
 ///
 /// # Toolchain
 ///
@@ -170,20 +175,23 @@ pub trait DenseDetector: private::Sealed {
     /// return a non-trivial peak inside the ROI.
     fn roi_border(&self, params: &Self::Params) -> i32;
 
-    /// Refine the peaks produced by [`Self::detect_corners`] on the
-    /// input image with `refiner`.
+    /// Give the peaks produced by [`Self::detect_corners`] their final
+    /// position with `refiner`.
     ///
-    /// ChESS forwards its [`ResponseMap`] together with the image to
-    /// [`crate::refine_corners_on_image`], so every refiner applies, and
-    /// drops the corners the refiner does not accept.
+    /// ChESS peaks sit on integer pixels: ChESS forwards its
+    /// [`ResponseMap`] together with the image to
+    /// [`crate::refine_corners_on_image`], so both its center-of-mass
+    /// localizer and an image refiner apply, seeded at the integer peak,
+    /// and drops the corners the refiner does not accept.
     ///
-    /// Radon's [`RadonResponseView`] is not a [`ResponseMap`] in the
-    /// peak positions' frame, so the refiner sees only the image (the
-    /// center-of-mass refiner, which reads the response map, rejects
-    /// every seed). Radon peaks are already subpixel, so a corner keeps
-    /// its peak-fit position (and covariance) unless the refiner
-    /// converges on it — the saddle-point refiner does so when its
-    /// re-centred fit converged — and is never dropped.
+    /// Radon peaks are already subpixel (the peak fit). Its
+    /// [`RadonResponseView`] is not a [`ResponseMap`] in the peak
+    /// positions' frame, so the refiner sees only the image and starts
+    /// from the peak fit. A corner keeps its peak-fit position (and
+    /// covariance) unless the refiner converges on it — the saddle-point
+    /// refiner does so when its re-centred fit converged — and is never
+    /// dropped. The center-of-mass refiner, which reads the response map,
+    /// converges on no Radon peak.
     fn refine_peaks_on_image(
         &self,
         corners: Vec<Corner>,
@@ -235,10 +243,10 @@ pub struct ChessBuffers {
 /// Wraps the canonical 16-sample ring response
 /// ([`crate::chess_response_u8`]) and the
 /// threshold + NMS + cluster-filter peak detector
-/// ([`crate::detect_peaks_from_response_with_refine_radius`]). Subpixel
-/// refinement (center-of-mass, saddle-point) is a separate
-/// detector-agnostic stage; see
-/// [`crate::refine_corners_on_image`].
+/// ([`crate::detect_peaks_from_response_with_refine_radius`]). Its
+/// peaks sit on integer pixels; the center-of-mass localizer or an image
+/// refiner gives them a subpixel position through
+/// [`DenseDetector::refine_peaks_on_image`].
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ChessDetector;
 
@@ -508,7 +516,9 @@ mod tests {
     /// that reports no covariance — keeps its peak-fit position.
     #[test]
     fn radon_refinement_keeps_peaks_without_a_covariance() {
-        use crate::refine::{CenterOfMassConfig, Refiner, RefinerKind, SaddlePointConfig};
+        use crate::refine::{
+            CenterOfMassConfig, CenterOfMassRefiner, Refiner, RefinerKind, SaddlePointConfig,
+        };
         const SIZE: usize = 65;
         let img = synthetic_chessboard_aa(SIZE, 8, (32.35, 32.8), 30, 230);
         let view = ImageView::from_u8_slice(SIZE, SIZE, &img).expect("view");
@@ -538,8 +548,9 @@ mod tests {
             peaks.len()
         );
 
-        let mut com = Refiner::from_kind(RefinerKind::CenterOfMass(CenterOfMassConfig::default()))
-            .with_covariance(true);
+        let mut com =
+            Refiner::CenterOfMass(CenterOfMassRefiner::new(CenterOfMassConfig::default()))
+                .with_covariance(true);
         let kept = RadonDetector.refine_peaks_on_image(peaks.clone(), view, &resp, &mut com);
         assert_eq!(kept.len(), peaks.len());
         for (p, k) in peaks.iter().zip(&kept) {

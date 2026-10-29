@@ -21,16 +21,14 @@ CODE_EXAMPLE_PATH = (
 # top-level branch of the 0.10.0 shape.
 SAMPLE_CONFIG = {
     "strategy": {
-        "chess": {
-            "ring": "broad",
-            "refiner": {
-                "saddle_point": {
-                    "radius": 2,
-                    "det_margin": 0.001,
-                    "max_offset": 2.0,
-                    "min_abs_det": 0.0001,
-                },
-            },
+        "chess": {"ring": "broad"},
+    },
+    "refiner": {
+        "saddle_point": {
+            "radius": 2,
+            "det_margin": 0.001,
+            "max_offset": 2.0,
+            "min_abs_det": 0.0001,
         },
     },
     "threshold": 0.5,
@@ -77,8 +75,8 @@ def test_full_config_example_parser_is_lazy_about_pillow():
     assert abs(cfg.threshold - 0.5) < 1e-6
     assert cfg.detection.nms_radius == 3
     assert cfg.detection.min_cluster_size == 1
-    assert cfg.strategy.chess.refiner.kind == "saddle_point"
-    assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
+    assert cfg.refiner.kind == "saddle_point"
+    assert cfg.refiner.payload.max_offset == 2.0
     ms = cfg.multiscale
     assert ms.kind == "pyramid"
     assert ms.levels == 3
@@ -109,8 +107,8 @@ def test_code_config_example_is_lazy_about_pillow_and_builds_full_config():
     assert cfg.strategy.kind == "chess"
     assert cfg.strategy.chess.ring is chess_corners.ChessRing.BROAD
     assert abs(cfg.threshold - 0.5) < 1e-6
-    assert cfg.strategy.chess.refiner.kind == "saddle_point"
-    assert cfg.strategy.chess.refiner.payload.max_offset == 2.0
+    assert cfg.refiner.kind == "saddle_point"
+    assert cfg.refiner.payload.max_offset == 2.0
     ms = cfg.multiscale
     assert ms.kind == "pyramid"
     assert ms.levels == 3

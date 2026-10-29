@@ -1,16 +1,14 @@
 {
   "image": "testimages/mid.png",
-  "ml": true,
   "strategy": {
     "chess": {
       "ring": "canonical",
-      "refiner": {
-        "center_of_mass": {
-          "radius": 2
-        }
+      "center_of_mass": {
+        "radius": 2
       }
     }
   },
+  "refiner": "ml",
   "threshold": 30.0,
   "detection": {
     "nms_radius": 2,

@@ -6,7 +6,8 @@ This crate is the public Rust API:
 
 - strategy-typed `DetectorConfig` (`DetectionStrategy::Chess(ChessConfig)`
   / `DetectionStrategy::Radon(RadonConfig)`) with a single numeric
-  `threshold` and per-ChESS-detector refiner selection (`ChessRefiner`)
+  `threshold` and one optional, detector-independent image refiner
+  (`ImageRefiner`)
 - top-level `MultiscaleConfig` (`SingleScale | Pyramid { ... }`) and
   `UpscaleConfig` (`Disabled | Fixed(factor)`), honoured by both
   detectors symmetrically
@@ -65,8 +66,7 @@ level:
 
 ```rust
 use chess_corners::{
-    ChessRefiner, ChessRing, DetectorConfig,
-    MultiscaleConfig, UpscaleConfig,
+    ChessRing, DetectorConfig, ImageRefiner, MultiscaleConfig, UpscaleConfig,
 };
 
 let cfg = DetectorConfig::chess()
@@ -76,13 +76,14 @@ let cfg = DetectorConfig::chess()
     .with_upscale(UpscaleConfig::Fixed(2))
     .with_chess(|c| {
         c.ring = ChessRing::Broad;
-        c.refiner = ChessRefiner::default();
+        c.center_of_mass.radius = 2;
     })
+    .with_refiner(ImageRefiner::saddle_point())
     .with_detection(|d| {
         d.nms_radius = 2;
         d.min_cluster_size = 2;
     });
-// Or switch to the Radon strategy:
+// Or switch to the Radon strategy (the image refiner stays):
 let cfg = cfg.with_radon(|_| {});
 ```
 
@@ -90,11 +91,12 @@ Three guarantees follow from this shape:
 
 1. **One place per knob.** `cfg.strategy.chess.ring = ChessRing::Broad`
    is the only way to request the wider ChESS ring.
-2. **Per-detector refiners.** `ChessRefiner` lists the refiners that
-   operate on ChESS output; `RadonRefiner` the two that apply to Radon
-   peaks (`PeakFit`, the default, and `SaddlePoint`).
+2. **Every combination is valid.** Each detector tunes its own subpixel
+   localizer in its strategy config (ChESS center of mass, Radon peak
+   fit); the optional image refiner (`DetectorConfig::refiner`) reads
+   only the image, so every `ImageRefiner` works with both detectors.
 3. **Symmetric encoding.** `MultiscaleConfig`, `UpscaleConfig`, and
-   `ChessRefiner` use the same enum-with-payload shape, so the JSON and
+   `ImageRefiner` use the same enum-with-payload shape, so the JSON and
    binding surface stays uniform. (`threshold` is a plain number, so it
    carries no tag.)
 
@@ -136,40 +138,35 @@ stage recovers board geometry from corner positions alone, disable it
 with `DetectorConfig::without_orientation()`: detection still runs and
 every descriptor's `axes` comes back `None`.
 
-## Refiner configuration
+## Subpixel localization
 
-`ChessRefiner` is a tagged enum; each variant carries its tuning struct
-as a payload, so switching kinds cannot leave a stale per-refiner config
-behind:
-
-```rust
-use chess_corners::{ChessRefiner, DetectorConfig, SaddlePointConfig};
-
-let cfg = DetectorConfig::chess().with_chess(|c| {
-    // `SaddlePointConfig` is `#[non_exhaustive]`: start from `Default` and
-    // set the fields you need.
-    let mut saddle = SaddlePointConfig::default();
-    saddle.max_offset = 2.0;
-    c.refiner = ChessRefiner::SaddlePoint(saddle);
-});
-```
-
-The Radon detector locates its peaks with a 3-point fit on the response
-map (`RadonConfig.peak_fit`); by default that position is final.
-`RadonConfig.refiner` can instead refine each peak with the saddle-point
-fit on the image, which is more accurate:
+Each detector places its corners with its own localizer on its response
+map: ChESS with the center of mass (`ChessConfig::center_of_mass`),
+Radon with the 3-point peak fit (`RadonConfig::peak_fit`). By default
+that position is final. An image refiner (`DetectorConfig::refiner`)
+refines the corners of either detector on the image; each variant
+carries its tuning struct:
 
 ```rust
-use chess_corners::{DetectorConfig, RadonRefiner};
+use chess_corners::{DetectorConfig, ImageRefiner, SaddlePointConfig};
 
-let cfg = DetectorConfig::radon().with_radon(|r| r.refiner = RadonRefiner::saddle_point());
+// `SaddlePointConfig` is `#[non_exhaustive]`: start from `Default` and
+// set the fields you need.
+let mut saddle = SaddlePointConfig::default();
+saddle.max_offset = 2.0;
+let cfg = DetectorConfig::chess().with_refiner(ImageRefiner::SaddlePoint(saddle));
+let cfg = DetectorConfig::radon().with_refiner(ImageRefiner::saddle_point());
 ```
+
+On ChESS the image refiner replaces the center of mass, starts from the
+integer peak and drops a corner it rejects; on Radon it starts from the
+peak fit and keeps the peak fit where it does not converge.
 
 ## CLI config shape
 
 The CLI uses the same `DetectorConfig` schema, combined with
-application fields such as `image`, `output_json`, `output_png`,
-`log_level`, and `ml`. It reads PNG, JPEG, TIFF, BMP, WebP and GIF
+application fields such as `image`, `output_json`, `output_png`, and
+`log_level`. It reads PNG, JPEG, TIFF, BMP, WebP and GIF
 input images.
 
 See:
@@ -182,17 +179,17 @@ See:
 
 ## ML refiner
 
-Enable the `ml-refiner` feature, then pick the `Ml` variant on the
-ChESS strategy's refiner:
+Enable the `ml-refiner` feature, then select `ImageRefiner::Ml`, with
+either detector:
 
 ```rust
 # #[cfg(feature = "ml-refiner")]
 # {
-use chess_corners::{ChessRefiner, Detector, DetectorConfig};
+use chess_corners::{Detector, DetectorConfig, ImageRefiner};
 use image::GrayImage;
 
 let img = GrayImage::new(1, 1);
-let cfg = DetectorConfig::chess().with_chess(|c| c.refiner = ChessRefiner::Ml);
+let cfg = DetectorConfig::chess().with_refiner(ImageRefiner::Ml);
 
 let mut detector = Detector::new(cfg).unwrap();
 let _ = detector.detect(&img).unwrap();
@@ -200,8 +197,9 @@ let _ = detector.detect(&img).unwrap();
 ```
 
 The ML path is slower than the classic refiners in the shipped
-benchmark and falls back to the classic CenterOfMass refiner at coarse
-pyramid levels.
+benchmark; under a pyramid the coarse seeds come from the detector's own
+localizer and the model runs at full resolution only. It reports no
+position covariance and is not supported by `Detector::detect_u8_roi`.
 
 ## Examples
 
